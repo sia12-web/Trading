@@ -117,6 +117,52 @@ def get_active_cl_contract(now=None) -> str:
     return f"CL{NYMEX_MONTH_CODES[m - 1]}{str(y)[-1]}"
 
 
+GOLD_MONTH_CODES = {2: "G", 4: "J", 6: "M", 8: "Q", 10: "V", 12: "Z"}
+
+
+def _last_business_day_of_month(y: int, m: int) -> datetime.date:
+    if m == 12:
+        last = datetime.date(y, 12, 31)
+    else:
+        last = datetime.date(y, m + 1, 1) - datetime.timedelta(days=1)
+    while last.weekday() >= 5:
+        last -= datetime.timedelta(days=1)
+    return last
+
+
+def _gold_first_notice(contract_year: int, contract_month: int) -> datetime.date:
+    if contract_month == 1:
+        y, m = contract_year - 1, 12
+    else:
+        y, m = contract_year, contract_month - 1
+    return _last_business_day_of_month(y, m)
+
+
+def get_active_gold_contract(now=None) -> str:
+    """Volume-lead Micro Gold month (Yahoo MGC=F / Tradovate), not calendar MGC.c.0."""
+    if now is None:
+        now = (
+            datetime.datetime.now(ZoneInfo("America/New_York"))
+            if ZoneInfo is not None
+            else datetime.datetime.now()
+        )
+    today = now.date() if hasattr(now, "date") else now
+    roll_lead_bd = 10
+    y, m = today.year, today.month
+    for i in range(18):
+        mm = m + i
+        cy = y + (mm - 1) // 12
+        cm = (mm - 1) % 12 + 1
+        code = GOLD_MONTH_CODES.get(cm)
+        if not code:
+            continue
+        fnd = _gold_first_notice(cy, cm)
+        roll = _business_days_before(fnd, roll_lead_bd)
+        if today <= roll:
+            return f"MGC{code}{str(cy)[-1]}"
+    return f"MGCZ{str(y)[-1]}"
+
+
 DESK_SYMBOLS = {
     "MNQ.c.0": "NASDAQ",
     "MYM.c.0": "DOW",
@@ -316,24 +362,6 @@ def seed_from_historical(api_key: str):
                 )
             upsert_completed_bars(desk, bars)
             print(f"[Sidecar] Seeded {len(bars)} 1m bars for {desk} ({raw})", flush=True)
-        gold_records = _hist_ohlcv(client, "MGC.c.0", "continuous", start, end)
-        gold_bars = []
-        for rec in gold_records:
-            close_px = _bar_px(rec, "pretty_close", "close")
-            if not close_px:
-                continue
-            gold_bars.append(
-                {
-                    "time": int(rec.ts_event / 1e9),
-                    "open": _bar_px(rec, "pretty_open", "open") or close_px,
-                    "high": _bar_px(rec, "pretty_high", "high") or close_px,
-                    "low": _bar_px(rec, "pretty_low", "low") or close_px,
-                    "close": close_px,
-                    "volume": int(getattr(rec, "volume", 0) or 0),
-                }
-            )
-        upsert_completed_bars("GOLD", gold_bars)
-        print(f"[Sidecar] Seeded {len(gold_bars)} 1m bars for GOLD (MGC.c.0)", flush=True)
     except Exception as e:
         print(f"[Sidecar] Historical seed failed: {e}", file=sys.stderr, flush=True)
 
@@ -344,6 +372,7 @@ def desk_raw_symbols():
         get_active_quarterly_contract("MNQ"): "NASDAQ",
         get_active_quarterly_contract("NKD"): "NIKKEI",
         get_active_cl_contract(): "CRUDE",
+        get_active_gold_contract(): "GOLD",
     }
 
 
@@ -359,13 +388,6 @@ def subscribe_live(live, raw_symbols):
             stype_in="raw_symbol",
             start=replay_start,
         )
-        live.subscribe(
-            dataset="GLBX.MDP3",
-            schema="ohlcv-1m",
-            symbols=["MGC.c.0"],
-            stype_in="continuous",
-            start=replay_start,
-        )
         print(f"[Sidecar] ohlcv-1m replay from {replay_start.isoformat()}", flush=True)
     except Exception as e:
         print(f"[Sidecar] ohlcv-1m replay unavailable ({e}); hist seed + trades only", flush=True)
@@ -377,13 +399,6 @@ def subscribe_live(live, raw_symbols):
             stype_in="raw_symbol",
             start=trade_start,
         )
-        live.subscribe(
-            dataset="GLBX.MDP3",
-            schema="trades",
-            symbols=["MGC.c.0"],
-            stype_in="continuous",
-            start=trade_start,
-        )
         print(f"[Sidecar] trades replay from {trade_start.isoformat()}", flush=True)
     except Exception as e:
         print(f"[Sidecar] trade replay start rejected ({e}); subscribing live-only", flush=True)
@@ -392,12 +407,6 @@ def subscribe_live(live, raw_symbols):
             schema="trades",
             symbols=raw_list,
             stype_in="raw_symbol",
-        )
-        live.subscribe(
-            dataset="GLBX.MDP3",
-            schema="trades",
-            symbols=["MGC.c.0"],
-            stype_in="continuous",
         )
 
 def broadcast_trade(payload: dict):
@@ -569,7 +578,7 @@ def run_databento_stream(api_key: str):
             live = db.Live(key=api_key)
             raw_symbols = desk_raw_symbols()
             print(
-                f"[Sidecar] Subscribing raw contracts: {list(raw_symbols.keys())} (WTI {get_active_cl_contract()})",
+                f"[Sidecar] Subscribing raw contracts: {list(raw_symbols.keys())} (WTI {get_active_cl_contract()} MGC {get_active_gold_contract()})",
                 flush=True,
             )
             # Instrument ids are only valid for one gateway session, and they change

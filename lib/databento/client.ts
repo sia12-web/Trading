@@ -140,6 +140,66 @@ export function getActiveCmeClContract(now: Date = new Date()): string {
   return `CL${NYMEX_MONTH_CODES[ny.m - 1]}${String(ny.y).slice(-1)}`
 }
 
+const GOLD_MONTH_CODES: Record<number, string> = {
+  2: 'G',
+  4: 'J',
+  6: 'M',
+  8: 'Q',
+  10: 'V',
+  12: 'Z',
+}
+
+function lastBusinessDayOfMonth(y: number, m: number): [number, number, number] {
+  const last = new Date(Date.UTC(y, m, 0))
+  let yy = last.getUTCFullYear()
+  let mm = last.getUTCMonth() + 1
+  let dd = last.getUTCDate()
+  if (isWeekendUtc(yy, mm, dd)) {
+    return prevBusinessDay(yy, mm, dd)
+  }
+  return [yy, mm, dd]
+}
+
+/**
+ * COMEX gold first notice: last business day of the month before delivery.
+ * Volume leaves the expiring month well before last trade (unlike WTI), so
+ * `MGC.c.0` calendar front in late September is October while Tradovate /
+ * Yahoo MGC=F / GC=F are already December — that painted ~4353 on a ~4382 book.
+ */
+function goldFirstNoticeYmd(contractYear: number, contractMonth: number): [number, number, number] {
+  let y = contractYear
+  let m = contractMonth - 1
+  if (m < 1) {
+    m = 12
+    y -= 1
+  }
+  return lastBusinessDayOfMonth(y, m)
+}
+
+/**
+ * Volume-lead Micro Gold month (Yahoo MGC=F / Tradovate MGC), not calendar MGC.c.0.
+ */
+export function getActiveCmeGoldContract(now: Date = new Date()): string {
+  const ny = nyCivilDate(now)
+  const today = ymdNum(ny.y, ny.m, ny.d)
+  // Roll 10 business days before first notice so we follow December volume
+  // in the second half of the October notice month.
+  const ROLL_LEAD_BD = 10
+  for (let i = 0; i < 18; i++) {
+    const dt = new Date(Date.UTC(ny.y, ny.m - 1 + i, 1))
+    const cy = dt.getUTCFullYear()
+    const cm = dt.getUTCMonth() + 1
+    const code = GOLD_MONTH_CODES[cm]
+    if (!code) continue
+    const fnd = goldFirstNoticeYmd(cy, cm)
+    const roll = businessDaysBefore(fnd[0], fnd[1], fnd[2], ROLL_LEAD_BD)
+    if (today <= ymdNum(roll[0], roll[1], roll[2])) {
+      return `MGC${code}${String(cy).slice(-1)}`
+    }
+  }
+  return `MGCZ${String(ny.y).slice(-1)}`
+}
+
 export function getDatabentoActiveSymbol(
   instrument: Instrument,
   now: Date = new Date()
@@ -154,7 +214,7 @@ export function getDatabentoActiveSymbol(
     return { symbol: getActiveCmeQuarterlyContract('NKD', now), stype_in: 'raw_symbol' }
   }
   if (instrument === 'GOLD') {
-    return { symbol: 'MGC.c.0', stype_in: 'continuous' }
+    return { symbol: getActiveCmeGoldContract(now), stype_in: 'raw_symbol' }
   }
   if (instrument === 'CRUDE') {
     return { symbol: getActiveCmeClContract(now), stype_in: 'raw_symbol' }
