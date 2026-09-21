@@ -204,13 +204,17 @@ export function mergeHistoryWithLiveTip<T extends FormingBar>(
   const alignedLive: T = { ...live, time: liveT }
   const last = history[history.length - 1]!
   const lastT = last.time
-  if (liveTipDisagreesWithBook(alignedLive.close, last.close, instrument)) {
+  // Same-bar only: delayed Yahoo close vs live *now* is a real move, not a
+  // wrong-month contract. Comparing across timestamps skipped the tape and
+  // left the chart on delayed bars with a hole to the live tip.
+  if (liveT === lastT && liveTipDisagreesWithBook(alignedLive.close, last.close, instrument)) {
     return history
   }
   if (liveT > lastT) {
     if (!isPlausibleDeskTick(last.close, alignedLive.close, 0.08)) return history
-    const merged = [...history, alignedLive]
-    return fillCandleGaps(merged, timeframe)
+    // Do not invent flat zero-volume bars across the vendor lag window.
+    // Real 1m CME prints for that span come from the Databento overlay.
+    return [...history, alignedLive]
   }
   if (liveT < lastT) return history
   if (!isPlausibleDeskTick(last.close, alignedLive.close, 0.08)) return history

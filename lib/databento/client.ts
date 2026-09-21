@@ -179,6 +179,10 @@ interface CacheEntry {
 
 const candleCache = new Map<string, CacheEntry>()
 const CACHE_TTL_MS = 60_000 // 1 minute cache
+const recent1mCache = new Map<string, CacheEntry>()
+const RECENT_1M_TTL_MS = 10_000
+/** Yahoo/OANDA lag window the live sidecar must cover after a restart. */
+export const DATABENTO_RECENT_LOOKBACK_SEC = 45 * 60
 
 let cachedDatasetEnd: { at: number; end: string } | null = null
 
@@ -377,15 +381,8 @@ export async function getDatabentoCandles(
   return null
 }
 
-async function processDatabentoResponse(
-  response: Response,
-  symbol: string,
-  resolution: string,
-  cacheKey: string
-): Promise<{ candles: DatabentoCandle[]; symbol: string } | null> {
-  const text = await response.text()
-  if (!text || text.trim().length === 0) return null
-
+function parseDatabentoOhlcvJsonl(text: string): DatabentoCandle[] {
+  if (!text || text.trim().length === 0) return []
   const lines = text.trim().split('\n').filter(Boolean)
   const m1Candles: DatabentoCandle[] = []
 
@@ -421,9 +418,116 @@ async function processDatabentoResponse(
     }
   }
 
-  if (m1Candles.length === 0) return null
-
   m1Candles.sort((a, b) => a.time - b.time)
+  return m1Candles
+}
+
+async function fetchDatabentoOhlcvJsonl(
+  apiKey: string,
+  symbol: string,
+  stypeIn: 'raw_symbol' | 'continuous',
+  startDateStr: string,
+  endDateStr: string,
+  timeoutMs: number
+): Promise<string | null> {
+  const params = new URLSearchParams({
+    dataset: 'GLBX.MDP3',
+    symbols: symbol,
+    schema: 'ohlcv-1m',
+    encoding: 'json',
+    stype_in: stypeIn,
+    start: startDateStr,
+    end: endDateStr,
+  })
+  const auth = Buffer.from(`${apiKey}:`).toString('base64')
+  const response = await fetch(`https://hist.databento.com/v0/timeseries.get_range?${params.toString()}`, {
+    headers: {
+      Authorization: `Basic ${auth}`,
+      Accept: 'application/json',
+    },
+    cache: 'no-store',
+    signal: AbortSignal.timeout(timeoutMs),
+  })
+  if (response.ok) return await response.text()
+  const errText = await response.text()
+  const match = errText.match(/and\s+([0-9T:\-\.]+Z)/)
+  if (!match?.[1]) {
+    console.warn(`[Databento] HTTP ${response.status} for ${symbol}: ${errText.slice(0, 150)}`)
+    return null
+  }
+  const validEndIso = match[1].slice(0, 19)
+  const retryParams = new URLSearchParams({
+    dataset: 'GLBX.MDP3',
+    symbols: symbol,
+    schema: 'ohlcv-1m',
+    encoding: 'json',
+    stype_in: stypeIn,
+    start: startDateStr,
+    end: validEndIso,
+  })
+  const retryRes = await fetch(`https://hist.databento.com/v0/timeseries.get_range?${retryParams.toString()}`, {
+    headers: {
+      Authorization: `Basic ${auth}`,
+      Accept: 'application/json',
+    },
+    cache: 'no-store',
+    signal: AbortSignal.timeout(timeoutMs),
+  })
+  if (!retryRes.ok) return null
+  return await retryRes.text()
+}
+
+/**
+ * Last ~45 minutes of official CME 1m bars. Used to cover the Yahoo lag window
+ * when the live sidecar has just restarted and has no completed_bars yet.
+ */
+export async function getDatabentoRecent1m(
+  instrument: Instrument,
+  sinceSec: number
+): Promise<DatabentoCandle[] | null> {
+  const apiKey = process.env.DATABENTO_API_KEY?.trim()
+  if (!apiKey) return null
+  const activeSym = getDatabentoActiveSymbol(instrument)
+  const nowSec = Math.floor(Date.now() / 1000)
+  const floor = nowSec - DATABENTO_RECENT_LOOKBACK_SEC
+  const startSec = Math.max(floor, (sinceSec || floor) - 60)
+  const cacheKey = `${instrument}:${activeSym.symbol}:${Math.floor(startSec / 60)}`
+  const cached = recent1mCache.get(cacheKey)
+  if (cached && Date.now() - cached.at < RECENT_1M_TTL_MS) {
+    return cached.candles
+  }
+
+  const startDateStr = new Date(startSec * 1000).toISOString().slice(0, 19)
+  const endDateStr = new Date(nowSec * 1000).toISOString().slice(0, 19)
+  try {
+    const text = await fetchDatabentoOhlcvJsonl(
+      apiKey,
+      activeSym.symbol,
+      activeSym.stype_in,
+      startDateStr,
+      endDateStr,
+      4_000
+    )
+    if (!text) return null
+    const candles = parseDatabentoOhlcvJsonl(text).filter((c) => c.time >= startSec)
+    if (!candles.length) return null
+    recent1mCache.set(cacheKey, { at: Date.now(), candles })
+    return candles
+  } catch (err) {
+    console.warn(`[Databento] Recent 1m fetch failed for ${activeSym.symbol}:`, err)
+    return null
+  }
+}
+
+async function processDatabentoResponse(
+  response: Response,
+  symbol: string,
+  resolution: string,
+  cacheKey: string
+): Promise<{ candles: DatabentoCandle[]; symbol: string } | null> {
+  const text = await response.text()
+  const m1Candles = parseDatabentoOhlcvJsonl(text)
+  if (m1Candles.length === 0) return null
 
   const resSec =
     resolution === '1'

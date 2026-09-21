@@ -29,8 +29,9 @@ import { dropImplausibleDeskBars, liveTipDisagreesWithBook } from '@/lib/chart/l
 import { AVWAP_CANDLE_FETCH_CALENDAR_DAYS } from '@/lib/chart/sessionVwap'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import type { Instrument } from '@/types/price-feed'
-import { getDatabentoCandles, isDatabentoConfigured } from '@/lib/databento/client'
+import { getDatabentoCandles, getDatabentoRecent1m, isDatabentoConfigured } from '@/lib/databento/client'
 import { fetchDatabentoLiveBars, resolveDatabentoLiveQuote } from '@/lib/databento/liveHub'
+import { liveTapeHasVendorGap, mergeTapeBars, overlayVendorWithTape } from '@/lib/databento/liveOverlay'
 import { fillCandleGaps } from '@/lib/chart/candleGapFiller'
 import { logger } from '@/lib/utils/logger'
 
@@ -59,40 +60,6 @@ const RES_SECONDS: Record<string, number> = {
 
 function resolutionSeconds(resolution: string, timeframe: string): number {
   return RES_SECONDS[resolution] ?? RES_SECONDS[RES_MAP[timeframe] ?? ''] ?? 300
-}
-
-type LiveBar = {
-  time: number
-  open: number
-  high: number
-  low: number
-  close: number
-  volume: number
-}
-
-/** Roll the sidecar's 1m bars up to the requested resolution. Input is oldest-first. */
-function aggregateLiveBars(bars: LiveBar[], stepSec: number): LiveBar[] {
-  const out: LiveBar[] = []
-  for (const bar of bars) {
-    const bucket = Math.floor(bar.time / stepSec) * stepSec
-    const cur = out[out.length - 1]
-    if (!cur || cur.time !== bucket) {
-      out.push({
-        time: bucket,
-        open: bar.open,
-        high: bar.high,
-        low: bar.low,
-        close: bar.close,
-        volume: bar.volume,
-      })
-    } else {
-      cur.high = Math.max(cur.high, bar.high)
-      cur.low = Math.min(cur.low, bar.low)
-      cur.close = bar.close
-      cur.volume += bar.volume
-    }
-  }
-  return out
 }
 
 interface CachedCandleEntry {
@@ -261,49 +228,30 @@ export async function GET(request: Request) {
           candles = clipAfternoonBars(candles, instrument)
         }
 
-        // 4. Overlay the tail of the series with real CME Globex prints. Yahoo and OANDA
-        //    both publish intraday bars several minutes behind the tape, and fillCandleGaps
-        //    would otherwise reconstruct that window as flat zero-volume bars — fabricated
-        //    OHLC that every downstream overlay (VWAP, profile, IB, excess, delta) reads as
-        //    real. These bars are built from the live tick stream, so there is no lag.
+        // 4. Overlay the tail with real CME Globex 1m prints. Yahoo/OANDA lag the
+        //    tape by several minutes. The sidecar is empty after a restart, so we
+        //    splice Databento Historical 1m into that window and let live win on
+        //    overlap. Skipping overlay because live *now* differs from delayed
+        //    Yahoo is what painted holes and late bars.
         if (candles?.length && !isDaily && isDatabentoConfigured()) {
           try {
             const stepSec = resolutionSeconds(resolution, timeframe)
             const vendorLast = candles[candles.length - 1]!.time
-            // Re-fetch the last vendor bucket too: it is usually still incomplete.
             const liveBars = await fetchDatabentoLiveBars(instrument, vendorLast)
-            if (liveBars?.length) {
-              const merged = aggregateLiveBars(liveBars, stepSec)
-              if (merged.length > 0) {
-                const vendorClose = candles[candles.length - 1]!.close
-                const liveClose = merged[merged.length - 1]!.close
-                // Wrong-month live (calendar CL.c.0 vs volume CL=F) must not splice
-                // a 4-point jump onto the vendor series.
-                if (liveTipDisagreesWithBook(liveClose, vendorClose, instrument)) {
-                  logger.warn(
-                    `[Candles] Skipping Databento live overlay for ${instrument}: live ${liveClose} vs book ${vendorClose}`
-                  )
-                } else {
-                  const firstLive = merged[0]!.time
-                  const kept = candles.filter((c) => c.time < firstLive)
-                  const overlap = candles.find((c) => c.time === firstLive)
-                  // The sidecar may have started part-way through the oldest overlapping
-                  // bucket, so union it with the vendor bar instead of replacing it.
-                  // Later buckets are fully covered by the live stream.
-                  if (overlap) {
-                    const live = merged[0]!
-                    merged[0] = {
-                      time: live.time,
-                      open: overlap.open,
-                      high: Math.max(overlap.high, live.high),
-                      low: Math.min(overlap.low, live.low),
-                      close: live.close,
-                      volume: Math.max(overlap.volume, live.volume),
-                    }
-                  }
-                  candles = [...kept, ...merged]
-                  source = 'databento'
-                }
+            let histTail = null
+            if (liveTapeHasVendorGap(liveBars, vendorLast, stepSec)) {
+              histTail = await getDatabentoRecent1m(instrument, vendorLast)
+            }
+            const tape = mergeTapeBars(histTail || [], liveBars || [])
+            if (tape.length) {
+              const spliced = overlayVendorWithTape(candles, tape, stepSec, instrument)
+              if (spliced.applied) {
+                candles = spliced.candles
+                source = 'databento'
+              } else {
+                logger.warn(
+                  `[Candles] Skipping Databento overlay for ${instrument}: same-bar contract mismatch`
+                )
               }
             }
           } catch (err) {
@@ -435,11 +383,9 @@ export async function GET(request: Request) {
       quote,
     }
 
-    // Cache TTL: 60s for daily, 600s for historical replay dates, 5s for intraday.
-    // The chart re-polls bars every 15s, so a longer intraday TTL stacks on top of that
-    // interval and the tape can sit up to 30s behind. 5s still absorbs the burst of
-    // duplicate requests that a panel mount fires off.
-    const ttlMs = isDaily ? 60_000 : endDate ? 600_000 : 5_000
+    // Cache TTL: 60s for daily, 600s for historical replay dates, 1s for a delayed
+    // vendor book that still needs a Databento overlay, 2s once the tape is spliced.
+    const ttlMs = isDaily ? 60_000 : endDate ? 600_000 : source === 'databento' ? 2_000 : 1_000
     candleMemoryCache.set(cacheKey, {
       data: payload,
       expiresAt: now + ttlMs,

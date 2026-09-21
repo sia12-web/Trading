@@ -181,6 +181,225 @@ def update_forming_candle(desk: str, price: float, size: int, ts_sec: int):
         cur["close"] = price
         cur["volume"] += size
 
+
+def _bar_px(record, pretty_attr, raw_attr):
+    pretty = getattr(record, pretty_attr, None)
+    try:
+        if pretty is not None and pretty == pretty and float(pretty) > 0:
+            return float(pretty)
+    except (TypeError, ValueError):
+        pass
+    raw = getattr(record, raw_attr, None)
+    try:
+        if raw is not None:
+            return float(raw) / 1e9
+    except (TypeError, ValueError):
+        pass
+    return None
+
+
+def upsert_completed_bars(desk: str, bars: list):
+    """Merge closed 1m bars by timestamp. Never overwrite the forming minute."""
+    if not bars:
+        return
+    with lock:
+        forming = forming_candles.get(desk)
+        forming_t = forming["time"] if forming else None
+        now_bucket = (int(time.time()) // 60) * 60
+        existing = {b["time"]: b for b in completed_bars.get(desk, ())}
+        for bar in bars:
+            t = bar.get("time")
+            if not t or not bar.get("close"):
+                continue
+            if forming_t is not None and t >= forming_t:
+                continue
+            if t >= now_bucket:
+                if desk not in forming_candles:
+                    forming_candles[desk] = dict(bar)
+                continue
+            existing[t] = bar
+        merged = [existing[t] for t in sorted(existing)]
+        completed_bars[desk] = collections.deque(
+            merged[-BAR_HISTORY_MINUTES:], maxlen=BAR_HISTORY_MINUTES
+        )
+
+
+def ingest_ohlcv_record(record, raw_symbols):
+    with lock:
+        desk = id_to_desk.get(record.instrument_id)
+        if not desk:
+            in_sym = getattr(record, "stype_in_symbol", None)
+            desk = raw_symbols.get(in_sym) or DESK_SYMBOLS.get(in_sym)
+        if not desk:
+            return
+    open_px = _bar_px(record, "pretty_open", "open")
+    high_px = _bar_px(record, "pretty_high", "high")
+    low_px = _bar_px(record, "pretty_low", "low")
+    close_px = _bar_px(record, "pretty_close", "close")
+    if not close_px or close_px <= 0:
+        return
+    ts_sec = int(record.ts_event / 1e9)
+    volume = int(getattr(record, "volume", 0) or 0)
+    upsert_completed_bars(
+        desk,
+        [
+            {
+                "time": ts_sec,
+                "open": open_px or close_px,
+                "high": high_px or close_px,
+                "low": low_px or close_px,
+                "close": close_px,
+                "volume": volume,
+            }
+        ],
+    )
+
+
+def _parse_hist_end(err):
+    import re
+
+    m = re.search(r"and\s+([0-9T:\-\.]+Z)", str(err))
+    if not m:
+        return None
+    return m.group(1)[:19]
+
+
+def _hist_ohlcv(client, symbols, stype_in, start, end):
+    kwargs = dict(
+        dataset="GLBX.MDP3",
+        schema="ohlcv-1m",
+        symbols=symbols,
+        stype_in=stype_in,
+        start=start,
+    )
+    if end is not None:
+        kwargs["end"] = end
+    try:
+        return list(client.timeseries.get_range(**kwargs))
+    except Exception as e:
+        valid_end = _parse_hist_end(e)
+        if not valid_end:
+            print(f"[Sidecar] Historical 1m failed for {symbols}: {e}", flush=True)
+            return []
+        kwargs["end"] = valid_end
+        try:
+            return list(client.timeseries.get_range(**kwargs))
+        except Exception as e2:
+            print(f"[Sidecar] Historical 1m retry failed for {symbols}: {e2}", flush=True)
+            return []
+
+
+def seed_from_historical(api_key: str):
+    """Fill completed_bars with official CME 1m so Yahoo's ~10m lag is real prints, not flats."""
+    try:
+        client = db.Historical(key=api_key)
+        end = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=20)
+        start = end - datetime.timedelta(minutes=45)
+        raw_symbols = desk_raw_symbols()
+        print(f"[Sidecar] Seeding 45m of ohlcv-1m from Historical ({start.isoformat()}Z)...", flush=True)
+        for raw, desk in raw_symbols.items():
+            records = _hist_ohlcv(client, raw, "raw_symbol", start, end)
+            bars = []
+            for rec in records:
+                close_px = _bar_px(rec, "pretty_close", "close")
+                if not close_px:
+                    continue
+                bars.append(
+                    {
+                        "time": int(rec.ts_event / 1e9),
+                        "open": _bar_px(rec, "pretty_open", "open") or close_px,
+                        "high": _bar_px(rec, "pretty_high", "high") or close_px,
+                        "low": _bar_px(rec, "pretty_low", "low") or close_px,
+                        "close": close_px,
+                        "volume": int(getattr(rec, "volume", 0) or 0),
+                    }
+                )
+            upsert_completed_bars(desk, bars)
+            print(f"[Sidecar] Seeded {len(bars)} 1m bars for {desk} ({raw})", flush=True)
+        gold_records = _hist_ohlcv(client, "MGC.c.0", "continuous", start, end)
+        gold_bars = []
+        for rec in gold_records:
+            close_px = _bar_px(rec, "pretty_close", "close")
+            if not close_px:
+                continue
+            gold_bars.append(
+                {
+                    "time": int(rec.ts_event / 1e9),
+                    "open": _bar_px(rec, "pretty_open", "open") or close_px,
+                    "high": _bar_px(rec, "pretty_high", "high") or close_px,
+                    "low": _bar_px(rec, "pretty_low", "low") or close_px,
+                    "close": close_px,
+                    "volume": int(getattr(rec, "volume", 0) or 0),
+                }
+            )
+        upsert_completed_bars("GOLD", gold_bars)
+        print(f"[Sidecar] Seeded {len(gold_bars)} 1m bars for GOLD (MGC.c.0)", flush=True)
+    except Exception as e:
+        print(f"[Sidecar] Historical seed failed: {e}", file=sys.stderr, flush=True)
+
+
+def desk_raw_symbols():
+    return {
+        get_active_quarterly_contract("MYM"): "DOW",
+        get_active_quarterly_contract("MNQ"): "NASDAQ",
+        get_active_quarterly_contract("NKD"): "NIKKEI",
+        get_active_cl_contract(): "CRUDE",
+    }
+
+
+def subscribe_live(live, raw_symbols):
+    raw_list = list(raw_symbols.keys())
+    replay_start = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=45)
+    trade_start = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=2)
+    try:
+        live.subscribe(
+            dataset="GLBX.MDP3",
+            schema="ohlcv-1m",
+            symbols=raw_list,
+            stype_in="raw_symbol",
+            start=replay_start,
+        )
+        live.subscribe(
+            dataset="GLBX.MDP3",
+            schema="ohlcv-1m",
+            symbols=["MGC.c.0"],
+            stype_in="continuous",
+            start=replay_start,
+        )
+        print(f"[Sidecar] ohlcv-1m replay from {replay_start.isoformat()}", flush=True)
+    except Exception as e:
+        print(f"[Sidecar] ohlcv-1m replay unavailable ({e}); hist seed + trades only", flush=True)
+    try:
+        live.subscribe(
+            dataset="GLBX.MDP3",
+            schema="trades",
+            symbols=raw_list,
+            stype_in="raw_symbol",
+            start=trade_start,
+        )
+        live.subscribe(
+            dataset="GLBX.MDP3",
+            schema="trades",
+            symbols=["MGC.c.0"],
+            stype_in="continuous",
+            start=trade_start,
+        )
+        print(f"[Sidecar] trades replay from {trade_start.isoformat()}", flush=True)
+    except Exception as e:
+        print(f"[Sidecar] trade replay start rejected ({e}); subscribing live-only", flush=True)
+        live.subscribe(
+            dataset="GLBX.MDP3",
+            schema="trades",
+            symbols=raw_list,
+            stype_in="raw_symbol",
+        )
+        live.subscribe(
+            dataset="GLBX.MDP3",
+            schema="trades",
+            symbols=["MGC.c.0"],
+            stype_in="continuous",
+        )
+
 def broadcast_trade(payload: dict):
     with lock:
         dead = []
@@ -348,18 +567,9 @@ def run_databento_stream(api_key: str):
         try:
             print("[Sidecar] Connecting to Databento Live TCP gateway (GLBX.MDP3)...", flush=True)
             live = db.Live(key=api_key)
-            active_mym = get_active_quarterly_contract("MYM")
-            active_mnq = get_active_quarterly_contract("MNQ")
-            active_nkd = get_active_quarterly_contract("NKD")
-            active_cl = get_active_cl_contract()
-            raw_symbols = {
-                active_mym: "DOW",
-                active_mnq: "NASDAQ",
-                active_nkd: "NIKKEI",
-                active_cl: "CRUDE",
-            }
+            raw_symbols = desk_raw_symbols()
             print(
-                f"[Sidecar] Subscribing raw contracts: {list(raw_symbols.keys())} (WTI {active_cl})",
+                f"[Sidecar] Subscribing raw contracts: {list(raw_symbols.keys())} (WTI {get_active_cl_contract()})",
                 flush=True,
             )
             # Instrument ids are only valid for one gateway session, and they change
@@ -367,18 +577,7 @@ def run_databento_stream(api_key: str):
             # contract onto a live desk book.
             with lock:
                 id_to_desk.clear()
-            live.subscribe(
-                dataset="GLBX.MDP3",
-                schema="trades",
-                symbols=list(raw_symbols.keys()),
-                stype_in="raw_symbol",
-            )
-            live.subscribe(
-                dataset="GLBX.MDP3",
-                schema="trades",
-                symbols=["MGC.c.0"],
-                stype_in="continuous",
-            )
+            subscribe_live(live, raw_symbols)
             connected = True
             print("[Sidecar] Connected! Streaming real-time CME Globex trades...", flush=True)
 
@@ -412,11 +611,14 @@ def run_databento_stream(api_key: str):
                         update_forming_candle(desk, price, size, ts_sec)
 
                     broadcast_trade(payload)
+                elif hasattr(record, "pretty_open") and hasattr(record, "pretty_close"):
+                    ingest_ohlcv_record(record, raw_symbols)
 
         except Exception as e:
             connected = False
             print(f"[Sidecar] Stream error: {e}. Reconnecting in 3s...", file=sys.stderr, flush=True)
             time.sleep(3)
+
 
 def main():
     api_key = load_api_key()
@@ -427,6 +629,10 @@ def main():
     print(f"[Sidecar] Starting Databento Live Gateway Sidecar on port {PORT}...", flush=True)
     http_thread = threading.Thread(target=run_http_server, daemon=True)
     http_thread.start()
+    # Seed closed 1m bars from Historical immediately so /bars is not empty
+    # for the Yahoo lag window while Live reconnects after a deploy.
+    seed_thread = threading.Thread(target=seed_from_historical, args=(api_key,), daemon=True)
+    seed_thread.start()
     run_databento_stream(api_key)
 
 if __name__ == "__main__":

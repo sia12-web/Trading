@@ -380,6 +380,11 @@ export type DatabentoLiveBar = {
   volume: number
 }
 
+function isTimeoutError(err: unknown): boolean {
+  const name = (err as Error)?.name
+  return name === 'TimeoutError' || name === 'AbortError'
+}
+
 /**
  * Real 1m bars the sidecar assembled from live CME prints, from `sinceSec` onward and
  * including the forming bar. Historical bar vendors lag the tape by several minutes, so
@@ -390,14 +395,16 @@ export async function fetchDatabentoLiveBars(
   sinceSec: number
 ): Promise<DatabentoLiveBar[] | null> {
   const h = hub()
-  if (isDatabentoSidecarDown()) return null
+  // Ticks flowing means the sidecar is up — a prior HTTP timeout must not
+  // blackout the bar overlay for 15s (that is visible delay + gaps).
+  if (isDatabentoSidecarDown() && !hasRecentTicks(h)) return null
   try {
     const res = await fetch(
       `${SIDECAR_URL}/bars?instrument=${encodeURIComponent(instrument)}&since=${Math.floor(sinceSec)}`,
-      { cache: 'no-store', signal: AbortSignal.timeout(600) }
+      { cache: 'no-store', signal: AbortSignal.timeout(2_000) }
     )
     if (!res.ok) {
-      h.downUntil = Date.now() + DOWN_BACKOFF_MS
+      if (!hasRecentTicks(h)) h.downUntil = Date.now() + DOWN_BACKOFF_MS
       return null
     }
     const json = await res.json()
@@ -407,8 +414,10 @@ export async function fetchDatabentoLiveBars(
       (b: DatabentoLiveBar) =>
         Number.isFinite(b?.time) && Number.isFinite(b?.close) && b.close > 0
     )
-  } catch {
-    h.downUntil = Date.now() + DOWN_BACKOFF_MS
+  } catch (err) {
+    if (!isTimeoutError(err) && !hasRecentTicks(h)) {
+      h.downUntil = Date.now() + DOWN_BACKOFF_MS
+    }
     return null
   }
 }
@@ -450,19 +459,21 @@ export async function fetchDatabentoLiveSnapshot(): Promise<{
   const h = hub()
   // Request paths await this snapshot, so a down sidecar must fail instantly rather than
   // adding the full timeout to every candle response.
-  if (isDatabentoSidecarDown()) return null
+  if (isDatabentoSidecarDown() && !hasRecentTicks(h)) return null
   try {
     const res = await fetch(`${SIDECAR_URL}/snapshot`, {
       cache: 'no-store',
-      signal: AbortSignal.timeout(600),
+      signal: AbortSignal.timeout(2_000),
     })
     if (!res.ok) {
-      h.downUntil = Date.now() + DOWN_BACKOFF_MS
+      if (!hasRecentTicks(h)) h.downUntil = Date.now() + DOWN_BACKOFF_MS
       return null
     }
     return await res.json()
-  } catch {
-    h.downUntil = Date.now() + DOWN_BACKOFF_MS
+  } catch (err) {
+    if (!isTimeoutError(err) && !hasRecentTicks(h)) {
+      h.downUntil = Date.now() + DOWN_BACKOFF_MS
+    }
     return null
   }
 }
