@@ -333,24 +333,36 @@ export function sessionEdgeUnix(
 }
 
 export function timeToX(
-  timeScale: { timeToCoordinate: (t: UTCTimestamp) => number | null },
+  timeScale: { timeToCoordinate: (t: any) => number | null },
   t: number,
-  candleTimes: number[]
+  candleTimes: number[],
+  asBusinessDay = false
 ): number | null {
-  const direct = timeScale.timeToCoordinate(t as UTCTimestamp)
+  const toCoord = (unix: number) => {
+    if (!asBusinessDay) {
+      return timeScale.timeToCoordinate(unix as UTCTimestamp)
+    }
+    const d = new Date(unix * 1000)
+    return timeScale.timeToCoordinate({
+      year: d.getUTCFullYear(),
+      month: d.getUTCMonth() + 1,
+      day: d.getUTCDate(),
+    })
+  }
+
+  const direct = toCoord(t)
   if (direct !== null) return direct
   if (candleTimes.length === 0) return null
 
   const first = candleTimes[0]!
   const last = candleTimes[candleTimes.length - 1]!
-  if (t <= first) return timeScale.timeToCoordinate(first as UTCTimestamp)
+  if (t <= first) return toCoord(first)
   if (t >= last) {
-    // Extrapolate past tip so endT = lastOpen + barSec covers the full last candle
-    const xLast = timeScale.timeToCoordinate(last as UTCTimestamp)
+    const xLast = toCoord(last)
     if (xLast == null) return null
     if (candleTimes.length >= 2) {
       const prev = candleTimes[candleTimes.length - 2]!
-      const xPrev = timeScale.timeToCoordinate(prev as UTCTimestamp)
+      const xPrev = toCoord(prev)
       if (xPrev != null && prev < last) {
         return xLast + (xLast - xPrev) * ((t - last) / (last - prev))
       }
@@ -367,8 +379,8 @@ export function timeToX(
   }
   const t0 = candleTimes[lo]!
   const t1 = candleTimes[hi]!
-  const x0 = timeScale.timeToCoordinate(t0 as UTCTimestamp)
-  const x1 = timeScale.timeToCoordinate(t1 as UTCTimestamp)
+  const x0 = toCoord(t0)
+  const x1 = toCoord(t1)
   if (x0 === null && x1 === null) return null
   if (x0 === null) return x1
   if (x1 === null) return x0

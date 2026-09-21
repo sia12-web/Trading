@@ -5,6 +5,7 @@
 
 import type { Instrument } from '@/types/price-feed'
 import { YAHOO_SYMBOLS } from '@/lib/yahoo/symbols'
+import { snapDailyUnix } from '@/lib/chart/chartTime'
 
 const INTERVAL_MAP: Record<string, string> = {
   '1': '1m',
@@ -166,6 +167,27 @@ async function fetchYahooChart(
   return dedupeSort(candles)
 }
 
+function snapDailyCandles(candles: YahooCandle[]): YahooCandle[] {
+  const byDay = new Map<number, YahooCandle>()
+  for (const c of candles) {
+    const day = snapDailyUnix(c.time)
+    const prev = byDay.get(day)
+    if (!prev) {
+      byDay.set(day, { ...c, time: day })
+      continue
+    }
+    byDay.set(day, {
+      time: day,
+      open: prev.open,
+      high: Math.max(prev.high, c.high),
+      low: Math.min(prev.low, c.low),
+      close: c.close,
+      volume: (prev.volume || 0) + (c.volume || 0),
+    })
+  }
+  return [...byDay.values()].sort((a, b) => a.time - b.time)
+}
+
 export async function getYahooCandles(
   instrument: Instrument,
   resolution: string,
@@ -226,6 +248,9 @@ export async function getYahooCandles(
     candles = retry === UNREACHABLE ? null : retry
   }
   if (!candles?.length) return null
+  if (interval === '1d') {
+    candles = snapDailyCandles(candles)
+  }
   if (resolution === '240') candles = aggregateTo4H(candles)
   if (resolution === '30') candles = aggregateTo30m(candles)
   return { candles, symbol }
@@ -252,6 +277,7 @@ export async function getYahooCandlesRange(
   )
   if (!fetched || fetched === UNREACHABLE) return null
   let candles: YahooCandle[] = fetched
+  if (interval === '1d') candles = snapDailyCandles(candles)
   if (resolution === '240') candles = aggregateTo4H(candles)
   if (resolution === '30') candles = aggregateTo30m(candles)
   // Keep only bars inside the requested window

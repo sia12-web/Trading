@@ -54,6 +54,56 @@ function wallParts(unixSec: number, timeZone: string): WallParts {
   return out
 }
 
+/** lightweight-charts daily bar. Bars sit next to each other; weekends are not plotted. */
+export type ChartBusinessDay = { year: number; month: number; day: number }
+
+export function isBusinessDay(time: unknown): time is ChartBusinessDay {
+  return (
+    !!time &&
+    typeof time === 'object' &&
+    Number.isFinite((time as ChartBusinessDay).year) &&
+    Number.isFinite((time as ChartBusinessDay).month) &&
+    Number.isFinite((time as ChartBusinessDay).day)
+  )
+}
+
+/**
+ * Calendar date of a daily futures bar.
+ * Yahoo stamps CME dailies at NY midnight (04:00 / 05:00 UTC) or an odd cash-session
+ * time on shortened days — the UTC date of that stamp is the trading day, and reading
+ * UTC midnight back through America/New_York would shift winter bars back one day.
+ */
+export function unixToBusinessDay(unixSec: number): ChartBusinessDay {
+  const d = new Date(unixSec * 1000)
+  return {
+    year: d.getUTCFullYear(),
+    month: d.getUTCMonth() + 1,
+    day: d.getUTCDate(),
+  }
+}
+
+/** UTC midnight of a business day — stable numeric key for matching / snapping. */
+export function businessDayToUtcMidnight(d: ChartBusinessDay): number {
+  return Math.floor(Date.UTC(d.year, d.month - 1, d.day) / 1000)
+}
+
+/** Collapse any intra-day stamp onto UTC midnight of its NY session date. */
+export function snapDailyUnix(unixSec: number): number {
+  if (!Number.isFinite(unixSec)) return unixSec
+  return businessDayToUtcMidnight(unixToBusinessDay(unixSec))
+}
+
+export function businessDayKey(d: ChartBusinessDay): string {
+  return `${d.year}-${String(d.month).padStart(2, '0')}-${String(d.day).padStart(2, '0')}`
+}
+
+/** Crosshair / tick formatter: unix seconds or a BusinessDay object. */
+export function chartTimeToUnix(time: unknown): number {
+  if (typeof time === 'number' && Number.isFinite(time)) return time
+  if (isBusinessDay(time)) return businessDayToUtcMidnight(time)
+  return NaN
+}
+
 /** Real unix seconds → lightweight-charts time (UTC comps = desk wall clock). */
 export function toChartTime(unixSec: number, timeZone: string): number {
   if (!Number.isFinite(unixSec)) return unixSec

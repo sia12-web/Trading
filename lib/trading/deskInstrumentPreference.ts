@@ -114,7 +114,7 @@ export function deskVisibleBarCount(
 ): number {
   const isDaily = timeframe === '1D'
   const is30m = timeframe === '30m'
-  const spacing = isDaily ? 6 : is30m ? 24 : DESK_BAR_SPACING
+  const spacing = isDaily ? 8 : is30m ? 24 : DESK_BAR_SPACING
   const byWidth = Math.floor(Math.max(containerWidth - 80, 240) / spacing)
   const minBars = isDaily ? 120 : is30m ? 24 : 40
   return Math.min(Math.max(barCount, 1), Math.max(minBars, byWidth))
@@ -138,7 +138,7 @@ export function deskBarSpacing(
   _barCount: number,
   timeframe?: string
 ): number {
-  return timeframe === '1D' ? 6 : timeframe === '30m' ? 24 : DESK_BAR_SPACING
+  return timeframe === '1D' ? 8 : timeframe === '30m' ? 24 : DESK_BAR_SPACING
 }
 
 /** Tip-relative viewport so new prints keep the same window after refresh. */

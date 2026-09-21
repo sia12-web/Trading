@@ -35,6 +35,7 @@ import {
   type IPriceLine,
   type CandlestickData,
   type UTCTimestamp,
+  type Time,
 } from 'lightweight-charts'
 import {
   AVWAP_CANDLE_FETCH_CALENDAR_DAYS,
@@ -88,6 +89,10 @@ import {
   formatChartDate,
   mapTimesToChart,
   toChartTime,
+  unixToBusinessDay,
+  snapDailyUnix,
+  chartTimeToUnix,
+  isBusinessDay,
 } from '@/lib/chart/chartTime'
 import {
   TRADER_DISPLAY_LABEL,
@@ -493,8 +498,8 @@ function getHighlightTheme(index: number, isUnsent: boolean) {
 type DeskChartFmt = {
   formatTime: (unix: number, withSeconds?: boolean) => string
   formatDate: (unix: number, style?: 'day' | 'month' | 'year') => string
-  tickMarkFormatter: (time: UTCTimestamp | string | number, tickMarkType: TickMarkType) => string
-  timeFormatter: (time: UTCTimestamp | string | number) => string
+  tickMarkFormatter: (time: Time, tickMarkType: TickMarkType) => string
+  timeFormatter: (time: Time) => string
   tzLabel: string
 }
 
@@ -562,8 +567,7 @@ function describeTimeHighlightSpan(
  */
 function makeDeskChartFormatters(_instrument: Instrument, timeframe: DeskTimeframe = '5m'): DeskChartFmt {
   const tzLabel = TRADER_DISPLAY_LABEL
-  const toUnix = (time: UTCTimestamp | string | number) =>
-    typeof time === 'number' ? time : Math.floor(new Date(String(time)).getTime() / 1000)
+  const toUnix = (time: Time) => chartTimeToUnix(time)
 
   const formatTime = (chartUnix: number, withSeconds = false) =>
     formatChartClock(chartUnix, withSeconds)
@@ -799,8 +803,9 @@ function normalizeCandleTimes(candles: OHLCV[], tf: DeskTimeframe = '5m'): OHLCV
     const l = Number(c.low)
     const cl = Number(c.close)
     if (!Number.isFinite(rawT) || !Number.isFinite(o) || !Number.isFinite(h) || !Number.isFinite(l) || !Number.isFinite(cl)) continue
-    // Normalize unaligned live tick timestamps (from Yahoo / broker feeds) to bar boundary
-    const t = tf === '1D' ? rawT : Math.floor(rawT / step) * step
+    // Daily bars: NY session date at UTC midnight. Yahoo stamps some days at 13:00/14:00 UTC
+    // (shortened sessions) which would otherwise plot as a second candle on the same day.
+    const t = tf === '1D' ? snapDailyUnix(rawT) : Math.floor(rawT / step) * step
     const safeCandle: OHLCV = {
       time: t as UTCTimestamp,
       open: o,
@@ -825,6 +830,31 @@ function normalizeCandleTimes(candles: OHLCV[], tf: DeskTimeframe = '5m'): OHLCV
   }
   const filled = tf === '1D' ? out : fillCandleGaps(out.map((c) => ({ ...c, time: c.time as number })), tf)
   return filled.map((c) => ({ ...c, time: c.time as UTCTimestamp }))
+}
+
+/** Series time: equally-spaced BusinessDay on 1D, Montreal-shifted unix otherwise. */
+function toSeriesTime(unixSec: number, timeframe: DeskTimeframe, tz: string): Time {
+  if (timeframe === '1D') return unixToBusinessDay(unixSec)
+  return toChartTime(unixSec, tz) as UTCTimestamp
+}
+
+function toDailyLinePoints(
+  rows: Array<{ time: number; value: number }>
+): Array<{ time: Time; value: number }> {
+  const out: Array<{ time: Time; value: number }> = []
+  const seen = new Set<string>()
+  for (const row of rows) {
+    if (!Number.isFinite(row.time) || !Number.isFinite(row.value)) continue
+    const day = unixToBusinessDay(row.time)
+    const key = `${day.year}-${day.month}-${day.day}`
+    if (seen.has(key)) {
+      out[out.length - 1] = { time: day, value: row.value }
+      continue
+    }
+    seen.add(key)
+    out.push({ time: day, value: row.value })
+  }
+  return out
 }
 
 /**
@@ -2458,7 +2488,10 @@ export function TradingChart({
   useEffect(() => {
     const list = candlesRef.current || []
     const tz = chartTzRef.current
-    candleTimesRef.current = list.map((c) => toChartTime(c.time as number, tz))
+    candleTimesRef.current =
+      timeframe === '1D'
+        ? list.map((c) => c.time as number)
+        : list.map((c) => toChartTime(c.time as number, tz))
 
     const rawBars: ContextBar[] = list.map((c) => ({
       time: c.time as number,
@@ -3812,18 +3845,25 @@ export function TradingChart({
     ctx.clearRect(0, 0, paneW, paneH)
 
     const tz = chartTzRef.current
+    const daily = timeframe === '1D'
     const candleTimes =
       candleTimesRef.current.length === list.length
         ? candleTimesRef.current
-        : list.map((c) => toChartTime(c.time as number, tz))
+        : list.map((c) => (daily ? (c.time as number) : toChartTime(c.time as number, tz)))
+    const xAt = (unix: number) =>
+      timeToX(
+        chart.timeScale(),
+        daily ? unix : toChartTime(unix, tz),
+        candleTimes,
+        daily
+      )
 
     // 2. Draw Extremes (Precomputed from analytics cache — zero CPU waste on scroll)
     const sessionExtremes = sessionExtremesRef.current
 
     renderedSessionExtremesRef.current = []
     for (const ex of sessionExtremes) {
-      const chartT = toChartTime(ex.time, tz)
-      const x = timeToX(chart.timeScale(), chartT, candleTimes)
+      const x = xAt(ex.time)
       const y = series.priceToCoordinate(ex.price)
       if (x == null || y == null || !Number.isFinite(x) || !Number.isFinite(y)) continue
       if (x < -40 || x > paneW + 40 || y < 0 || y > paneH) continue
@@ -3870,7 +3910,7 @@ export function TradingChart({
 
         // Horizontal shelf extending to the end of the session
         const xEnd = ex.sessionEndTime != null
-          ? (timeToX(chart.timeScale(), toChartTime(ex.sessionEndTime, tz), candleTimes) ?? (x + 130))
+          ? (xAt(ex.sessionEndTime) ?? (x + 130))
           : (x + 130)
         const shelfRight = Math.min(paneW, Math.max(x + 50, xEnd))
 
@@ -3900,7 +3940,7 @@ export function TradingChart({
 
         // Horizontal shelf extending to the end of the session
         const xEnd = ex.sessionEndTime != null
-          ? (timeToX(chart.timeScale(), toChartTime(ex.sessionEndTime, tz), candleTimes) ?? (x + 130))
+          ? (xAt(ex.sessionEndTime) ?? (x + 130))
           : (x + 130)
         const shelfRight = Math.min(paneW, Math.max(x + 50, xEnd))
 
@@ -6759,7 +6799,7 @@ export function TradingChart({
     const spacing = deskBarSpacing(width, candlesRef.current.length, timeframe)
     chart.applyOptions({
       localization: {
-        timeFormatter: (time: UTCTimestamp | string | number) =>
+        timeFormatter: (time: Time) =>
           chartFmtRef.current.timeFormatter(time),
       },
       timeScale: {
@@ -6854,13 +6894,13 @@ export function TradingChart({
       width: containerRef.current.clientWidth,
       height: containerRef.current.clientHeight,
       localization: {
-        timeFormatter: (time: UTCTimestamp | string | number) =>
+        timeFormatter: (time: Time) =>
           chartFmtRef.current.timeFormatter(time),
       },
       timeScale: {
         ...CHART_THEME.timeScale,
         tickMarkFormatter: (
-          time: UTCTimestamp | string | number,
+          time: Time,
           tickMarkType: TickMarkType,
         ) => chartFmtRef.current.tickMarkFormatter(time, tickMarkType),
       },
@@ -7096,17 +7136,21 @@ export function TradingChart({
           const close = (candle as any).close ?? 0
           const change = close - open
           const fmt = chartFmtRef.current
-          const barTime = Number(param.time)
+          const barTime = param.time
+          const barUnix = chartTimeToUnix(barTime)
           const list = candlesRef.current
           const tz = chartTzRef.current
-          const matchedBar = list.find((b) => toChartTime(b.time as number, tz) === barTime)
+          const matchedBar =
+            timeframe === '1D'
+              ? list.find((b) => snapDailyUnix(b.time as number) === snapDailyUnix(barUnix))
+              : list.find((b) => toChartTime(b.time as number, tz) === barUnix)
           const barVol = matchedBar?.volume ?? (candle as any).volume ?? 0
 
           tipPending = {
             time: param.time
               ? (timeframe === '1D'
-                  ? `${fmt.formatDate(barTime, 'day')}`
-                  : `${fmt.formatTime(barTime)} ${fmt.tzLabel}`)
+                  ? `${fmt.formatDate(barUnix, 'day')}`
+                  : `${fmt.formatTime(barUnix)} ${fmt.tzLabel}`)
               : '',
             open: (candle as any).open,
             high: (candle as any).high,
@@ -7228,7 +7272,7 @@ export function TradingChart({
         // Same timezone-aware formatters as the main price chart — prevents the CVD
         // time axis from displaying raw UTC while the price chart shows desk wall clock.
         localization: {
-          timeFormatter: (time: UTCTimestamp | string | number) =>
+          timeFormatter: (time: Time) =>
             chartFmtRef.current.timeFormatter(time),
         },
         timeScale: {
@@ -7239,7 +7283,7 @@ export function TradingChart({
           borderVisible: true,
           borderColor: '#1e293b',
           tickMarkFormatter: (
-            time: UTCTimestamp | string | number,
+            time: Time,
             tickMarkType: TickMarkType,
           ) => chartFmtRef.current.tickMarkFormatter(time, tickMarkType),
         },
@@ -7950,13 +7994,13 @@ export function TradingChart({
 
     const ordered = normalizeCandleTimes(candles, timeframe)
     const tz = chartTzRef.current
-    const seenTimes = new Set<number>()
+    const seenTimes = new Set<string>()
     const candleData: CandlestickData[] = []
     for (const c of ordered) {
-      const t = toChartTime(c.time as number, tz) as UTCTimestamp
-      const tNum = Number(t)
-      if (!seenTimes.has(tNum)) {
-        seenTimes.add(tNum)
+      const t = toSeriesTime(c.time as number, timeframe, tz)
+      const key = isBusinessDay(t) ? `${t.year}-${t.month}-${t.day}` : String(t)
+      if (!seenTimes.has(key)) {
+        seenTimes.add(key)
         candleData.push({
           time: t,
           open: c.open,
@@ -7966,7 +8010,7 @@ export function TradingChart({
         })
       }
     }
-    candleData.sort((a, b) => Number(a.time) - Number(b.time))
+    candleData.sort((a, b) => chartTimeToUnix(a.time) - chartTimeToUnix(b.time))
 
     const ts = chartRef.current.timeScale()
     let savedRange: { from: number; to: number } | null = null
@@ -7988,7 +8032,7 @@ export function TradingChart({
 
     if (volumeSeriesRef.current) {
       const volumeData = ordered.map((c) => {
-        const t = toChartTime(c.time as number, tz) as UTCTimestamp
+        const t = toSeriesTime(c.time as number, timeframe, tz)
         const isUp = c.close >= c.open
         return {
           time: t,
@@ -7997,7 +8041,7 @@ export function TradingChart({
         }
       })
       try {
-        volumeSeriesRef.current.setData(sanitizeChartPoints(volumeData))
+        volumeSeriesRef.current.setData(volumeData as any)
       } catch {
         /* ignore */
       }
@@ -8043,20 +8087,22 @@ export function TradingChart({
     const vs = vwapSeriesRef.current
     if (vs) {
       if (showVwap && bands) {
-        const shift = <T extends { time: number | UTCTimestamp; value: number }>(rows: T[]) =>
-          sanitizeChartPoints(
-            mapTimesToChart(
-              rows.map((r) => ({ time: r.time as number, value: r.value })),
-              tz
-            ).map((r) => ({ time: r.time as UTCTimestamp, value: r.value }))
-          )
-        try { vs.vwap.setData(shift(bands.vwap)) } catch {}
-        try { vs.upper1.setData(shift(bands.upper1)) } catch {}
-        try { vs.lower1.setData(shift(bands.lower1)) } catch {}
-        try { vs.upper2.setData(shift(bands.upper2)) } catch {}
-        try { vs.lower2.setData(shift(bands.lower2)) } catch {}
-        try { vs.upper3.setData(bands.upper3 ? shift(bands.upper3) : []) } catch {}
-        try { vs.lower3.setData(bands.lower3 ? shift(bands.lower3) : []) } catch {}
+        const shift = (rows: Array<{ time: number; value: number }>) =>
+          timeframe === '1D'
+            ? toDailyLinePoints(rows)
+            : sanitizeChartPoints(
+                mapTimesToChart(
+                  rows.map((r) => ({ time: r.time as number, value: r.value })),
+                  tz
+                ).map((r) => ({ time: r.time as UTCTimestamp, value: r.value }))
+              )
+        try { vs.vwap.setData(shift(bands.vwap) as any) } catch {}
+        try { vs.upper1.setData(shift(bands.upper1) as any) } catch {}
+        try { vs.lower1.setData(shift(bands.lower1) as any) } catch {}
+        try { vs.upper2.setData(shift(bands.upper2) as any) } catch {}
+        try { vs.lower2.setData(shift(bands.lower2) as any) } catch {}
+        try { vs.upper3.setData(bands.upper3 ? (shift(bands.upper3) as any) : []) } catch {}
+        try { vs.lower3.setData(bands.lower3 ? (shift(bands.lower3) as any) : []) } catch {}
       } else {
         try { vs.vwap.setData([]) } catch {}
         try { vs.upper1.setData([]) } catch {}
@@ -8080,13 +8126,13 @@ export function TradingChart({
           volume: c.volume,
         }))
       )
-      const seenCvdTimes = new Set<number>()
+      const seenCvdTimes = new Set<string>()
       const shiftedCvd: CandlestickData[] = []
       for (const b of cvdBars) {
-        const t = toChartTime(b.time, tz) as UTCTimestamp
-        const tNum = Number(t)
-        if (!seenCvdTimes.has(tNum)) {
-          seenCvdTimes.add(tNum)
+        const t = toSeriesTime(b.time, timeframe, tz)
+        const key = isBusinessDay(t) ? `${t.year}-${t.month}-${t.day}` : String(t)
+        if (!seenCvdTimes.has(key)) {
+          seenCvdTimes.add(key)
           shiftedCvd.push({
             time: t,
             open: b.open,
@@ -8096,7 +8142,7 @@ export function TradingChart({
           })
         }
       }
-      shiftedCvd.sort((a, b) => Number(a.time) - Number(b.time))
+      shiftedCvd.sort((a, b) => chartTimeToUnix(a.time) - chartTimeToUnix(b.time))
       cachedCvdBarsRef.current = shiftedCvd
 
       if (cvdCandleSeriesRef.current) {
@@ -8140,18 +8186,18 @@ export function TradingChart({
         if (ordered.length === 1 || a.time === b.time) {
           host.setData([
             {
-              time: toChartTime(a.time as number, tz) as UTCTimestamp,
+              time: toSeriesTime(a.time as number, timeframe, tz),
               value: a.close,
             },
           ])
         } else {
           host.setData([
             {
-              time: toChartTime(a.time as number, tz) as UTCTimestamp,
+              time: toSeriesTime(a.time as number, timeframe, tz),
               value: a.close,
             },
             {
-              time: toChartTime(b.time as number, tz) as UTCTimestamp,
+              time: toSeriesTime(b.time as number, timeframe, tz),
               value: b.close,
             },
           ])
@@ -8185,7 +8231,7 @@ export function TradingChart({
         lastCandleRef.current = merged
         try {
           candleRef.current.update({
-            time: toChartTime(merged.time as number, chartTzRef.current) as UTCTimestamp,
+            time: toSeriesTime(merged.time as number, timeframe, chartTzRef.current),
             open: merged.open,
             high: merged.high,
             low: merged.low,
@@ -8198,7 +8244,7 @@ export function TradingChart({
         lastCandleRef.current = liveBefore
         try {
           candleRef.current.update({
-            time: toChartTime(liveBefore.time as number, chartTzRef.current) as UTCTimestamp,
+            time: toSeriesTime(liveBefore.time as number, timeframe, chartTzRef.current),
             open: liveBefore.open,
             high: liveBefore.high,
             low: liveBefore.low,
@@ -8593,7 +8639,7 @@ export function TradingChart({
         activeDeskSessionsAt(Math.floor(Date.now() / 1000)).length > 0)
 
     const toChartCandle = (bar: OHLCV) => ({
-      time: toChartTime(bar.time as number, chartTzRef.current) as UTCTimestamp,
+      time: toSeriesTime(bar.time as number, timeframe, chartTzRef.current),
       open: bar.open,
       high: bar.high,
       low: bar.low,
