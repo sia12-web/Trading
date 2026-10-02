@@ -13,10 +13,7 @@ import {
   isVisibleLiveJournalRow,
   journalTicketEquity,
 } from '@/lib/trading/journalHistory'
-import {
-  getTopstepXJournalRows,
-  computeTopstepXChallengeState,
-} from '@/lib/trading/topstepXChallenge'
+
 
 export const dynamic = 'force-dynamic'
 
