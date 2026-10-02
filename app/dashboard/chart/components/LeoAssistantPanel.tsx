@@ -9,7 +9,7 @@ import {
   type LeoExecutionDirective,
 } from '@/lib/ai/leoAssistant'
 import { playTradingViewChime, primeAudioContext } from '@/lib/chart/soundEffects'
-import { warningToast, successToast } from '@/lib/utils/toastUtils'
+import { warningToast } from '@/lib/utils/toastUtils'
 import type { TeamConsensusReport } from '@/lib/ai/stack/types'
 import type { InstitutionalHedgingTelemetry } from '@/lib/ai/stack/models/institutionalHedgingModel'
 import type { DayTypeEvaluation, MarketDayType } from '@/lib/chart/context55'
@@ -22,10 +22,8 @@ import {
   isEntrySituationRule,
   loadRulesForMarket,
   saveRulesForMarket,
-  armMarketOneToOneSituation,
   addRule,
   updateRule,
-  MARKET_DEFAULT_PARAMS,
   type MarketInstrument,
   type RuleConditionProgress,
 } from '@/lib/trading/leoRules'
@@ -2756,41 +2754,6 @@ export function LeoAssistantPanel({
           <div className="p-2.5 border-t border-neutral-800/80 bg-neutral-900/70 space-y-1.5">
             {/* Quick Action Suggestion Chips */}
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5 text-[9.5px] font-mono">
-              <button
-                type="button"
-                onClick={() => {
-                  const inst = (context.instrument || 'NASDAQ') as MarketInstrument
-                  const meta = MARKET_DEFAULT_PARAMS[inst] || { defaultPrice: 29450, defaultPoints: 20 }
-                  const targetPx = context.currentPrice ?? meta.defaultPrice
-                  const pts = meta.defaultPoints
-                  armMarketOneToOneSituation(inst, {
-                    price: targetPx,
-                    direction: 'LONG',
-                    points: pts,
-                  })
-                  playTradingViewChime()
-                  const sl = Number((targetPx - pts).toFixed(2))
-                  const tp = Number((targetPx + pts).toFixed(2))
-                  successToast(
-                    `⚡ [1:1 ${inst} ARMED]: Long @ ${targetPx.toLocaleString()} | SL: ${sl.toLocaleString()} | TP: ${tp.toLocaleString()}`,
-                    8000
-                  )
-                  speakText(`Armed one to one ${inst} situation at ${targetPx.toLocaleString()}.`)
-                  setMessages((prev) => [
-                    ...prev,
-                    {
-                      id: `sit-chip-${Date.now()}`,
-                      role: 'assistant',
-                      content: `⚡ **[1:1 ${inst} SITUATION ARMED]**\n\n- **Instrument**: ${inst}\n- **Target Entry**: **${targetPx.toLocaleString()}** (Price Touch)\n- **Stop Loss**: **${sl.toLocaleString()}** (-${pts} pts)\n- **Take Profit**: **${tp.toLocaleString()}** (+${pts} pts)\n- **Risk:Reward**: **1:1**\n\n*Condition is set to immediate level touch. Leo is evaluating price and will fire the order directly onto the chart canvas.*`,
-                      timestamp: Date.now(),
-                    },
-                  ])
-                }}
-                className="px-2 py-0.5 rounded-md bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-600/70 hover:border-emerald-500 text-emerald-200 hover:text-white shrink-0 transition font-bold flex items-center gap-1 shadow-sm"
-                title={`Arm 1:1 Risk-to-Reward ${context.instrument} situation right now at market price`}
-              >
-                <span>⚡</span> 1:1 {context.instrument} Live
-              </button>
               <button
                 type="button"
                 onClick={() =>

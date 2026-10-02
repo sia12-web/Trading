@@ -21,7 +21,6 @@ import {
   clearMarketRules,
   listenToRuleUpdates,
   formatRuleDate,
-  armMarketOneToOneSituation,
   type ArmedRule,
   type MarketInstrument,
   type RuleType,
@@ -124,22 +123,10 @@ export default function SituationsPage() {
         <div className="flex items-center gap-2.5">
           <button
             type="button"
-            onClick={() => {
-              const m = selectedMarket === 'ALL' ? 'DOW' : selectedMarket
-              armMarketOneToOneSituation(m)
-              refreshRules()
-            }}
-            className="flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition border border-emerald-400/40 font-mono shadow-emerald-950/40 cursor-pointer"
-            title={selectedMarket === 'ALL' ? 'Arm 1:1 live-trigger situation at market price with 1:1 risk-to-reward' : `Arm 1:1 ${selectedMarket} live-trigger situation at market price with 1:1 risk-to-reward`}
-          >
-            <span>⚡</span> Arm 1:1 {selectedMarket === 'ALL' ? 'Market' : selectedMarket} (Live Now)
-          </button>
-          <button
-            type="button"
             onClick={() => setIsModalOpen(true)}
             className="flex items-center gap-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition border border-brand-400/30"
           >
-            <span>+</span> Arm Custom Situation
+            <span>+</span> Arm Situation Note
           </button>
           <Link
             href={selectedMarket === 'ALL' ? '/dashboard/chart' : `/dashboard/chart?instrument=${selectedMarket}`}
@@ -1031,19 +1018,16 @@ function ArmSituationModal({
               setInstrument('NASDAQ')
               setType('MARKET_SITUATION')
               setDirection('LONG')
-              setTargetReference('Live Market Touch (29,448)')
-              setTargetPrice(29448)
+              setTargetReference('Level Touch (20,145)')
+              setTargetPrice(20145)
               setPattern('LEVEL_TOUCH')
-              setStopLoss(29428)
-              setTakeProfit(29468)
-              setSize(1)
               setIsLongTerm(true)
-              setDescription('Long 1 NASDAQ on price touch at 29,448 with 1:1 R:R (20 pts SL / 20 pts TP)')
-              setUserPrompt('Enter LONG 1 NASDAQ on price touch at 29,448 with 1:1 risk-to-reward')
+              setDescription('Monitor NASDAQ price touch at 20,145')
+              setUserPrompt('Alert and log situation note when NASDAQ touches 20,145')
             }}
             className="rounded-md bg-emerald-950/90 border border-emerald-500/60 hover:bg-emerald-900 px-2.5 py-1 text-[10px] font-bold text-emerald-300 transition flex items-center gap-1"
           >
-            <span>⚡</span> 1:1 NASDAQ (Live Touch 29,448)
+            <span>📍</span> NASDAQ Touch Note
           </button>
           <button
             type="button"
@@ -1053,16 +1037,13 @@ function ArmSituationModal({
               setDirection('LONG')
               setTargetReference('Bearish Trendline Breakout')
               setPattern('TRENDLINE_BREAKOUT_5M')
-              setStopLoss(2050)
-              setTakeProfit(2100)
-              setSize(1)
               setIsLongTerm(true)
-              setDescription('Long 1 GOLD on 5m Candle Close above Bearish Trendline with Trend-Borning Zone & Dynamic Trailing Exit')
-              setUserPrompt('When 5m candle closes above bearish trendline, enter Long GOLD. Stop loss below breakout candle low, TP +50 pts or dynamic 1:2, exit when 5m candle closes below dynamic trendline.')
+              setDescription('Monitor GOLD 5m candle close above Bearish Trendline')
+              setUserPrompt('When 5m candle closes above bearish trendline, record situation note for GOLD.')
             }}
             className="rounded-md bg-amber-950/90 border border-amber-500/60 hover:bg-amber-900 px-2.5 py-1 text-[10px] font-bold text-amber-300 transition flex items-center gap-1"
           >
-            <span>📐</span> Trendline Strategy (GOLD)
+            <span>📐</span> Trendline Situation (GOLD)
           </button>
         </div>
 
