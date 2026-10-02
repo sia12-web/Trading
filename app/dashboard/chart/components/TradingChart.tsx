@@ -2405,6 +2405,20 @@ export function TradingChart({
 
   const paintYesterdayProfile = useCallback(() => {
     const host = priceLineHostRef.current
+    if (timeframe === '1D') {
+      setYesterdayBadge('Yday off')
+      setYdayProfile(null)
+      ydayPaintKeyRef.current = ''
+      for (const line of ydayLinesRef.current) {
+        try {
+          host?.removePriceLine(line)
+        } catch {
+          /* ignore */
+        }
+      }
+      ydayLinesRef.current = []
+      return
+    }
     const list = candlesRef.current
     const lastBar = list.length ? (list[list.length - 1]!.time as number) : null
     const asOfUnix = resolveYesterdayAsOfUnix(
@@ -2440,10 +2454,23 @@ export function TradingChart({
       }
     }
     ydayLinesRef.current = []
-  }, [showYesterdayProfile, instrument])
+  }, [showYesterdayProfile, instrument, timeframe])
 
   const paintOpeningActivity = useCallback(() => {
     const host = priceLineHostRef.current
+    if (timeframe === '1D') {
+      setOpeningBadge('WAIT')
+      openingPaintKeyRef.current = ''
+      for (const line of openingLinesRef.current) {
+        try {
+          host?.removePriceLine(line)
+        } catch {
+          /* ignore */
+        }
+      }
+      openingLinesRef.current = []
+      return
+    }
     const list = candlesRef.current
     const lastBar = list.length ? (list[list.length - 1]!.time as number) : null
     const asOfUnix = resolveOpeningAsOfUnix(
@@ -2476,10 +2503,22 @@ export function TradingChart({
       }
     }
     openingLinesRef.current = []
-  }, [showOpeningActivity, instrument])
+  }, [showOpeningActivity, instrument, timeframe])
 
   const paintFrvp5d = useCallback((overrideBars?: OHLCV[]) => {
     const host = priceLineHostRef.current
+    if (timeframe === '1D') {
+      setFrvp5d(null)
+      for (const line of frvpLinesRef.current) {
+        try {
+          host?.removePriceLine(line)
+        } catch {
+          /* ignore */
+        }
+      }
+      frvpLinesRef.current = []
+      return
+    }
     const list = overrideBars || candlesRef.current
     if (!list || list.length === 0) return
     const profile = compute5DayFixedRangeVolumeProfile(
@@ -2502,10 +2541,23 @@ export function TradingChart({
       }
     }
     frvpLinesRef.current = []
-  }, [instrument])
+  }, [instrument, timeframe])
 
   const paintYesterdayNyc = useCallback((overrideBars?: OHLCV[]) => {
     const host = priceLineHostRef.current
+    if (timeframe === '1D') {
+      setYesterdayNyc(null)
+      setOvernightInventory(null)
+      for (const line of yesterdayNycLinesRef.current) {
+        try {
+          host?.removePriceLine(line)
+        } catch {
+          /* ignore */
+        }
+      }
+      yesterdayNycLinesRef.current = []
+      return
+    }
     const list = overrideBars || candlesRef.current
     if (!list || list.length === 0) return
     const bars: ContextBar[] = list.map((c) => ({
@@ -2539,7 +2591,7 @@ export function TradingChart({
       }
     }
     yesterdayNycLinesRef.current = []
-  }, [])
+  }, [timeframe])
 
   const paintInventorySessions = useCallback(() => {
     const host = priceLineHostRef.current
@@ -2563,16 +2615,19 @@ export function TradingChart({
       }
     }
     avwap5mLinesRef.current = []
-    if (!host || timeframe === '1D' || !avwap5mBenchmark?.vwap) return
+    const price =
+      avwap5mBenchmark?.vwap ??
+      (timeframe === '1D' && latestVwapBandsRef.current?.lastVwap ? latestVwapBandsRef.current.lastVwap : null)
+    if (!host || !price) return
 
     try {
       const vwapLine = host.createPriceLine({
-        price: avwap5mBenchmark.vwap,
+        price,
         color: '#10b981',
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
         axisLabelVisible: true,
-        title: `5M AVWAP ${avwap5mBenchmark.vwap.toLocaleString()}`,
+        title: `5M AVWAP ${price.toLocaleString()}`,
       })
       avwap5mLinesRef.current.push(vwapLine)
     } catch {
@@ -5257,6 +5312,22 @@ export function TradingChart({
 
   const paintAuctionOverlay = useCallback(() => {
     const host = priceLineHostRef.current
+    if (timeframe === '1D') {
+      setAuctionBadge('off')
+      setAuctionHud(null)
+      auctionSignalsRef.current = []
+      auctionPaintKeyRef.current = ''
+      for (const line of auctionLinesRef.current) {
+        try {
+          host?.removePriceLine(line)
+        } catch {
+          /* ignore */
+        }
+      }
+      auctionLinesRef.current = []
+      paintDeskMarkersRef.current()
+      return
+    }
     const list = candlesRef.current
     const lastBar = list.length ? (list[list.length - 1]!.time as number) : null
     const asOfUnix = resolveAuctionAsOfUnix(lastBar, Math.floor(Date.now() / 1000))
@@ -5308,10 +5379,26 @@ export function TradingChart({
     }
     auctionLinesRef.current = []
     paintDeskMarkersRef.current()
-  }, [showAuction, instrument])
+  }, [showAuction, instrument, timeframe])
 
   const paintDow15mFailOverlay = useCallback(() => {
     const host = priceLineHostRef.current
+    if (timeframe === '1D') {
+      setDow15mFailBadge('off')
+      setDow15mFailHud(null)
+      dow15mFailSignalsRef.current = []
+      dow15mFailPaintKeyRef.current = ''
+      for (const line of dow15mFailLinesRef.current) {
+        try {
+          host?.removePriceLine(line)
+        } catch {
+          /* ignore */
+        }
+      }
+      dow15mFailLinesRef.current = []
+      paintDeskMarkersRef.current()
+      return
+    }
     const list = candlesRef.current
     const lastBar = list.length ? (list[list.length - 1]!.time as number) : null
     const asOfUnix = resolveAuctionAsOfUnix(lastBar, Math.floor(Date.now() / 1000))
@@ -5361,10 +5448,24 @@ export function TradingChart({
     }
     dow15mFailLinesRef.current = []
     paintDeskMarkersRef.current()
-  }, [showDow15mFail, instrument])
+  }, [showDow15mFail, instrument, timeframe])
 
   const paintMarketControl = useCallback(() => {
     const host = priceLineHostRef.current
+    if (timeframe === '1D') {
+      setControlBadge('RF WAIT')
+      marketControlRef.current = null
+      controlPaintKeyRef.current = ''
+      for (const line of controlLinesRef.current) {
+        try {
+          host?.removePriceLine(line)
+        } catch {
+          /* ignore */
+        }
+      }
+      controlLinesRef.current = []
+      return
+    }
     const list = candlesRef.current
     const lastBar = list.length ? (list[list.length - 1]!.time as number) : null
     const asOfUnix = resolveMarketControlAsOfUnix(
@@ -5398,7 +5499,7 @@ export function TradingChart({
       }
     }
     controlLinesRef.current = []
-  }, [showMarketControl, instrument])
+  }, [showMarketControl, instrument, timeframe])
 
   const paintDeskCall = useCallback(() => {
     const list = candlesRef.current
@@ -8131,6 +8232,10 @@ export function TradingChart({
         try { or30s.high.setData([]); or30s.low.setData([]) } catch {}
       }
       try { candleRef.current?.setMarkers([]) } catch {}
+      setFrvp5d(null)
+      setYesterdayNyc(null)
+      setOvernightInventory(null)
+      setYdayProfile(null)
     }
   }, [timeframe])
 
@@ -8352,6 +8457,15 @@ export function TradingChart({
       try { paintAuctionOverlayRef.current() } catch {}
       try { paintDow15mFailOverlayRef.current() } catch {}
       try { paintMarketControlRef.current() } catch {}
+    } else {
+      try { paintYesterdayProfileRef.current() } catch {}
+      try { paintOpeningActivityRef.current() } catch {}
+      try { paintFrvp5dRef.current(ordered) } catch {}
+      try { paintYesterdayNycRef.current(ordered) } catch {}
+      try { paintInventorySessionsRef.current() } catch {}
+      try { paintAuctionOverlayRef.current() } catch {}
+      try { paintDow15mFailOverlayRef.current() } catch {}
+      try { paintMarketControlRef.current() } catch {}
     }
     try { paint5mAvwapBenchmarkRef.current() } catch {}
     try { paintFrvpHistogramRef.current?.() } catch {}
@@ -8535,12 +8649,14 @@ export function TradingChart({
     if (bands && bands.vwap) {
       const tz = chartTzRef.current
       const shift = <T extends { time: number | UTCTimestamp; value: number }>(rows: T[]) =>
-        sanitizeChartPoints(
-          mapTimesToChart(
-            rows.map((r) => ({ time: r.time as number, value: r.value })),
-            tz
-          ).map((r) => ({ time: r.time as UTCTimestamp, value: r.value }))
-        )
+        timeframe === '1D'
+          ? (toDailyLinePoints(rows as Array<{ time: number; value: number }>) as any)
+          : sanitizeChartPoints(
+              mapTimesToChart(
+                rows.map((r) => ({ time: r.time as number, value: r.value })),
+                tz
+              ).map((r) => ({ time: r.time as UTCTimestamp, value: r.value }))
+            )
       try { if (bands.vwap) vs.vwap.setData(shift(bands.vwap)) } catch {}
       try { if (bands.upper1) vs.upper1.setData(shift(bands.upper1)) } catch {}
       try { if (bands.lower1) vs.lower1.setData(shift(bands.lower1)) } catch {}
