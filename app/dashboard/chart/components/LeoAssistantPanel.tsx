@@ -543,27 +543,32 @@ export function LeoAssistantPanel({
     }
   }
 
-  // Execute order placed by Leo with audio chime, speech, DB journal, and chart tracking
-  const executePlaceOrder = async (order: {
+  // Situation notification handler for Leo — system is strictly read-only and never places orders
+  const notifySituation = (situation: {
     instrument: string
     direction: 'LONG' | 'SHORT'
     price: number
-    stopLoss: number
-    profitTarget: number
-    size?: number
+    stopLoss?: number
+    profitTarget?: number
     reason: string
   }) => {
-    warningToast('👁️ Order placement is disabled. Platform is operating in Market Monitoring Mode.', 6000)
+    playTradingViewChime()
+    warningToast(
+      `🎯 [SITUATION ALERT]: ${situation.direction} setup on ${situation.instrument} @ ${situation.price.toLocaleString()}`,
+      10000
+    )
     setMessages((prev) => [
       ...prev,
       {
-        id: `exec-order-${Date.now()}`,
+        id: `sit-alert-${Date.now()}`,
         role: 'assistant',
-        content: `### 👁️ **[MARKET MONITORING MODE ACTIVE]**
-Order placement for **${order.direction} ${order.instrument}** at **${order.price.toLocaleString()}** was aborted. The desk is strictly configured for monitoring market structure, situations, and taking journal notes.`,
+        content: `### 🎯 **[SITUATION ALERT] (${situation.instrument})**\n\n**${situation.direction}** situation detected at **${situation.price.toLocaleString()}**.\n\n- **Context / Reason:** ${situation.reason}${situation.stopLoss ? `\n- **Reference Stop Loss:** ${situation.stopLoss.toLocaleString()}` : ''}${situation.profitTarget ? `\n- **Reference Target:** ${situation.profitTarget.toLocaleString()}` : ''}\n\n*(The system is always in Read-Only Market Monitoring Mode and never places orders. This notification informs you of the developing market setup).*`,
         timestamp: Date.now(),
       },
     ])
+    speakText(
+      `Situation alert: ${situation.direction} setup on ${situation.instrument} at ${situation.price.toFixed(0)}`
+    )
   }
 
   // Dispatch a Desk alert (Plays chime, triggers top-right notification toast, posts in Leo chat & speaks)
@@ -686,21 +691,6 @@ Order placement for **${order.direction} ${order.instrument}** at **${order.pric
         const dir = (d.direction || 'LONG').toUpperCase() as 'LONG' | 'SHORT'
         const px = Number(d.price || context.currentPrice || 0)
 
-        // Prevent order placement without a valid live price
-        if (!px || px <= 0) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `err-${Date.now()}`,
-              role: 'assistant',
-              content: `⚠️ **[LEO ORDER BLOCKED]**\nUnable to execute ${dir} on **${inst}** because live price is currently unavailable. Order aborted for risk safety.`,
-              timestamp: Date.now(),
-            },
-          ])
-          speakText(`Order blocked: live price unavailable for ${inst}`)
-          continue
-        }
-
         const { slDist, tpDist } = getInstrumentDefaultDistances(inst)
         let sl = d.stopLoss ? Number(d.stopLoss) : undefined
         let tp = d.profitTarget ? Number(d.profitTarget) : undefined
@@ -723,14 +713,13 @@ Order placement for **${order.direction} ${order.instrument}** at **${order.pric
           }
         }
 
-        const reason = d.reason || 'Trader voice/chat command'
-        void executePlaceOrder({
+        const reason = d.reason || 'Trader situation notification request'
+        notifySituation({
           instrument: inst,
           direction: dir,
           price: px,
           stopLoss: sl,
           profitTarget: tp,
-          size: d.size ?? 1,
           reason,
         })
       } else if (d.action === 'ARM_CONDITIONAL_ENTRY' || d.action === 'ARM_LVN_BULL_ENG_RULE') {
@@ -1349,19 +1338,18 @@ Order placement for **${order.direction} ${order.instrument}** at **${order.pric
                   const slPx = brkCheck.defaultStopLoss ?? (tradeDir === 'SHORT' ? Number((entryPx + 10).toFixed(2)) : Number((entryPx - 10).toFixed(2)))
                   const tpPx = brkCheck.defaultTakeProfitFixed50 ?? (tradeDir === 'SHORT' ? Number((entryPx - 50).toFixed(2)) : Number((entryPx + 50).toFixed(2)))
 
-                  void executePlaceOrder({
+                  notifySituation({
                     instrument: rule.instrument || context.instrument,
                     direction: tradeDir,
                     price: entryPx,
                     stopLoss: slPx,
                     profitTarget: tpPx,
-                    size: rule.size || 1,
                     reason: `Systematic Trendline Breakout (${tradeDir}) (Trend-Borning Score: ${borningScore}/100 Grade ${borningGrade})`,
                   })
 
                   rule = {
                     ...rule,
-                    status: 'TRIGGERED',
+                    status: 'SATISFIED',
                     executedAt: Date.now(),
                     executedPrice: entryPx,
                   }
@@ -1584,32 +1572,21 @@ Order placement for **${order.direction} ${order.instrument}** at **${order.pric
                 tp = Number((entryPx - finalRiskPts * 2.0).toFixed(2))
               }
 
-              // ACTUALLY PLACE THE ORDER ON THE DESK!
-              void executePlaceOrder({
+              notifySituation({
                 instrument: rule.instrument || context.instrument,
                 direction: dir,
                 price: entryPx,
                 stopLoss: sl,
                 profitTarget: tp,
-                size: rule.size || (rule as any).conditions?.size || 1,
                 reason: `Situation Triggered: ${rawPattern || 'Level Touch'} confirmed at ${rule.targetReference || 'Target'} (${currentTargetPx.toLocaleString()}). ${rule.userPrompt || rule.description}`,
               })
-
-              playTradingViewChime()
-              warningToast(
-                `⚡ [LEO AUTO-ORDER EXECUTED]: ${dir} ${rule.instrument} @ ${entryPx.toFixed(2)} | SL: ${sl.toFixed(2)} | TP: ${tp.toFixed(2)}`,
-                10000
-              )
-              speakText(
-                `Situation triggered! Order placed for ${dir} ${rule.instrument}.`
-              )
 
               return {
                 ...rule,
                 conditionProgress: newProgress,
                 targetPrice: currentTargetPx,
                 lastEvaluatedBarTime: signalBar?.time,
-                status: 'EXECUTED' as const,
+                status: 'SATISFIED' as const,
                 executedAt: Date.now(),
                 executedPrice: entryPx,
               }

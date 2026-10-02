@@ -125,14 +125,14 @@ export default function SituationsPage() {
           <button
             type="button"
             onClick={() => {
-              const m = selectedMarket === 'ALL' ? 'NASDAQ' : selectedMarket
+              const m = selectedMarket === 'ALL' ? 'DOW' : selectedMarket
               armMarketOneToOneSituation(m)
               refreshRules()
             }}
             className="flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition border border-emerald-400/40 font-mono shadow-emerald-950/40 cursor-pointer"
-            title={`Arm 1:1 ${selectedMarket === 'ALL' ? 'NASDAQ' : selectedMarket} live-trigger situation at market price with 1:1 risk-to-reward`}
+            title={selectedMarket === 'ALL' ? 'Arm 1:1 live-trigger situation at market price with 1:1 risk-to-reward' : `Arm 1:1 ${selectedMarket} live-trigger situation at market price with 1:1 risk-to-reward`}
           >
-            <span>⚡</span> Arm 1:1 {selectedMarket === 'ALL' ? 'NASDAQ' : selectedMarket} (Live Now)
+            <span>⚡</span> Arm 1:1 {selectedMarket === 'ALL' ? 'Market' : selectedMarket} (Live Now)
           </button>
           <button
             type="button"
@@ -142,10 +142,10 @@ export default function SituationsPage() {
             <span>+</span> Arm Custom Situation
           </button>
           <Link
-            href={`/dashboard/chart?instrument=${selectedMarket === 'ALL' ? 'NASDAQ' : selectedMarket}`}
+            href={selectedMarket === 'ALL' ? '/dashboard/chart' : `/dashboard/chart?instrument=${selectedMarket}`}
             className="rounded-lg border border-sky-600/40 bg-sky-950/40 px-3.5 py-2 text-xs font-semibold text-sky-200 hover:bg-sky-900/50 hover:text-white transition font-mono"
           >
-            {selectedMarket === 'ALL' ? 'NASDAQ' : selectedMarket} Chart Desk →
+            {selectedMarket === 'ALL' ? 'Chart Desk →' : `${selectedMarket} Chart Desk →`}
           </Link>
         </div>
       </div>

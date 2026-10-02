@@ -388,7 +388,7 @@ ${tfLine}${cvdLine ? '\n' + cvdLine : ''}
 </execute>`
   }
 
-  // 3. Direct order placement command — system is strictly for monitoring markets, situations & notes
+  // 3. Direct order command — system is strictly for monitoring markets, situations & notes
   if (/\b(buy|long|sell|short|enter|place\s+order|open\s+position|take\s+(a\s+)?trade)\b/i.test(lower)) {
     let inst = ctx.instrument || 'NASDAQ'
     if (/\bdow\b|ym/i.test(lower)) inst = 'DOW'
@@ -397,14 +397,14 @@ ${tfLine}${cvdLine ? '\n' + cvdLine : ''}
     else if (/\bcrude\b|oil|cl/i.test(lower)) inst = 'CRUDE'
     else if (/\bnikkei\b|nk/i.test(lower)) inst = 'NIKKEI'
 
-    return `### 👁️ **[MARKET MONITORING MODE ACTIVE] (${inst})**
+    return `### 👁️ **[READ-ONLY MARKET MONITOR] (${inst})**
 
-Order placement is **disabled** on this system. The desk is strictly configured for:
+The desk is always in **Read-Only Market Monitoring Mode** and never places orders:
 - 📊 **Market Monitoring:** Live tick tracking, VWAP, CVD order flow & price levels for **${inst}**.
-- 🎯 **Situations:** Arming and analyzing high-probability market setups.
-- 📝 **Journal Notes:** Documenting structural observations and trade reflections.
+- 🎯 **Situation Alerts:** Detecting, tracking, and notifying you the moment market setups and structural events happen.
+- 📝 **Journal Notes:** Recording market observations, volume behavior, and situational notes.
 
-*No live or simulated orders will be placed by the system.*`
+*AI Leo is purely for telling you what is going on in the market; it never places any orders.*`
   }
 
   // 3. Trade status command: "how is my trade going", "position status", "how are we doing"

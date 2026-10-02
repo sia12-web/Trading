@@ -511,7 +511,7 @@ export function LevelOrderTicket({
 
   const submit = () => {
     if (placingRef.current) return false
-    failSubmit('Order placement is disabled. System is strictly in Market Monitoring Mode.')
+    failSubmit('The system is always in Read-Only Market Monitoring Mode and never places orders.')
     return false
   }
 
