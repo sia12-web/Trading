@@ -192,12 +192,33 @@ function snapDailyCandles(candles: YahooCandle[]): YahooCandle[] {
   return [...byDay.values()].sort((a, b) => a.time - b.time)
 }
 
+/**
+ * Resolves the Yahoo Finance ticker for an instrument and resolution.
+ * For daily charts ('D', '1D', '1d'), COMEX Gold trades under continuous symbol 'GC=F'.
+ * Yahoo's 'MGC=F' (Micro Gold) continuous feed suffers from calendar-front month stalls
+ * where daily volume drops to near zero for months before rolling late, whereas 'GC=F'
+ * maintains institutional continuous liquidity (~150k-250k daily volume) at the exact
+ * same price to the penny. Intraday resolutions retain 'MGC=F' matching Tradovate micro lots.
+ */
+export function resolveYahooSymbol(
+  instrument: Instrument,
+  resolution: string
+): string | null {
+  if (
+    instrument === 'GOLD' &&
+    (resolution === 'D' || resolution === '1D' || resolution === '1d')
+  ) {
+    return 'GC=F'
+  }
+  return YAHOO_SYMBOLS[instrument] ?? null
+}
+
 export async function getYahooCandles(
   instrument: Instrument,
   resolution: string,
   days: number
 ): Promise<{ candles: YahooCandle[]; symbol: string } | null> {
-  const symbol = YAHOO_SYMBOLS[instrument]
+  const symbol = resolveYahooSymbol(instrument, resolution)
   if (!symbol) return null
 
   const interval = INTERVAL_MAP[resolution] || '5m'
@@ -270,7 +291,7 @@ export async function getYahooCandlesRange(
   period1: number,
   period2: number
 ): Promise<{ candles: YahooCandle[]; symbol: string } | null> {
-  const symbol = YAHOO_SYMBOLS[instrument]
+  const symbol = resolveYahooSymbol(instrument, resolution)
   if (!symbol) return null
 
   const interval = INTERVAL_MAP[resolution] || '5m'

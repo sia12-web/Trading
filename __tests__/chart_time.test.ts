@@ -46,4 +46,20 @@ const JST = 'Asia/Tokyo'
   assert(d.getUTCDate() === 27, 'civil day 27 on chart time')
 }
 
+{
+  // Month ticks: clean month abbreviation ('Jul', 'Oct'), never 'Jul 26' or 'Oct 26'
+  const realJul = nyDateTimeToUnix('2026-07-01', 0, 0)
+  const chartJul = toChartTime(realJul, ET)
+  assert(formatChartDate(chartJul, 'month') === 'Jul', `Expected 'Jul', got ${formatChartDate(chartJul, 'month')}`)
+
+  const realOct = nyDateTimeToUnix('2026-10-01', 0, 0)
+  const chartOct = toChartTime(realOct, ET)
+  assert(formatChartDate(chartOct, 'month') === 'Oct', `Expected 'Oct', got ${formatChartDate(chartOct, 'month')}`)
+
+  const realJan = nyDateTimeToUnix('2026-01-01', 0, 0)
+  const chartJan = toChartTime(realJan, ET)
+  assert(formatChartDate(chartJan, 'month') === '2026', `Expected '2026', got ${formatChartDate(chartJan, 'month')}`)
+  assert(formatChartDate(chartJan, 'year') === '2026', `Expected '2026', got ${formatChartDate(chartJan, 'year')}`)
+}
+
 console.log('chart_time: ok')

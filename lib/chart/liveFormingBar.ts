@@ -274,6 +274,7 @@ export function mergeHistoryWithLiveTip<T extends FormingBar>(
     high: Math.max(last.high, alignedLive.high, close),
     low: Math.min(last.low, alignedLive.low, close),
     close,
+    volume: Math.max(last.volume || 0, alignedLive.volume || 0),
   }
   const out = history.slice()
   out[out.length - 1] = next

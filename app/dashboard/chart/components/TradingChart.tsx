@@ -627,7 +627,13 @@ function makeDeskChartFormatters(_instrument: Instrument, timeframe: DeskTimefra
       const unix = toUnix(time)
       if (!Number.isFinite(unix)) return ''
       if (isDaily) {
-        return formatDate(unix, 'day')
+        const d = new Date(unix * 1000)
+        return d.toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          timeZone: 'UTC',
+        })
       }
       return `${formatDate(unix, 'day')} ${formatTime(unix)} ${tzLabel}`
     },
@@ -8639,6 +8645,7 @@ export function TradingChart({
     const tz = chartTzRef.current
     const seenTimes = new Set<string>()
     const candleData: CandlestickData[] = []
+    const volumeData: { time: Time; value: number; color: string }[] = []
     const cvdRaw = computeCvdCandleBars(
       ordered.map((c) => ({
         time: c.time as number,
@@ -8664,6 +8671,12 @@ export function TradingChart({
           low: c.low,
           close: c.close,
         })
+        const isUp = c.close >= c.open
+        volumeData.push({
+          time: t,
+          value: Number.isFinite(c.volume) ? (c.volume ?? 0) : 0,
+          color: isUp ? 'rgba(8, 153, 129, 0.7)' : 'rgba(242, 54, 69, 0.7)',
+        })
         const d = cvdByUnix.get(c.time as number)
         shiftedCvd.push({
           time: t,
@@ -8675,6 +8688,7 @@ export function TradingChart({
       }
     }
     candleData.sort((a, b) => chartTimeToUnix(a.time) - chartTimeToUnix(b.time))
+    volumeData.sort((a, b) => chartTimeToUnix(a.time) - chartTimeToUnix(b.time))
     shiftedCvd.sort((a, b) => chartTimeToUnix(a.time) - chartTimeToUnix(b.time))
 
     const ts = chartRef.current.timeScale()
@@ -8696,17 +8710,6 @@ export function TradingChart({
     }
 
     if (volumeSeriesRef.current) {
-      const volumeData = ordered
-        .filter((c) => (c.volume ?? 0) > 0)  // skip bars with no volume data — avoids phantom flat bars
-        .map((c) => {
-          const t = toSeriesTime(c.time as number, timeframe, tz)
-          const isUp = c.close >= c.open
-          return {
-            time: t,
-            value: Number.isFinite(c.volume) ? c.volume : 0,
-            color: isUp ? 'rgba(8, 153, 129, 0.7)' : 'rgba(242, 54, 69, 0.7)',
-          }
-        })
       try {
         volumeSeriesRef.current.setData(volumeData as any)
       } catch {
@@ -9453,12 +9456,47 @@ export function TradingChart({
       if (!last || !candleRef.current) return
 
       if (timeframe === '1D') {
-        // Daily chart: directly update today's candle high, low, close with live tick
-        // Volume: take the cumulative volume from the exchange's 1m bar if provided
+        const quoteDay = snapDailyUnix(quoteTs)
+        const lastDay = snapDailyUnix(last.time as number)
         const updatedVol =
           exchangeBar && exchangeBar.volume > 0
             ? Math.max(last.volume ?? 0, exchangeBar.volume)
             : last.volume
+
+        if (quoteDay > lastDay) {
+          // Calendar rollover to a new day: append new daily bar instead of mutating yesterday
+          const newBar: OHLCV = {
+            time: quoteDay as UTCTimestamp,
+            open: price,
+            high: price,
+            low: price,
+            close: price,
+            volume: exchangeBar?.volume ?? 0,
+          }
+          lastCandleRef.current = newBar
+          candlesRef.current.push(newBar)
+          try {
+            candleRef.current.update(toChartCandle(newBar))
+          } catch {
+            /* ignore */
+          }
+          if (volumeSeriesRef.current) {
+            const volTime = toSeriesTime(newBar.time as number, '1D', chartTzRef.current)
+            try {
+              volumeSeriesRef.current.update({
+                time: volTime,
+                value: newBar.volume ?? 0,
+                color: 'rgba(8, 153, 129, 0.7)',
+              } as any)
+            } catch {
+              /* ignore */
+            }
+          }
+          return
+        }
+
+        // Daily chart: directly update today's candle high, low, close with live tick
+        // Volume: take the cumulative volume from the exchange's 1m bar if provided
         const updated: OHLCV = {
           ...last,
           high: Math.max(last.high, price),

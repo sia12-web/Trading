@@ -155,9 +155,11 @@ export function formatChartDate(
   const d = new Date(chartSec * 1000)
   if (style === 'year') return String(d.getUTCFullYear())
   if (style === 'month') {
+    // January boundaries show 4-digit year; other months show month name ('Jul', 'Aug', 'Sep', 'Oct').
+    // Never format as 'Jul 26' which looks like July 26th!
+    if (d.getUTCMonth() === 0) return String(d.getUTCFullYear())
     return d.toLocaleString('en-US', {
       month: 'short',
-      year: '2-digit',
       timeZone: 'UTC',
     })
   }
