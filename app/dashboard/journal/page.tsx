@@ -466,8 +466,8 @@ function JournalPageInner() {
           </Link>
         </div>
 
-        {/* TopstepX $1,500 Challenge Engine HUD */}
-        {tab === 'live' && topstepxChallenge && (
+        {/* CMC Markets CFD Account ($2,000 Capital) HUD */}
+        {tab === 'live' && (
           <div className="rounded-xl border border-sky-900/50 bg-[#161b22] p-4 sm:p-5 space-y-4 shadow-lg">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#30363d] pb-3">
               <div className="flex items-center gap-2.5">
@@ -475,188 +475,81 @@ function JournalPageInner() {
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-sm font-bold tracking-tight text-white">
-                      {topstepxChallenge.challengeName}
+                      CMC Markets CFD Account
                     </h2>
                     <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded bg-sky-950/70 border border-sky-600/40 text-sky-300">
-                      {topstepxChallenge.accountId || '1.5KCHCR-LABS004-V2-675081-67067724'}
+                      CMC CFD Desk
                     </span>
                     <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-600/40 text-emerald-300">
-                      Target +${topstepxChallenge.profitTarget.toLocaleString()}
-                    </span>
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-red-950/60 border border-red-600/40 text-red-300">
-                      MLL -${Math.abs(topstepxChallenge.maxLossFloor).toLocaleString()} Limit
+                      Capital: $2,000.00
                     </span>
                   </div>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    BAL: <strong className="text-emerald-400">${topstepxChallenge.totalNetPnl.toFixed(2)}</strong> · MLL: <strong className="text-red-400">-${Math.abs(topstepxChallenge.maxLossFloor).toFixed(2)}</strong> · Cushion: <strong className="text-emerald-300">${topstepxChallenge.remainingRoomToBreach.toFixed(2)}</strong> · RP&amp;L: $0.00 · UP&amp;L: $0.00
+                    Closed and open live fills by day and market — entries, SL/TP, and equity tracking.
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <span
-                  className={`text-xs font-bold px-2.5 py-1 rounded border ${
-                    topstepxChallenge.status === 'ACTIVE_WARNING'
-                      ? 'bg-amber-950/40 text-amber-300 border-amber-700/60'
-                      : topstepxChallenge.status === 'PASSED'
-                        ? 'bg-emerald-950/40 text-emerald-300 border-emerald-700/60'
-                        : topstepxChallenge.status === 'BREACHED'
-                          ? 'bg-red-950/40 text-red-300 border-red-700/60'
-                          : 'bg-sky-950/40 text-sky-300 border-sky-700/60'
-                  }`}
-                >
-                  {topstepxChallenge.status === 'ACTIVE_WARNING' ? '⚠️ ACTIVE (CAUTION)' : topstepxChallenge.status}
+                <span className="text-xs font-bold px-2.5 py-1 rounded border bg-emerald-950/40 text-emerald-300 border-emerald-700/60">
+                  LIVE CFD MONITORING
                 </span>
               </div>
             </div>
 
-            {/* Critical Caution Alert if remaining cushion is small */}
-            {topstepxChallenge.remainingRoomToBreach < 300 && (
-              <div className="rounded-lg border border-amber-600/40 bg-amber-950/30 px-3.5 py-2.5 text-xs text-amber-200 flex items-start gap-2.5">
-                <span className="text-base leading-none">⚠️</span>
-                <div>
-                  <span className="font-semibold text-amber-100">TopstepX Risk Caution: </span>
-                  {topstepxChallenge.riskRecommendation}
-                </div>
-              </div>
-            )}
-
-            {/* Metrics Row 1: Key Balances */}
+            {/* Metrics Row: Capital & Live P&L Summary */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="rounded-lg border border-[#30363d] bg-[#0d1117]/80 p-3">
-                <div className="text-[10px] uppercase font-semibold text-gray-500">Total P&amp;L / Balance</div>
-                <div
-                  className={`mt-1 text-xl font-bold price-mono ${
-                    topstepxChallenge.totalNetPnl >= 0 ? 'text-emerald-400' : 'text-red-400'
-                  }`}
-                >
-                  {fmtMoney(topstepxChallenge.totalNetPnl, true)}
+                <div className="text-[10px] uppercase font-semibold text-gray-500">Account Balance</div>
+                <div className={`mt-1 text-xl font-bold price-mono ${(summary?.total_pnl ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {fmtMoney(2000 + (summary?.total_pnl ?? 0))}
                 </div>
                 <div className="text-[10px] text-gray-500 mt-0.5">
-                  Gross: {fmtMoney(topstepxChallenge.grossProfit || topstepxChallenge.totalGrossPnl, true)} · Loss: {fmtMoney(topstepxChallenge.grossLoss || 0)}
+                  Starting Capital: $2,000.00
                 </div>
               </div>
 
               <div className="rounded-lg border border-[#30363d] bg-[#0d1117]/80 p-3">
-                <div className="text-[10px] uppercase font-semibold text-gray-500">Cushion to -$500 Floor</div>
-                <div
-                  className={`mt-1 text-xl font-bold price-mono ${
-                    topstepxChallenge.remainingRoomToBreach > 350
-                      ? 'text-emerald-400'
-                      : topstepxChallenge.remainingRoomToBreach > 200
-                        ? 'text-amber-400'
-                        : 'text-red-400'
-                  }`}
-                >
-                  ${topstepxChallenge.remainingRoomToBreach.toFixed(2)}
+                <div className="text-[10px] uppercase font-semibold text-gray-500">Total Net P&amp;L</div>
+                <div className={`mt-1 text-xl font-bold price-mono ${(summary?.total_pnl ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {fmtMoney(summary?.total_pnl ?? 0, true)}
                 </div>
                 <div className="text-[10px] text-gray-500 mt-0.5">
-                  {topstepxChallenge.breachCushionPercent}% buffer remaining
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-[#30363d] bg-[#0d1117]/80 p-3">
-                <div className="text-[10px] uppercase font-semibold text-gray-500">Distance to +$1,500 Target</div>
-                <div className="mt-1 text-xl font-bold price-mono text-emerald-400">
-                  ${topstepxChallenge.distanceToTarget.toFixed(2)}
-                </div>
-                <div className="text-[10px] text-gray-500 mt-0.5">
-                  Progress: {topstepxChallenge.targetProgressPercent}% of target
+                  Across {summary?.closed ?? 0} closed trades
                 </div>
               </div>
 
               <div className="rounded-lg border border-[#30363d] bg-[#0d1117]/80 p-3">
                 <div className="text-[10px] uppercase font-semibold text-gray-500">Trade Win %</div>
                 <div className="mt-1 text-xl font-bold price-mono text-white">
-                  {topstepxChallenge.winRate}%
+                  {summary?.win_rate != null ? `${summary.win_rate.toFixed(1)}%` : '—'}
                 </div>
                 <div className="text-[10px] text-gray-500 mt-0.5">
-                  {topstepxChallenge.winningTrades}W · {topstepxChallenge.losingTrades}L · {topstepxChallenge.totalTrades} trades
+                  {summary?.wins ?? 0}W · {summary?.losses ?? 0}L · {summary?.closed ?? 0} trades
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-[#30363d] bg-[#0d1117]/80 p-3">
+                <div className="text-[10px] uppercase font-semibold text-gray-500">Open Positions</div>
+                <div className="mt-1 text-xl font-bold price-mono text-sky-400">
+                  {summary?.open ?? 0}
+                </div>
+                <div className="text-[10px] text-gray-500 mt-0.5">
+                  Active in market
                 </div>
               </div>
             </div>
 
-            {/* Metrics Row 2: Deep Prop Firm Stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="rounded-lg border border-[#30363d] bg-[#0d1117]/60 p-2.5">
-                <div className="text-[10px] uppercase font-semibold text-gray-500">Profit Factor</div>
-                <div className="mt-0.5 text-base font-bold price-mono text-emerald-300">
-                  {topstepxChallenge.profitFactor || 1.23}
-                </div>
-                <div className="text-[10px] text-gray-500">
-                  -$803.92 / +$987.56
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-[#30363d] bg-[#0d1117]/60 p-2.5">
-                <div className="text-[10px] uppercase font-semibold text-gray-500">Avg Win / Avg Loss</div>
-                <div className="mt-0.5 text-base font-bold price-mono text-white">
-                  {topstepxChallenge.avgWin ? `$${topstepxChallenge.avgWin.toFixed(2)} / -$${Math.abs(topstepxChallenge.avgLoss).toFixed(2)}` : '$26.69 / -$27.72'}
-                </div>
-                <div className="text-[10px] text-gray-500">
-                  Ratio: 0.96 · {topstepxChallenge.avgTradeDuration || '6m 38s avg'}
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-[#30363d] bg-[#0d1117]/60 p-2.5">
-                <div className="text-[10px] uppercase font-semibold text-gray-500">Direction % (Long)</div>
-                <div className="mt-0.5 text-base font-bold price-mono text-white">
-                  {topstepxChallenge.tradeDirectionLongPercent || 72.73}%
-                </div>
-                <div className="text-[10px] text-gray-500">
-                  {topstepxChallenge.tradeDirectionLongCount || 48} Long · {topstepxChallenge.tradeDirectionShortCount || 18} Short
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-[#30363d] bg-[#0d1117]/60 p-2.5">
-                <div className="text-[10px] uppercase font-semibold text-gray-500">Best / Worst Trade</div>
-                <div className="mt-0.5 text-base font-bold price-mono text-emerald-400">
-                  +${topstepxChallenge.bestTrade?.toFixed(2) || '134.58'} <span className="text-red-400 font-normal text-xs">/ -${Math.abs(topstepxChallenge.worstTrade || 59.04).toFixed(2)}</span>
-                </div>
-                <div className="text-[10px] text-gray-500">
-                  {topstepxChallenge.totalLots || 68} total lots traded
-                </div>
-              </div>
-            </div>
-
-            {/* Daily Net Breakdown */}
-            <div className="rounded-lg border border-[#30363d] bg-[#0d1117] p-3 space-y-2">
-              <div className="text-[10px] uppercase tracking-wider font-semibold text-gray-400">
-                Daily Account Performance (TopstepX Ledger)
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                <div className="p-2 rounded bg-[#161b22] border border-red-900/40">
-                  <div className="text-[10px] text-gray-400 font-medium">09/08 (19 trades)</div>
-                  <div className="font-bold price-mono text-red-400 mt-0.5">-$231.50</div>
-                </div>
-                <div className="p-2 rounded bg-[#161b22] border border-emerald-900/40">
-                  <div className="text-[10px] text-emerald-400 font-medium">09/09 (23 trades - Best Day)</div>
-                  <div className="font-bold price-mono text-emerald-400 mt-0.5">+$274.12</div>
-                </div>
-                <div className="p-2 rounded bg-[#161b22] border border-emerald-900/40">
-                  <div className="text-[10px] text-gray-400 font-medium">09/10 (18 trades)</div>
-                  <div className="font-bold price-mono text-emerald-400 mt-0.5">+$109.34</div>
-                </div>
-                <div className="p-2 rounded bg-[#161b22] border border-emerald-900/40">
-                  <div className="text-[10px] text-gray-400 font-medium">09/11 (6 trades)</div>
-                  <div className="font-bold price-mono text-emerald-400 mt-0.5">+$31.68</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Pacing & Copy Trading Helper */}
             <div className="flex flex-wrap items-center justify-between gap-3 text-xs bg-[#0d1117] rounded-lg border border-[#30363d] px-3.5 py-2.5">
               <div className="flex items-center gap-2 text-gray-400">
-                <span className="font-semibold text-gray-300">Copy-Trade Rules:</span>
-                <span>MNQ $2/pt (SL max 20–25 pts)</span>
+                <span className="font-semibold text-gray-300">Desk Account:</span>
+                <span>CMC Markets CFD</span>
                 <span>·</span>
-                <span>MGC $10/pt (SL max 4–5 pts)</span>
+                <span>Capital: $2,000.00</span>
                 <span>·</span>
-                <span>MYM $0.50/pt (SL max 80–100 pts)</span>
-                <span>·</span>
-                <span>MCL $100/pt (SL max 0.40–0.50)</span>
+                <span>Markets: NASDAQ · DOW · GOLD · CRUDE</span>
               </div>
               <div className="text-gray-400 text-[11px]">
-                Recommended Max Risk: <span className="text-amber-300 font-semibold">$40–$50/trade</span>
+                Status: <span className="text-emerald-300 font-semibold">Ready for live order updates</span>
               </div>
             </div>
           </div>

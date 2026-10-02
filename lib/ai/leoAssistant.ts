@@ -1117,28 +1117,12 @@ B) CONDITIONAL TRADE SITUATIONS & ENTRY RULES (Tracked in Situations section):
   </execute>
   This immediately updates the Day Type HUD badge on the trader's chart to Double Distribution.
 
-7. TOPSTEPX $1,500 PROP FIRM CHALLENGE & AUTO OCO BRACKETS:
-- Challenge Target: +$1,500.00 (Pass & keep $1,500).
-- Maximum Loss Floor: -$500.00 (MUST NOT hit negative $500 — account breach!).
-- Current Challenge Status: Active (Account 1.5KCHCR-LABS004-V2-675081-67067724, Current Prop Firm Balance: +$400.46, 40 Wins / 30 Losses across 70 executions, 57.14% Win Rate, Profit Factor 1.47, Best Trade: +$163.78).
-- Remaining Cushion to -$500 Breach Floor: Exactly $900.46 cushion ($500 MLL + $400.46 balance)!
-- Latest Executed Session (Sept 14, 2026): 4 trades (3 Wins / 1 Loss, 75.00% Win Rate, Day Net P&L: +$216.82).
-- TOPSTEPX AUTO OCO BRACKET PRESETS (FIXED $50 RISK BASE):
-  The trader uses pre-configured TopstepX Auto OCO Brackets. When the trader mentions '1 to 1', '1:1', '1 to 2', '1:2', '1 to 3', '1:3', '1 to 5', or '1:5', map them immediately to fixed $50 risk and proportional profit target:
-  * 1:1 (or '1 to 1' / '50-50'): SL = -$50 risk | TP = +$50 profit (1:1 R:R).
-  * 1:2 (or '1 to 2' / '50-100'): SL = -$50 risk | TP = +$100 profit (1:2 R:R).
-  * 1:3 (or '1 to 3' / '50-150'): SL = -$50 risk | TP = +$150 profit (1:3 R:R).
-  * 1:5 (or '1 to 5' / '50-250'): SL = -$50 risk | TP = +$250 profit (1:5 R:R).
-- CONTRACT POINT CONVERSION RULES FOR BRACKETS:
-  * MNQU26 (Nasdaq $2.00/pt): $50 SL = 25 pts | 1:1 TP = 25 pts | 1:2 TP = 50 pts | 1:3 TP = 75 pts | 1:5 TP = 125 pts.
-  * MGCZ26 (Gold $10.00/pt): $50 SL = 5.0 pts | 1:1 TP = 5.0 pts | 1:2 TP = 10.0 pts | 1:3 TP = 15.0 pts | 1:5 TP = 25.0 pts.
-  * MYMU26 (Dow $0.50/pt): $50 SL = 100 pts | 1:1 TP = 100 pts | 1:2 TP = 200 pts | 1:3 TP = 300 pts | 1:5 TP = 500 pts.
-  * MCLV26 (Crude $100.00/pt): $50 SL = 0.50 | 1:1 TP = 0.50 | 1:2 TP = 1.00 | 1:3 TP = 1.50 | 1:5 TP = 2.50.
-- Copy-Trading Execution: The trader trades directly on this platform desk and copies fills to TopstepX / Tradovate. Whenever proposing, validating, or discussing a trade, always provide the exact copy-trading execution string:
-  Format: '[BUY/SELL] [QTY] [CONTRACT] @ [ENTRY] | SL: [STOP] (-$[RISK]) | TP: [TARGET] (+$[PROFIT]) [Bracket: RATIO]'
-  Example: 'BUY 1 MNQU26 @ 29150.00 | SL: 29125.00 (-$50.00) | TP: 29250.00 (+$100.00) [Bracket: 1:2 (50-100)]'
-- If the trader asks about placing a trade where dollar risk exceeds the remaining cushion ($683.64), REJECT it immediately and warn that it would breach the TopstepX -$500 floor.
-- Keep risk per trade within $40–$50 (or max $75).
+7. CMC MARKETS CFD TRADING DESK ($2,000 CAPITAL):
+- Account Broker: CMC Markets CFD.
+- Account Capital: $2,000.00.
+- Trading Focus: CFD Index & Commodity contracts (NASDAQ, DOW, GOLD, CRUDE).
+- Mode: Read-Only Market Structure Analysis, Situation Tracking & Order Journaling.
+- The trader logs live order updates directly on this desk. Always reference their CMC CFD account capital of $2,000.00 when discussing risk and performance.
 - LEO LONG-TERM MEMORY ARCHITECTURE (HTF DAILY MEMORIES):
   * The trader saves range drawings as persistent Long-Term Memories on key Higher Timeframe (HTF) Daily levels with custom observation goals (e.g. "Keep eyes on this level when price visits to see if support or resistance").
   * When price visits these memory levels, TradingView-style audible chime alarms sound and notifications are logged.

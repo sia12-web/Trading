@@ -228,47 +228,18 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    const topstepxRows = getTopstepXJournalRows()
-    const normInst = instrument ? instrument.toUpperCase() : null
-
-    const filteredTopstepx = topstepxRows.filter((tx) => {
-      if (normInst) {
-        if (normInst === 'MNQ' && tx.instrument !== 'NASDAQ') return false
-        if (normInst === 'MYM' && tx.instrument !== 'DOW') return false
-        if (normInst === 'MGC' && tx.instrument !== 'GOLD') return false
-        if (normInst === 'MCL' && tx.instrument !== 'CRUDE') return false
-        if (
-          normInst !== 'MNQ' &&
-          normInst !== 'MYM' &&
-          normInst !== 'MGC' &&
-          normInst !== 'MCL' &&
-          tx.instrument !== normInst
-        ) {
-          return false
-        }
-      }
-      const txDate = new Date(tx.fill.time)
-      if (txDate.getTime() < since.getTime()) return false
-      return true
-    })
-
-    const seenIds = new Set<string>(entries.map((e) => e.id))
     const mergedEntries = [...entries]
-
-    for (const tx of filteredTopstepx) {
-      if (!seenIds.has(tx.id)) {
-        seenIds.add(tx.id)
-        mergedEntries.push(tx as any)
-      }
-    }
 
     // Sort descending by fill time
     mergedEntries.sort(
       (a, b) => new Date(b.fill.time).getTime() - new Date(a.fill.time).getTime()
     )
 
-    // TopstepX $1,500 Challenge Engine state
-    const topstepxChallenge = computeTopstepXChallengeState()
+    const cmcAccount = {
+      accountName: 'CMC Markets CFD',
+      broker: 'CMC Markets CFD',
+      startingCapital: 2000,
+    }
 
     const allClosed = mergedEntries.filter((t) => t.status === 'closed')
     const allOpen = mergedEntries.filter((t) => t.status === 'open')
@@ -282,15 +253,12 @@ export async function GET(request: NextRequest) {
     )
     const allTotalPnl = allClosed.reduce((s, t) => s + (t.pnl?.dollars ?? 0), 0)
 
-    const hasTopstepx = mergedEntries.some((e) => String(e.id || '').startsWith('topstepx-'))
-    const baseAccount = hasTopstepx
-      ? 0
-      : (typeof startingAccount === 'number' && !isNaN(startingAccount) ? startingAccount : 50000)
+    const baseAccount = 2000
     const roundedTotalPnl = Math.round(allTotalPnl * 100) / 100
 
     return NextResponse.json({
       success: true,
-      topstepx_challenge: topstepxChallenge,
+      cmc_account: cmcAccount,
       summary: {
         trades: mergedEntries.length,
         open: allOpen.length,
