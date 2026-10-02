@@ -1531,7 +1531,6 @@ export function TradingChart({
   const cvdCandleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const cachedCvdBarsRef = useRef<any[]>([])
   const cvdTimeSyncingRef = useRef(false)
-  const [cvdFollowsPrice, setCvdFollowsPrice] = useState(true)
   const syncCvdFromMainRef = useRef<() => void>(() => {})
   const syncMainFromCvdRef = useRef<() => void>(() => {})
   const detachCvdFromPriceRef = useRef<() => void>(() => {})
@@ -1593,7 +1592,6 @@ export function TradingChart({
   }
 
   relinkCvdToPriceRef.current = () => {
-    setCvdFollowsPrice(true)
     requestAnimationFrame(() => syncCvdFromMainRef.current())
   }
   const cvdSessionOverlayRef = useRef<HTMLDivElement>(null)
@@ -7259,10 +7257,23 @@ export function TradingChart({
       }
       if (!param?.seriesData?.size || param.point === undefined) {
         tipPending = null
+        setSyncCrosshair(null)
+        if (cachedCvdBarsRef.current.length > 0) {
+          const lastCvd = cachedCvdBarsRef.current[cachedCvdBarsRef.current.length - 1]
+          if (lastCvd) {
+            setCurrentCvdLegend({
+              open: Math.round(lastCvd.open),
+              high: Math.round(lastCvd.high),
+              low: Math.round(lastCvd.low),
+              close: Math.round(lastCvd.close),
+            })
+          }
+        }
       } else {
         const candle = param.seriesData.get(candleSeries) as CandlestickData | undefined
         if (!candle) {
           tipPending = null
+          setSyncCrosshair(null)
         } else {
           const open = (candle as any).open ?? 0
           const close = (candle as any).close ?? 0
@@ -7278,12 +7289,29 @@ export function TradingChart({
               : list.find((b) => toChartTime(b.time as number, tz) === barUnix)
           const barVol = matchedBar?.volume ?? (candle as any).volume ?? 0
 
+          // Lookup matching CVD bar for this exact candle timestamp
+          const matchingCvd = cachedCvdBarsRef.current.find((b) => b.time === param.time)
+          const cvdClose = matchingCvd ? Math.round(matchingCvd.close) : undefined
+          const cvdOpen = matchingCvd ? Math.round(matchingCvd.open) : undefined
+          const cvdDelta = cvdClose != null && cvdOpen != null ? cvdClose - cvdOpen : undefined
+
+          if (matchingCvd) {
+            setCurrentCvdLegend({
+              open: cvdOpen!,
+              high: Math.round(matchingCvd.high),
+              low: Math.round(matchingCvd.low),
+              close: cvdClose!,
+            })
+          }
+
+          const timeStr = param.time
+            ? (timeframe === '1D'
+                ? `${fmt.formatDate(barUnix, 'day')}`
+                : `${fmt.formatTime(barUnix)} ${fmt.tzLabel}`)
+            : ''
+
           tipPending = {
-            time: param.time
-              ? (timeframe === '1D'
-                  ? `${fmt.formatDate(barUnix, 'day')}`
-                  : `${fmt.formatTime(barUnix)} ${fmt.tzLabel}`)
-              : '',
+            time: timeStr,
             open: (candle as any).open,
             high: (candle as any).high,
             low: (candle as any).low,
@@ -7291,6 +7319,15 @@ export function TradingChart({
             volume: barVol,
             change,
             changePct: open !== 0 ? (change / open) * 100 : 0,
+            cvd: cvdClose,
+            barDelta: cvdDelta,
+          }
+
+          if (param.point) {
+            setSyncCrosshair({
+              x: param.point.x,
+              timeStr,
+            })
           }
         }
       }
@@ -7430,14 +7467,12 @@ export function TradingChart({
           borderVisible: true,
           borderColor: '#1e293b',
           autoScale: true,
-          minimumWidth: 75,
+          minimumWidth: 82, // EXACT MATCH TO MAIN PRICE CHART AXIS WIDTH (82px)
           scaleMargins: {
             top: 0.15,
             bottom: 0.15,
           },
         },
-        // Wheel / drag / pinch zoom this pane only. Price chart zoom still
-        // re-links CVD; CVD zoom never moves the price bars.
         handleScroll: {
           mouseWheel: true,
           pressedMouseMove: true,
@@ -7446,21 +7481,22 @@ export function TradingChart({
         },
         handleScale: {
           axisPressedMouseMove: { time: true, price: true },
-          axisDoubleClickReset: { time: false, price: true },
+          axisDoubleClickReset: { time: true, price: true },
           mouseWheel: true,
           pinch: true,
         },
       })
       cvdChartRef.current = cvdChart
 
+      // High-Contrast Vivid Cumulative Volume Delta Candlesticks with Crisp Borders
       const cvdSeries = cvdChart.addCandlestickSeries({
-        upColor: '#10b981',
-        downColor: '#f43f5e',
-        borderUpColor: '#10b981',
-        borderDownColor: '#f43f5e',
-        wickUpColor: '#34d399',
-        wickDownColor: '#fb7185',
-        borderVisible: false,
+        upColor: '#06b6d4',          // Vibrant Cyan (Aggressive Buyer Delta)
+        downColor: '#f43f5e',        // Vivid Rose (Aggressive Seller Delta)
+        borderVisible: true,
+        borderUpColor: '#22d3ee',    // Bright Crisp Cyan Border
+        borderDownColor: '#fb7185',  // Bright Crisp Rose Border
+        wickUpColor: '#67e8f9',      // Luminous Cyan Wick
+        wickDownColor: '#fda4af',    // Luminous Rose Wick
         priceFormat: {
           type: 'volume',
           precision: 0,
@@ -7471,16 +7507,19 @@ export function TradingChart({
       try {
         cvdSeries.createPriceLine({
           price: 0,
-          color: 'rgba(148, 163, 184, 0.45)',
+          color: 'rgba(56, 189, 248, 0.55)',
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
           axisLabelVisible: true,
-          title: '0 Δ',
+          title: '0 Δ (Baseline)',
         })
       } catch {}
 
       const onCrosshairMove = (param: any) => {
-        if (!param || !param.time || !param.seriesPrices) return
+        if (!param || !param.point || !param.time || !param.seriesPrices) {
+          setSyncCrosshair(null)
+          return
+        }
         const priceData = param.seriesPrices.get(cvdSeries)
         if (priceData && typeof priceData === 'object') {
           setCurrentCvdLegend({
@@ -7490,14 +7529,43 @@ export function TradingChart({
             close: Math.round((priceData as any).close ?? 0),
           })
         }
+
+        // Match price candle and sync main chart tooltip & crosshair position!
+        const barUnix = chartTimeToUnix(param.time)
+        const tz = chartTzRef.current
+        const matchedPriceBar = candlesRef.current.find(
+          (b) => toChartTime(b.time as number, tz) === barUnix
+        )
+        if (matchedPriceBar) {
+          const fmt = chartFmtRef.current
+          const open = matchedPriceBar.open
+          const close = matchedPriceBar.close
+          const change = close - open
+          setTooltip({
+            time: `${fmt.formatTime(barUnix)} ${fmt.tzLabel}`,
+            open,
+            high: matchedPriceBar.high,
+            low: matchedPriceBar.low,
+            close,
+            volume: matchedPriceBar.volume,
+            change,
+            changePct: open !== 0 ? (change / open) * 100 : 0,
+            cvd: (priceData as any)?.close,
+            barDelta:
+              (priceData as any)?.close != null && (priceData as any)?.open != null
+                ? (priceData as any).close - (priceData as any).open
+                : undefined,
+          })
+        }
+        setSyncCrosshair({
+          x: param.point.x,
+          timeStr: param.time ? String(param.time) : '',
+        })
       }
       cvdChart.subscribeCrosshairMove(onCrosshairMove)
 
-      const onCvdInteract = () => detachCvdFromPriceRef.current()
-      const onCvdDblClick = () => relinkCvdToPriceRef.current()
-      cvdContainer.addEventListener('wheel', onCvdInteract, { passive: true })
-      cvdContainer.addEventListener('mousedown', onCvdInteract)
-      cvdContainer.addEventListener('dblclick', onCvdDblClick)
+      // Lockstep bidirectional scroll/pan with main price chart
+      cvdChart.timeScale().subscribeVisibleLogicalRangeChange(() => syncMainFromCvdRef.current())
 
       const ro = new ResizeObserver(() => {
         if (cvdContainerRef.current && cvdChartRef.current && showCvdSubPane) {
@@ -7564,7 +7632,7 @@ export function TradingChart({
             cvdSubPaneHeight
           )
           const mainRange = chartRef.current?.timeScale().getVisibleLogicalRange()
-          if (mainRange && !cvdIndependentZoomRef.current) {
+          if (mainRange) {
             try {
               cvdChartRef.current.timeScale().setVisibleLogicalRange(mainRange)
             } catch {}
@@ -11530,140 +11598,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               ))}
             </div>
 
-            {/* User Interactive Drawing Tools (Trendline, Range Box, Manual FRVP) */}
-            <div className="flex items-center gap-1 rounded-lg bg-surface-900/90 px-1.5 py-0.5 border border-cyan-500/40 shadow-sm text-xs">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 pl-0.5 pr-1 select-none">
-                Draw:
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveDrawingTool((prev) => (prev === 'TRENDLINE' ? 'NONE' : 'TRENDLINE'))
-                  setDrawingDraft(null)
-                }}
-                className={`flex items-center gap-1 px-2 py-1 rounded font-semibold transition-all ${
-                  activeDrawingTool === 'TRENDLINE'
-                    ? 'bg-sky-500/30 text-sky-200 border border-sky-400 shadow-sm'
-                    : 'text-gray-300 hover:text-sky-300 hover:bg-surface-800'
-                }`}
-                title="Draw Trendline (Hotkey: W) — Click 2 points on chart"
-              >
-                <span>📐</span>
-                <span>Trend (W)</span>
-              </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveDrawingTool((prev) => (prev === 'ACTION_TRENDLINE' ? 'NONE' : 'ACTION_TRENDLINE'))
-                  setDrawingDraft(null)
-                }}
-                className={`flex items-center gap-1 px-2 py-1 rounded font-semibold transition-all ${
-                  activeDrawingTool === 'ACTION_TRENDLINE'
-                    ? 'bg-amber-500/40 text-amber-200 border border-amber-400 shadow-sm shadow-amber-500/20'
-                    : 'text-amber-400 hover:text-amber-200 hover:bg-amber-950/40'
-                }`}
-                title="Draw Action Trendline (Initial Overnight · Hotkey: X) — Leo arms reaction on NYC breakout"
-              >
-                <span>🎯</span>
-                <span className="font-bold">Action (X)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  if (!hasBrokenAction) {
-                    setDrawingToast({
-                      type: 'TRENDLINE',
-                      id: `reaction-locked-${Date.now()}`,
-                      label: 'Reaction Line Locked',
-                      summary:
-                        'Reaction trendlines can only be drawn after an Action Trendline has experienced a confirmed breakout on a 5-minute candle.',
-                    })
-                    return
-                  }
-                  const targetId = activeActionTlId || brokenActionLineIds[0] || null
-                  setActiveActionTlId(targetId)
-                  setActiveDrawingTool((prev) => (prev === 'REACTION_TRENDLINE' ? 'NONE' : 'REACTION_TRENDLINE'))
-                  setDrawingDraft(null)
-                }}
-                className={`flex items-center gap-1 px-2 py-1 rounded font-semibold transition-all ${
-                  !hasBrokenAction
-                    ? 'opacity-40 cursor-not-allowed text-slate-500 hover:text-slate-500 bg-slate-900/40 border border-slate-800'
-                    : activeDrawingTool === 'REACTION_TRENDLINE'
-                    ? 'bg-sky-500/40 text-sky-200 border border-sky-400 shadow-sm shadow-sky-500/20'
-                    : 'text-sky-400 hover:text-sky-200 hover:bg-sky-950/40 ring-1 ring-amber-400/40 animate-pulse'
-                }`}
-                title={
-                  hasBrokenAction
-                    ? 'Draw Reaction Trendline (Action line broken! Click 2 swing points)'
-                    : 'Reaction Line Locked: Requires an Action Trendline with a confirmed breakout'
-                }
-              >
-                <span>📐⚡</span>
-                <span className="font-bold">Reaction</span>
-                {!hasBrokenAction ? (
-                  <span className="text-[10px] text-slate-500 font-mono">🔒</span>
-                ) : (
-                  <span className="text-[10px] text-amber-300 font-bold">●</span>
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveDrawingTool((prev) => (prev === 'RANGE' ? 'NONE' : 'RANGE'))
-                  setDrawingDraft(null)
-                }}
-                className={`flex items-center gap-1 px-2 py-1 rounded font-semibold transition-all ${
-                  activeDrawingTool === 'RANGE'
-                    ? 'bg-purple-500/30 text-purple-200 border border-purple-400 shadow-sm'
-                    : 'text-gray-300 hover:text-purple-300 hover:bg-surface-800'
-                }`}
-                title="Draw Range / Box (Hotkey: D) — Click 2 points on chart"
-              >
-                <span>⬛</span>
-                <span>Range (D)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveDrawingTool((prev) => (prev === 'FRVP' ? 'NONE' : 'FRVP'))
-                  setDrawingDraft(null)
-                }}
-                className={`flex items-center gap-1 px-2 py-1 rounded font-semibold transition-all ${
-                  activeDrawingTool === 'FRVP'
-                    ? 'bg-amber-500/30 text-amber-200 border border-amber-400 shadow-sm'
-                    : 'text-gray-300 hover:text-amber-300 hover:bg-surface-800'
-                }`}
-                title="Draw Fixed Range Volume Profile (Hotkey: V) — Click 2 points on chart"
-              >
-                <span>📊</span>
-                <span>FRVP (V)</span>
-              </button>
-
-              <div className="h-3.5 w-px bg-surface-700 mx-0.5" />
-
-              <button
-                type="button"
-                onClick={() => setDrawingsPanelOpen((prev) => !prev)}
-                className={`relative flex items-center gap-1 px-2 py-1 rounded font-medium transition-all ${
-                  drawingsPanelOpen || activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length > 0
-                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
-                    : 'text-gray-400 hover:text-cyan-300 hover:bg-surface-800'
-                }`}
-                title="Manage Drawn Tools"
-              >
-                <span>🎨</span>
-                <span>Tools</span>
-                {activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length > 0 && (
-                  <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-cyan-500 px-1 text-[10px] font-bold text-slate-950">
-                    {activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length}
-                  </span>
-                )}
-              </button>
-            </div>
 
             {/* Quick 1-Click 1:1 Market Entry Buttons & Canvas Label Visibility Toggle */}
             <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-surface-900/90 border border-neutral-700/60 shadow-sm text-xs font-mono">
@@ -12071,39 +12006,44 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </div>
 
           {/* CVD Sub-Pane Header Legend */}
-          <div className="absolute top-2 left-3 z-10 flex items-center gap-2 text-xs font-mono font-semibold bg-zinc-950/85 px-2.5 py-1 rounded border border-zinc-800/80 select-none shadow-sm pointer-events-none">
-            <span className="font-bold text-zinc-300">CVD</span>
+          <div className="absolute top-2 left-3 z-10 flex items-center gap-2.5 text-xs font-mono font-semibold bg-zinc-950/90 px-2.5 py-1 rounded border border-zinc-800/80 select-none shadow-md pointer-events-none">
+            <span className="font-bold text-zinc-300 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+              CVD
+            </span>
             {currentCvdLegend ? (
-              <span className={currentCvdLegend.close >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-                {currentCvdLegend.close >= 0 ? '+' : ''}
-                {Math.abs(currentCvdLegend.close) >= 1000
-                  ? `${(currentCvdLegend.close / 1000).toFixed(2)}K`
-                  : currentCvdLegend.close.toLocaleString()}
-              </span>
+              <div className="flex items-center gap-2 font-mono text-[11px]">
+                <span className={currentCvdLegend.close >= 0 ? 'text-cyan-400 font-bold' : 'text-rose-400 font-bold'}>
+                  {currentCvdLegend.close >= 0 ? '+' : ''}
+                  {Math.abs(currentCvdLegend.close) >= 1000
+                    ? `${(currentCvdLegend.close / 1000).toFixed(2)}K`
+                    : currentCvdLegend.close.toLocaleString()}
+                </span>
+                <span className="text-zinc-600">|</span>
+                <span className="text-zinc-400 text-[10.5px]">
+                  Bar Δ: <strong className={currentCvdLegend.close >= currentCvdLegend.open ? 'text-cyan-400' : 'text-rose-400'}>
+                    {currentCvdLegend.close - currentCvdLegend.open >= 0 ? '+' : ''}
+                    {(currentCvdLegend.close - currentCvdLegend.open).toLocaleString()}
+                  </strong>
+                </span>
+                <span className="text-zinc-600 hidden sm:inline">|</span>
+                <span className="text-zinc-400 text-[10px] hidden md:inline">
+                  O: <span className="text-zinc-200">{currentCvdLegend.open.toLocaleString()}</span> H: <span className="text-zinc-200">{currentCvdLegend.high.toLocaleString()}</span> L: <span className="text-zinc-200">{currentCvdLegend.low.toLocaleString()}</span> C: <span className="text-zinc-200">{currentCvdLegend.close.toLocaleString()}</span>
+                </span>
+              </div>
             ) : (
               <span className="text-zinc-500">—</span>
             )}
-            {!cvdFollowsPrice && (
-              <button
-                type="button"
-                className="pointer-events-auto ml-1 rounded border border-cyan-500/40 bg-cyan-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-cyan-300 hover:bg-cyan-500/25"
-                title="Match CVD zoom back to the price chart"
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  relinkCvdToPriceRef.current()
-                }}
-              >
-                Follow price
-              </button>
-            )}
+            <span className="ml-1 inline-flex items-center gap-1 text-[9.5px] font-mono text-cyan-400/90 bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-800/40">
+              🔒 1:1 Linked
+            </span>
           </div>
 
           {/* CVD Lightweight Chart Container */}
           <div
             ref={cvdContainerRef}
             className="absolute inset-0 z-0"
-            title="Scroll or drag to zoom CVD only. Double-click or Follow price to match the chart."
+            title="Scroll or drag anywhere to zoom and pan. Price and CVD stay 100% 1:1 synchronized."
           />
           <div
             ref={cvdSessionOverlayRef}
@@ -12111,6 +12051,25 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             style={{ opacity: 1, transition: 'none', willChange: 'opacity' }}
           />
         </div>
+
+        {/* Synchronized TradingView Crosshair Guide & Column Beam across Main & CVD Panes */}
+        {showCvdSubPane && syncCrosshair && (
+          <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
+            {/* Full-height Vertical Beam Highlight connecting price candle to CVD candle */}
+            <div
+              style={{
+                left: `${syncCrosshair.x - Math.round(((chartRef.current?.timeScale() as any)?.options?.()?.barSpacing ?? 10) * 0.42)}px`,
+                width: `${Math.max(4, Math.round(((chartRef.current?.timeScale() as any)?.options?.()?.barSpacing ?? 10) * 0.84))}px`,
+              }}
+              className="absolute top-0 bottom-0 bg-cyan-400/[0.12] transition-none pointer-events-none"
+            />
+            {/* Full-height Vertical Crosshair Hairline */}
+            <div
+              style={{ left: `${syncCrosshair.x}px` }}
+              className="absolute top-0 bottom-0 w-[1px] border-l border-dashed border-cyan-400/80 transition-none pointer-events-none shadow-[0_0_8px_rgba(34,211,238,0.5)]"
+            />
+          </div>
+        )}
 
         {/* ── Draggable Floating Drawing Tool Rail (horizontal) ── */}
         <div
