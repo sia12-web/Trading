@@ -56,7 +56,7 @@ export default function NotesPage() {
               const filtered = parsed
                 .filter(
                   (r: any) =>
-                    (r.type === 'DESK_ALERT' || r.type === 'TELEGRAM_ALERT') &&
+                    r.type === 'DESK_ALERT' &&
                     !isArmedRuleExpired(r)
                 )
                 .map((r: any) => ({

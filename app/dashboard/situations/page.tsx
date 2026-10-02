@@ -70,7 +70,7 @@ export default function SituationsPage() {
   const stats = useMemo(() => {
     const totalArmed = allRulesList.filter((r) => r.status === 'ARMED').length
     const conditionalEntries = allRulesList.filter((r) => (r.type === 'CONDITIONAL_ENTRY' || r.type === 'MARKET_SITUATION') && r.status === 'ARMED').length
-    const deskAlerts = allRulesList.filter((r) => (r.type === 'DESK_ALERT' || r.type === 'TELEGRAM_ALERT') && r.status === 'ARMED').length
+    const deskAlerts = allRulesList.filter((r) => r.type === 'DESK_ALERT' && r.status === 'ARMED').length
     const stagnationRules = allRulesList.filter((r) => r.type === 'STAGNATION_TIMEOUT' && r.status === 'ARMED').length
     const completedHistory = allRulesList.filter((r) => r.status === 'TRIGGERED' || r.status === 'EXECUTED').length
     return { totalArmed, conditionalEntries, deskAlerts, stagnationRules, completedHistory }
@@ -174,7 +174,7 @@ export default function SituationsPage() {
           <div className="text-xl font-bold font-mono text-amber-300">
             {stats.deskAlerts}
           </div>
-          <div className="text-[10px] text-gray-500">Desk & Telegram alerts</div>
+          <div className="text-[10px] text-gray-500">In-browser Desk alerts</div>
         </div>
 
         <div className="rounded-xl border border-surface-600/80 bg-surface-800/60 p-3.5 space-y-1">
@@ -286,7 +286,6 @@ export default function SituationsPage() {
             <option value="ALL">All Types</option>
             <option value="CONDITIONAL_ENTRY">Entries</option>
             <option value="DESK_ALERT">Desk Alerts</option>
-            <option value="TELEGRAM_ALERT">Telegram Alerts</option>
             <option value="STAGNATION_TIMEOUT">Stagnation</option>
             <option value="MARKET_SITUATION">Situations</option>
           </select>
@@ -1093,7 +1092,6 @@ function ArmSituationModal({
                 <option value="CONDITIONAL_ENTRY">Conditional Entry</option>
                 <option value="TRENDLINE_BREAKOUT_SYSTEMATIC">Trendline Breakout & Borning Zone</option>
                 <option value="DESK_ALERT">Desk Alert</option>
-                <option value="TELEGRAM_ALERT">Telegram Alert</option>
                 <option value="STAGNATION_TIMEOUT">Stagnation Timeout</option>
                 <option value="MARKET_SITUATION">Market Situation</option>
               </select>
