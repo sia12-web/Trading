@@ -4539,8 +4539,14 @@ export function TradingChart({
 
       // 5. Draw Emotional News Moves (Precomputed from analytics cache)
       const newsMoves = newsMovesRef.current
+      const nowSec = Math.floor(Date.now() / 1000)
 
       for (const move of newsMoves) {
+        // Skip completed/done news moves: broken corridors or events older than 24h
+        const isBroken = move.status === 'BROKEN_ABOVE' || move.status === 'BROKEN_BELOW'
+        const isOld = move.reactionEndTime < nowSec - 24 * 3600
+        if (isBroken || isOld) continue
+
         const xStart = timeToX(chart.timeScale(), toChartTime(move.reactionStartTime, tz), candleTimes)
         if (xStart == null || !Number.isFinite(xStart) || xStart > paneW + 30) continue
 
@@ -4648,9 +4654,13 @@ export function TradingChart({
       const ms = parseCalendarEventMs(e.time, nowMs)
       if (!ms || !Number.isFinite(ms)) continue
 
-      // Only show UPCOMING events — skip anything already released (past news)
-      const isReleased = !!(e.isReleased || (e.actual != null && String(e.actual).trim() !== ''))
-      if (isReleased) continue
+      // Only show strictly UPCOMING events — remove/skip anything already past or released (done news)
+      const isPast = ms <= nowMs
+      const isReleased = !!(
+        e.isReleased ||
+        (e.actual != null && String(e.actual).trim() !== '' && String(e.actual).trim().toLowerCase() !== 'null')
+      )
+      if (isPast || isReleased) continue
 
       const sec = Math.floor(ms / 1000)
       const chartT = toChartTime(sec, tz)
@@ -4726,6 +4736,10 @@ export function TradingChart({
 
   useEffect(() => {
     paintNewsMarkers()
+    const timer = setInterval(() => {
+      paintNewsMarkers()
+    }, 10_000)
+    return () => clearInterval(timer)
   }, [paintNewsMarkers])
 
   // Poll high/medium impact calendar news events for the bottom time axis markers
@@ -8602,6 +8616,9 @@ export function TradingChart({
     priceLineHostSeededRef.current = false
     lastCandleRef.current = null
     sessionSpansRef.current = null
+    if (newsMarkersOverlayRef.current) {
+      newsMarkersOverlayRef.current.innerHTML = ''
+    }
     // Check if target timeframe already has fresh cached candles
     const cached = candleCacheRef.current.get(`${instrument}:${timeframe}`)
     // Same window the loader uses, otherwise bars are wiped here and immediately

@@ -634,8 +634,10 @@ export function computeYesterdayNycSession(
       (b) => b.time >= openUnix && b.time < closeUnix && Number.isFinite(b.high) && Number.isFinite(b.low)
     )
 
-    // Skip truncated / early-close / low-participation sessions (< 15 5-min bars)
-    if (candidateBars.length < 15) {
+    // Skip truncated / early-close / low-participation sessions (< 15 5-min bars, or < 8 30-min bars)
+    const barStep = candidateBars.length >= 2 ? candidateBars[1]!.time - candidateBars[0]!.time : 300
+    const minBars = barStep >= 1200 ? 8 : 15
+    if (candidateBars.length < minBars) {
       continue
     }
 
@@ -644,7 +646,7 @@ export function computeYesterdayNycSession(
       volSum += Math.max(0, b.volume > 0 ? b.volume : 1)
     }
 
-    if (volSum < 50) {
+    if (volSum < (barStep >= 1200 ? 10 : 50)) {
       continue
     }
 
