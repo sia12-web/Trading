@@ -2,7 +2,7 @@ import './globals.css'
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'TradePulse — Level Intelligence',
+  title: 'TradePulse',
   description: 'AI-powered real-time support & resistance tracking for DOW, NASDAQ, NIKKEI',
   icons: {
     icon: '/favicon.svg',
