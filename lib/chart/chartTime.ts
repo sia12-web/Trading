@@ -104,6 +104,21 @@ export function chartTimeToUnix(time: unknown): number {
   return NaN
 }
 
+/** Compare two chart times for equality (handles BusinessDay objects, unix seconds, and cross-type equality). */
+export function isSameChartTime(t1: unknown, t2: unknown): boolean {
+  if (t1 === t2) return true
+  if (t1 == null || t2 == null) return false
+  if (isBusinessDay(t1) && isBusinessDay(t2)) {
+    return t1.year === t2.year && t1.month === t2.month && t1.day === t2.day
+  }
+  const u1 = chartTimeToUnix(t1)
+  const u2 = chartTimeToUnix(t2)
+  if (Number.isFinite(u1) && Number.isFinite(u2)) {
+    return u1 === u2
+  }
+  return false
+}
+
 /** Real unix seconds → lightweight-charts time (UTC comps = desk wall clock). */
 export function toChartTime(unixSec: number, timeZone: string): number {
   if (!Number.isFinite(unixSec)) return unixSec

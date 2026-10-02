@@ -8,6 +8,7 @@ import {
   fromChartTime,
   formatChartClock,
   formatChartDate,
+  isSameChartTime,
 } from '../lib/chart/chartTime'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '../lib/utils/dateUtils'
 
@@ -62,4 +63,23 @@ const JST = 'Asia/Tokyo'
   assert(formatChartDate(chartJan, 'year') === '2026', `Expected '2026', got ${formatChartDate(chartJan, 'year')}`)
 }
 
+{
+  // isSameChartTime: verifies reference equality vs value equality for BusinessDay and unix seconds
+  const dayA = { year: 2026, month: 10, day: 2 }
+  const dayB = { year: 2026, month: 10, day: 2 } // distinct object in memory!
+  const dayDiff = { year: 2026, month: 10, day: 1 }
+  assert(dayA !== dayB, 'JS objects must be distinct references')
+  assert(isSameChartTime(dayA, dayB), 'isSameChartTime must match identical BusinessDay objects')
+  assert(!isSameChartTime(dayA, dayDiff), 'isSameChartTime must reject different BusinessDay objects')
+
+  // Intraday timestamps
+  assert(isSameChartTime(1790908800, 1790908800), 'isSameChartTime must match equal numbers')
+  assert(!isSameChartTime(1790908800, 1790908860), 'isSameChartTime must reject unequal numbers')
+
+  // Cross-type comparison (BusinessDay object vs epoch midnight seconds)
+  const midnightSec = Date.UTC(2026, 9, 2) / 1000
+  assert(isSameChartTime(dayA, midnightSec), 'isSameChartTime must match BusinessDay with equivalent unix midnight')
+}
+
 console.log('chart_time: ok')
+

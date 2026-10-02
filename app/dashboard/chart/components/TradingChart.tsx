@@ -96,6 +96,7 @@ import {
   snapDailyUnix,
   chartTimeToUnix,
   isBusinessDay,
+  isSameChartTime,
 } from '@/lib/chart/chartTime'
 import {
   TRADER_DISPLAY_LABEL,
@@ -1575,6 +1576,7 @@ export function TradingChart({
   const detachCvdFromPriceRef = useRef<() => void>(() => {})
   const relinkCvdToPriceRef = useRef<() => void>(() => {})
   const [syncCrosshair, setSyncCrosshair] = useState<{ x: number; timeStr: string } | null>(null)
+  const lastPointerPosRef = useRef<{ x: number; y: number } | null>(null)
 
   const rangesDiffer = (
     r1: { from: number; to: number } | null,
@@ -7750,8 +7752,8 @@ export function TradingChart({
               : list.find((b) => toChartTime(b.time as number, tz) === barUnix)
           const barVol = matchedBar?.volume ?? (candle as any).volume ?? 0
 
-          // Lookup matching CVD bar for this exact candle timestamp
-          const matchingCvd = cachedCvdBarsRef.current.find((b) => b.time === param.time)
+          // Lookup matching CVD bar for this exact candle timestamp (supports BusinessDay on 1D)
+          const matchingCvd = cachedCvdBarsRef.current.find((b) => isSameChartTime(b.time, param.time))
           const cvdClose = matchingCvd ? Math.round(matchingCvd.close) : undefined
           const cvdOpen = matchingCvd ? Math.round(matchingCvd.open) : undefined
           const cvdDelta = cvdClose != null && cvdOpen != null ? cvdClose - cvdOpen : undefined
@@ -7810,6 +7812,32 @@ export function TradingChart({
     or30SeriesRef.current = or30Series
     setChartReady(true)
 
+    const updateCvdUnderCursor = () => {
+      if (lastPointerPosRef.current && containerRef.current && chartRef.current && candleRef.current) {
+        const rect = containerRef.current.getBoundingClientRect()
+        const x = lastPointerPosRef.current.x - rect.left
+        if (x >= 0 && x <= rect.width) {
+          const logical = chartRef.current.timeScale().coordinateToLogical(x)
+          if (logical != null) {
+            const candle = candleRef.current.dataByIndex(Math.round(logical)) as CandlestickData | null
+            if (candle && candle.time) {
+              const matchingCvd = cachedCvdBarsRef.current.find((b) => isSameChartTime(b.time, candle.time))
+              if (matchingCvd) {
+                const cClose = Math.round((matchingCvd as any).close ?? 0)
+                const cOpen = Math.round((matchingCvd as any).open ?? 0)
+                setCurrentCvdLegend({
+                  open: cOpen,
+                  high: Math.round((matchingCvd as any).high ?? 0),
+                  low: Math.round((matchingCvd as any).low ?? 0),
+                  close: cClose,
+                })
+              }
+            }
+          }
+        }
+      }
+    }
+
     // Sync overlay coordinates on chart scroll/zoom — immediate execution for 0-lag 60fps tracking
     const onScroll = () => {
       pokeOverlayLayoutRef.current()
@@ -7818,6 +7846,7 @@ export function TradingChart({
       paintExcessesAndRoundedRef.current?.()
       paintUserDrawingsRef.current?.()
       paintNewsMarkersRef.current?.()
+      updateCvdUnderCursor()
     }
     chart.timeScale().subscribeVisibleLogicalRangeChange(onScroll)
 
@@ -7851,16 +7880,27 @@ export function TradingChart({
       paintExcessesAndRoundedRef.current?.()
       paintUserDrawingsRef.current?.()
       paintNewsMarkersRef.current?.()
+      updateCvdUnderCursor()
     }
     const onPricePointer = () => {
       relinkCvdToPriceRef.current()
       pokeOverlayLayoutRef.current()
     }
+    const onPointerMove = (e: MouseEvent) => {
+      lastPointerPosRef.current = { x: e.clientX, y: e.clientY }
+    }
+    const onPointerLeave = () => {
+      lastPointerPosRef.current = null
+    }
+    containerRef.current.addEventListener('mousemove', onPointerMove, { passive: true })
+    containerRef.current.addEventListener('mouseleave', onPointerLeave)
     containerRef.current.addEventListener('wheel', onWheelLayout, { passive: true })
     containerRef.current.addEventListener('mousedown', onPricePointer)
 
     return () => {
       ro.disconnect()
+      containerRef.current?.removeEventListener('mousemove', onPointerMove)
+      containerRef.current?.removeEventListener('mouseleave', onPointerLeave)
       containerRef.current?.removeEventListener('wheel', onWheelLayout)
       containerRef.current?.removeEventListener('mousedown', onPricePointer)
       try {
@@ -7978,33 +8018,42 @@ export function TradingChart({
       } catch {}
 
       const onCrosshairMove = (param: any) => {
-        if (!param || !param.point || !param.time || !param.seriesPrices) {
+        if (!param || !param.point || !param.time) {
           setSyncCrosshair(null)
           return
         }
-        const priceData = param.seriesPrices.get(cvdSeries)
-        if (priceData && typeof priceData === 'object') {
+        const priceData = (param.seriesData?.get(cvdSeries) ?? param.seriesPrices?.get(cvdSeries)) as CandlestickData | undefined
+        const matchingCvd = priceData ?? cachedCvdBarsRef.current.find((b) => isSameChartTime(b.time, param.time))
+        if (matchingCvd && typeof matchingCvd === 'object') {
+          const cClose = Math.round((matchingCvd as any).close ?? 0)
+          const cOpen = Math.round((matchingCvd as any).open ?? 0)
           setCurrentCvdLegend({
-            open: Math.round((priceData as any).open ?? 0),
-            high: Math.round((priceData as any).high ?? 0),
-            low: Math.round((priceData as any).low ?? 0),
-            close: Math.round((priceData as any).close ?? 0),
+            open: cOpen,
+            high: Math.round((matchingCvd as any).high ?? 0),
+            low: Math.round((matchingCvd as any).low ?? 0),
+            close: cClose,
           })
         }
 
         // Match price candle and sync main chart tooltip & crosshair position!
         const barUnix = chartTimeToUnix(param.time)
         const tz = chartTzRef.current
-        const matchedPriceBar = candlesRef.current.find(
-          (b) => toChartTime(b.time as number, tz) === barUnix
-        )
+        const matchedPriceBar =
+          timeframe === '1D'
+            ? candlesRef.current.find((b) => snapDailyUnix(b.time as number) === snapDailyUnix(barUnix))
+            : candlesRef.current.find((b) => toChartTime(b.time as number, tz) === barUnix)
         if (matchedPriceBar) {
           const fmt = chartFmtRef.current
           const open = matchedPriceBar.open
           const close = matchedPriceBar.close
           const change = close - open
+          const cvdClose = matchingCvd ? Math.round((matchingCvd as any).close ?? 0) : undefined
+          const cvdOpen = matchingCvd ? Math.round((matchingCvd as any).open ?? 0) : undefined
+          const cvdDelta = cvdClose != null && cvdOpen != null ? cvdClose - cvdOpen : undefined
           setTooltip({
-            time: `${fmt.formatTime(barUnix)} ${fmt.tzLabel}`,
+            time: timeframe === '1D'
+              ? `${fmt.formatDate(barUnix, 'day')}`
+              : `${fmt.formatTime(barUnix)} ${fmt.tzLabel}`,
             open,
             high: matchedPriceBar.high,
             low: matchedPriceBar.low,
@@ -8012,11 +8061,8 @@ export function TradingChart({
             volume: matchedPriceBar.volume,
             change,
             changePct: open !== 0 ? (change / open) * 100 : 0,
-            cvd: (priceData as any)?.close,
-            barDelta:
-              (priceData as any)?.close != null && (priceData as any)?.open != null
-                ? (priceData as any).close - (priceData as any).open
-                : undefined,
+            cvd: cvdClose,
+            barDelta: cvdDelta,
           })
         }
         setSyncCrosshair({
@@ -8043,8 +8089,9 @@ export function TradingChart({
     // Set data immediately if cached or from candles
     let barsToSet = cachedCvdBarsRef.current
     if (barsToSet.length === 0 && candlesRef.current.length > 0) {
+      const ordered = normalizeCandleTimes(candlesRef.current, timeframe)
       const cvdBars = computeCvdCandleBars(
-        candlesRef.current.map((c) => ({
+        ordered.map((c) => ({
           time: c.time as number,
           open: c.open,
           high: c.high,
@@ -8054,22 +8101,27 @@ export function TradingChart({
         }))
       )
       const tz = chartTzRef.current
-      barsToSet = mapTimesToChart(
-        cvdBars.map((b) => ({
-          time: b.time,
-          open: b.open,
-          high: b.high,
-          low: b.low,
-          close: b.close,
-        })),
-        tz
-      ).map((b) => ({
-        time: b.time as UTCTimestamp,
-        open: (b as any).open,
-        high: (b as any).high,
-        low: (b as any).low,
-        close: (b as any).close,
-      }))
+      const cvdByUnix = new Map<number, (typeof cvdBars)[number]>()
+      for (const b of cvdBars) cvdByUnix.set(b.time, b)
+      const seenTimes = new Set<string>()
+      const shifted: CandlestickData[] = []
+      for (const c of ordered) {
+        const t = toSeriesTime(c.time as number, timeframe, tz)
+        const key = isBusinessDay(t) ? `${t.year}-${t.month}-${t.day}` : String(t)
+        if (!seenTimes.has(key)) {
+          seenTimes.add(key)
+          const d = cvdByUnix.get(c.time as number)
+          shifted.push({
+            time: t,
+            open: d?.open ?? 0,
+            high: d?.high ?? 0,
+            low: d?.low ?? 0,
+            close: d?.close ?? 0,
+          })
+        }
+      }
+      shifted.sort((a, b) => chartTimeToUnix(a.time) - chartTimeToUnix(b.time))
+      barsToSet = shifted
       cachedCvdBarsRef.current = barsToSet
     }
 
@@ -12888,16 +12940,26 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             {currentCvdLegend ? (
               <div className="flex items-center gap-2 font-mono text-[11px]">
                 <span className={currentCvdLegend.close >= 0 ? 'text-cyan-400 font-bold' : 'text-rose-400 font-bold'}>
-                  {currentCvdLegend.close >= 0 ? '+' : ''}
-                  {Math.abs(currentCvdLegend.close) >= 1000
-                    ? `${(currentCvdLegend.close / 1000).toFixed(2)}K`
-                    : currentCvdLegend.close.toLocaleString()}
+                  {(() => {
+                    const val = currentCvdLegend.close
+                    const sign = val >= 0 ? '+' : ''
+                    const abs = Math.abs(val)
+                    if (abs >= 1_000_000) return `${sign}${(val / 1_000_000).toFixed(2)}M`
+                    if (abs >= 1_000) return `${sign}${(val / 1_000).toFixed(1)}K`
+                    return `${sign}${val.toLocaleString()}`
+                  })()}
                 </span>
                 <span className="text-zinc-600">|</span>
                 <span className="text-zinc-400 text-[10.5px]">
                   Bar Δ: <strong className={currentCvdLegend.close >= currentCvdLegend.open ? 'text-cyan-400' : 'text-rose-400'}>
-                    {currentCvdLegend.close - currentCvdLegend.open >= 0 ? '+' : ''}
-                    {(currentCvdLegend.close - currentCvdLegend.open).toLocaleString()}
+                    {(() => {
+                      const delta = currentCvdLegend.close - currentCvdLegend.open
+                      const sign = delta >= 0 ? '+' : ''
+                      const abs = Math.abs(delta)
+                      if (abs >= 1_000_000) return `${sign}${(delta / 1_000_000).toFixed(2)}M`
+                      if (abs >= 1_000) return `${sign}${(delta / 1_000).toFixed(1)}K`
+                      return `${sign}${delta.toLocaleString()}`
+                    })()}
                   </strong>
                 </span>
                 <span className="text-zinc-600 hidden sm:inline">|</span>
