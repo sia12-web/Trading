@@ -10,6 +10,7 @@ export const dynamic = 'force-dynamic'
 interface AiTeamRequestBody {
   instrument: string
   livePrice?: number
+  candles?: Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }>
   chartContext?: LeoChatContext
   customPrompt?: string
   newsHeadlines?: string[]
@@ -34,10 +35,19 @@ export async function POST(req: NextRequest) {
         ? chartContext.currentPrice
         : 20000 // Fallback
 
-    // Prioritize real candles from chart context if available
+    // 1. Prioritize real candles directly passed by the client chart
     let candles: Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }> = []
 
-    if (chartContext?.recentCandles && chartContext.recentCandles.length > 0) {
+    if (body.candles && Array.isArray(body.candles) && body.candles.length > 0) {
+      candles = body.candles.map((c) => ({
+        time: typeof c.time === 'number' ? c.time : Math.floor(new Date(c.time).getTime() / 1000),
+        open: Number(c.open.toFixed(2)),
+        high: Number(c.high.toFixed(2)),
+        low: Number(c.low.toFixed(2)),
+        close: Number(c.close.toFixed(2)),
+        volume: c.volume ?? 1,
+      }))
+    } else if (chartContext?.recentCandles && chartContext.recentCandles.length > 0) {
       candles = chartContext.recentCandles.map((c) => ({
         time: c.time,
         open: Number(c.open.toFixed(2)),
@@ -47,37 +57,23 @@ export async function POST(req: NextRequest) {
         volume: c.volume ?? 1,
       }))
     } else {
-      // Derive pseudo-candles from chart context data points or baseline
-      const dataPoints = chartContext?.dataPoints || chartContext?.selectedDataPoints || []
-      candles = dataPoints
-        .filter((p) => p.category === 'POC' || p.category === 'VWAP' || p.category === 'EXTREME')
-        .map((p, idx) => {
-          const val = typeof p.value === 'number' ? p.value : parseFloat(String(p.value)) || livePrice
-          return {
-            time: Math.floor(Date.now() / 1000) - (20 - idx) * 300,
-            open: Number(val.toFixed(2)),
-            high: Number((val * 1.002).toFixed(2)),
-            low: Number((val * 0.998).toFixed(2)),
-            close: Number(val.toFixed(2)),
-            volume: typeof p.volume === 'number' ? p.volume : 500,
-          }
-        })
+      // Ground from actual multi-timeframe money levels present in chart context
+      const realLevels: number[] = [livePrice]
+      if (chartContext?.shortTermMoney?.ypoc) realLevels.push(chartContext.shortTermMoney.ypoc)
+      if (chartContext?.shortTermMoney?.yhigh) realLevels.push(chartContext.shortTermMoney.yhigh)
+      if (chartContext?.shortTermMoney?.ylow) realLevels.push(chartContext.shortTermMoney.ylow)
+      if (chartContext?.intermediateMoney?.poc5d) realLevels.push(chartContext.intermediateMoney.poc5d)
+      if (chartContext?.longTermMoney?.avwap5m) realLevels.push(chartContext.longTermMoney.avwap5m)
 
-      // If still no candles in context, construct 20-bar baseline around livePrice
-      if (candles.length === 0) {
-        for (let i = 0; i < 20; i++) {
-          const delta = Math.sin(i / 3) * (livePrice * 0.003)
-          const close = Number((livePrice + delta).toFixed(2))
-          candles.push({
-            time: Math.floor(Date.now() / 1000) - (20 - i) * 300,
-            open: Number((close - 2).toFixed(2)),
-            high: Number((close + (livePrice * 0.002)).toFixed(2)),
-            low: Number((close - (livePrice * 0.002)).toFixed(2)),
-            close,
-            volume: 800 + i * 20,
-          })
-        }
-      }
+      const minPx = Math.min(...realLevels)
+      const maxPx = Math.max(...realLevels)
+      const nowSec = Math.floor(Date.now() / 1000)
+
+      candles = [
+        { time: nowSec - 3600, open: minPx, high: maxPx, low: minPx, close: livePrice, volume: 1500 },
+        { time: nowSec - 1800, open: livePrice, high: maxPx, low: minPx, close: livePrice, volume: 1200 },
+        { time: nowSec, open: livePrice, high: Math.max(livePrice, maxPx), low: Math.min(livePrice, minPx), close: livePrice, volume: 1000 },
+      ]
     }
 
     const hedgingTelemetry = buildInstitutionalHedgingTelemetry({

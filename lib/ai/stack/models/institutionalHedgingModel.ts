@@ -72,6 +72,17 @@ export interface InstitutionalHedgingTelemetry {
   }>
 }
 
+export function getInstrumentStrikeStep(instrument?: string): number {
+  if (!instrument) return 50
+  const norm = instrument.toUpperCase()
+  if (norm.includes('DOW') || norm.includes('YM')) return 100
+  if (norm.includes('GOLD') || norm.includes('GC')) return 10
+  if (norm.includes('CRUDE') || norm.includes('OIL') || norm.includes('CL')) return 1
+  if (norm.includes('ES') || norm.includes('SPX')) return 25
+  if (norm.includes('NIKKEI') || norm.includes('NKD')) return 100
+  return 50 // Default for NQ / MNQ / NASDAQ
+}
+
 /**
  * Computes dealer gamma flip levels and volatility inflection.
  * In positive gamma (above flip), dealers sell rallies and buy dips (dampening volatility).
@@ -80,13 +91,16 @@ export interface InstitutionalHedgingTelemetry {
 export function computeDealerGammaLevels(
   currentPrice: number,
   candles: CandlePricePoint[],
-  _instrument?: string
+  instrument?: string
 ): DealerGammaLevels {
+  const strikeStep = getInstrumentStrikeStep(instrument)
+
   if (!candles || candles.length === 0 || currentPrice <= 0) {
+    const zeroGamma = Math.round(currentPrice / strikeStep) * strikeStep
     return {
-      zeroGammaLevel: currentPrice,
-      callWallResistance: Number((currentPrice * 1.01).toFixed(2)),
-      putWallSupport: Number((currentPrice * 0.99).toFixed(2)),
+      zeroGammaLevel: zeroGamma,
+      callWallResistance: zeroGamma + strikeStep,
+      putWallSupport: zeroGamma - strikeStep,
       currentRegime: 'INFLECTION',
       expectedBehavior: 'Dealer gamma pinning near current fair price.',
       volatilityMultiplier: 1.0,
@@ -111,10 +125,32 @@ export function computeDealerGammaLevels(
   const vwap = sumV > 0 ? sumPV / sumV : currentPrice
   const range = high - low > 0 ? high - low : currentPrice * 0.01
 
-  // Zero-gamma inflection resides near the primary multi-session volume node
+  // Compute 14-bar ATR if available
+  const sampleBars = candles.slice(-14)
+  let trSum = 0
+  for (let i = 1; i < sampleBars.length; i++) {
+    const cur = sampleBars[i]!
+    const prev = sampleBars[i - 1]!
+    trSum += Math.max(cur.high - cur.low, Math.abs(cur.high - prev.close), Math.abs(cur.low - prev.close))
+  }
+  const atr = sampleBars.length > 1 ? trSum / (sampleBars.length - 1) : range / 10
+
+  // Zero-gamma inflection resides near primary volume-weighted mean
   const zeroGammaLevel = Number(vwap.toFixed(2))
-  const callWallResistance = Number((high - range * 0.05).toFixed(2))
-  const putWallSupport = Number((low + range * 0.05).toFixed(2))
+
+  // Institutional Call Wall is the major round options strike ABOVE current price / session high
+  const rawCallTarget = Math.max(high, currentPrice + Math.max(atr * 0.75, strikeStep * 0.5))
+  let callWallResistance = Math.ceil(rawCallTarget / strikeStep) * strikeStep
+  if (callWallResistance <= currentPrice) {
+    callWallResistance = (Math.floor(currentPrice / strikeStep) + 1) * strikeStep
+  }
+
+  // Institutional Put Wall is the major round options strike BELOW current price / session low
+  const rawPutTarget = Math.min(low, currentPrice - Math.max(atr * 0.75, strikeStep * 0.5))
+  let putWallSupport = Math.floor(rawPutTarget / strikeStep) * strikeStep
+  if (putWallSupport >= currentPrice) {
+    putWallSupport = (Math.ceil(currentPrice / strikeStep) - 1) * strikeStep
+  }
 
   let currentRegime: 'POSITIVE_GAMMA' | 'NEGATIVE_GAMMA' | 'INFLECTION' = 'INFLECTION'
   let expectedBehavior = ''
@@ -125,17 +161,17 @@ export function computeDealerGammaLevels(
   if (diffPct > 0.0015) {
     currentRegime = 'POSITIVE_GAMMA'
     expectedBehavior =
-      'Dealers are long gamma. They counter-trend hedge by buying dips and selling rallies, providing market stability.'
+      'Dealers are long gamma. They counter-trend hedge by buying dips and selling rallies, dampening volatility.'
     volatilityMultiplier = 0.75
   } else if (diffPct < -0.0015) {
     currentRegime = 'NEGATIVE_GAMMA'
     expectedBehavior =
-      'Dealers are short gamma. They are forced to pro-cyclically hedge by selling into breakdowns, creating rapid volatility expansion.'
+      'Dealers are short gamma. They are forced to pro-cyclically hedge by selling into breakdowns, accelerating volatility.'
     volatilityMultiplier = 1.65
   } else {
     currentRegime = 'INFLECTION'
     expectedBehavior =
-      'Zero-gamma volatility inflection zone. Choppy hedging transitions expected; break below initiates negative gamma cascades.'
+      'Zero-gamma volatility inflection zone. Transition between dampening and accelerated market-maker delta hedging.'
     volatilityMultiplier = 1.2
   }
 
@@ -196,8 +232,14 @@ export function computeCtaRebalancingBands(
     trendBias = 'BEARISH'
   }
 
-  const distanceToLiquidationPts = Number(Math.abs(currentPrice - ctaLiquidationTrigger).toFixed(2))
-  const riskOfForcedSqueeze = distanceToLiquidationPts < atr * 0.5
+  // If CTAs are short, forced liquidation occurs on a rally above ctaLongTrigger.
+  // If CTAs are long, forced liquidation occurs on a drop below ctaLiquidationTrigger.
+  const distanceToLiquidationPts =
+    trendBias === 'BEARISH'
+      ? Number(Math.abs(currentPrice - ctaLongTrigger).toFixed(2))
+      : Number(Math.abs(currentPrice - ctaLiquidationTrigger).toFixed(2))
+
+  const riskOfForcedSqueeze = distanceToLiquidationPts < atr * 0.6
 
   return {
     trendBias,

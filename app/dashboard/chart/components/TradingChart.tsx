@@ -11716,11 +11716,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
 
 
-            {/* Quick 1-Click 1:1 Market Entry Buttons & Canvas Label Visibility Toggle */}
             <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-surface-900/90 border border-neutral-700/60 shadow-sm text-xs font-mono">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-bold bg-amber-950/60 border border-amber-500/50 text-amber-300 text-[11px] shadow-sm select-none" title="Read-Only Market Monitoring Mode. The system is observational and delivers live situational alerts and market analysis; it never places orders.">
-                👁️ MARKET MONITORING MODE
-              </span>
               <button
                 type="button"
                 onClick={() => {

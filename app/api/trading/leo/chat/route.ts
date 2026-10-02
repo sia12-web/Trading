@@ -12,6 +12,7 @@ import {
   compareMultipleRanges,
   formatRangeVolumeComparisonReport,
 } from '@/lib/trading/rangeVolumeComparison'
+import { buildInstitutionalHedgingTelemetry } from '@/lib/ai/stack/models/institutionalHedgingModel'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -95,6 +96,28 @@ export async function POST(req: NextRequest) {
           }
         } catch {
           // ignore calculation error
+        }
+      }
+
+      // 4. Institutional Hedging Telemetry injection for Leo
+      if (!chartContext.hedgingTelemetry) {
+        try {
+          const bars = chartContext.recentCandles || []
+          chartContext.hedgingTelemetry = buildInstitutionalHedgingTelemetry({
+            instrument: chartContext.instrument,
+            currentPrice: chartContext.currentPrice ?? 20000,
+            candles: bars.map((b) => ({
+              time: b.time,
+              open: b.open,
+              high: b.high,
+              low: b.low,
+              close: b.close,
+              volume: b.volume ?? 1,
+            })),
+            observedBasis: null,
+          })
+        } catch {
+          // ignore hedging telemetry computation errors
         }
       }
     }
@@ -239,9 +262,9 @@ export function buildDeskFallbackResponse(
   const curPrice = ctx.currentPrice != null ? ctx.currentPrice.toFixed(2) : 'active price'
   const sessionName = ctx.sessionDetails?.sessionName ?? 'Active Session'
 
-  // 1. Immediate close command
+  // 1. Immediate close situation notification (system never places broker orders)
   if (/close\s+(the\s+)?position|flatten|exit\s+now|close\s+now/i.test(lower)) {
-    return `Roger that. Executing immediate market close on ${ctx.instrument} at ${curPrice}. Flattening desk position.\n\n<execute>\n{\n  "action": "CLOSE_POSITION",\n  "reason": "Trader voice command: Close position"\n}\n</execute>`
+    return `### 👁️ **[READ-ONLY NOTIFICATION]**\n\nPosition exit situation noted for **${ctx.instrument}** at **${curPrice}**.\n\n*(The system and AI Leo are strictly in Read-Only Market Monitoring Mode and never place or close broker orders. Please manage your broker bracket directly).*`
   }
 
   // 2. Conditional Entry Strategy & Drawing Monitor (e.g. "monitor price for yesterday FRVP low volume node; if we see a bullish engulfing enter long...", "in low volume of yesterday fix range volume profile if we see a bullish engulfing enter")
@@ -367,7 +390,7 @@ ${tfLine}${cvdLine ? '\n' + cvdLine : ''}
 - **Direction:** **${direction}**
 - **Dynamic Stop Loss:** ${slLabel}
 - **Profit Target:** **${takeProfitMode} Risk:Reward**
-- **Execution Desk:** Armed & actively monitoring live ticks. Leo will automatically execute the order on ${inst} as soon as conditions confirm.
+- **Execution Desk:** Armed & actively monitoring live ticks. Leo will alert you as soon as the market situation confirms. *(The system is always in Read-Only Market Monitoring Mode and never places orders).*
 
 <execute>
 {

@@ -247,6 +247,7 @@ export interface LeoChatContext {
   trappedTraders?: string
   priceQuestioning?: PriceCritiqueEvaluation
   rangeComparisons?: RangeComparisonResult[]
+  hedgingTelemetry?: any
 }
 
 export interface LeoMessage {
@@ -1258,14 +1259,33 @@ ${
     : 'No active Higher Timeframe Long-Term Memories currently set.'
 }
 
+[INSTITUTIONAL HEDGING & CME BIG MONEY DEALER POSITIONING]:
+${
+  ctx.hedgingTelemetry
+    ? `- Dealer Gamma Regime: ${ctx.hedgingTelemetry.dealerGamma?.currentRegime ?? 'INFLECTION'} (Volatility Multiplier: ${ctx.hedgingTelemetry.dealerGamma?.volatilityMultiplier ?? 1.0}x)
+- Dealer Behavior: ${ctx.hedgingTelemetry.dealerGamma?.expectedBehavior ?? 'N/A'}
+- Zero-Gamma Inflection (Flip): ${ctx.hedgingTelemetry.dealerGamma?.zeroGammaLevel ?? 'N/A'}
+- Dealer Call Wall (Resistance Strike): ${ctx.hedgingTelemetry.dealerGamma?.callWallResistance ?? 'N/A'}
+- Dealer Put Wall (Support Strike): ${ctx.hedgingTelemetry.dealerGamma?.putWallSupport ?? 'N/A'}
+- CTA Trend Bias: ${ctx.hedgingTelemetry.ctaBands?.trendBias ?? 'NEUTRAL'}
+- CTA Liquidation Trigger: ${ctx.hedgingTelemetry.ctaBands?.ctaLiquidationTrigger ?? 'N/A'} (Distance: ${ctx.hedgingTelemetry.ctaBands?.distanceToLiquidationPts ?? 0} pts)
+- CTA Short Flip Trigger: ${ctx.hedgingTelemetry.ctaBands?.ctaShortFlipTrigger ?? 'N/A'}
+- Forced Squeeze Risk: ${ctx.hedgingTelemetry.ctaBands?.riskOfForcedSqueeze ? '⚠️ SQUEEZE RISK ACTIVE' : 'Normal'}
+- CME Basis Arbitrage: ${ctx.hedgingTelemetry.basisArbitrage?.basisPts ?? 0} pts basis vs ${ctx.hedgingTelemetry.basisArbitrage?.fairValueBasis ?? 0} pts fair value (${ctx.hedgingTelemetry.basisArbitrage?.arbitragePressure ?? 'NEUTRAL'})
+- Places They Must Act (Verified CME Triggers):
+${(ctx.hedgingTelemetry.placesTheyMustAct || []).map((p: any) => `  * ${p.type} @ ${p.price} [${p.urgency} urgency, Status: ${p.reactionStatus ?? 'PENDING'}] -> ${p.description}`).join('\n')}`
+    : 'Institutional hedging telemetry computed directly from live bars and volume anchors.'
+}
+
 [DATA REFERENCE POINT CLICKED / ATTACHED FROM CHART]:
 ${selectedSummary}
 
-COMMUNICATION GUIDELINES:
+COMMUNICATION GUIDELINES & ANTI-HALLUCINATION PROTOCOL:
 - Address the trader concisely and authoritatively as Leo.
-- Always quote exact prices from the chart telemetry above.
+- ZERO-HALLUCINATION MANDATE: Every numerical price, level, gamma wall, CTA trigger, and VWAP you cite MUST come directly from the verified telemetry above. Never fabricate or estimate price levels.
+- System Mode: The system is ALWAYS in Read-Only Market Monitoring Mode and NEVER places orders. Leo notifies the trader when situations happen and alerts them of critical market events.
 - User Drawings & Manual References: When the trader discusses their drawn trendline, range box, or manual FRVP, quote their exact prices and evaluate market structure using Dalton Auction Theory (acceptance vs rejection of Value, volume facilitation, rotation vs initiative breakout).
-- If the trader speaks an execution or alert command, confirm the exact parameters (minutes, prices, targets) and emit the required <execute> tag.
+- If the trader speaks an alert command or situation request, confirm the exact parameters (minutes, prices, targets) and emit the required <execute> tag.
 - Keep prose concise and fast to read — institutional traders value high signal-to-noise ratio over lengthy essays.
 `
 }

@@ -311,6 +311,7 @@ export function LeoAssistantPanel({
     setIsLoadingTeam(true)
     setTeamError(null)
     try {
+      const activeCandles = (candlesRef.current && candlesRef.current.length > 0 ? candlesRef.current : candles || []).slice(-100)
       const res = await fetch('/api/trading/ai-team', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -318,6 +319,14 @@ export function LeoAssistantPanel({
           instrument: context.instrument,
           livePrice: context.currentPrice,
           chartContext: context,
+          candles: activeCandles.map((c) => ({
+            time: typeof c.time === 'number' ? c.time : Math.floor(new Date(c.time).getTime() / 1000),
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: c.volume ?? 1,
+          })),
         }),
       })
       const data = await res.json()
@@ -349,6 +358,7 @@ export function LeoAssistantPanel({
   const [ttsEnabled, setTtsEnabled] = useState(false)
   const recognitionRef = useRef<any>(null)
   const isListeningRef = useRef(false)
+  const isSendingRef = useRef(false)
   const sessionBaseTranscriptRef = useRef('')
   const inputPromptRef = useRef('')
   const restartTimerRef = useRef<any>(null)
@@ -403,6 +413,7 @@ export function LeoAssistantPanel({
     recog.maxAlternatives = 1
 
     recog.onresult = (event: any) => {
+      if (!isListeningRef.current) return
       let sessionTranscript = ''
       for (let i = 0; i < event.results.length; i++) {
         const item = event.results[i]
@@ -413,6 +424,7 @@ export function LeoAssistantPanel({
       const base = sessionBaseTranscriptRef.current.trim()
       const combined = base ? `${base} ${sessionTranscript.trim()}` : sessionTranscript.trim()
       setInputPrompt(combined)
+      inputPromptRef.current = combined
     }
 
     recog.onerror = (event: any) => {
@@ -425,27 +437,29 @@ export function LeoAssistantPanel({
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
         isListeningRef.current = false
         setIsListening(false)
+        sessionBaseTranscriptRef.current = ''
       }
     }
 
     recog.onend = () => {
-      // If user still wants to listen, browser simply dropped due to silence/network timeout
-      if (isListeningRef.current) {
-        // Save whatever has been recognized so far as base for the next chunk
-        sessionBaseTranscriptRef.current = inputPromptRef.current.trim()
-        clearTimeout(restartTimerRef.current)
-        restartTimerRef.current = setTimeout(() => {
-          if (isListeningRef.current) {
-            try {
-              recog.start()
-            } catch {
-              // Ignore if already active
-            }
-          }
-        }, 150)
-      } else {
+      // If user stopped listening, discard transcript base and do not restart
+      if (!isListeningRef.current) {
         setIsListening(false)
+        sessionBaseTranscriptRef.current = ''
+        return
       }
+      // Browser dropped due to silence/network timeout while still intended to be listening
+      sessionBaseTranscriptRef.current = inputPromptRef.current.trim()
+      clearTimeout(restartTimerRef.current)
+      restartTimerRef.current = setTimeout(() => {
+        if (isListeningRef.current) {
+          try {
+            recog.start()
+          } catch {
+            // Ignore if already active
+          }
+        }
+      }, 150)
     }
 
     recognitionRef.current = recog
@@ -478,11 +492,16 @@ export function LeoAssistantPanel({
     clearTimeout(restartTimerRef.current)
     isListeningRef.current = false
     setIsListening(false)
+    sessionBaseTranscriptRef.current = ''
     if (recognitionRef.current) {
       try {
-        recognitionRef.current.stop()
+        recognitionRef.current.abort()
       } catch {
-        // Ignore stop errors
+        try {
+          recognitionRef.current.stop()
+        } catch {
+          // Ignore stop errors
+        }
       }
     }
   }
@@ -1727,11 +1746,32 @@ export function LeoAssistantPanel({
 
   // Send message to Leo via streaming API
   const handleSendMessage = async (textToSend?: string, pointsToSend?: LeoDataPoint[]) => {
-    if (isListeningRef.current) {
+    if (isSendingRef.current) return
+    isSendingRef.current = true
+
+    if (isListeningRef.current || recognitionRef.current) {
       stopListening()
+      try {
+        recognitionRef.current?.abort()
+      } catch {}
     }
-    const text = textToSend ?? inputPrompt
-    if (!text.trim()) return
+
+    const rawText = textToSend ?? inputPromptRef.current ?? inputPrompt
+    const text = (rawText || '').trim()
+
+    // Clear state, voice transcript refs, and DOM textarea synchronously BEFORE streaming
+    setInputPrompt('')
+    inputPromptRef.current = ''
+    sessionBaseTranscriptRef.current = ''
+    if (textareaRef.current) {
+      textareaRef.current.value = ''
+      textareaRef.current.style.height = '38px'
+    }
+
+    if (!text) {
+      isSendingRef.current = false
+      return
+    }
 
     // Abort active prior streaming request if running
     if (activeAbortControllerRef.current) {
@@ -1754,14 +1794,6 @@ export function LeoAssistantPanel({
 
     const nextMessages = [...messages, userMessage]
     setMessages(nextMessages)
-
-    // Clear state & voice transcript refs synchronously upon message send
-    setInputPrompt('')
-    inputPromptRef.current = ''
-    sessionBaseTranscriptRef.current = ''
-    if (textareaRef.current) {
-      textareaRef.current.style.height = '38px'
-    }
     setIsStreaming(true)
 
     // Append streaming assistant placeholder
@@ -1799,6 +1831,7 @@ export function LeoAssistantPanel({
           chartContext: {
             ...context,
             selectedDataPoints: points,
+            hedgingTelemetry: hedgingTelemetry ?? undefined,
           },
         }),
       })
@@ -1867,6 +1900,7 @@ export function LeoAssistantPanel({
         )
       )
     } finally {
+      isSendingRef.current = false
       if (activeAbortControllerRef.current === abortController) {
         activeAbortControllerRef.current = null
       }
@@ -1956,7 +1990,7 @@ export function LeoAssistantPanel({
       {isPanelOpen && (
         <div className="absolute top-2 bottom-2 right-2 z-[60] w-full max-w-[395px] flex flex-col rounded-2xl backdrop-blur-xl bg-neutral-950/90 border border-purple-500/35 shadow-2xl overflow-hidden transition-all duration-300">
           {/* Header Bar */}
-          <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-neutral-800/80 bg-neutral-900/60">
+          <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-neutral-800/80 bg-neutral-900/95 shrink-0 sticky top-0 z-30">
             <div className="flex items-center gap-2">
               <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
               <div>
@@ -1994,7 +2028,7 @@ export function LeoAssistantPanel({
               <button
                 type="button"
                 onClick={handleClose}
-                className="p-1.5 rounded-lg border border-neutral-800 bg-neutral-900/50 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700 transition-colors text-xs cursor-pointer z-10"
+                className="p-1.5 rounded-lg border border-neutral-800 bg-neutral-900/80 text-neutral-300 hover:text-white hover:border-neutral-600 hover:bg-neutral-800 transition-colors text-xs cursor-pointer z-10 shrink-0"
                 title="Close panel"
               >
                 ✕
@@ -2003,7 +2037,7 @@ export function LeoAssistantPanel({
           </div>
 
           {/* Time, Session & Market Telemetry Bar */}
-          <div className="px-3 py-1.5 bg-neutral-900/50 border-b border-neutral-800/60 flex items-center justify-between text-[10px] font-mono text-neutral-300">
+          <div className="px-3 py-1.5 bg-neutral-900/70 border-b border-neutral-800/60 flex items-center justify-between text-[10px] font-mono text-neutral-300 shrink-0">
             <span className="flex items-center gap-1">
               <span className="text-neutral-500">Session:</span>
               <span className="text-amber-300 font-semibold">
@@ -2060,7 +2094,7 @@ export function LeoAssistantPanel({
 
           {/* ── Active Position Management Card (When In Trade) ── */}
           {activePos && (
-            <div className="px-3 py-2 border-b border-neutral-800/80 bg-neutral-900/80">
+            <div className="px-3 py-2 border-b border-neutral-800/80 bg-neutral-900/80 shrink-0">
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-1.5">
                   <span
@@ -2564,7 +2598,7 @@ export function LeoAssistantPanel({
 
           {/* ── Clean Clicked Chart Reference Pill (Direct from Canvas Arrows) ── */}
           {attachedPoints.length > 0 && (
-            <div className="px-3 py-1.5 border-b border-neutral-800/70 bg-neutral-900/70 flex flex-wrap items-center gap-1">
+            <div className="px-3 py-1.5 border-b border-neutral-800/70 bg-neutral-900/70 flex flex-wrap items-center gap-1 shrink-0">
               <span className="text-[9px] text-neutral-400 font-mono">Attached:</span>
               {attachedPoints.map((pt) => (
                 <span
@@ -2646,7 +2680,7 @@ export function LeoAssistantPanel({
               </div>
 
               {/* Conversation History */}
-              <div className="flex-1 p-3 overflow-y-auto space-y-3 font-sans text-xs min-h-[160px]">
+              <div className="flex-1 min-h-0 p-3 overflow-y-auto space-y-3 font-sans text-xs">
             {messages.map((msg) => {
               const isUser = msg.role === 'user'
               // Strip <execute> block from regular visual chat text
@@ -2716,7 +2750,7 @@ export function LeoAssistantPanel({
 
           {/* Voice Feedback Preview if Listening */}
           {isListening && (
-            <div className="px-3 py-2 bg-purple-950/80 border-t border-purple-600/60 flex items-center justify-between text-xs font-mono text-purple-200">
+            <div className="px-3 py-2 bg-purple-950/80 border-t border-purple-600/60 flex items-center justify-between text-xs font-mono text-purple-200 shrink-0">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="relative flex h-2.5 w-2.5 shrink-0">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
@@ -2751,7 +2785,7 @@ export function LeoAssistantPanel({
           )}
 
           {/* Input & Voice Controls Bar */}
-          <div className="p-2.5 border-t border-neutral-800/80 bg-neutral-900/70 space-y-1.5">
+          <div className="p-2.5 border-t border-neutral-800/80 bg-neutral-900/70 space-y-1.5 shrink-0">
             {/* Quick Action Suggestion Chips */}
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5 text-[9.5px] font-mono">
               <button
@@ -2795,10 +2829,9 @@ export function LeoAssistantPanel({
             <form
               onSubmit={(e) => {
                 e.preventDefault()
-                if (isListeningRef.current) {
-                  stopListening()
+                if (inputPrompt.trim()) {
+                  handleSendMessage()
                 }
-                handleSendMessage()
               }}
               className="flex items-end gap-1.5"
             >
@@ -2837,9 +2870,6 @@ export function LeoAssistantPanel({
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault()
                       if (inputPrompt.trim()) {
-                        if (isListeningRef.current) {
-                          stopListening()
-                        }
                         handleSendMessage()
                       }
                     }
