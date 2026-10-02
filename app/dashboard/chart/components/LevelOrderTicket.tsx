@@ -151,7 +151,7 @@ export function LevelOrderTicket({
   regime,
   regimeConfidence,
   canPlace,
-  entryWindow,
+  entryWindow: _entryWindow,
   useLiveAccount = true,
   initialAccountSize,
   strategyRange = null,
@@ -163,7 +163,7 @@ export function LevelOrderTicket({
   sessionFillsUsed = 0,
   onClose,
   onAutoConfirmError,
-  onPlaced,
+  onPlaced: _onPlaced,
 }: Props) {
   const entrySource = normalizeEntrySource(
     entrySourceProp ||
@@ -511,106 +511,8 @@ export function LevelOrderTicket({
 
   const submit = () => {
     if (placingRef.current) return false
-    if (useLiveAccount && accountLoading) {
-      failSubmit('Wait for live OANDA equity to load before placing')
-      return false
-    }
-    if (!canPlace) {
-      failSubmit(
-        'Entries locked — check session gate / attempt ladder / locked instrument'
-      )
-      return false
-    }
-    if (tradeifyOn && tradeifyDecision && !tradeifyDecision.allowed) {
-      failSubmit(tradeifyDecision.refuseMessage)
-      return false
-    }
-    const limit = snappedLimit
-    if (!preview) {
-      failSubmit(
-        isManual
-          ? 'Set a valid limit and stop (stop must be beyond the limit)'
-          : 'Invalid account size or level price'
-      )
-      return false
-    }
-
-    placingRef.current = true
-    setPlacing(true)
-
-    const stopGuard = assertProtectiveStop({
-      instrument,
-      entry: limit,
-      stop: isManual && Number.isFinite(stopInput) ? stopInput : preview.stop_loss_price,
-      direction,
-      plannedStop: isManual && Number.isFinite(stopInput) ? stopInput : preview.stop_loss_price,
-    })
-    if (!stopGuard.ok) {
-      placingRef.current = false
-      setPlacing(false)
-      failSubmit(stopGuard.message)
-      return false
-    }
-    const stop = stopGuard.stop
-    let tp = displayTp
-    if (!Number.isFinite(tp) || tp <= 0) {
-      tp = snapTargetToTick(instrument, limit, preview.profit_target_price, direction)
-    }
-    if (direction === 'LONG' && tp <= limit) {
-      placingRef.current = false
-      setPlacing(false)
-      failSubmit('Take profit must be above the limit for LONG')
-      return false
-    }
-    if (direction === 'SHORT' && tp >= limit) {
-      placingRef.current = false
-      setPlacing(false)
-      failSubmit('Take profit must be below the limit for SHORT')
-      return false
-    }
-
-    // Re-size off snapped prices so risk stays exact
-    const sized =
-      (tradeifyOn && tradeifyDecision
-        ? previewPositionSizingFromRiskAmount(
-            limit,
-            TRADEIFY_STARTING_BALANCE,
-            direction,
-            stop,
-            tradeifyDecision.riskDollars
-          )
-        : previewPositionSizing(limit, accountSize, direction, stop, riskPct)) ?? preview
-
-    onPlaced({
-      instrument,
-      level: limit,
-      levelType: isManual ? 'manual' : levelType,
-      entrySource,
-      auctionTicket: false,
-      entryReason:
-        entryReason ||
-        (isManual
-          ? `Manual ${direction} limit @ ${limit.toLocaleString()} — ${
-              tradeifyOn
-                ? formatTradeifyRiskChip(tradeifyFills)
-                : `${riskPct}% risk`
-            }`
-          : `${direction} at ${levelType || 'desk'} level ${limit.toLocaleString()} — liquidity / stop-pool thesis`),
-      direction,
-      stopLoss: stop,
-      profitTarget: tp,
-      positionSize: sized.position_size,
-      riskAmount: sized.risk_amount,
-      riskPercent: sized.risk_percent,
-      accountSize: tradeifyOn ? TRADEIFY_STARTING_BALANCE : accountSize,
-      riskProfile: tradeifyOn ? 'tradeify_growth_50k' : 'oanda_cash',
-      entryWindow,
-      regime,
-      regimeConfidence,
-      placedAt: Date.now(),
-      strategyRange: strategyRange ?? null,
-    })
-    return true
+    failSubmit('Order placement is disabled. System is strictly in Market Monitoring Mode.')
+    return false
   }
 
   // Auto-confirm (risk-box flow already collected entry + SL/TP) — submit as
@@ -669,7 +571,7 @@ export function LevelOrderTicket({
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold text-white">
-              {isManual ? 'Place Market Order' : 'Execute Market Order'}
+              👁️ Monitor Level / Situation Note
             </h3>
             <p className="mt-1 text-xs text-gray-400">
               {instrument} ·{' '}

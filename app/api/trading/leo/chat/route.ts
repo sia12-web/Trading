@@ -8,6 +8,10 @@ import {
 import { getLatestDatabentoLiveQuote } from '@/lib/databento/liveHub'
 import { detectCandlestickPatterns } from '@/lib/trading/candlestickPatterns'
 import { evaluatePriceQuestioning, isPriceQuestioningSessionActive } from '@/lib/trading/priceQuestioning'
+import {
+  compareMultipleRanges,
+  formatRangeVolumeComparisonReport,
+} from '@/lib/trading/rangeVolumeComparison'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -72,6 +76,25 @@ export async function POST(req: NextRequest) {
         }
         if (activePatterns.length > 0) {
           chartContext.candlestickPatterns = { activePatterns }
+        }
+      }
+
+      // 3. Multi-Range Volume Comparison calculation
+      if (
+        chartContext.userDrawings?.ranges &&
+        chartContext.userDrawings.ranges.length >= 2 &&
+        (!chartContext.rangeComparisons || chartContext.rangeComparisons.length === 0)
+      ) {
+        try {
+          const comparisons = compareMultipleRanges(
+            chartContext.userDrawings.ranges as any,
+            chartContext.currentPrice
+          )
+          if (comparisons.length > 0) {
+            chartContext.rangeComparisons = comparisons
+          }
+        } catch {
+          // ignore calculation error
         }
       }
     }
@@ -365,12 +388,8 @@ ${tfLine}${cvdLine ? '\n' + cvdLine : ''}
 </execute>`
   }
 
-  // 3. Direct order placement command (e.g. "Leo buy 1 NQ", "Leo enter long", "Leo sell DOW", "place order")
+  // 3. Direct order placement command — system is strictly for monitoring markets, situations & notes
   if (/\b(buy|long|sell|short|enter|place\s+order|open\s+position|take\s+(a\s+)?trade)\b/i.test(lower)) {
-    const isShort = /\b(sell|short)\b/i.test(lower)
-    const direction: 'LONG' | 'SHORT' = isShort ? 'SHORT' : 'LONG'
-    
-    // Resolve instrument
     let inst = ctx.instrument || 'NASDAQ'
     if (/\bdow\b|ym/i.test(lower)) inst = 'DOW'
     else if (/\bnasdaq\b|nq/i.test(lower)) inst = 'NASDAQ'
@@ -378,54 +397,14 @@ ${tfLine}${cvdLine ? '\n' + cvdLine : ''}
     else if (/\bcrude\b|oil|cl/i.test(lower)) inst = 'CRUDE'
     else if (/\bnikkei\b|nk/i.test(lower)) inst = 'NIKKEI'
 
-    // Resolve price
-    const matchPrice = lower.match(/(?:at|@|price)\s*([\d,]+(?:\.\d+)?)/i)
-    const fallbackPrice =
-      inst === 'DOW' ? 52500 : inst === 'GOLD' ? 4350 : inst === 'CRUDE' ? 104 : 29500
-    const rawPrice = matchPrice ? parseFloat(matchPrice[1]!.replace(/,/g, '')) : (ctx.currentPrice ?? fallbackPrice)
-    const price = Number.isFinite(rawPrice) && rawPrice > 0 ? rawPrice : fallbackPrice
+    return `### 👁️ **[MARKET MONITORING MODE ACTIVE] (${inst})**
 
-    // Resolve SL and TP brackets
-    const slDist =
-      inst === 'DOW' ? 60 : inst === 'GOLD' ? 5 : inst === 'CRUDE' ? 0.5 : inst === 'NIKKEI' ? 100 : 25
-    const tpDist =
-      inst === 'DOW' ? 120 : inst === 'GOLD' ? 10 : inst === 'CRUDE' ? 1.0 : inst === 'NIKKEI' ? 200 : 50
+Order placement is **disabled** on this system. The desk is strictly configured for:
+- 📊 **Market Monitoring:** Live tick tracking, VWAP, CVD order flow & price levels for **${inst}**.
+- 🎯 **Situations:** Arming and analyzing high-probability market setups.
+- 📝 **Journal Notes:** Documenting structural observations and trade reflections.
 
-    const matchSl = lower.match(/(?:stop|sl)\s*(?:at\s*)?([\d,]+(?:\.\d+)?)/i)
-    const matchTp = lower.match(/(?:target|tp|profit)\s*(?:at\s*)?([\d,]+(?:\.\d+)?)/i)
-
-    const stopLoss = matchSl
-      ? parseFloat(matchSl[1]!.replace(/,/g, ''))
-      : (direction === 'LONG' ? price - slDist : price + slDist)
-
-    const profitTarget = matchTp
-      ? parseFloat(matchTp[1]!.replace(/,/g, ''))
-      : (direction === 'LONG' ? price + tpDist : price - tpDist)
-
-    return `### 🚀 Leo Order Placed & Journaled
-
-Executing **${direction}** on **${inst}** at **${price.toLocaleString()}**:
-- **Direction:** ${direction}
-- **Entry Price:** ${price.toLocaleString()}
-- **Stop Loss:** ${stopLoss.toLocaleString()} (${direction === 'LONG' ? '-' : '+'}${Math.abs(price - stopLoss).toFixed(1)} pts)
-- **Profit Target:** ${profitTarget.toLocaleString()} (${direction === 'LONG' ? '+' : '-'}${Math.abs(profitTarget - price).toFixed(1)} pts)
-- **Order History:** ✅ Transmitted to execution desk and saved in Order History.
-- **Chart Tracking:** ✅ Active on chart — monitoring live price and P&L tick-by-tick.
-
-*(Note: AI never auto-exits; only you or your bracket stops/targets close the position).*
-
-<execute>
-{
-  "action": "PLACE_ORDER",
-  "instrument": "${inst}",
-  "direction": "${direction}",
-  "price": ${price},
-  "stopLoss": ${stopLoss},
-  "profitTarget": ${profitTarget},
-  "size": 1,
-  "reason": "Trader command: ${lastMsg.replace(/["\\]/g, '')}"
-}
-</execute>`
+*No live or simulated orders will be placed by the system.*`
   }
 
   // 3. Trade status command: "how is my trade going", "position status", "how are we doing"
@@ -637,17 +616,120 @@ ${tl.priceRelation === 'TESTING'
     }
   }
 
-  // 5. User Drawings: Range / Box analysis
+  // 5. User Drawings: Range Volume Comparison & S/R Readiness analysis
+  // e.g. "leo compare the volume traded in these ranges", "compare volume in these ranges", "are these ranges good or bad support or resistance", "compare volumes"
+  if (
+    /\b(compare\s+(the\s+)?volume|compare\s+(these\s+)?ranges|compare\s+levels|volume\s+in\s+these\s+ranges|good\s+or\s+bad\s+support|good\s+or\s+bad\s+resisten?ce|volume\s+(were\s+)?(decreased|increased)|volume\s+traded\s+in\s+these\s+ranges)\b/i.test(
+      lower
+    ) ||
+    ((lower.includes('compare') || lower.includes('volume')) && lower.includes('range'))
+  ) {
+    const comparisons =
+      ctx.rangeComparisons && ctx.rangeComparisons.length > 0
+        ? ctx.rangeComparisons
+        : ctx.userDrawings?.ranges && ctx.userDrawings.ranges.length >= 2
+        ? compareMultipleRanges(ctx.userDrawings.ranges as any, ctx.currentPrice)
+        : []
+
+    if (comparisons.length > 0) {
+      const report = formatRangeVolumeComparisonReport(comparisons)
+      return `### 📊 Leo Range Volume Comparison & S/R Readiness (${ctx.instrument} @ ${curPrice})
+
+> *"Auction Market Theory Dictum: Price advertises opportunity, but volume measures acceptance. When price revisits prior levels, volume expansion vs exhaustion determines whether a level holds as support/resistance or shatters."*
+
+---
+
+${report}
+
+---
+
+### 🛡️ Institutional Desk Readiness Directives:
+${comparisons
+  .map((c) => {
+    const isGoodSup =
+      c.supportReadiness.classification === 'GOOD_SUPPORT' ||
+      c.supportReadiness.classification === 'ACCUMULATION_SUPPORT'
+    const isGoodRes =
+      c.resistanceReadiness.classification === 'GOOD_RESISTANCE' ||
+      c.resistanceReadiness.classification === 'DISTRIBUTION_RESISTANCE'
+
+    return `- **For Floor Level (${Math.min(c.rangeA.priceLow, c.rangeB.priceLow).toLocaleString()} – ${Math.min(c.rangeA.priceHigh, c.rangeB.priceHigh).toLocaleString()}):** ${
+      isGoodSup
+        ? '✅ **VALIDATED SUPPORT FLOOR.** Volume confirms supply exhaustion/accumulation. Watch for reversal wick to buy.'
+        : '⚠️ **FRAGILE SUPPORT.** Heavy distribution observed. High probability of downward knife-catch if entered without confirmation.'
+    }
+- **For Overhead Level (${Math.max(c.rangeA.priceLow, c.rangeB.priceLow).toLocaleString()} – ${Math.max(c.rangeA.priceHigh, c.rangeB.priceHigh).toLocaleString()}):** ${
+      isGoodRes
+        ? '✅ **VALIDATED RESISTANCE CEILING.** Volume confirms buyer exhaustion/distribution. Watch for rejection to short or take profits.'
+        : '⚠️ **VULNERABLE RESISTANCE.** Aggressive initiative buying. High probability of upside breakout.'
+    }`
+  })
+  .join('\n')}
+
+Standing by to monitor tick-by-tick order flow and alert you the instant price interacts with these ranges.`
+    }
+
+    // If only 1 range is currently drawn
+    const singleRange = ctx.userDrawings?.ranges?.[0]
+    if (singleRange) {
+      const volStr =
+        singleRange.totalVolume != null ? singleRange.totalVolume.toLocaleString() : 'calculating'
+      const rateStr =
+        singleRange.volumeRatePerMin != null ? `${singleRange.volumeRatePerMin} contracts/min` : 'N/A'
+      const buyPct = singleRange.buyRatioPct ?? 50
+      const deltaStr =
+        singleRange.delta != null
+          ? `${singleRange.delta >= 0 ? '+' : ''}${singleRange.delta.toLocaleString()}`
+          : '0'
+
+      return `### 📊 Leo Range Volume Analysis (${ctx.instrument} @ ${curPrice})
+
+Currently tracking 1 range on chart (**${singleRange.label || 'Range Box'}**):
+- **Traded Volume:** **${volStr} contracts** (${rateStr}) across ${singleRange.durationMin} minutes.
+- **Order Flow Delta:** **${deltaStr} contracts** (${buyPct}% Buy / ${100 - buyPct}% Sell).
+- **Price Boundaries:** **${singleRange.priceLow.toLocaleString()} – ${singleRange.priceHigh.toLocaleString()}** (POC: **${singleRange.poc ?? singleRange.midPrice}**).
+
+**Support & Resistance Readiness Rules:**
+1. **To compare volume across multiple ranges:** Draw a second range box (Hotkey: **R**) over a prior consolidation, session retest, or reference zone. I will automatically calculate whether volume increased or decreased and classify whether the levels are **Good vs Bad Support** and **Good vs Bad Resistance**!
+2. **Current Level Read:**
+   - If market retests **${singleRange.priceLow.toLocaleString()}** on **decreasing volume** (< 70% of current rate): Signals supply exhaustion -> **Good Support**.
+   - If market retests **${singleRange.priceLow.toLocaleString()}** on **surging volume with sell delta**: Signals liquidation -> **Bad Support** (breakdown threat).
+   - If market tests **${singleRange.priceHigh.toLocaleString()}** on **decreasing volume**: Signals buyer exhaustion -> **Good Resistance**.
+   - If market tests **${singleRange.priceHigh.toLocaleString()}** on **surging buy volume**: Signals breakout -> **Bad Resistance** (breakout threat).`
+    }
+
+    // If no ranges are drawn yet
+    return `### 📊 Leo Range Volume Comparison & S/R Readiness Engine (${ctx.instrument} @ ${curPrice})
+
+No manual range boxes are currently drawn on your chart canvas.
+
+**How to Compare Volumes Traded in Different Ranges:**
+1. **Draw Ranges:** Use the Range tool (Hotkey: **R**) to draw two or more boxes over consolidation levels, session swings, or retest zones.
+2. **Instant Volume Telemetry:** The engine automatically measures total contracts, volume rate per minute, order flow delta, and POC for each range.
+3. **Automated Comparison:** I will compare the ranges and tell you:
+   - Whether volumes **increased or decreased** between the levels (exact % and contracts).
+   - **Support Readiness:** Determines if the lower level will act as **Good Support** (supply exhaustion) or **Bad Support** (aggressive seller distribution / breakdown threat).
+   - **Resistance Readiness:** Determines if the upper level will act as **Good Resistance** (buyer exhaustion) or **Bad Resistance** (aggressive buyer absorption / breakout threat).
+
+Draw your ranges on the chart now, then ask me again: *"Leo compare the volume traded in these ranges"*!`
+  }
+
+  // 5b. User Drawings: Single Range / Box analysis
   if (/range|box|rectangle|square|consolidation/i.test(lower)) {
     const r = ctx.userDrawings?.ranges?.[0]
     if (r) {
+      const volBlock =
+        r.totalVolume != null
+          ? `\n- **Traded Volume:** **${r.totalVolume.toLocaleString()} contracts** (${r.volumeRatePerMin ?? 0} vol/min, ${r.buyRatioPct ?? 50}% buy, delta ${r.delta != null && r.delta >= 0 ? '+' : ''}${r.delta?.toLocaleString() ?? 0}, POC: **${r.poc ?? r.midPrice}**)`
+          : ''
+
       return `### Leo Range / Bracket Assessment (${ctx.instrument} @ ${curPrice})
 
 Tracking your drawn **${r.label || 'Range Box'}**:
 - **Boundary Extremes:** High **${r.priceHigh.toLocaleString()}** | Low **${r.priceLow.toLocaleString()}**
 - **Bracket Dimensions:** **${r.heightPts.toFixed(1)} pts** span across **${r.durationMin} minutes** (${r.startTimeEt} – ${r.endTimeEt})
 - **Equilibrium (Midpoint):** **${r.midPrice.toLocaleString()}**
-- **Location Status:** Market is **${r.priceRelation}** the range (${r.positionPct}% of bracket).
+- **Location Status:** Market is **${r.priceRelation}** the range (${r.positionPct}% of bracket).${volBlock}
 
 **Dalton Auction Theory Read:**
 ${r.priceRelation === 'INSIDE'

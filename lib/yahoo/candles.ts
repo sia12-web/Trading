@@ -38,15 +38,16 @@ function aggregateTo30m(candles: YahooCandle[]): YahooCandle[] {
 
   for (const c of candles) {
     const start = Math.floor(c.time / BUCKET) * BUCKET
+    const vol = Number.isFinite(c.volume) ? c.volume : 0
     if (!cur || start !== bucketStart) {
       if (cur) out.push(cur)
       bucketStart = start
-      cur = { time: start, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume }
+      cur = { time: start, open: c.open, high: c.high, low: c.low, close: c.close, volume: vol }
     } else {
       cur.high = Math.max(cur.high, c.high)
       cur.low = Math.min(cur.low, c.low)
       cur.close = c.close
-      cur.volume += c.volume
+      cur.volume += vol   // only add finite values — NaN/null bars don't corrupt the sum
     }
   }
   if (cur) out.push(cur)
@@ -63,15 +64,16 @@ function aggregateTo4H(candles: YahooCandle[]): YahooCandle[] {
 
   for (const c of candles) {
     const start = Math.floor(c.time / BUCKET) * BUCKET
+    const vol = Number.isFinite(c.volume) ? c.volume : 0
     if (!cur || start !== bucketStart) {
       if (cur) out.push(cur)
       bucketStart = start
-      cur = { time: start, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume }
+      cur = { time: start, open: c.open, high: c.high, low: c.low, close: c.close, volume: vol }
     } else {
       cur.high = Math.max(cur.high, c.high)
       cur.low = Math.min(cur.low, c.low)
       cur.close = c.close
-      cur.volume += c.volume
+      cur.volume += vol   // only add finite values — NaN/null bars don't corrupt the sum
     }
   }
   if (cur) out.push(cur)
@@ -176,13 +178,15 @@ function snapDailyCandles(candles: YahooCandle[]): YahooCandle[] {
       byDay.set(day, { ...c, time: day })
       continue
     }
+    // Yahoo 1d feed reports cumulative daily volume per row — use Math.max, not sum.
+    // Summing two same-day rows (e.g. a pre-market stub + the RTH bar) double-counts.
     byDay.set(day, {
       time: day,
       open: prev.open,
       high: Math.max(prev.high, c.high),
       low: Math.min(prev.low, c.low),
       close: c.close,
-      volume: (prev.volume || 0) + (c.volume || 0),
+      volume: Math.max(prev.volume || 0, c.volume || 0),
     })
   }
   return [...byDay.values()].sort((a, b) => a.time - b.time)

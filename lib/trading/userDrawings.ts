@@ -316,7 +316,8 @@ export function computeTrendlineMetrics(
 export function computeRangeMetrics(
   p1: { time: number; price: number },
   p2: { time: number; price: number },
-  currentPrice?: number | null
+  currentPrice?: number | null,
+  candles?: Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }>
 ) {
   const priceHigh = Math.max(p1.price, p2.price)
   const priceLow = Math.min(p1.price, p2.price)
@@ -343,6 +344,59 @@ export function computeRangeMetrics(
     }
   }
 
+  let totalVolume: number | undefined
+  let volumeRatePerMin: number | undefined
+  let buyVolume: number | undefined
+  let sellVolume: number | undefined
+  let delta: number | undefined
+  let buyRatioPct: number | undefined
+  let poc: number | undefined
+
+  if (candles && candles.length > 0) {
+    let tot = 0
+    let buyTot = 0
+    let sellTot = 0
+    const bucketStep = heightPts > 0 ? Math.max(0.25, heightPts / 20) : 1
+    const bucketMap = new Map<number, number>()
+
+    const scoped = candles.filter((c) => {
+      if (!Number.isFinite(c.time) || !Number.isFinite(c.high) || !Number.isFinite(c.low)) return false
+      return c.time >= timeStart - 60 && c.time <= timeEnd + 60
+    })
+
+    for (const c of scoped) {
+      const vol = Math.max(0, c.volume > 0 ? c.volume : 1)
+      tot += vol
+      if (c.close >= c.open) {
+        buyTot += vol
+      } else {
+        sellTot += vol
+      }
+      const candleMid = (c.high + c.low + c.close) / 3
+      const bucket = Math.round(candleMid / bucketStep) * bucketStep
+      bucketMap.set(bucket, (bucketMap.get(bucket) ?? 0) + vol)
+    }
+
+    if (tot > 0) {
+      totalVolume = Math.round(tot)
+      buyVolume = Math.round(buyTot)
+      sellVolume = Math.round(sellTot)
+      delta = buyVolume - sellVolume
+      buyRatioPct = Math.round((buyVolume / totalVolume) * 100)
+      volumeRatePerMin = Number((totalVolume / Math.max(1, durationMin)).toFixed(1))
+
+      let maxBVol = -1
+      let bestPoc = midPrice
+      for (const [p, v] of bucketMap.entries()) {
+        if (v > maxBVol) {
+          maxBVol = v
+          bestPoc = Number(p.toFixed(2))
+        }
+      }
+      poc = bestPoc
+    }
+  }
+
   return {
     priceHigh,
     priceLow,
@@ -353,5 +407,13 @@ export function computeRangeMetrics(
     durationMin,
     priceRelation,
     positionPct: Math.round(positionPct),
+    totalVolume,
+    volumeRatePerMin,
+    buyVolume,
+    sellVolume,
+    delta,
+    buyRatioPct,
+    poc,
   }
 }
+

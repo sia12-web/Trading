@@ -172,6 +172,7 @@ import {
   computeRangeMetrics,
   formatEtTime,
 } from '@/lib/trading/userDrawings'
+import { compareMultipleRanges } from '@/lib/trading/rangeVolumeComparison'
 import { playTradingViewChime } from '@/lib/chart/soundEffects'
 import {
   type LeoLongTermMemory,
@@ -675,6 +676,8 @@ interface TooltipData {
   volume: number
   change: number
   changePct: number
+  cvd?: number
+  barDelta?: number
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -684,6 +687,20 @@ const INSTRUMENT_META: Record<Instrument, { label: string; symbol: string; color
   NASDAQ: { label: 'Micro Nasdaq · MNQ', symbol: 'MNQ', color: '#0f766e', basePrice: 29500 },
   GOLD: { label: 'Micro Gold · MGC', symbol: 'MGC', color: '#ca8a04', basePrice: 4350 },
   CRUDE: { label: 'Crude · CL', symbol: 'CL', color: '#78716c', basePrice: 104 },
+}
+
+/** Exchange-native axis precision keeps labels clean like TradingView. */
+function deskCandlePriceFormat(instrument: Instrument) {
+  if (instrument === 'DOW') {
+    return { type: 'price' as const, precision: 0, minMove: 1 }
+  }
+  if (instrument === 'GOLD') {
+    return { type: 'price' as const, precision: 1, minMove: 0.1 }
+  }
+  if (instrument === 'NASDAQ') {
+    return { type: 'price' as const, precision: 2, minMove: 0.25 }
+  }
+  return { type: 'price' as const, precision: 2, minMove: 0.01 }
 }
 
 function paintPositionBandOverlay(
@@ -933,6 +950,18 @@ function OHLCVTooltip({ data, color }: { data: TooltipData | null; color: string
       {data.volume > 0 && (
         <span className="text-gray-500">
           V <span className="text-cyan-400 font-semibold">{data.volume >= 1000 ? `${(data.volume / 1000).toFixed(1)}k` : data.volume.toLocaleString()}</span>
+        </span>
+      )}
+      {data.cvd !== undefined && (
+        <span className="text-gray-500">
+          CVD <span className={`font-semibold ${data.cvd >= 0 ? 'text-cyan-400' : 'text-rose-400'}`}>
+            {data.cvd >= 0 ? '+' : ''}{Math.abs(data.cvd) >= 1000 ? `${(data.cvd / 1000).toFixed(1)}k` : data.cvd.toLocaleString()}
+          </span>
+          {data.barDelta !== undefined && (
+            <span className={`text-[10px] ml-1 ${data.barDelta >= 0 ? 'text-cyan-300' : 'text-rose-300'}`}>
+              (Δ {data.barDelta >= 0 ? '+' : ''}{Math.abs(data.barDelta) >= 1000 ? `${(data.barDelta / 1000).toFixed(1)}k` : data.barDelta.toLocaleString()})
+            </span>
+          )}
         </span>
       )}
       <span className={isUp ? 'text-green-400' : 'text-red-400'}>
@@ -1502,11 +1531,13 @@ export function TradingChart({
   const cvdCandleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const cachedCvdBarsRef = useRef<any[]>([])
   const cvdTimeSyncingRef = useRef(false)
-  const cvdIndependentZoomRef = useRef(false)
   const [cvdFollowsPrice, setCvdFollowsPrice] = useState(true)
   const syncCvdFromMainRef = useRef<() => void>(() => {})
+  const syncMainFromCvdRef = useRef<() => void>(() => {})
   const detachCvdFromPriceRef = useRef<() => void>(() => {})
   const relinkCvdToPriceRef = useRef<() => void>(() => {})
+  const [syncCrosshair, setSyncCrosshair] = useState<{ x: number; timeStr: string } | null>(null)
+
   const rangesDiffer = (
     r1: { from: number; to: number } | null,
     r2: { from: number; to: number } | null,
@@ -1515,9 +1546,10 @@ export function TradingChart({
     if (!r1 || !r2) return true
     return Math.abs(r1.from - r2.from) >= eps || Math.abs(r1.to - r2.to) >= eps
   }
+
+  // 1:1 Bidirectional lockstep zoom & pan between main price chart and CVD sub-pane
   syncCvdFromMainRef.current = () => {
     if (!showCvdSubPaneRef.current || cvdTimeSyncingRef.current) return
-    if (cvdIndependentZoomRef.current) return
     const main = chartRef.current
     const cvd = cvdChartRef.current
     if (!main || !cvd) return
@@ -1535,15 +1567,33 @@ export function TradingChart({
       cvdTimeSyncingRef.current = false
     })
   }
-  detachCvdFromPriceRef.current = () => {
-    if (cvdIndependentZoomRef.current) return
-    cvdIndependentZoomRef.current = true
-    setCvdFollowsPrice(false)
+
+  syncMainFromCvdRef.current = () => {
+    if (!showCvdSubPaneRef.current || cvdTimeSyncingRef.current) return
+    const main = chartRef.current
+    const cvd = cvdChartRef.current
+    if (!main || !cvd) return
+    const range = cvd.timeScale().getVisibleLogicalRange()
+    if (!range) return
+    const current = main.timeScale().getVisibleLogicalRange()
+    if (!rangesDiffer(current, range)) return
+    cvdTimeSyncingRef.current = true
+    try {
+      main.timeScale().setVisibleLogicalRange(range)
+    } catch {
+      /* ignore */
+    }
+    requestAnimationFrame(() => {
+      cvdTimeSyncingRef.current = false
+    })
   }
+
+  detachCvdFromPriceRef.current = () => {
+    // Keep 1:1 lockstep intact — never allow accidental horizontal detachment
+  }
+
   relinkCvdToPriceRef.current = () => {
-    const wasIndependent = cvdIndependentZoomRef.current
-    cvdIndependentZoomRef.current = false
-    if (!cvdFollowsPrice || wasIndependent) setCvdFollowsPrice(true)
+    setCvdFollowsPrice(true)
     requestAnimationFrame(() => syncCvdFromMainRef.current())
   }
   const cvdSessionOverlayRef = useRef<HTMLDivElement>(null)
@@ -4200,6 +4250,11 @@ export function TradingChart({
     for (const e of newsEvents) {
       const ms = parseCalendarEventMs(e.time, nowMs)
       if (!ms || !Number.isFinite(ms)) continue
+
+      // Only show UPCOMING events — skip anything already released (past news)
+      const isReleased = !!(e.isReleased || (e.actual != null && String(e.actual).trim() !== ''))
+      if (isReleased) continue
+
       const sec = Math.floor(ms / 1000)
       const chartT = toChartTime(sec, tz)
       const x = timeToX(chart.timeScale(), chartT, candleTimes)
@@ -4240,14 +4295,12 @@ export function TradingChart({
         setActiveNewsTooltip({ event: item.event, x: px, y: py })
       }
 
+      // All events reaching here are UPCOMING (not yet released)
       const isHigh = item.event.impact?.toLowerCase().includes('high')
-      const isReleased = !!(item.event.isReleased || (item.event.actual != null && String(item.event.actual).trim() !== ''))
-      const bg = isReleased ? '#059669' : isHigh ? '#7c3aed' : '#6d28d9'
-      const icon = isReleased ? '🎯' : '⚡'
-      const actualStr = item.event.actual != null ? `\nActual: ${item.event.actual}${item.event.outcome ? ` [${item.event.outcome}]` : ''}` : ''
+      const bg = isHigh ? '#7c3aed' : '#6d28d9'
       const estStr = item.event.estimate != null ? ` | Exp: ${item.event.estimate}` : ''
       const prevStr = item.event.prev != null ? ` | Prev: ${item.event.prev}` : ''
-      const tooltip = `${item.event.event} (${item.event.country}) - ${item.event.impact.toUpperCase()}${actualStr}${estStr}${prevStr}`
+      const tooltip = `⏳ UPCOMING: ${item.event.event} (${item.event.country}) - ${item.event.impact.toUpperCase()}${estStr}${prevStr}`
 
       el.innerHTML = `
         <div style="
@@ -4264,7 +4317,7 @@ export function TradingChart({
           font-size: 11px;
           line-height: 1;
         " title="${tooltip}">
-          ${icon}
+          ⚡
         </div>
       `
     }
@@ -4647,6 +4700,31 @@ export function TradingChart({
       }
     }
 
+    // User Range Boxes with full volume profiling
+    const computedRanges = activeRangeBoxes.map((r) => {
+      const m = computeRangeMetrics(r.p1, r.p2, curPrice, candles)
+      return {
+        id: r.id,
+        label: r.label,
+        priceHigh: m.priceHigh,
+        priceLow: m.priceLow,
+        midPrice: m.midPrice,
+        heightPts: m.heightPts,
+        startTimeEt: formatEtTime(m.timeStart),
+        endTimeEt: formatEtTime(m.timeEnd),
+        durationMin: m.durationMin,
+        positionPct: m.positionPct,
+        priceRelation: m.priceRelation,
+        totalVolume: m.totalVolume,
+        volumeRatePerMin: m.volumeRatePerMin,
+        buyVolume: m.buyVolume,
+        sellVolume: m.sellVolume,
+        delta: m.delta,
+        buyRatioPct: m.buyRatioPct,
+        poc: m.poc,
+      }
+    })
+
     return {
       instrument,
       currentPrice: curPrice,
@@ -4793,22 +4871,7 @@ export function TradingChart({
             },
           }
         }),
-        ranges: activeRangeBoxes.map((r) => {
-          const m = computeRangeMetrics(r.p1, r.p2, curPrice)
-          return {
-            id: r.id,
-            label: r.label,
-            priceHigh: m.priceHigh,
-            priceLow: m.priceLow,
-            midPrice: m.midPrice,
-            heightPts: m.heightPts,
-            startTimeEt: formatEtTime(m.timeStart),
-            endTimeEt: formatEtTime(m.timeEnd),
-            durationMin: m.durationMin,
-            positionPct: m.positionPct,
-            priceRelation: m.priceRelation,
-          }
-        }),
+        ranges: computedRanges,
         frvps: activeManualFrvps.map((f) => {
           let priceRel: 'AT_POC' | 'INSIDE_VALUE' | 'ABOVE_VAH' | 'BELOW_VAL' = 'INSIDE_VALUE'
           let distPoc: number | null = null
@@ -4904,6 +4967,7 @@ export function TradingChart({
         volume: c.volume ?? 1,
       })),
       priceQuestioning: livePriceCritique || undefined,
+      rangeComparisons: compareMultipleRanges(computedRanges as any, curPrice),
     }
   }, [
     instrument,
@@ -5065,7 +5129,11 @@ export function TradingChart({
       } else if (type === 'RANGE') {
         const rb = rangeBoxes.find((r) => r.id === id)
         if (!rb) return
-        const m = computeRangeMetrics(rb.p1, rb.p2, curPrice)
+        const m = computeRangeMetrics(rb.p1, rb.p2, curPrice, candles)
+        const volDesc =
+          m.totalVolume != null
+            ? ` | Vol: ${m.totalVolume.toLocaleString()} (${m.volumeRatePerMin ?? 0} vol/min, ${m.buyRatioPct ?? 50}% buy, delta ${m.delta != null && m.delta >= 0 ? '+' : ''}${m.delta?.toLocaleString() ?? 0}, POC: ${m.poc ?? m.midPrice})`
+            : ''
         setLeoExternalPoints([
           {
             id: rb.id,
@@ -5073,7 +5141,8 @@ export function TradingChart({
             value: `${m.heightPts} pts (${m.priceHigh.toLocaleString()} – ${m.priceLow.toLocaleString()})`,
             tier: 'DRAWING',
             category: 'RANGE',
-            description: `User Range Box: High ${m.priceHigh.toLocaleString()}, Low ${m.priceLow.toLocaleString()}, Mid ${m.midPrice.toLocaleString()}. Position: ${m.priceRelation} (${m.positionPct}%). Height: ${m.heightPts} pts. Duration: ${m.durationMin}m.`,
+            volume: m.totalVolume,
+            description: `User Range Box: High ${m.priceHigh.toLocaleString()}, Low ${m.priceLow.toLocaleString()}, Mid ${m.midPrice.toLocaleString()}. Position: ${m.priceRelation} (${m.positionPct}%). Height: ${m.heightPts} pts. Duration: ${m.durationMin}m.${volDesc}`,
           },
         ])
         setLeoPanelOpen(true)
@@ -6139,6 +6208,7 @@ export function TradingChart({
         borderDownColor: DESK_CANDLE_DOWN,
         wickUpColor: DESK_CANDLE_UP,
         wickDownColor: DESK_CANDLE_DOWN,
+        priceFormat: deskCandlePriceFormat(instrument),
       })
     } catch {
       /* ignore */
@@ -7031,6 +7101,11 @@ export function TradingChart({
       wickDownColor: DESK_CANDLE_DOWN,
       borderVisible: false,
       wickVisible: true,
+      lastValueVisible: true,
+      priceLineVisible: true,
+      priceLineWidth: 1,
+      priceLineStyle: LineStyle.Dotted,
+      priceFormat: deskCandlePriceFormat(instrumentRef.current),
       autoscaleInfoProvider: candleAutoscale,
     })
 
@@ -7053,10 +7128,12 @@ export function TradingChart({
     })
     chart.priceScale('volume').applyOptions({
       scaleMargins: {
-        top: 0.82,
+        top: 0.78,   // bars occupy bottom 22% of chart (was 18%)
         bottom: 0,
       },
-      visible: false,
+      visible: true,
+      borderVisible: false,
+      textColor: 'rgba(180, 180, 180, 0.65)',
     })
     volumeSeriesRef.current = volumeSeries
 
@@ -7161,7 +7238,7 @@ export function TradingChart({
     chart.priceScale('right').applyOptions({
       autoScale: true,
       scaleMargins: DESK_CHART_THEME.rightPriceScale.scaleMargins,
-      borderVisible: false,
+      borderVisible: true,
     })
 
     // ─── 2. Crosshair tooltip — skip entirely while panning (React setState kills FPS)
@@ -8091,15 +8168,17 @@ export function TradingChart({
     }
 
     if (volumeSeriesRef.current) {
-      const volumeData = ordered.map((c) => {
-        const t = toSeriesTime(c.time as number, timeframe, tz)
-        const isUp = c.close >= c.open
-        return {
-          time: t,
-          value: Number.isFinite(c.volume) ? c.volume : 0,
-          color: isUp ? 'rgba(8, 153, 129, 0.45)' : 'rgba(242, 54, 69, 0.45)',
-        }
-      })
+      const volumeData = ordered
+        .filter((c) => (c.volume ?? 0) > 0)  // skip bars with no volume data — avoids phantom flat bars
+        .map((c) => {
+          const t = toSeriesTime(c.time as number, timeframe, tz)
+          const isUp = c.close >= c.open
+          return {
+            time: t,
+            value: Number.isFinite(c.volume) ? c.volume : 0,
+            color: isUp ? 'rgba(8, 153, 129, 0.7)' : 'rgba(242, 54, 69, 0.7)',
+          }
+        })
       try {
         volumeSeriesRef.current.setData(volumeData as any)
       } catch {
@@ -8694,6 +8773,23 @@ export function TradingChart({
         if (!b || !candleRef.current) return
         try {
           candleRef.current.update(toChartCandle(b))
+          // Keep the live volume bar in sync with the forming candle
+          if (volumeSeriesRef.current && (b.volume ?? 0) > 0) {
+            const volTime = toSeriesTime(b.time as number, timeframe, chartTzRef.current)
+            const volColor =
+              b.close >= b.open
+                ? 'rgba(8, 153, 129, 0.7)'
+                : 'rgba(242, 54, 69, 0.7)'
+            try {
+              volumeSeriesRef.current.update({
+                time: volTime,
+                value: b.volume ?? 0,
+                color: volColor,
+              } as any)
+            } catch {
+              /* ignore */
+            }
+          }
           if (!interactingRef.current) {
             const now = Date.now()
             if (now - lastOverlayTickPaint >= 150) {
@@ -8818,17 +8914,40 @@ export function TradingChart({
 
       if (timeframe === '1D') {
         // Daily chart: directly update today's candle high, low, close with live tick
+        // Volume: take the cumulative volume from the exchange's 1m bar if provided
+        const updatedVol =
+          exchangeBar && exchangeBar.volume > 0
+            ? Math.max(last.volume ?? 0, exchangeBar.volume)
+            : last.volume
         const updated: OHLCV = {
           ...last,
           high: Math.max(last.high, price),
           low: Math.min(last.low, price),
           close: price,
+          volume: updatedVol,
         }
         lastCandleRef.current = updated
         try {
           candleRef.current.update(toChartCandle(updated))
         } catch {
           /* ignore */
+        }
+        // Keep daily volume bar in sync
+        if (volumeSeriesRef.current && (updatedVol ?? 0) > 0) {
+          const volTime = toSeriesTime(updated.time as number, '1D', chartTzRef.current)
+          const volColor =
+            updated.close >= updated.open
+              ? 'rgba(8, 153, 129, 0.7)'
+              : 'rgba(242, 54, 69, 0.7)'
+          try {
+            volumeSeriesRef.current.update({
+              time: volTime,
+              value: updatedVol ?? 0,
+              color: volColor,
+            } as any)
+          } catch {
+            /* ignore */
+          }
         }
         return
       }
@@ -11548,61 +11667,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
             {/* Quick 1-Click 1:1 Market Entry Buttons & Canvas Label Visibility Toggle */}
             <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-surface-900/90 border border-neutral-700/60 shadow-sm text-xs font-mono">
-              {onPlaceOrder && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const curPx = livePrice || (candles.length > 0 ? candles[candles.length - 1]!.close : 0)
-                      if (!curPx || curPx <= 0) return
-                      const meta = MARKET_DEFAULT_PARAMS[instrument as MarketInstrument] || { defaultPrice: curPx, defaultPoints: 20 }
-                      const slDist = meta.defaultPoints
-                      const tpDist = meta.defaultPoints
-                      const stopLoss = Number((curPx - slDist).toFixed(2))
-                      const profitTarget = Number((curPx + tpDist).toFixed(2))
-                      void onPlaceOrder({
-                        instrument,
-                        direction: 'LONG',
-                        price: curPx,
-                        stopLoss,
-                        profitTarget,
-                        size: 1,
-                        reason: `1-Click 1:1 Market Buy (${instrument})`,
-                      })
-                    }}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded font-bold bg-emerald-600/30 hover:bg-emerald-600/60 border border-emerald-500/60 text-emerald-300 hover:text-white transition shadow-sm active:scale-95 cursor-pointer"
-                    title={`Execute 1:1 Market BUY on ${instrument} @ ${livePrice ?? 'Market'} (SL: -${MARKET_DEFAULT_PARAMS[instrument as MarketInstrument]?.defaultPoints ?? 20}pts, TP: +${MARKET_DEFAULT_PARAMS[instrument as MarketInstrument]?.defaultPoints ?? 20}pts)`}
-                  >
-                    <span>⚡ BUY MKT 1:1</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const curPx = livePrice || (candles.length > 0 ? candles[candles.length - 1]!.close : 0)
-                      if (!curPx || curPx <= 0) return
-                      const meta = MARKET_DEFAULT_PARAMS[instrument as MarketInstrument] || { defaultPrice: curPx, defaultPoints: 20 }
-                      const slDist = meta.defaultPoints
-                      const tpDist = meta.defaultPoints
-                      const stopLoss = Number((curPx + slDist).toFixed(2))
-                      const profitTarget = Number((curPx - tpDist).toFixed(2))
-                      void onPlaceOrder({
-                        instrument,
-                        direction: 'SHORT',
-                        price: curPx,
-                        stopLoss,
-                        profitTarget,
-                        size: 1,
-                        reason: `1-Click 1:1 Market Sell (${instrument})`,
-                      })
-                    }}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded font-bold bg-rose-600/30 hover:bg-rose-600/60 border border-rose-500/60 text-rose-300 hover:text-white transition shadow-sm active:scale-95 cursor-pointer"
-                    title={`Execute 1:1 Market SELL on ${instrument} @ ${livePrice ?? 'Market'} (SL: +${MARKET_DEFAULT_PARAMS[instrument as MarketInstrument]?.defaultPoints ?? 20}pts, TP: -${MARKET_DEFAULT_PARAMS[instrument as MarketInstrument]?.defaultPoints ?? 20}pts)`}
-                  >
-                    <span>⚡ SELL MKT 1:1</span>
-                  </button>
-                  <div className="h-3.5 w-px bg-surface-700 mx-0.5" />
-                </>
-              )}
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-bold bg-amber-950/60 border border-amber-500/50 text-amber-300 text-[11px] shadow-sm select-none" title="Order placement is disabled. System is in Read-Only Market Monitoring Mode.">
+                👁️ MARKET MONITORING MODE
+              </span>
               <button
                 type="button"
                 onClick={() => {

@@ -5,15 +5,19 @@
 
 import { ColorType, CrosshairMode, LineStyle } from 'lightweight-charts'
 
-export const DESK_CHART_BG = '#fafafa'
-export const DESK_CHART_GRID = '#edf0f3'
-export const DESK_CHART_TEXT = '#4b5563'
-export const DESK_CHART_BORDER = '#d1d5db'
+/** TradingView light-chart neutrals: pure pane, cool grid, high-contrast axes. */
+export const DESK_CHART_BG = '#ffffff'
+export const DESK_CHART_GRID = '#f0f3fa'
+export const DESK_CHART_TEXT = '#434651'
+export const DESK_CHART_BORDER = '#d1d4dc'
 export const DESK_CANDLE_UP = '#089981'
 export const DESK_CANDLE_DOWN = '#f23645'
 
-/** Pixel width of one candle slot — keeps bodies readable like TradingView. */
-export const DESK_BAR_SPACING = 12
+/** 14px slot produces the dense 8–10px solid body used by TradingView. */
+export const DESK_BAR_SPACING = 14
+export const DESK_COMPACT_BAR_SPACING = 11
+export const DESK_DAILY_BAR_SPACING = 12
+export const DESK_30M_BAR_SPACING = 16
 /** Wheel zoom-out floor — allows smooth TradingView-style deep zoom-out without snapping. */
 export const DESK_MIN_BAR_SPACING = 0.5
 
@@ -21,7 +25,8 @@ export const DESK_CHART_THEME = {
   layout: {
     background: { type: ColorType.Solid, color: DESK_CHART_BG },
     textColor: DESK_CHART_TEXT,
-    fontFamily: 'Inter, JetBrains Mono, system-ui',
+    fontFamily:
+      '-apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif',
     fontSize: 12,
     attributionLogo: false,
   },
@@ -32,16 +37,16 @@ export const DESK_CHART_THEME = {
   crosshair: {
     mode: CrosshairMode.Normal,
     vertLine: {
-      color: '#9ca3af',
+      color: '#758696',
       width: 1 as const,
       style: LineStyle.Dashed,
-      labelBackgroundColor: '#374151',
+      labelBackgroundColor: '#2962ff',
     },
     horzLine: {
-      color: '#9ca3af',
+      color: '#758696',
       width: 1 as const,
       style: LineStyle.Dashed,
-      labelBackgroundColor: '#374151',
+      labelBackgroundColor: '#2962ff',
     },
   },
   rightPriceScale: {
@@ -51,14 +56,14 @@ export const DESK_CHART_THEME = {
     alignLabels: true,
     entireTextOnly: true,
     ticksVisible: true,
-    minimumWidth: 75,
-    scaleMargins: { top: 0.12, bottom: 0.12 },
+    minimumWidth: 82,
+    scaleMargins: { top: 0.1, bottom: 0.1 },
   },
   timeScale: {
     borderColor: DESK_CHART_BORDER,
     timeVisible: true,
     secondsVisible: false,
-    rightOffset: 10,
+    rightOffset: 8,
     barSpacing: DESK_BAR_SPACING,
     minBarSpacing: DESK_MIN_BAR_SPACING,
     fixLeftEdge: false,

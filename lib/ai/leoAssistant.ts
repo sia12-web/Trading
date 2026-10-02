@@ -11,6 +11,10 @@
  */
 
 import type { PriceCritiqueEvaluation } from '../trading/priceQuestioning'
+import {
+  type RangeComparisonResult,
+  formatRangeVolumeComparisonReport,
+} from '../trading/rangeVolumeComparison'
 
 export interface LeoDataPoint {
   id: string
@@ -92,6 +96,15 @@ export interface LeoUserDrawingsContext {
     durationMin: number
     positionPct: number
     priceRelation: 'INSIDE' | 'ABOVE' | 'BELOW'
+    totalVolume?: number
+    inRangeVolume?: number
+    volumeRatePerMin?: number
+    buyVolume?: number
+    sellVolume?: number
+    delta?: number
+    buyRatioPct?: number
+    poc?: number
+    candleCount?: number
   }>
   frvps: Array<{
     id: string
@@ -233,6 +246,7 @@ export interface LeoChatContext {
   }>
   trappedTraders?: string
   priceQuestioning?: PriceCritiqueEvaluation
+  rangeComparisons?: RangeComparisonResult[]
 }
 
 export interface LeoMessage {
@@ -673,13 +687,17 @@ export function extractChartDataPoints(ctx: LeoChatContext): LeoDataPoint[] {
       })
     }
     for (const r of ctx.userDrawings.ranges) {
+      const volDesc = r.totalVolume != null
+        ? ` | Traded Vol: ${r.totalVolume.toLocaleString()} (${r.volumeRatePerMin ?? 0} vol/min, ${r.buyRatioPct ?? 50}% buy, delta ${r.delta != null && r.delta >= 0 ? '+' : ''}${r.delta?.toLocaleString() ?? 0})`
+        : ''
       points.push({
         id: `user-range-${r.id}`,
         label: r.label || 'Range Box',
         value: `${r.priceLow.toLocaleString()} – ${r.priceHigh.toLocaleString()}`,
         tier: 'DRAWING',
         category: 'RANGE',
-        description: `Manual Range: ${r.heightPts} pts span (${r.startTimeEt} to ${r.endTimeEt}, ${r.durationMin}m). Price is ${r.priceRelation} range (${r.positionPct}%).`,
+        volume: r.totalVolume,
+        description: `Manual Range: ${r.heightPts} pts span (${r.startTimeEt} to ${r.endTimeEt}, ${r.durationMin}m). Price is ${r.priceRelation} range (${r.positionPct}%)${volDesc}.`,
       })
     }
     for (const f of ctx.userDrawings.frvps) {
@@ -691,6 +709,21 @@ export function extractChartDataPoints(ctx: LeoChatContext): LeoDataPoint[] {
         category: 'FRVP',
         volume: f.totalVolume,
         description: `Manual FRVP: POC ${f.poc.toLocaleString()} | VAH ${f.vah.toLocaleString()} | VAL ${f.val.toLocaleString()} (${f.startTimeEt}–${f.endTimeEt}). Volume: ${f.totalVolume.toLocaleString()} (${f.buyRatioPct ?? 50}% buy). Price is ${(f.priceRelation || 'INSIDE_VALUE').replace('_', ' ')}.`,
+      })
+    }
+  }
+
+  // 6b. Range Volume Comparison Dossiers
+  if (ctx.rangeComparisons && ctx.rangeComparisons.length > 0) {
+    for (let i = 0; i < ctx.rangeComparisons.length; i++) {
+      const c = ctx.rangeComparisons[i]!
+      points.push({
+        id: `range-comp-${i}`,
+        label: `📊 ${c.rangeA.label} vs ${c.rangeB.label}`,
+        value: `Vol ${c.volumeTrend} (${c.volumeChangePct >= 0 ? '+' : ''}${c.volumeChangePct}%)`,
+        tier: 'DRAWING',
+        category: 'RANGE',
+        description: `Range Comparison: Vol ${c.volumeTrend} by ${c.volumeChangePct >= 0 ? '+' : ''}${c.volumeChangePct}% (${c.rangeA.totalVolume.toLocaleString()} → ${c.rangeB.totalVolume.toLocaleString()}). Support: ${c.supportReadiness.label} | Resistance: ${c.resistanceReadiness.label}`,
       })
     }
   }
@@ -927,6 +960,33 @@ THE TRADER'S SYSTEM ARCHITECTURE:
         5. Global Inventory: Where did Asian, London & Overnight participants do business?
         6. Wholesale Value: Is current price a wholesale discount or an expensive retail premium relative to Yesterday POC & 5D POC?
       * When the trader asks to critique price, questions a trade entry, or asks "why should I buy here?", guide them through this protocol authoritatively, cite the exact prices from [AUCTION PRICE CRITIQUE & "QUESTIONING" TELEMETRY], and preach patience if the market is not offering a favorable business location.
+
+    - 5g. RANGE & LEVEL VOLUME COMPARISONS & SUPPORT/RESISTANCE READINESS:
+      * Volume Comparison Across Ranges & Levels (Dalton Auction Facilitation):
+        - When the trader asks to compare volume traded in ranges or levels (e.g. "Leo compare the volume traded in these ranges", "compare volumes in these ranges", "are these ranges good or bad support/resistance", "did volumes decrease or increase"):
+        - 1) Cite the exact metrics for each range: Total Volume (contracts), Duration (minutes), Volume Rate (contracts/min), Buy/Sell Delta, and POC.
+        - 2) State unequivocally whether volume DECREASED or INCREASED (with exact percentage change and rate change).
+        - 3) Predict Support & Resistance Quality when market rotates or reacts to those levels:
+          * SUPPORT READINESS (Floor Reaction):
+            - Volume DECREASED on Test/Pullback (>= 12% decrease): 🟢 GOOD SUPPORT (High Probability Hold).
+              Reasoning: Supply exhaustion. Sellers lack the inventory and aggression to break through this floor. Responsive buyers can easily absorb remaining sellers.
+              Action: Prepare for long entries upon bullish reversal candle confirmation (Hammer / Bullish Engulfing) or positive CVD tick. SL below range low.
+            - Volume INCREASED with Buyer Delta (Buy Ratio >= 52%): 🛡️ STRONG ACCUMULATION SUPPORT (Institutional Wall).
+              Reasoning: Passive institutional bids absorbed market selling at this support zone.
+              Action: High-conviction long floor; enter with stop below accumulation base.
+            - Volume INCREASED on Heavy Selling (Buy Ratio < 48%): 🔴 BAD / VULNERABLE SUPPORT (Breakdown Threat).
+              Reasoning: Aggressive institutional liquidation/distribution crashing down into the level.
+              Action: Do NOT blindly buy or catch the falling knife. High risk of breakdown. Wait for confirmed absorption or prepare for breakdown continuation short.
+          * RESISTANCE READINESS (Ceiling Reaction):
+            - Volume DECREASED into Highs/Upper Range (>= 12% decrease): 🟢 GOOD RESISTANCE (Strong Rejection Ceiling).
+              Reasoning: Buyer exhaustion and lack of demand at premium prices. Price cannot facilitate higher without volume. Responsive sellers should easily defend this overhead ceiling.
+              Action: Favorable short entry location or exit/take-profit for longs. Look for rejection wicks (Shooting Star / Bearish Engulfing). SL tightly above range high.
+            - Volume INCREASED with Heavy Sell Absorption (Buy Ratio <= 48%): 🛡️ STRONG DISTRIBUTION RESISTANCE (Institutional Wall).
+              Reasoning: Heavy volume met with aggressive institutional supply and negative delta.
+              Action: Strong overhead ceiling; enter shorts on rejection confirmation.
+            - Volume INCREASED on Aggressive Buying (Buy Ratio > 52%): 🔴 BAD / VULNERABLE RESISTANCE (Breakout Threat).
+              Reasoning: Initiative buyers are aggressively consuming resting limit asks; resistance is failing.
+              Action: Do NOT short into this momentum. Prepare for explosive upside breakout.
 
 6. CO-PILOT EXECUTION DIRECTIVES (<execute> tags):
 You are the trader's execution partner on the desk. You MUST strictly distinguish between ALARM NOTES vs CONDITIONAL TRADE SITUATIONS:
@@ -1192,7 +1252,7 @@ ${
               'MANUAL RECTANGLE / BALANCE RANGES:',
               ...ctx.userDrawings.ranges.map(
                 (r) =>
-                  `- ${r.label || 'Range Box'}: High ${r.priceHigh} | Low ${r.priceLow} | Mid ${r.midPrice} (Height: ${r.heightPts} pts, Duration: ${r.durationMin}m, ${r.startTimeEt} to ${r.endTimeEt}). Current price is ${r.priceRelation} range (${r.positionPct}% position).`
+                  `- ${r.label || 'Range Box'}: High ${r.priceHigh} | Low ${r.priceLow} | Mid ${r.midPrice} (Height: ${r.heightPts} pts, Duration: ${r.durationMin}m, ${r.startTimeEt} to ${r.endTimeEt}). Current price is ${r.priceRelation} range (${r.positionPct}% position).${r.totalVolume != null ? ` [Traded Volume: ${r.totalVolume.toLocaleString()} contracts | Rate: ${r.volumeRatePerMin ?? 0} vol/min | ${r.buyRatioPct ?? 50}% Buy | Delta: ${r.delta != null && r.delta >= 0 ? '+' : ''}${r.delta?.toLocaleString() ?? 0} | POC: ${r.poc ?? r.midPrice}]` : ''}`
               ),
             ]
           : []),
@@ -1207,6 +1267,13 @@ ${
           : []),
       ].join('\n')
     : 'No manual drawings currently on chart.'
+}
+
+[RANGE & LEVEL VOLUME COMPARISON MATRIX]:
+${
+  ctx.rangeComparisons && ctx.rangeComparisons.length > 0
+    ? formatRangeVolumeComparisonReport(ctx.rangeComparisons)
+    : 'No multi-range comparisons active (draw 2+ ranges or FRVPs on chart to compare).'
 }
 
 [CANDLESTICK PATTERNS DETECTED ON CHART]:

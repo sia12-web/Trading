@@ -358,14 +358,10 @@ export function DeskRiskBoxOverlay({
               e.stopPropagation()
               onConfirm()
             }}
-            className={`px-3 py-1 text-xs font-extrabold uppercase rounded-md shadow-md transition border ${
-              riskBox.direction === 'LONG'
-                ? 'bg-blue-600 border-blue-400 text-white hover:bg-blue-500 hover:scale-105'
-                : 'bg-red-600 border-red-400 text-white hover:bg-red-500 hover:scale-105'
-            }`}
-            title={`Place ${riskBox.direction} limit`}
+            className="px-3 py-1 text-xs font-extrabold uppercase rounded-md shadow-md transition border bg-amber-600/80 border-amber-400 text-white hover:bg-amber-500 hover:scale-105"
+            title={`Monitor ${riskBox.direction} level setup`}
           >
-            {riskBox.direction === 'LONG' ? 'BUY LIMIT' : 'SELL LIMIT'}
+            MONITOR LEVEL
           </button>
           {!lockDirection && (
           <button

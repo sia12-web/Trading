@@ -4,7 +4,12 @@
  * Persisted NIKKEI is ignored (live desk is NYC only; Nikkei stays on Simulation).
  */
 
-import { DESK_BAR_SPACING } from '../chart/deskChartTheme'
+import {
+  DESK_30M_BAR_SPACING,
+  DESK_BAR_SPACING,
+  DESK_COMPACT_BAR_SPACING,
+  DESK_DAILY_BAR_SPACING,
+} from '../chart/deskChartTheme'
 import { isLiveClockInstrument, type LiveClockInstrument } from './liveDeskBook'
 
 export type DeskInstrumentPref = LiveClockInstrument
@@ -105,7 +110,7 @@ export function setDeskInstrumentPreference(instrument: DeskInstrumentPref): voi
  * Fitting all ~3k bars makes the chart look randomly "zoomed out."
  * Bar count follows pane width so each candle stays ~DESK_BAR_SPACING px.
  */
-export const DESK_VISIBLE_BARS = 90
+export const DESK_VISIBLE_BARS = 77
 
 export function deskVisibleBarCount(
   containerWidth: number,
@@ -114,9 +119,20 @@ export function deskVisibleBarCount(
 ): number {
   const isDaily = timeframe === '1D'
   const is30m = timeframe === '30m'
-  const spacing = isDaily ? 8 : is30m ? 24 : DESK_BAR_SPACING
+  const spacing = deskBarSpacing(containerWidth, barCount, timeframe)
   const byWidth = Math.floor(Math.max(containerWidth - 80, 240) / spacing)
-  const minBars = isDaily ? 120 : is30m ? 24 : 40
+  const compact = containerWidth < 700
+  const minBars = isDaily
+    ? compact
+      ? 50
+      : 80
+    : is30m
+      ? compact
+        ? 18
+        : 28
+      : compact
+        ? 28
+        : 40
   return Math.min(Math.max(barCount, 1), Math.max(minBars, byWidth))
 }
 
@@ -134,11 +150,20 @@ export function deskVisibleLogicalRange(
 }
 
 export function deskBarSpacing(
-  _containerWidth: number,
+  containerWidth: number,
   _barCount: number,
   timeframe?: string
 ): number {
-  return timeframe === '1D' ? 8 : timeframe === '30m' ? 24 : DESK_BAR_SPACING
+  const compact = containerWidth < 700
+  if (timeframe === '1D') {
+    return compact ? 7 : DESK_DAILY_BAR_SPACING
+  }
+  if (timeframe === '30m') {
+    return compact ? 16 : DESK_30M_BAR_SPACING
+  }
+  if (compact) return 10
+  if (containerWidth < 1000) return DESK_COMPACT_BAR_SPACING
+  return DESK_BAR_SPACING
 }
 
 /** Tip-relative viewport so new prints keep the same window after refresh. */

@@ -159,7 +159,7 @@ export function LeoAssistantPanel({
   externalPrompt,
   onClearExternalPrompt,
   onClosePosition,
-  onPlaceOrder,
+  onPlaceOrder: _onPlaceOrder,
   onOverrideDayType,
 }: LeoAssistantPanelProps) {
   const [internalIsOpen, setInternalIsOpen] = useState(false)
@@ -553,103 +553,14 @@ export function LeoAssistantPanel({
     size?: number
     reason: string
   }) => {
-    // 0. Safety Parameter Validation Guard: Reject invalid / NaN / non-positive numbers
-    if (
-      !order.price ||
-      !Number.isFinite(order.price) ||
-      order.price <= 0 ||
-      !Number.isFinite(order.stopLoss) ||
-      order.stopLoss <= 0 ||
-      !Number.isFinite(order.profitTarget) ||
-      order.profitTarget <= 0
-    ) {
-      warningToast('⚠️ [LEO DESK ERROR]: Aborted order with invalid or non-finite price parameters.', 8000)
-      return
-    }
-
-    // Directional Bracket Sanity Guard
-    const dir = order.direction.toUpperCase() as 'LONG' | 'SHORT'
-    let sl = order.stopLoss
-    let tp = order.profitTarget
-    const { slDist } = getInstrumentDefaultDistances(order.instrument)
-
-    if (dir === 'LONG') {
-      if (sl >= order.price) sl = Number((order.price - slDist).toFixed(2))
-      if (tp <= order.price) tp = Number((order.price + slDist * 2.0).toFixed(2))
-    } else {
-      if (sl <= order.price) sl = Number((order.price + slDist).toFixed(2))
-      if (tp >= order.price) tp = Number((order.price - slDist * 2.0).toFixed(2))
-    }
-
-    order.stopLoss = sl
-    order.profitTarget = tp
-
-    // 1. Audio notifications: TradingView procedural chime & speech synthesis
-    playTradingViewChime()
-    speakText(
-      `Order placed: ${order.direction} ${order.instrument} at ${order.price.toLocaleString()}. Stop ${order.stopLoss.toLocaleString()}, target ${order.profitTarget.toLocaleString()}.`
-    )
-
-    // 2. Transmit to execution desk via onPlaceOrder prop or /api/trading/positions/open
-    let success = false
-    let errMsg = ''
-    try {
-      if (onPlaceOrder) {
-        const res = await onPlaceOrder(order)
-        success = res.success
-        if (!success) errMsg = res.message || 'Desk rejected order'
-      } else {
-        const res = await fetch('/api/trading/positions/open', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            instrument: order.instrument,
-            entry_price: order.price,
-            entry_direction: order.direction,
-            entry_window: 1,
-            account_size: 50000,
-            regime: order.direction === 'LONG' ? 'bullish' : 'bearish',
-            regime_confidence: 90,
-            entry_source: 'ai',
-            is_leo_order: true,
-            stop_loss_price: order.stopLoss,
-            profit_target_price: order.profitTarget,
-            entry_reason: `Leo AI Order: ${order.direction} ${order.instrument} @ ${order.price}. ${order.reason}`,
-            auction_ticket: true,
-            risk_profile: 'tradeify_growth_50k',
-          }),
-        })
-        const json = await res.json()
-        success = res.ok && json.success
-        if (!success) errMsg = json.message || 'Desk rejected order'
-      }
-    } catch (err: any) {
-      errMsg = err?.message || 'Network error'
-    }
-
-    // 3. Append execution note card into chat
-    const slPts = Math.abs(order.price - order.stopLoss).toFixed(1)
-    const tpPts = Math.abs(order.profitTarget - order.price).toFixed(1)
-
+    warningToast('👁️ Order placement is disabled. Platform is operating in Market Monitoring Mode.', 6000)
     setMessages((prev) => [
       ...prev,
       {
         id: `exec-order-${Date.now()}`,
         role: 'assistant',
-        content: success
-          ? `### 🚀 **[LEO ORDER EXECUTED & JOURNALED]**
-- **Instrument:** ${order.instrument}
-- **Direction:** **${order.direction}**
-- **Entry Price:** **${order.price.toLocaleString()}**
-- **Stop Loss:** **${order.stopLoss.toLocaleString()}** (-${slPts} pts)
-- **Profit Target:** **${order.profitTarget.toLocaleString()}** (+${tpPts} pts)
-- **Execution Notes:** ${order.reason}
-- **Order History:** ✅ Saved to database (\`trades_journal\`)
-- **Live Chart:** ✅ Active position overlay mounted on chart. Tracking live price & P&L.
-
-*(AI never auto-exits; only you can close or adjust brackets).*`
-          : `⚠️ **[LEO ORDER NOTICE]**
-Attempted to place **${order.direction} ${order.instrument}** at ${order.price.toLocaleString()}, but desk returned: ${errMsg}`,
+        content: `### 👁️ **[MARKET MONITORING MODE ACTIVE]**
+Order placement for **${order.direction} ${order.instrument}** at **${order.price.toLocaleString()}** was aborted. The desk is strictly configured for monitoring market structure, situations, and taking journal notes.`,
         timestamp: Date.now(),
       },
     ])
@@ -2615,30 +2526,39 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                     )}
                   </div>
                 ))}
-                {context.userDrawings.ranges.map((r) => (
-                  <button
-                    key={r.id}
-                    type="button"
-                    onClick={() => {
-                      if (attachedPoints.some((p) => p.id === `user-range-${r.id}`)) return
-                      setAttachedPoints((prev) => [
-                        ...prev,
-                        {
-                          id: `user-range-${r.id}`,
-                          label: r.label || 'Range Box',
-                          value: `${r.priceLow.toLocaleString()} – ${r.priceHigh.toLocaleString()}`,
-                          tier: 'DRAWING',
-                          category: 'RANGE',
-                          description: `${r.heightPts} pts span (${r.durationMin}m). Price is ${r.priceRelation} range.`,
-                        },
-                      ])
-                    }}
-                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-950/60 hover:bg-purple-900/80 border border-purple-600/50 text-[9.5px] font-mono text-purple-200 transition shadow-sm"
-                    title="Click to attach this range box to your message"
-                  >
-                    <span>⬛</span> {r.label || 'Range'} ({r.heightPts}p)
-                  </button>
-                ))}
+                {context.userDrawings.ranges.map((r) => {
+                  const volStr = r.totalVolume != null ? ` · ${(r.totalVolume / 1000).toFixed(1)}k v` : ''
+                  const volDesc =
+                    r.totalVolume != null
+                      ? ` | Traded Vol: ${r.totalVolume.toLocaleString()} (${r.volumeRatePerMin ?? 0} vol/min, ${r.buyRatioPct ?? 50}% buy, delta ${r.delta != null && r.delta >= 0 ? '+' : ''}${r.delta?.toLocaleString() ?? 0}, POC: ${r.poc ?? r.midPrice})`
+                      : ''
+
+                  return (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => {
+                        if (attachedPoints.some((p) => p.id === `user-range-${r.id}`)) return
+                        setAttachedPoints((prev) => [
+                          ...prev,
+                          {
+                            id: `user-range-${r.id}`,
+                            label: r.label || 'Range Box',
+                            value: `${r.priceLow.toLocaleString()} – ${r.priceHigh.toLocaleString()}`,
+                            tier: 'DRAWING',
+                            category: 'RANGE',
+                            volume: r.totalVolume,
+                            description: `${r.heightPts} pts span (${r.durationMin}m). Price is ${r.priceRelation} range.${volDesc}`,
+                          },
+                        ])
+                      }}
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-950/60 hover:bg-purple-900/80 border border-purple-600/50 text-[9.5px] font-mono text-purple-200 transition shadow-sm"
+                      title={`Click to attach ${r.label || 'Range Box'}${r.totalVolume != null ? ` (${r.totalVolume.toLocaleString()} vol)` : ''} to Leo`}
+                    >
+                      <span>⬛</span> {r.label || 'Range'} ({r.heightPts}p{volStr})
+                    </button>
+                  )
+                })}
                 {context.userDrawings.frvps.map((f) => (
                   <button
                     key={f.id}
@@ -2729,6 +2649,17 @@ Attempted to place **${order.direction} ${order.instrument}** at ${order.price.t
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-950/60 hover:bg-purple-900/80 border border-purple-500/50 text-[9.5px] font-mono text-purple-200 shrink-0 transition shadow-sm"
                 >
                   <span>⚡</span> Order Flow Setup
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleSendMessage(
+                      'Leo, compare the volume traded in these ranges and evaluate whether they will act as good or bad support or resistance.'
+                    )
+                  }
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-950/60 hover:bg-emerald-900/80 border border-emerald-500/50 text-[9.5px] font-mono text-emerald-200 shrink-0 transition shadow-sm"
+                >
+                  <span>📈</span> Compare Range Volumes
                 </button>
                 <button
                   type="button"
