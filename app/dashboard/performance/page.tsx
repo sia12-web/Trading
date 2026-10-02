@@ -16,6 +16,7 @@ import {
   DURATION_BUCKETS,
   formatCmeExchangePrice,
   getExchangeTag,
+  getSymbolMultiplier,
   getTradeDurationSec,
   type TradeRecord,
 } from '@/lib/trading/performanceMetrics'
@@ -84,30 +85,67 @@ export default function PerformancePage() {
         const tRes = await fetch('/api/trading/team-tape', { cache: 'no-store' })
         if (tRes.ok) {
           const tData = await tRes.json()
-          const rawList = Array.isArray(tData.history)
-            ? tData.history
-            : Array.isArray(tData.open)
-            ? tData.open
+          const openPositions = Array.isArray(tData.open)
+            ? tData.open.filter((s: any) => s.status === 'filled')
             : []
-          if (rawList.length > 0) {
-            const mappedTeam: TradeRecord[] = rawList.map((s: any) => ({
-              id: String(s.sourceId || s.id || Math.random()),
-              symbol: String(s.symbol || 'NVDA'),
-              direction: s.side === 'SELL' ? 'SELL' : 'BUY',
-              entry: Number(s.entry || 0),
-              exit: s.target || null,
-              stop: s.stop || null,
-              target: s.target || null,
-              pnl:
-                s.target && s.entry
-                  ? (s.side === 'BUY' ? s.target - s.entry : s.entry - s.target) * (s.quantity || 1)
-                  : 0,
-              quantity: Number(s.quantity || 1),
-              status: s.status || 'closed',
-              entryTime: s.filledAt || new Date().toISOString(),
-              exitTime: s.filledAt || null,
-              exchange: getExchangeTag(s.symbol || 'NVDA'),
-            }))
+          const historyTrades = Array.isArray(tData.history)
+            ? tData.history.filter((s: any) => s.status !== 'cancelled')
+            : []
+
+          const combined = [
+            ...openPositions.map((s: any) => ({ ...s, _isOpen: true })),
+            ...historyTrades.map((s: any) => ({ ...s, _isOpen: false })),
+          ]
+
+          if (combined.length > 0) {
+            const mappedTeam: TradeRecord[] = combined.map((s: any) => {
+              const sym = String(s.symbol || 'NVDA')
+              const mult =
+                typeof s.multiplier === 'number' && s.multiplier > 0
+                  ? s.multiplier
+                  : getSymbolMultiplier(sym)
+              const qty = Number(s.quantity || 1)
+              const isBuy = s.side === 'BUY' || s.side === 'LONG'
+
+              let calcPnl = 0
+              if (s._isOpen) {
+                // For active ongoing positions, prioritize livePnl or mark calculation
+                if (typeof s.livePnl === 'number') {
+                  calcPnl = s.livePnl
+                } else if (s.mark != null && s.entry != null) {
+                  calcPnl = (isBuy ? s.mark - s.entry : s.entry - s.mark) * qty * mult
+                } else if (typeof s.pnl === 'number') {
+                  calcPnl = s.pnl
+                }
+              } else {
+                // For closed historical trades
+                if (typeof s.pnl === 'number') {
+                  calcPnl = s.pnl
+                } else if (s.exit != null && s.entry != null) {
+                  calcPnl = (isBuy ? s.exit - s.entry : s.entry - s.exit) * qty * mult
+                } else if (typeof s.livePnl === 'number') {
+                  calcPnl = s.livePnl
+                } else if (s.target != null && s.entry != null) {
+                  calcPnl = (isBuy ? s.target - s.entry : s.entry - s.target) * qty * mult
+                }
+              }
+
+              return {
+                id: String(s.sourceId || s.id || Math.random()),
+                symbol: sym,
+                direction: (s.side === 'SELL' || s.side === 'SHORT' ? 'SELL' : 'BUY') as 'BUY' | 'SELL',
+                entry: Number(s.entry || 0),
+                exit: s._isOpen ? null : (s.exit ?? s.target ?? null),
+                stop: s.stop || null,
+                target: s.target || null,
+                pnl: Math.round(calcPnl * 100) / 100,
+                quantity: qty,
+                status: s._isOpen ? 'open' : 'closed',
+                entryTime: s.filledAt || new Date().toISOString(),
+                exitTime: s._isOpen ? null : (s.filledAt || null),
+                exchange: getExchangeTag(sym),
+              }
+            })
             if (!cancelled) setTeamTrades(mappedTeam)
           }
         }
@@ -242,7 +280,7 @@ export default function PerformancePage() {
           <div className="rounded-lg border border-white/10 bg-[#0d1117] p-3">
             <div className="text-[10px] uppercase font-semibold text-gray-400">Total P&amp;L</div>
             <div className={`mt-1 text-xl font-bold price-mono ${pnlClass(metrics.totalPnl)}`}>
-              {metrics.totalPnl >= 0 ? '+' : ''}${Math.abs(metrics.totalPnl).toFixed(2)}
+              {metrics.totalPnl >= 0 ? '+' : '-'}${Math.abs(metrics.totalPnl).toFixed(2)}
             </div>
             <div className="text-[10px] text-gray-500 mt-0.5">{metrics.totalTrades} total trades</div>
           </div>
@@ -299,7 +337,7 @@ export default function PerformancePage() {
           <div className="flex items-center justify-between text-xs text-gray-400">
             <span className="font-semibold text-gray-300">Daily Account Performance &amp; Equity Track</span>
             <span className="font-mono text-[11px] text-sky-300">
-              {metrics.totalTrades} total trades · Net P&amp;L {metrics.totalPnl >= 0 ? '+' : ''}${metrics.totalPnl.toFixed(2)}
+              {metrics.totalTrades} total trades · Net P&amp;L {metrics.totalPnl >= 0 ? '+' : '-'}${Math.abs(metrics.totalPnl).toFixed(2)}
             </span>
           </div>
           <div className="h-28 w-full rounded border border-white/5 bg-black/40 flex items-center justify-between px-6 text-xs text-gray-300 font-mono">
@@ -406,7 +444,7 @@ export default function PerformancePage() {
               <span>📅</span> Monthly P/L Calendar (October 2026)
             </h4>
             <span className={`text-xs font-extrabold px-2.5 py-1 rounded border ${metrics.totalPnl >= 0 ? 'bg-emerald-950/60 text-emerald-300 border-emerald-700/50' : 'bg-red-950/60 text-red-300 border-red-700/50'}`}>
-              Monthly P/L: {metrics.totalPnl >= 0 ? '+' : ''}${metrics.totalPnl.toFixed(2)}
+              Monthly P/L: {metrics.totalPnl >= 0 ? '+' : '-'}${Math.abs(metrics.totalPnl).toFixed(2)}
             </span>
           </div>
 
@@ -419,7 +457,9 @@ export default function PerformancePage() {
               <div key={w.week} className="flex items-center justify-between p-2.5 rounded bg-black/40 border border-white/5">
                 <span className="text-gray-300 font-bold">{w.week}</span>
                 <div className="flex items-center gap-3">
-                  <span className={pnlClass(w.pnl)}>${w.pnl.toFixed(2)}</span>
+                  <span className={pnlClass(w.pnl)}>
+                    {w.pnl > 0 ? '+' : w.pnl < 0 ? '-' : ''}${Math.abs(w.pnl).toFixed(2)}
+                  </span>
                   <span className="text-gray-500 text-[11px]">{w.trades} trades</span>
                 </div>
               </div>
@@ -450,7 +490,7 @@ export default function PerformancePage() {
                   <th className="py-2.5 px-3">Exact Entry</th>
                   <th className="py-2.5 px-3">Stop Loss (SL)</th>
                   <th className="py-2.5 px-3">Take Profit (TP)</th>
-                  <th className="py-2.5 px-3">Exact Exit</th>
+                  <th className="py-2.5 px-3">Exit / Status</th>
                   <th className="py-2.5 px-3">Net P&amp;L</th>
                   <th className="py-2.5 px-3">Duration</th>
                 </tr>
@@ -458,12 +498,32 @@ export default function PerformancePage() {
               <tbody className="divide-y divide-white/5 text-gray-300">
                 {activeTrades.map((t) => {
                   const pnl = t.pnl ?? 0
-                  const isWin = pnl >= 0
                   const exTag = t.exchange || getExchangeTag(t.symbol)
                   const isCme = exTag === 'CME Globex'
+                  const isOpen = t.status === 'open'
+                  const isBuy = t.direction === 'BUY' || t.direction === 'LONG'
+                  const mult = getSymbolMultiplier(t.symbol)
+
+                  const projectedLoss =
+                    t.stop != null && t.entry != null
+                      ? Math.abs((isBuy ? t.entry - t.stop : t.stop - t.entry) * t.quantity * mult)
+                      : null
+
+                  const projectedProfit =
+                    t.target != null && t.entry != null
+                      ? Math.abs((isBuy ? t.target - t.entry : t.entry - t.target) * t.quantity * mult)
+                      : null
+
                   return (
                     <tr key={t.id} className="hover:bg-white/[0.03] transition">
-                      <td className="py-2.5 px-3 font-bold text-sky-300">{t.id}</td>
+                      <td className="py-2.5 px-3 font-bold text-sky-300">
+                        <div className="flex items-center gap-1.5">
+                          {isOpen && (
+                            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" title="Active Ongoing Position" />
+                          )}
+                          <span>{t.id}</span>
+                        </div>
+                      </td>
                       <td className="py-2.5 px-3">
                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${isCme ? 'bg-amber-950 text-amber-300 border border-amber-700/50' : 'bg-purple-950 text-purple-300 border border-purple-700/50'}`}>
                           {exTag}
@@ -471,7 +531,7 @@ export default function PerformancePage() {
                       </td>
                       <td className="py-2.5 px-3 font-bold text-white">{t.symbol}</td>
                       <td className="py-2.5 px-3">
-                        <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded ${t.direction === 'BUY' || t.direction === 'LONG' ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/50' : 'bg-red-950 text-red-300 border border-red-700/50'}`}>
+                        <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded ${isBuy ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/50' : 'bg-red-950 text-red-300 border border-red-700/50'}`}>
                           {t.direction}
                         </span>
                       </td>
@@ -480,19 +540,41 @@ export default function PerformancePage() {
                         {formatCmeExchangePrice(t.symbol, t.entry)}
                       </td>
                       <td className="py-2.5 px-3 text-red-300">
-                        {formatCmeExchangePrice(t.symbol, t.stop)}
+                        <div className="flex items-baseline gap-1 flex-wrap">
+                          <span className="font-semibold">{formatCmeExchangePrice(t.symbol, t.stop)}</span>
+                          {projectedLoss != null && (
+                            <span className="text-red-400 text-[10px] font-bold">
+                              (-${projectedLoss.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })})
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-2.5 px-3 text-emerald-300">
-                        {formatCmeExchangePrice(t.symbol, t.target)}
+                        <div className="flex items-baseline gap-1 flex-wrap">
+                          <span className="font-semibold">{formatCmeExchangePrice(t.symbol, t.target)}</span>
+                          {projectedProfit != null && (
+                            <span className="text-emerald-400 text-[10px] font-bold">
+                              (+${projectedProfit.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })})
+                            </span>
+                          )}
+                        </div>
                       </td>
-                      <td className="py-2.5 px-3 text-gray-200">
-                        {formatCmeExchangePrice(t.symbol, t.exit)}
+                      <td className="py-2.5 px-3">
+                        {isOpen ? (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-700/50 uppercase">
+                            OPEN (LIVE)
+                          </span>
+                        ) : (
+                          <span className="text-gray-200">
+                            {formatCmeExchangePrice(t.symbol, t.exit)}
+                          </span>
+                        )}
                       </td>
                       <td className={`py-2.5 px-3 ${pnlClass(pnl)}`}>
-                        {isWin ? '+' : ''}${pnl.toFixed(2)}
+                        {pnl > 0 ? '+' : pnl < 0 ? '-' : ''}${Math.abs(pnl).toFixed(2)}
                       </td>
                       <td className="py-2.5 px-3 text-gray-400">
-                        {formatSec(getTradeDurationSec(t))}
+                        {isOpen ? 'Ongoing' : formatSec(getTradeDurationSec(t))}
                       </td>
                     </tr>
                   )

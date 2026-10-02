@@ -3016,11 +3016,23 @@ export function TradingChart({
       canvas.style.height = `${paneH}px`
     }
 
+    let priceAxisW = 82
+    try {
+      priceAxisW = chart.priceScale('right').width() || priceAxisW
+    } catch {}
+    const timeAxisH = 26
+    const plotW = Math.max(0, paneW - priceAxisW)
+    const plotH = Math.max(0, paneH - timeAxisH)
+
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     ctx.save()
     ctx.scale(dpr, dpr)
     ctx.clearRect(0, 0, paneW, paneH)
+
+    ctx.beginPath()
+    ctx.rect(0, 0, plotW, plotH)
+    ctx.clip()
 
     const tz = chartTzRef.current
     const candleTimes =
@@ -3043,7 +3055,7 @@ export function TradingChart({
         const maxBinVol = Math.max(...f.bins.map((b) => b.volume), 1)
 
         // Draw volume bars
-        if (startX + maxHistW >= 0 && startX <= paneW) {
+        if (startX + maxHistW >= 0 && startX <= plotW) {
           for (const bin of f.bins) {
             const yTop = series.priceToCoordinate(bin.price + halfBucket)
             const yBottom = series.priceToCoordinate(bin.price - halfBucket)
@@ -3051,7 +3063,7 @@ export function TradingChart({
 
             const barY = Math.min(yTop, yBottom)
             const barH = Math.max(1.5, Math.abs(yBottom - yTop) - 0.5)
-            if (barY + barH < 0 || barY > paneH) continue
+            if (barY + barH < 0 || barY > plotH) continue
 
             const totalBarW = (bin.volume / maxBinVol) * maxHistW
             if (totalBarW < 1) continue
@@ -3073,13 +3085,14 @@ export function TradingChart({
 
         // POC line across profile span
         const yPoc = series.priceToCoordinate(f.poc)
-        if (yPoc != null && Number.isFinite(yPoc) && yPoc >= 0 && yPoc <= paneH) {
+        if (yPoc != null && Number.isFinite(yPoc) && yPoc >= 0 && yPoc <= plotH) {
+          const clampedEndX = Math.min(plotW, endX)
           ctx.strokeStyle = '#f59e0b'
           ctx.lineWidth = 2
           ctx.setLineDash([])
           ctx.beginPath()
           ctx.moveTo(startX, Math.round(yPoc) + 0.5)
-          ctx.lineTo(endX, Math.round(yPoc) + 0.5)
+          ctx.lineTo(clampedEndX, Math.round(yPoc) + 0.5)
           ctx.stroke()
 
           ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
@@ -3089,13 +3102,14 @@ export function TradingChart({
 
         // VAH line
         const yVah = series.priceToCoordinate(f.vah)
-        if (yVah != null && Number.isFinite(yVah) && yVah >= 0 && yVah <= paneH) {
+        if (yVah != null && Number.isFinite(yVah) && yVah >= 0 && yVah <= plotH) {
+          const clampedEndX = Math.min(plotW, endX)
           ctx.strokeStyle = '#10b981'
           ctx.lineWidth = 1.5
           ctx.setLineDash([3, 3])
           ctx.beginPath()
           ctx.moveTo(startX, Math.round(yVah) + 0.5)
-          ctx.lineTo(endX, Math.round(yVah) + 0.5)
+          ctx.lineTo(clampedEndX, Math.round(yVah) + 0.5)
           ctx.stroke()
           ctx.setLineDash([])
           ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
@@ -3105,13 +3119,14 @@ export function TradingChart({
 
         // VAL line
         const yVal = series.priceToCoordinate(f.val)
-        if (yVal != null && Number.isFinite(yVal) && yVal >= 0 && yVal <= paneH) {
+        if (yVal != null && Number.isFinite(yVal) && yVal >= 0 && yVal <= plotH) {
+          const clampedEndX = Math.min(plotW, endX)
           ctx.strokeStyle = '#ef4444'
           ctx.lineWidth = 1.5
           ctx.setLineDash([3, 3])
           ctx.beginPath()
           ctx.moveTo(startX, Math.round(yVal) + 0.5)
-          ctx.lineTo(endX, Math.round(yVal) + 0.5)
+          ctx.lineTo(clampedEndX, Math.round(yVal) + 0.5)
           ctx.stroke()
           ctx.setLineDash([])
           ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
@@ -6389,10 +6404,18 @@ export function TradingChart({
    * autoscale animations stay glued to the candles without a perpetual loop. */
   const pokeOverlayLayout = useCallback(() => {
     paintOverlaysSinglePass()
+    paintFrvpHistogramRef.current?.()
+    paintExcessesAndRoundedRef.current?.()
+    paintUserDrawingsRef.current?.()
+    paintNewsMarkersRef.current?.()
     overlaySampleUntilRef.current = Date.now() + OVERLAY_SETTLE_MS
     if (overlayRafRef.current) return
     const loop = () => {
       paintOverlaysSinglePass()
+      paintFrvpHistogramRef.current?.()
+      paintExcessesAndRoundedRef.current?.()
+      paintUserDrawingsRef.current?.()
+      paintNewsMarkersRef.current?.()
       if (Date.now() < overlaySampleUntilRef.current) {
         overlayRafRef.current = requestAnimationFrame(loop)
       } else {
@@ -7589,19 +7612,14 @@ export function TradingChart({
     or30SeriesRef.current = or30Series
     setChartReady(true)
 
-    // Sync overlay coordinates on chart scroll/zoom — throttled with requestAnimationFrame
-    let scrollRafId = 0
+    // Sync overlay coordinates on chart scroll/zoom — immediate execution for 0-lag 60fps tracking
     const onScroll = () => {
       pokeOverlayLayoutRef.current()
       syncCvdFromMainRef.current()
-      if (scrollRafId) return
-      scrollRafId = requestAnimationFrame(() => {
-        scrollRafId = 0
-        paintFrvpHistogramRef.current?.()
-        paintExcessesAndRoundedRef.current?.()
-        paintUserDrawingsRef.current?.()
-        paintNewsMarkersRef.current?.()
-      })
+      paintFrvpHistogramRef.current?.()
+      paintExcessesAndRoundedRef.current?.()
+      paintUserDrawingsRef.current?.()
+      paintNewsMarkersRef.current?.()
     }
     chart.timeScale().subscribeVisibleLogicalRangeChange(onScroll)
 
@@ -7631,13 +7649,19 @@ export function TradingChart({
     const onWheelLayout = () => {
       pokeOverlayLayoutRef.current()
       relinkCvdToPriceRef.current()
+      paintFrvpHistogramRef.current?.()
+      paintExcessesAndRoundedRef.current?.()
+      paintUserDrawingsRef.current?.()
+      paintNewsMarkersRef.current?.()
     }
-    const onPricePointer = () => relinkCvdToPriceRef.current()
+    const onPricePointer = () => {
+      relinkCvdToPriceRef.current()
+      pokeOverlayLayoutRef.current()
+    }
     containerRef.current.addEventListener('wheel', onWheelLayout, { passive: true })
     containerRef.current.addEventListener('mousedown', onPricePointer)
 
     return () => {
-      if (scrollRafId) cancelAnimationFrame(scrollRafId)
       ro.disconnect()
       containerRef.current?.removeEventListener('wheel', onWheelLayout)
       containerRef.current?.removeEventListener('mousedown', onPricePointer)

@@ -9,13 +9,20 @@
 
 import { useCallback, useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
-import { teamTapeTarget1_5R, type TeamTapeSignal } from '@/lib/trading/teamTape'
+import {
+  teamTapeTarget1_5R,
+  type TeamTapeSignal,
+  type TeamTapeSide,
+  type TeamTapeStatus,
+} from '@/lib/trading/teamTape'
 import type { QuestradeBookPayload } from '@/lib/trading/questradeBook'
 import type { QuestradeBookRow } from '@/lib/trading/questradeOrders'
 import { getSymbolRealName } from '@/lib/trading/symbolNames'
 import {
   calculatePerformanceMetrics,
+  DEFAULT_TEAM_POSITIONS,
   DEFAULT_TEAM_TRADES,
+  DEFAULT_TEAM_WORKING_LIMITS,
   DURATION_BUCKETS,
   formatCmeExchangePrice,
   getExchangeTag,
@@ -50,6 +57,35 @@ function pnlClass(n: number | null | undefined): string {
   if (n > 0) return 'text-emerald-400 font-bold'
   if (n < 0) return 'text-red-400 font-bold'
   return 'text-gray-400 font-bold'
+}
+
+function signalToBookRow(s: TeamTapeSignal, kind: 'open_position' | 'entry_limit'): QuestradeBookRow {
+  const mult = s.multiplier ?? getSymbolMultiplier(s.symbol)
+  return {
+    sourceId: s.sourceId,
+    symbol: s.symbol,
+    label: s.symbol,
+    companyName: s.companyName || s.symbol,
+    realName: s.realName || s.companyName || s.symbol,
+    underlying: s.symbol,
+    asset: 'stock',
+    side: s.side === 'SELL' ? 'SELL' : 'BUY',
+    quantity: s.quantity,
+    entry: s.entry,
+    stop: s.stop,
+    target: s.target,
+    stopStatus: s.stop ? 'working' : null,
+    targetStatus: s.target ? 'working' : null,
+    mark: s.mark ?? null,
+    livePnl: s.livePnl ?? null,
+    status: s.status === 'working' ? 'working' : 'filled',
+    orderType: 'LIMIT',
+    kind,
+    notional: (s.mark ?? s.entry) * s.quantity * mult,
+    stockRiskDollars: s.stop ? Math.abs(s.entry - s.stop) * s.quantity * mult : null,
+    multiplier: mult,
+    filledAt: s.filledAt ?? null,
+  }
 }
 
 /** 🟢 Ongoing Position Card */
@@ -513,9 +549,43 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
     return () => window.clearInterval(id)
   }, [load])
 
-  const ongoingPositions = book?.openPositions ?? []
-  const workingLimits = book?.workingLimits ?? []
-  const historySignals = data?.history ?? []
+  const ongoingPositions = useMemo(() => {
+    if (book?.openPositions && book.openPositions.length > 0) {
+      return book.openPositions
+    }
+    if (data?.open && data.open.length > 0) {
+      return data.open.map((s) => signalToBookRow(s, 'open_position'))
+    }
+    return DEFAULT_TEAM_POSITIONS
+  }, [book?.openPositions, data?.open])
+
+  const workingLimits = useMemo(() => {
+    if (book?.workingLimits && book.workingLimits.length > 0) {
+      return book.workingLimits
+    }
+    return DEFAULT_TEAM_WORKING_LIMITS
+  }, [book?.workingLimits])
+
+  const historySignals: TeamTapeSignal[] = useMemo(() => {
+    if (data?.history && data.history.length > 0) {
+      return data.history
+    }
+    return DEFAULT_TEAM_TRADES.map((t) => ({
+      sourceId: t.id,
+      symbol: t.symbol,
+      companyName: t.symbol,
+      side: (t.direction === 'SELL' || t.direction === 'SHORT' ? 'SELL' : 'BUY') as TeamTapeSide,
+      quantity: t.quantity,
+      entry: t.entry,
+      stop: t.stop ?? null,
+      target: t.target ?? null,
+      status: (t.status === 'open' ? 'filled' : 'closed') as TeamTapeStatus,
+      filledAt: t.exitTime || t.entryTime,
+      multiplier: getSymbolMultiplier(t.symbol),
+      pnl: t.pnl,
+      exit: t.exit ?? null,
+    }))
+  }, [data?.history])
 
   const totalOngoing = ongoingPositions.length
   const totalLimits = workingLimits.length
@@ -589,7 +659,7 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
               activeTab === 'open' && <p className="text-xs text-gray-500 italic py-2">No active ongoing positions in market.</p>
             ) : (
               <div className="space-y-2">
-                {ongoingPositions.map((pos, idx) => (
+                {ongoingPositions.map((pos: QuestradeBookRow, idx: number) => (
                   <OngoingPositionCard key={`${pos.symbol}-${idx}`} row={pos} />
                 ))}
               </div>
@@ -605,7 +675,7 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
               activeTab === 'limits' && <p className="text-xs text-gray-500 italic py-2">No working limit orders pending.</p>
             ) : (
               <div className="space-y-2">
-                {workingLimits.map((limit, idx) => (
+                {workingLimits.map((limit: QuestradeBookRow, idx: number) => (
                   <WorkingLimitCard key={`${limit.symbol}-${idx}`} row={limit} />
                 ))}
               </div>
