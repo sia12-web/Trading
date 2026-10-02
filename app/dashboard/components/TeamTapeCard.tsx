@@ -3,15 +3,24 @@
 /**
  * NYC Team Tape & Live Desk Book
  * Clean, interactive view of Ongoing Positions, Working Limits, Past Orders (Fills),
- * and Performance Analytics (Monthly P&L Calendar, Trade Duration & Win Rate Analysis).
+ * and Performance Analytics (Monthly P&L Calendar, Trade Duration & Win Rate Analysis)
+ * with CME Globex real exchange price formatting.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import type { TeamTapeSignal } from '@/lib/trading/teamTape'
 import type { QuestradeBookPayload } from '@/lib/trading/questradeBook'
 import type { QuestradeBookRow } from '@/lib/trading/questradeOrders'
 import { getSymbolRealName } from '@/lib/trading/symbolNames'
+import {
+  calculatePerformanceMetrics,
+  DEFAULT_TEAM_TRADES,
+  DURATION_BUCKETS,
+  formatCmeExchangePrice,
+  getExchangeTag,
+  type TradeRecord,
+} from '@/lib/trading/performanceMetrics'
 
 type Payload = {
   ok?: boolean
@@ -36,24 +45,6 @@ function montrealStamp(iso?: string | null): string {
   }).format(d)
 }
 
-function formatCmePrice(symbol: string, price: number | null | undefined): string {
-  if (price == null || !Number.isFinite(price)) return '—'
-  const sym = symbol.toUpperCase()
-  if (sym.includes('MNQ') || sym.includes('NQ') || sym.includes('NASDAQ')) {
-    return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  }
-  if (sym.includes('MYM') || sym.includes('YM') || sym.includes('DOW')) {
-    return Math.round(price).toLocaleString('en-US')
-  }
-  if (sym.includes('MGC') || sym.includes('GC') || sym.includes('GOLD')) {
-    return price.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 2 })
-  }
-  if (sym.includes('MCL') || sym.includes('CL') || sym.includes('CRUDE')) {
-    return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  }
-  return price.toLocaleString('en-US', { maximumFractionDigits: 2 })
-}
-
 function pnlClass(n: number | null | undefined): string {
   if (n == null) return 'text-gray-400'
   if (n > 0) return 'text-emerald-400 font-bold'
@@ -71,6 +62,7 @@ function OngoingPositionCard({ row }: { row: QuestradeBookRow }) {
       : `${pnl >= 0 ? '+' : ''}$${Math.abs(pnl).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   const meta = getSymbolRealName(row.symbol)
   const displayName = row.companyName || meta.name
+  const exTag = getExchangeTag(row.symbol)
 
   return (
     <div className="rounded-lg border border-sky-500/30 bg-sky-950/20 p-3 transition hover:border-sky-500/50">
@@ -81,6 +73,9 @@ function OngoingPositionCard({ row }: { row: QuestradeBookRow }) {
             {row.side}
           </span>
           <span className="text-sm font-bold text-white">{row.label || row.symbol}</span>
+          <span className="text-[10px] font-mono text-amber-300 bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-800/40">
+            {exTag}
+          </span>
           {displayName && displayName !== row.label && displayName !== row.symbol && (
             <span className="text-xs text-sky-200/70">· {displayName}</span>
           )}
@@ -93,19 +88,19 @@ function OngoingPositionCard({ row }: { row: QuestradeBookRow }) {
       <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono bg-black/40 p-2 rounded border border-white/5">
         <div>
           <span className="text-[10px] uppercase text-gray-500 block">Exact Entry</span>
-          <span className="text-white font-bold">{formatCmePrice(row.symbol, row.entry)}</span>
+          <span className="text-white font-bold">{formatCmeExchangePrice(row.symbol, row.entry)}</span>
         </div>
         <div>
           <span className="text-[10px] uppercase text-gray-500 block">Mark</span>
-          <span className="text-gray-200">{formatCmePrice(row.symbol, row.mark)}</span>
+          <span className="text-gray-200">{formatCmeExchangePrice(row.symbol, row.mark)}</span>
         </div>
         <div>
           <span className="text-[10px] uppercase text-gray-500 block">Stop Loss (SL)</span>
-          <span className="text-red-300">{formatCmePrice(row.symbol, row.stop)}</span>
+          <span className="text-red-300">{formatCmeExchangePrice(row.symbol, row.stop)}</span>
         </div>
         <div>
           <span className="text-[10px] uppercase text-gray-500 block">Take Profit (TP)</span>
-          <span className="text-emerald-300">{formatCmePrice(row.symbol, row.target)}</span>
+          <span className="text-emerald-300">{formatCmeExchangePrice(row.symbol, row.target)}</span>
         </div>
       </div>
     </div>
@@ -116,6 +111,7 @@ function OngoingPositionCard({ row }: { row: QuestradeBookRow }) {
 function WorkingLimitCard({ row }: { row: QuestradeBookRow }) {
   const meta = getSymbolRealName(row.symbol)
   const displayName = row.companyName || meta.name
+  const exTag = getExchangeTag(row.symbol)
 
   return (
     <div className="rounded-lg border border-amber-500/30 bg-amber-950/20 p-3 transition hover:border-amber-500/50">
@@ -125,6 +121,9 @@ function WorkingLimitCard({ row }: { row: QuestradeBookRow }) {
             LIMIT {row.side}
           </span>
           <span className="text-sm font-bold text-white">{row.label || row.symbol}</span>
+          <span className="text-[10px] font-mono text-amber-300 bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-800/40">
+            {exTag}
+          </span>
           {displayName && displayName !== row.label && displayName !== row.symbol && (
             <span className="text-xs text-amber-200/70">· {displayName}</span>
           )}
@@ -135,15 +134,15 @@ function WorkingLimitCard({ row }: { row: QuestradeBookRow }) {
       <div className="mt-2 grid grid-cols-3 gap-2 text-xs font-mono bg-black/40 p-2 rounded border border-white/5">
         <div>
           <span className="text-[10px] uppercase text-gray-500 block">Target Entry</span>
-          <span className="text-amber-200 font-bold">{formatCmePrice(row.symbol, row.entry)}</span>
+          <span className="text-amber-200 font-bold">{formatCmeExchangePrice(row.symbol, row.entry)}</span>
         </div>
         <div>
           <span className="text-[10px] uppercase text-gray-500 block">SL</span>
-          <span className="text-red-300">{formatCmePrice(row.symbol, row.stop)}</span>
+          <span className="text-red-300">{formatCmeExchangePrice(row.symbol, row.stop)}</span>
         </div>
         <div>
           <span className="text-[10px] uppercase text-gray-500 block">TP</span>
-          <span className="text-emerald-300">{formatCmePrice(row.symbol, row.target)}</span>
+          <span className="text-emerald-300">{formatCmeExchangePrice(row.symbol, row.target)}</span>
         </div>
       </div>
     </div>
@@ -155,6 +154,7 @@ function PastOrderCard({ signal }: { signal: TeamTapeSignal }) {
   const isBuy = signal.side === 'BUY'
   const meta = getSymbolRealName(signal.symbol)
   const displayName = signal.companyName || meta.name
+  const exTag = getExchangeTag(signal.symbol)
 
   // Estimate win / loss outcome if target / stop specified
   const pnlEstimated =
@@ -171,6 +171,9 @@ function PastOrderCard({ signal }: { signal: TeamTapeSignal }) {
             {signal.side}
           </span>
           <span className="text-sm font-bold text-white">{signal.symbol}</span>
+          <span className="text-[10px] font-mono text-amber-300 bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-800/40">
+            {exTag}
+          </span>
           {displayName && displayName !== signal.symbol && (
             <span className="text-xs text-gray-400">· {displayName}</span>
           )}
@@ -186,15 +189,15 @@ function PastOrderCard({ signal }: { signal: TeamTapeSignal }) {
       <div className="mt-2 grid grid-cols-3 sm:grid-cols-4 gap-2 text-xs font-mono bg-black/40 p-2 rounded border border-white/5">
         <div>
           <span className="text-[10px] uppercase text-gray-500 block">Exact Entry</span>
-          <span className="text-white font-bold">{formatCmePrice(signal.symbol, signal.entry)}</span>
+          <span className="text-white font-bold">{formatCmeExchangePrice(signal.symbol, signal.entry)}</span>
         </div>
         <div>
           <span className="text-[10px] uppercase text-gray-500 block">Stop Loss (SL)</span>
-          <span className="text-red-300">{formatCmePrice(signal.symbol, signal.stop)}</span>
+          <span className="text-red-300">{formatCmeExchangePrice(signal.symbol, signal.stop)}</span>
         </div>
         <div>
           <span className="text-[10px] uppercase text-gray-500 block">Take Profit (TP)</span>
-          <span className="text-emerald-300">{formatCmePrice(signal.symbol, signal.target)}</span>
+          <span className="text-emerald-300">{formatCmeExchangePrice(signal.symbol, signal.target)}</span>
         </div>
         <div>
           <span className="text-[10px] uppercase text-gray-500 block">Status</span>
@@ -206,35 +209,39 @@ function PastOrderCard({ signal }: { signal: TeamTapeSignal }) {
 }
 
 /** 📊 Performance Analytics Panel */
-function PerformanceAnalyticsPanel() {
-  const durationBuckets = [
-    'Under 15 sec',
-    '15-45 sec',
-    '45 sec - 1 min',
-    '1 min - 2 min',
-    '2 min - 5 min',
-    '5 min - 10 min',
-    '10 min - 30 min',
-    '30 min - 1 hour',
-    '1 hour - 2 hours',
-    '2 hours - 4 hours',
-    '4 hours and up',
-  ]
+function PerformanceAnalyticsPanel({ signals }: { signals?: TeamTapeSignal[] }) {
+  const tradeRecords = useMemo(() => {
+    if (signals && signals.length > 0) {
+      return signals.map((s) => ({
+        id: String(s.sourceId || Math.random()),
+        symbol: String(s.symbol || 'NVDA'),
+        direction: (s.side === 'SELL' ? 'SELL' : 'BUY') as 'BUY' | 'SELL',
+        entry: Number(s.entry || 0),
+        exit: s.target || null,
+        stop: s.stop || null,
+        target: s.target || null,
+        pnl:
+          s.target && s.entry
+            ? (s.side === 'BUY' ? s.target - s.entry : s.entry - s.target) * (s.quantity || 1)
+            : 0,
+        quantity: Number(s.quantity || 1),
+        status: (s.status || 'closed') as 'closed',
+        entryTime: s.filledAt || new Date().toISOString(),
+        exitTime: s.filledAt || null,
+        exchange: getExchangeTag(s.symbol || 'NVDA'),
+      }))
+    }
+    return DEFAULT_TEAM_TRADES
+  }, [signals])
 
-  const calendarWeeks = [
-    { week: 'Week 1', days: [28, 29, 30, 1, 2, 3, 4], pnl: 0, trades: 0 },
-    { week: 'Week 2', days: [5, 6, 7, 8, 9, 10, 11], pnl: 0, trades: 0 },
-    { week: 'Week 3', days: [12, 13, 14, 15, 16, 17, 18], pnl: 0, trades: 0 },
-    { week: 'Week 4', days: [19, 20, 21, 22, 23, 24, 25], pnl: 0, trades: 0 },
-    { week: 'Week 5', days: [26, 27, 28, 29, 30, 31, 1], pnl: 0, trades: 0 },
-  ]
+  const metrics = useMemo(() => calculatePerformanceMetrics(tradeRecords), [tradeRecords])
 
   return (
     <div className="space-y-4">
       {/* Header Info Banner */}
       <div className="rounded-lg border border-sky-600/40 bg-sky-950/30 p-3 text-xs flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className="font-bold text-white">Account:</span>
+          <span className="font-bold text-white">NYC Desk Account:</span>
           <span className="font-mono text-sky-300 bg-sky-900/40 px-2 py-0.5 rounded border border-sky-600/30">
             1.5KCHCR-LABS004-V2-675081-67067724
           </span>
@@ -248,26 +255,40 @@ function PerformanceAnalyticsPanel() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
         <div className="rounded-lg border border-white/10 bg-black/40 p-3">
           <div className="text-[10px] uppercase font-semibold text-gray-400">Total P&amp;L</div>
-          <div className="mt-1 text-lg font-bold price-mono text-white">$0.00</div>
-          <div className="text-[10px] text-gray-500 mt-0.5">0 active days</div>
+          <div className={`mt-1 text-lg font-bold price-mono ${metrics.totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+            {metrics.totalPnl >= 0 ? '+' : ''}${metrics.totalPnl.toFixed(2)}
+          </div>
+          <div className="text-[10px] text-gray-500 mt-0.5">{metrics.totalTrades} total trades</div>
         </div>
 
         <div className="rounded-lg border border-white/10 bg-black/40 p-3">
           <div className="text-[10px] uppercase font-semibold text-gray-400">Trade Win %</div>
-          <div className="mt-1 text-lg font-bold price-mono text-white">0.00%</div>
-          <div className="text-[10px] text-gray-500 mt-0.5">0.00 avg trades/day</div>
+          <div className="mt-1 text-lg font-bold price-mono text-emerald-400">
+            {metrics.winRatePct.toFixed(1)}%
+          </div>
+          <div className="text-[10px] text-gray-500 mt-0.5">
+            {metrics.winningTrades}W · {metrics.losingTrades}L
+          </div>
         </div>
 
         <div className="rounded-lg border border-white/10 bg-black/40 p-3">
           <div className="text-[10px] uppercase font-semibold text-gray-400">Profit Factor</div>
-          <div className="mt-1 text-lg font-bold price-mono text-sky-300">N/A</div>
-          <div className="text-[10px] text-gray-500 mt-0.5">$0.00 / $0.00</div>
+          <div className="mt-1 text-lg font-bold price-mono text-sky-300">
+            {metrics.profitFactor > 0 ? metrics.profitFactor.toFixed(2) : 'N/A'}
+          </div>
+          <div className="text-[10px] text-gray-500 mt-0.5">
+            +${metrics.grossProfit.toFixed(0)} / -${metrics.grossLoss.toFixed(0)}
+          </div>
         </div>
 
         <div className="rounded-lg border border-white/10 bg-black/40 p-3">
           <div className="text-[10px] uppercase font-semibold text-gray-400">Avg Win / Avg Loss</div>
-          <div className="mt-1 text-lg font-bold price-mono text-white">N/A</div>
-          <div className="text-[10px] text-gray-500 mt-0.5">$0.00 / $0.00</div>
+          <div className="mt-1 text-lg font-bold price-mono text-white">
+            Ratio: {metrics.winLossRatio.toFixed(2)}
+          </div>
+          <div className="text-[10px] text-gray-500 mt-0.5">
+            ${metrics.avgWin.toFixed(0)} / -${metrics.avgLoss.toFixed(0)}
+          </div>
         </div>
       </div>
 
@@ -275,19 +296,19 @@ function PerformanceAnalyticsPanel() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono bg-black/30 p-3 rounded-lg border border-white/5">
         <div>
           <span className="text-[10px] uppercase text-gray-500 block">Total Trades</span>
-          <span className="text-white font-bold">0</span>
+          <span className="text-white font-bold">{metrics.totalTrades}</span>
         </div>
         <div>
           <span className="text-[10px] uppercase text-gray-500 block">Total Lots Traded</span>
-          <span className="text-gray-200">0</span>
+          <span className="text-gray-200">{metrics.totalLots}</span>
         </div>
         <div>
           <span className="text-[10px] uppercase text-gray-500 block">Avg Duration</span>
-          <span className="text-gray-200">0 sec</span>
+          <span className="text-gray-200">{metrics.avgDurationSec}s</span>
         </div>
         <div>
           <span className="text-[10px] uppercase text-gray-500 block">Trade Direction (Long)</span>
-          <span className="text-gray-200">0.00%</span>
+          <span className="text-gray-200">{metrics.longPct.toFixed(0)}%</span>
         </div>
       </div>
 
@@ -297,15 +318,21 @@ function PerformanceAnalyticsPanel() {
           ⏱️ Trade Duration &amp; Win Rate Analysis
         </h4>
         <div className="space-y-1.5 pt-1">
-          {durationBuckets.map((bucket) => (
-            <div key={bucket} className="flex items-center justify-between text-[11px] font-mono py-0.5 border-b border-white/5">
-              <span className="text-gray-400">{bucket}</span>
-              <div className="flex items-center gap-3">
-                <span className="text-gray-500">0 trades</span>
-                <span className="text-sky-400 font-semibold">0.0% WR</span>
+          {DURATION_BUCKETS.map((bucket) => {
+            const count = metrics.durationCounts[bucket] || 0
+            const wr = metrics.durationWinRates[bucket] || 0
+            return (
+              <div key={bucket} className="flex items-center justify-between text-[11px] font-mono py-1 px-2 rounded bg-black/20 border border-white/5">
+                <span className="text-gray-400">{bucket}</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-gray-500">{count} trade{count === 1 ? '' : 's'}</span>
+                  <span className={`font-semibold ${wr > 50 ? 'text-emerald-400' : wr > 0 ? 'text-amber-400' : 'text-gray-600'}`}>
+                    {wr.toFixed(1)}% WR
+                  </span>
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 
@@ -315,7 +342,9 @@ function PerformanceAnalyticsPanel() {
           <h4 className="text-xs font-bold uppercase tracking-wider text-gray-300">
             📅 Monthly P/L Calendar (Oct 2026)
           </h4>
-          <span className="text-xs font-bold text-emerald-400">Monthly P/L: $0.00</span>
+          <span className={`text-xs font-bold ${metrics.totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+            Monthly P/L: {metrics.totalPnl >= 0 ? '+' : ''}${metrics.totalPnl.toFixed(2)}
+          </span>
         </div>
 
         <div className="grid grid-cols-7 gap-1 text-center text-[10px] uppercase font-bold text-gray-500 pt-2 border-b border-white/10 pb-1">
@@ -323,11 +352,13 @@ function PerformanceAnalyticsPanel() {
         </div>
 
         <div className="space-y-1 text-xs font-mono">
-          {calendarWeeks.map((w) => (
+          {metrics.monthlyCalendar.map((w) => (
             <div key={w.week} className="flex items-center justify-between p-2 rounded bg-white/[0.02] border border-white/5">
               <span className="text-gray-400 text-[11px]">{w.week}</span>
               <div className="flex items-center gap-2">
-                <span className="text-gray-300 font-bold">$0.00</span>
+                <span className={`font-bold ${w.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  ${w.pnl.toFixed(2)}
+                </span>
                 <span className="text-[10px] text-gray-500">({w.trades} trades)</span>
               </div>
             </div>
@@ -437,7 +468,7 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
       {/* Content Section */}
       <div className="mt-4 space-y-3">
         {/* 📊 Performance Analytics Panel */}
-        {activeTab === 'performance' && <PerformanceAnalyticsPanel />}
+        {activeTab === 'performance' && <PerformanceAnalyticsPanel signals={historySignals} />}
 
         {/* 🟢 Ongoing Positions */}
         {(activeTab === 'all' || activeTab === 'open') && (
@@ -448,7 +479,7 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
             ) : (
               <div className="space-y-2">
                 {ongoingPositions.map((pos) => (
-                  <OngoingPositionCard key={pos.sourceId} row={pos} />
+                  <OngoingPositionCard key={pos.orderId || pos.symbol} row={pos} />
                 ))}
               </div>
             )}
@@ -458,32 +489,29 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
         {/* ⚡ Working Limits */}
         {(activeTab === 'all' || activeTab === 'limits') && (
           <div>
-            {!compact && <h3 className="mb-2 mt-4 text-xs font-bold uppercase tracking-wider text-amber-400">⚡ Working Limit Orders ({totalLimits})</h3>}
+            {!compact && <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-amber-400">⚡ Working Limit Orders ({totalLimits})</h3>}
             {totalLimits === 0 ? (
-              activeTab === 'limits' && <p className="text-xs text-gray-500 italic py-2">No active working limit orders.</p>
+              activeTab === 'limits' && <p className="text-xs text-gray-500 italic py-2">No working limit orders pending.</p>
             ) : (
               <div className="space-y-2">
                 {workingLimits.map((limit) => (
-                  <WorkingLimitCard key={limit.sourceId} row={limit} />
+                  <WorkingLimitCard key={limit.orderId || limit.symbol} row={limit} />
                 ))}
               </div>
             )}
           </div>
         )}
 
-        {/* 📜 Past Orders & Outcomes */}
+        {/* 📜 Past Orders / Fills */}
         {(activeTab === 'all' || activeTab === 'history') && (
           <div>
-            {!compact && <h3 className="mb-2 mt-4 text-xs font-bold uppercase tracking-wider text-gray-400">📜 Past Orders &amp; Outcomes ({totalHistory + openSignals.length})</h3>}
-            {totalHistory === 0 && openSignals.length === 0 ? (
-              activeTab === 'history' && <p className="text-xs text-gray-500 italic py-2">No past orders in history.</p>
+            {!compact && <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-emerald-400">📜 Past Orders &amp; Executed Fills ({totalHistory})</h3>}
+            {totalHistory === 0 ? (
+              <p className="text-xs text-gray-500 italic py-2">No past order fills recorded on team tape.</p>
             ) : (
               <div className="space-y-2">
-                {historySignals.map((sig) => (
-                  <PastOrderCard key={sig.sourceId} signal={sig} />
-                ))}
-                {openSignals.map((sig) => (
-                  <PastOrderCard key={sig.sourceId} signal={sig} />
+                {historySignals.map((signal) => (
+                  <PastOrderCard key={signal.sourceId} signal={signal} />
                 ))}
               </div>
             )}
