@@ -2,8 +2,8 @@
 
 /**
  * NYC Team Tape & Live Desk Book
- * Clean, interactive view of Ongoing Positions, Working Limits, and Past Orders (Fills)
- * with exact CME Futures Exchange prices, SL/TP levels, and Win/Loss P&L outcomes.
+ * Clean, interactive view of Ongoing Positions, Working Limits, Past Orders (Fills),
+ * and Performance Analytics (Monthly P&L Calendar, Trade Duration & Win Rate Analysis).
  */
 
 import { useCallback, useEffect, useState } from 'react'
@@ -20,7 +20,7 @@ type Payload = {
   error?: string
 }
 
-type TabType = 'all' | 'open' | 'limits' | 'history'
+type TabType = 'all' | 'open' | 'limits' | 'history' | 'performance'
 
 function montrealStamp(iso?: string | null): string {
   if (!iso) return '—'
@@ -205,6 +205,139 @@ function PastOrderCard({ signal }: { signal: TeamTapeSignal }) {
   )
 }
 
+/** 📊 Performance Analytics Panel */
+function PerformanceAnalyticsPanel() {
+  const durationBuckets = [
+    'Under 15 sec',
+    '15-45 sec',
+    '45 sec - 1 min',
+    '1 min - 2 min',
+    '2 min - 5 min',
+    '5 min - 10 min',
+    '10 min - 30 min',
+    '30 min - 1 hour',
+    '1 hour - 2 hours',
+    '2 hours - 4 hours',
+    '4 hours and up',
+  ]
+
+  const calendarWeeks = [
+    { week: 'Week 1', days: [28, 29, 30, 1, 2, 3, 4], pnl: 0, trades: 0 },
+    { week: 'Week 2', days: [5, 6, 7, 8, 9, 10, 11], pnl: 0, trades: 0 },
+    { week: 'Week 3', days: [12, 13, 14, 15, 16, 17, 18], pnl: 0, trades: 0 },
+    { week: 'Week 4', days: [19, 20, 21, 22, 23, 24, 25], pnl: 0, trades: 0 },
+    { week: 'Week 5', days: [26, 27, 28, 29, 30, 31, 1], pnl: 0, trades: 0 },
+  ]
+
+  return (
+    <div className="space-y-4">
+      {/* Header Info Banner */}
+      <div className="rounded-lg border border-sky-600/40 bg-sky-950/30 p-3 text-xs flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="font-bold text-white">Account:</span>
+          <span className="font-mono text-sky-300 bg-sky-900/40 px-2 py-0.5 rounded border border-sky-600/30">
+            1.5KCHCR-LABS004-V2-675081-67067724
+          </span>
+        </div>
+        <div className="text-gray-400 font-mono">
+          Date Range: <span className="text-gray-200">09/30/2026 – 10/01/2026</span>
+        </div>
+      </div>
+
+      {/* Primary Key Performance Indicators Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        <div className="rounded-lg border border-white/10 bg-black/40 p-3">
+          <div className="text-[10px] uppercase font-semibold text-gray-400">Total P&amp;L</div>
+          <div className="mt-1 text-lg font-bold price-mono text-white">$0.00</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">0 active days</div>
+        </div>
+
+        <div className="rounded-lg border border-white/10 bg-black/40 p-3">
+          <div className="text-[10px] uppercase font-semibold text-gray-400">Trade Win %</div>
+          <div className="mt-1 text-lg font-bold price-mono text-white">0.00%</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">0.00 avg trades/day</div>
+        </div>
+
+        <div className="rounded-lg border border-white/10 bg-black/40 p-3">
+          <div className="text-[10px] uppercase font-semibold text-gray-400">Profit Factor</div>
+          <div className="mt-1 text-lg font-bold price-mono text-sky-300">N/A</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">$0.00 / $0.00</div>
+        </div>
+
+        <div className="rounded-lg border border-white/10 bg-black/40 p-3">
+          <div className="text-[10px] uppercase font-semibold text-gray-400">Avg Win / Avg Loss</div>
+          <div className="mt-1 text-lg font-bold price-mono text-white">N/A</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">$0.00 / $0.00</div>
+        </div>
+      </div>
+
+      {/* Secondary Metrics */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono bg-black/30 p-3 rounded-lg border border-white/5">
+        <div>
+          <span className="text-[10px] uppercase text-gray-500 block">Total Trades</span>
+          <span className="text-white font-bold">0</span>
+        </div>
+        <div>
+          <span className="text-[10px] uppercase text-gray-500 block">Total Lots Traded</span>
+          <span className="text-gray-200">0</span>
+        </div>
+        <div>
+          <span className="text-[10px] uppercase text-gray-500 block">Avg Duration</span>
+          <span className="text-gray-200">0 sec</span>
+        </div>
+        <div>
+          <span className="text-[10px] uppercase text-gray-500 block">Trade Direction (Long)</span>
+          <span className="text-gray-200">0.00%</span>
+        </div>
+      </div>
+
+      {/* Trade Duration Analysis */}
+      <div className="rounded-lg border border-white/10 bg-black/40 p-3 space-y-2">
+        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-300">
+          ⏱️ Trade Duration &amp; Win Rate Analysis
+        </h4>
+        <div className="space-y-1.5 pt-1">
+          {durationBuckets.map((bucket) => (
+            <div key={bucket} className="flex items-center justify-between text-[11px] font-mono py-0.5 border-b border-white/5">
+              <span className="text-gray-400">{bucket}</span>
+              <div className="flex items-center gap-3">
+                <span className="text-gray-500">0 trades</span>
+                <span className="text-sky-400 font-semibold">0.0% WR</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Monthly P&L Calendar */}
+      <div className="rounded-lg border border-white/10 bg-black/40 p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-gray-300">
+            📅 Monthly P/L Calendar (Oct 2026)
+          </h4>
+          <span className="text-xs font-bold text-emerald-400">Monthly P/L: $0.00</span>
+        </div>
+
+        <div className="grid grid-cols-7 gap-1 text-center text-[10px] uppercase font-bold text-gray-500 pt-2 border-b border-white/10 pb-1">
+          <span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span>
+        </div>
+
+        <div className="space-y-1 text-xs font-mono">
+          {calendarWeeks.map((w, idx) => (
+            <div key={w.week} className="flex items-center justify-between p-2 rounded bg-white/[0.02] border border-white/5">
+              <span className="text-gray-400 text-[11px]">{w.week}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-300 font-bold">$0.00</span>
+                <span className="text-[10px] text-gray-500">({w.trades} trades)</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
   const [data, setData] = useState<Payload | null>(null)
   const [book, setBook] = useState<QuestradeBookPayload | null>(null)
@@ -279,6 +412,7 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
               { id: 'open', label: '🟢 Ongoing Positions', count: totalOngoing },
               { id: 'limits', label: '⚡ Working Limits', count: totalLimits },
               { id: 'history', label: '📜 Past Fills & Outcomes', count: totalHistory },
+              { id: 'performance', label: '📊 Performance Analytics', count: 'Stats' },
             ] as const
           ).map((tab) => (
             <button
@@ -302,6 +436,9 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
 
       {/* Content Section */}
       <div className="mt-4 space-y-3">
+        {/* 📊 Performance Analytics Panel */}
+        {activeTab === 'performance' && <PerformanceAnalyticsPanel />}
+
         {/* 🟢 Ongoing Positions */}
         {(activeTab === 'all' || activeTab === 'open') && (
           <div>
