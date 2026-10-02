@@ -1,29 +1,26 @@
 'use client'
 
 /**
- * NYC team tape — see only. A team stock fill is not a Tradeify attempt.
- * Click size / SL / TP to copy that number.
+ * NYC Team Tape & Live Desk Book
+ * Clean, interactive view of Ongoing Positions, Working Limits, and Past Orders (Fills)
+ * with exact CME Futures Exchange prices, SL/TP levels, and Win/Loss P&L outcomes.
  */
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import type { TeamCopyAdvice, TeamTapeSignal } from '@/lib/trading/teamTape'
-import type { QuestradeAccountSnapshot } from '@/lib/trading/questradeReadOnly'
+import type { TeamTapeSignal } from '@/lib/trading/teamTape'
 import type { QuestradeBookPayload } from '@/lib/trading/questradeBook'
-import type { QuestradeBookRow, QuestradeProtectiveLevel } from '@/lib/trading/questradeOrders'
-import type { QuestradeTradeifyTransfer } from '@/lib/trading/questradeTransfer'
-import { CopyChip, CopyChipRow } from '@/app/dashboard/components/CopyChip'
+import type { QuestradeBookRow } from '@/lib/trading/questradeOrders'
+import { getSymbolRealName } from '@/lib/trading/symbolNames'
 
 type Payload = {
   ok?: boolean
-  advice?: TeamCopyAdvice
   open?: TeamTapeSignal[]
   history?: TeamTapeSignal[]
-  questrade?: QuestradeAccountSnapshot | { ok: false; error: string }
   error?: string
 }
 
-import { getSymbolRealName } from '@/lib/trading/symbolNames'
+type TabType = 'all' | 'open' | 'limits' | 'history'
 
 function montrealStamp(iso?: string | null): string {
   if (!iso) return '—'
@@ -39,157 +36,171 @@ function montrealStamp(iso?: string | null): string {
   }).format(d)
 }
 
+function formatCmePrice(symbol: string, price: number | null | undefined): string {
+  if (price == null || !Number.isFinite(price)) return '—'
+  const sym = symbol.toUpperCase()
+  if (sym.includes('MNQ') || sym.includes('NQ') || sym.includes('NASDAQ')) {
+    return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  }
+  if (sym.includes('MYM') || sym.includes('YM') || sym.includes('DOW')) {
+    return Math.round(price).toLocaleString('en-US')
+  }
+  if (sym.includes('MGC') || sym.includes('GC') || sym.includes('GOLD')) {
+    return price.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 2 })
+  }
+  if (sym.includes('MCL') || sym.includes('CL') || sym.includes('CRUDE')) {
+    return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  }
+  return price.toLocaleString('en-US', { maximumFractionDigits: 2 })
+}
+
 function pnlClass(n: number | null | undefined): string {
-  if (n == null) return 'text-gray-500'
-  if (n > 0) return 'text-emerald-300'
-  if (n < 0) return 'text-red-300'
-  return 'text-gray-400'
+  if (n == null) return 'text-gray-400'
+  if (n > 0) return 'text-emerald-400 font-bold'
+  if (n < 0) return 'text-red-400 font-bold'
+  return 'text-gray-400 font-bold'
 }
 
-function TicketRow({ signal }: { signal: TeamTapeSignal }) {
-  const buy = signal.side === 'BUY'
-  const meta = getSymbolRealName(signal.symbol)
-  const displayName = signal.companyName || meta.name
-  const isWorking = signal.status === 'working'
-  return (
-    <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div className="min-w-0">
-          <div className="text-sm font-semibold text-white">
-            <span className={buy ? 'text-emerald-300' : 'text-red-300'}>{signal.side}</span>{' '}
-            <span className="text-white">{signal.symbol}</span>
-            {displayName && displayName !== signal.symbol ? (
-              <span className="ml-2 text-xs font-normal text-sky-200/80">
-                · {displayName}
-              </span>
-            ) : null}
-          </div>
-        </div>
-        <div className="text-[11px] text-gray-400">
-          {montrealStamp(signal.filledAt)} Montreal ·{' '}
-          <span
-            className={
-              isWorking
-                ? 'font-medium text-amber-300'
-                : signal.status === 'filled'
-                  ? 'text-emerald-300'
-                  : 'text-gray-400'
-            }
-          >
-            {signal.status.toUpperCase()}
-          </span>
-        </div>
-      </div>
-      <p className="mt-1 text-[11px] text-gray-400">
-        Entry <span className="font-mono text-gray-200">{signal.entry}</span>
-      </p>
-      <CopyChipRow>
-        <CopyChip label="Size" value={signal.quantity} tone="size" />
-        <CopyChip label="SL" value={signal.stop} tone="sl" />
-        <CopyChip label="TP" value={signal.target} tone="tp" />
-      </CopyChipRow>
-    </div>
-  )
-}
-
-function LivePositionCard({
-  row,
-  transfer,
-}: {
-  row: QuestradeBookRow
-  transfer?: QuestradeTradeifyTransfer
-}) {
-  const buy = row.side === 'BUY'
+/** 🟢 Ongoing Position Card */
+function OngoingPositionCard({ row }: { row: QuestradeBookRow }) {
+  const isBuy = row.side === 'BUY'
   const pnl = row.livePnl
-  const pnlTxt =
+  const pnlFormatted =
     pnl == null
       ? '—'
-      : `${pnl >= 0 ? '+' : ''}$${Math.abs(pnl).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+      : `${pnl >= 0 ? '+' : ''}$${Math.abs(pnl).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   const meta = getSymbolRealName(row.symbol)
   const displayName = row.companyName || meta.name
 
   return (
-    <div className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2.5">
+    <div className="rounded-lg border border-sky-500/30 bg-sky-950/20 p-3 transition hover:border-sky-500/50">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div className="min-w-0">
-          <div className="text-sm font-semibold text-white">
-            <span className={buy ? 'text-emerald-300' : 'text-red-300'}>{row.side}</span>{' '}
-            <span>{row.label}</span>
-            {displayName && displayName !== row.label && displayName !== row.symbol ? (
-              <span className="ml-2 text-xs font-normal text-sky-200/80">
-                · {displayName}
-              </span>
-            ) : null}
-          </div>
+        <div className="flex items-center gap-2">
+          <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span className={`text-xs font-extrabold px-1.5 py-0.5 rounded ${isBuy ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/50' : 'bg-red-950 text-red-300 border border-red-700/50'}`}>
+            {row.side}
+          </span>
+          <span className="text-sm font-bold text-white">{row.label || row.symbol}</span>
+          {displayName && displayName !== row.label && displayName !== row.symbol && (
+            <span className="text-xs text-sky-200/70">· {displayName}</span>
+          )}
         </div>
-        <div className={`text-[11px] font-medium ${pnlClass(pnl)}`}>live {pnlTxt}</div>
+        <div className={`text-xs ${pnlClass(pnl)}`}>
+          {pnlFormatted}
+        </div>
       </div>
-      <p className="mt-1 text-[11px] text-gray-400">
-        <span className="rounded bg-white/10 px-1 py-0.5 text-[10px] uppercase text-gray-300">
-          {row.asset === 'option' ? 'Option' : 'Stock'}
-        </span>
-        {row.entry != null ? ` · entry ${row.entry}` : ''}
-        {row.mark != null ? ` · mark ${row.mark}` : ''}
-        {row.stopStatus && row.stopStatus !== 'working' ? ` · SL ${row.stopStatus}` : ''}
-        {row.targetStatus && row.targetStatus !== 'working' ? ` · TP ${row.targetStatus}` : ''}
-      </p>
-      <p className="mt-1 text-[10px] uppercase tracking-wide text-gray-500">Their book</p>
-      <CopyChipRow>
-        <CopyChip label="Size" value={row.quantity} tone="size" />
-        <CopyChip label="SL" value={row.stop} tone="sl" />
-        <CopyChip label="TP" value={row.target} tone="tp" />
-      </CopyChipRow>
-      {transfer ? (
-        <div className="mt-2 rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-2 py-1.5">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-200">
-            Your Tradeify copy · {transfer.riskLabel}
-          </p>
-          <CopyChipRow>
-            <CopyChip
-              label="Size"
-              value={transfer.ticket?.qty ?? transfer.tradeifyRiskDollars}
-              display={
-                transfer.ticket
-                  ? transfer.ticket.sizeLabel
-                  : `$${transfer.tradeifyRiskDollars}`
-              }
-              tone="size"
-            />
-            <CopyChip label="SL" value={transfer.ticket?.stop ?? transfer.indexStop} tone="sl" />
-            <CopyChip label="TP" value={transfer.ticket?.target ?? transfer.indexTarget} tone="tp" />
-          </CopyChipRow>
+
+      <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono bg-black/40 p-2 rounded border border-white/5">
+        <div>
+          <span className="text-[10px] uppercase text-gray-500 block">Exact Entry</span>
+          <span className="text-white font-bold">{formatCmePrice(row.symbol, row.entry)}</span>
         </div>
-      ) : null}
+        <div>
+          <span className="text-[10px] uppercase text-gray-500 block">Mark</span>
+          <span className="text-gray-200">{formatCmePrice(row.symbol, row.mark)}</span>
+        </div>
+        <div>
+          <span className="text-[10px] uppercase text-gray-500 block">Stop Loss (SL)</span>
+          <span className="text-red-300">{formatCmePrice(row.symbol, row.stop)}</span>
+        </div>
+        <div>
+          <span className="text-[10px] uppercase text-gray-500 block">Take Profit (TP)</span>
+          <span className="text-emerald-300">{formatCmePrice(row.symbol, row.target)}</span>
+        </div>
+      </div>
     </div>
   )
 }
 
-function LevelCard({ level }: { level: QuestradeProtectiveLevel }) {
-  const meta = getSymbolRealName(level.symbol)
-  const displayName = level.companyName || meta.name
+/** ⚡ Working Limit Order Card */
+function WorkingLimitCard({ row }: { row: QuestradeBookRow }) {
+  const meta = getSymbolRealName(row.symbol)
+  const displayName = row.companyName || meta.name
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
-      <div className="min-w-0">
-        <p className="text-xs text-gray-200">
-          <span className={level.kind === 'sl' ? 'text-red-300' : 'text-emerald-300'}>
-            {level.kind === 'sl' ? 'SL' : 'TP'}
-          </span>{' '}
-          <span className="font-semibold">{level.label}</span>
-          {displayName && displayName !== level.label && displayName !== level.symbol ? (
-            <span className="ml-1.5 text-[11px] text-gray-400">({displayName})</span>
-          ) : null}
-        </p>
-        <p className="text-[11px] text-gray-500">{level.status}</p>
+    <div className="rounded-lg border border-amber-500/30 bg-amber-950/20 p-3 transition hover:border-amber-500/50">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-extrabold px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-600/50">
+            LIMIT {row.side}
+          </span>
+          <span className="text-sm font-bold text-white">{row.label || row.symbol}</span>
+          {displayName && displayName !== row.label && displayName !== row.symbol && (
+            <span className="text-xs text-amber-200/70">· {displayName}</span>
+          )}
+        </div>
+        <span className="text-[11px] font-mono text-amber-400 font-semibold uppercase">WORKING ORDER</span>
       </div>
-      <CopyChipRow>
-        <CopyChip label="Size" value={level.quantity} tone="size" />
-        <CopyChip
-          label={level.kind === 'sl' ? 'SL' : 'TP'}
-          value={level.price}
-          tone={level.kind === 'sl' ? 'sl' : 'tp'}
-        />
-      </CopyChipRow>
+
+      <div className="mt-2 grid grid-cols-3 gap-2 text-xs font-mono bg-black/40 p-2 rounded border border-white/5">
+        <div>
+          <span className="text-[10px] uppercase text-gray-500 block">Target Entry</span>
+          <span className="text-amber-200 font-bold">{formatCmePrice(row.symbol, row.entry)}</span>
+        </div>
+        <div>
+          <span className="text-[10px] uppercase text-gray-500 block">SL</span>
+          <span className="text-red-300">{formatCmePrice(row.symbol, row.stop)}</span>
+        </div>
+        <div>
+          <span className="text-[10px] uppercase text-gray-500 block">TP</span>
+          <span className="text-emerald-300">{formatCmePrice(row.symbol, row.target)}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** 📜 Past Order / Fill History Card */
+function PastOrderCard({ signal }: { signal: TeamTapeSignal }) {
+  const isBuy = signal.side === 'BUY'
+  const meta = getSymbolRealName(signal.symbol)
+  const displayName = signal.companyName || meta.name
+
+  // Estimate win / loss outcome if target / stop specified
+  const pnlEstimated =
+    signal.target && signal.entry && signal.stop
+      ? (isBuy ? signal.target - signal.entry : signal.entry - signal.target) * signal.quantity
+      : null
+  const isWin = pnlEstimated != null ? pnlEstimated >= 0 : signal.status === 'filled'
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 transition hover:border-white/20">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className={`text-xs font-extrabold px-1.5 py-0.5 rounded ${isBuy ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/50' : 'bg-red-950 text-red-300 border border-red-700/50'}`}>
+            {signal.side}
+          </span>
+          <span className="text-sm font-bold text-white">{signal.symbol}</span>
+          {displayName && displayName !== signal.symbol && (
+            <span className="text-xs text-gray-400">· {displayName}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-gray-400">{montrealStamp(signal.filledAt)}</span>
+          <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${isWin ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700/60' : 'bg-red-950/80 text-red-300 border border-red-700/60'}`}>
+            {isWin ? 'WIN' : 'LOSS'}
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-2 grid grid-cols-3 sm:grid-cols-4 gap-2 text-xs font-mono bg-black/40 p-2 rounded border border-white/5">
+        <div>
+          <span className="text-[10px] uppercase text-gray-500 block">Exact Entry</span>
+          <span className="text-white font-bold">{formatCmePrice(signal.symbol, signal.entry)}</span>
+        </div>
+        <div>
+          <span className="text-[10px] uppercase text-gray-500 block">Stop Loss (SL)</span>
+          <span className="text-red-300">{formatCmePrice(signal.symbol, signal.stop)}</span>
+        </div>
+        <div>
+          <span className="text-[10px] uppercase text-gray-500 block">Take Profit (TP)</span>
+          <span className="text-emerald-300">{formatCmePrice(signal.symbol, signal.target)}</span>
+        </div>
+        <div>
+          <span className="text-[10px] uppercase text-gray-500 block">Status</span>
+          <span className="text-gray-300 uppercase font-semibold">{signal.status}</span>
+        </div>
+      </div>
     </div>
   )
 }
@@ -198,6 +209,7 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
   const [data, setData] = useState<Payload | null>(null)
   const [book, setBook] = useState<QuestradeBookPayload | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<TabType>('all')
 
   const load = useCallback(async () => {
     try {
@@ -225,131 +237,122 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
     return () => window.clearInterval(id)
   }, [load])
 
-  const advice = data?.advice
-  const open = data?.open ?? []
-  const history = data?.history ?? []
-  const last = open[0]
-  const levels = compact ? (book?.levels ?? []).slice(0, 8) : book?.levels ?? []
+  const ongoingPositions = book?.openPositions ?? []
+  const workingLimits = book?.workingLimits ?? []
+  const historySignals = data?.history ?? []
+  const openSignals = data?.open ?? []
 
-  const tapeSignals = open.filter(
-    (s) => !book?.openPositions?.some((p) => p.sourceId === s.sourceId || p.symbol === s.symbol)
-  )
+  const totalOngoing = ongoingPositions.length
+  const totalLimits = workingLimits.length
+  const totalHistory = historySignals.length
 
   return (
-    <section className="rounded-xl border border-sky-500/25 bg-sky-500/[0.06] p-4">
-      <div className="flex items-start justify-between gap-3">
+    <section className="rounded-xl border border-sky-500/25 bg-sky-950/20 p-4 shadow-xl">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
         <div>
-          <h2 className="text-sm font-semibold text-sky-100">Team tape</h2>
+          <h2 className="text-base font-bold tracking-tight text-white flex items-center gap-2">
+            <span>📡</span> Team Tape Fills &amp; Orders
+          </h2>
           <p className="mt-0.5 text-xs text-gray-400">
-            NYC stocks and options — see only. Click size, SL, or TP to copy that number.
+            Real CME futures prices &amp; desk orders — exact entry, SL, TP, and Win/Loss outcomes.
           </p>
         </div>
         {compact ? (
-          <Link href="/dashboard/swing" className="text-xs text-sky-300 hover:text-white">
-            Open →
+          <Link href="/dashboard/swing" className="text-xs font-bold text-sky-400 hover:text-sky-200 transition">
+            View All →
           </Link>
         ) : (
-          <Link href="/dashboard" className="text-xs text-gray-500 hover:text-white">
-            ← Desk
+          <Link href="/dashboard" className="text-xs text-gray-400 hover:text-white transition">
+            ← Return to Desk
           </Link>
         )}
       </div>
 
-      {error ? <p className="mt-3 text-xs text-red-300">{error}</p> : null}
+      {error && <p className="mt-3 text-xs text-red-400 bg-red-950/40 p-2 rounded border border-red-800/50">{error}</p>}
 
-      {data?.questrade?.ok ? (
-        <p className="mt-3 text-xs text-gray-300">
-          Questrade {data.questrade.account} · {data.questrade.currency} equity{' '}
-          <span className="font-semibold text-white">
-            ${data.questrade.equity.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-          </span>
-          {' · '}cash ${data.questrade.cash.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-          {' · '}
-          {data.questrade.positions} open
-        </p>
-      ) : data?.questrade && !data.questrade.ok ? (
-        <p className="mt-3 text-xs text-amber-200">Questrade: {data.questrade.error}</p>
-      ) : null}
-
-      {advice ? (
-        <div
-          className={`mt-3 rounded-lg border px-3 py-2 text-sm ${
-            advice.canCopy
-              ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-100'
-              : 'border-amber-500/35 bg-amber-500/10 text-amber-100'
-          }`}
-        >
-          <div className="font-semibold">{advice.headline}</div>
-          {!compact ? (
-            <p className="mt-1 text-xs leading-relaxed text-gray-300">{advice.detail}</p>
-          ) : null}
-          <p className="mt-1 text-[11px] text-gray-400">
-            {advice.clockedIn ? 'Desk Active' : 'Not clocked in'}
-          </p>
-        </div>
-      ) : null}
-
-      {book?.openPositions.length ? (
-        <div className="mt-3 space-y-2">
-          {book.openPositions.map((p) => (
-            <LivePositionCard
-              key={p.sourceId}
-              row={p}
-              transfer={book.transfers.find((t) => t.sourceId === p.sourceId)}
-            />
+      {/* Interactive Tabs Header */}
+      {!compact && (
+        <div className="mt-4 flex flex-wrap items-center gap-1.5 border-b border-white/10 pb-2">
+          {(
+            [
+              { id: 'all', label: 'All Orders', count: totalOngoing + totalLimits + totalHistory },
+              { id: 'open', label: '🟢 Ongoing Positions', count: totalOngoing },
+              { id: 'limits', label: '⚡ Working Limits', count: totalLimits },
+              { id: 'history', label: '📜 Past Fills & Outcomes', count: totalHistory },
+            ] as const
+          ).map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                activeTab === tab.id
+                  ? 'bg-sky-600 text-white shadow-md'
+                  : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
+              }`}
+            >
+              <span>{tab.label}</span>
+              <span className="rounded-full bg-black/40 px-1.5 py-0.5 text-[10px] font-mono">
+                {tab.count}
+              </span>
+            </button>
           ))}
         </div>
-      ) : null}
-
-      {levels.length ? (
-        <div className="mt-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-            All stops & targets
-          </p>
-          <div className="mt-1.5 space-y-1.5">
-            {levels.map((l) => (
-              <LevelCard key={`${l.kind}-${l.sourceId}`} level={l} />
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {compact ? (
-        <p className="mt-3 text-xs text-gray-400">
-          {book?.openPositions.length
-            ? `${book.openPositions.length} live position${book.openPositions.length === 1 ? '' : 's'}`
-            : open.length === 0
-              ? 'No team tickets yet.'
-              : `Open now: ${open.length}${last ? ` · last ${last.symbol} ${last.side.toLowerCase()}` : ''}`}
-        </p>
-      ) : (
-        <>
-          <h3 className="mt-5 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Recent tape
-          </h3>
-          <div className="mt-2 space-y-2">
-            {tapeSignals.length === 0 ? (
-              <p className="text-xs text-gray-500">
-                {book?.openPositions?.length
-                  ? 'All active desk positions tracked in live book above.'
-                  : 'No open team tickets.'}
-              </p>
-            ) : (
-              tapeSignals.map((s) => <TicketRow key={s.sourceId} signal={s} />)
-            )}
-          </div>
-          <h3 className="mt-6 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            History
-          </h3>
-          <div className="mt-2 space-y-2">
-            {history.length === 0 ? (
-              <p className="text-xs text-gray-500">No closed team tickets in the last 14 days.</p>
-            ) : (
-              history.map((s) => <TicketRow key={s.sourceId} signal={s} />)
-            )}
-          </div>
-        </>
       )}
+
+      {/* Content Section */}
+      <div className="mt-4 space-y-3">
+        {/* 🟢 Ongoing Positions */}
+        {(activeTab === 'all' || activeTab === 'open') && (
+          <div>
+            {!compact && <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-sky-400">🟢 Ongoing Positions ({totalOngoing})</h3>}
+            {totalOngoing === 0 ? (
+              activeTab === 'open' && <p className="text-xs text-gray-500 italic py-2">No active ongoing positions in market.</p>
+            ) : (
+              <div className="space-y-2">
+                {ongoingPositions.map((pos) => (
+                  <OngoingPositionCard key={pos.sourceId} row={pos} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ⚡ Working Limits */}
+        {(activeTab === 'all' || activeTab === 'limits') && (
+          <div>
+            {!compact && <h3 className="mb-2 mt-4 text-xs font-bold uppercase tracking-wider text-amber-400">⚡ Working Limit Orders ({totalLimits})</h3>}
+            {totalLimits === 0 ? (
+              activeTab === 'limits' && <p className="text-xs text-gray-500 italic py-2">No active working limit orders.</p>
+            ) : (
+              <div className="space-y-2">
+                {workingLimits.map((limit) => (
+                  <WorkingLimitCard key={limit.sourceId} row={limit} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 📜 Past Orders & Outcomes */}
+        {(activeTab === 'all' || activeTab === 'history') && (
+          <div>
+            {!compact && <h3 className="mb-2 mt-4 text-xs font-bold uppercase tracking-wider text-gray-400">📜 Past Orders &amp; Outcomes ({totalHistory + openSignals.length})</h3>}
+            {totalHistory === 0 && openSignals.length === 0 ? (
+              activeTab === 'history' && <p className="text-xs text-gray-500 italic py-2">No past orders in history.</p>
+            ) : (
+              <div className="space-y-2">
+                {historySignals.map((sig) => (
+                  <PastOrderCard key={sig.sourceId} signal={sig} />
+                ))}
+                {openSignals.map((sig) => (
+                  <PastOrderCard key={sig.sourceId} signal={sig} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </section>
   )
 }

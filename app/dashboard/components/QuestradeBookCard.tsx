@@ -15,8 +15,6 @@ import {
 } from 'recharts'
 import type { QuestradeBookPayload } from '@/lib/trading/questradeBook'
 import type { QuestradeBookRow, QuestradeProtectiveLevel } from '@/lib/trading/questradeOrders'
-import type { QuestradeTradeifyTransfer } from '@/lib/trading/questradeTransfer'
-import { deskFuturesTitle } from '@/lib/trading/tradovateMirror'
 import { CopyChip, CopyChipRow } from '@/app/dashboard/components/CopyChip'
 import { getSymbolRealName } from '@/lib/trading/symbolNames'
 
@@ -127,84 +125,7 @@ function LevelRow({ level }: { level: QuestradeProtectiveLevel }) {
   )
 }
 
-function TransferCard({ item }: { item: QuestradeTradeifyTransfer }) {
-  const [copied, setCopied] = useState(false)
-  const meta = getSymbolRealName(item.symbol)
-  const displayName = item.companyName || meta.name
 
-  const copy = useCallback(async () => {
-    if (!item.ticket?.copyText) return
-    try {
-      await navigator.clipboard.writeText(item.ticket.copyText)
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 2000)
-    } catch {
-      setCopied(false)
-    }
-  }, [item.ticket])
-
-  return (
-    <div className="rounded-lg border border-amber-500/25 bg-amber-500/[0.06] px-3 py-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div className="text-sm font-semibold text-amber-100">
-          <span>{item.symbol}</span>
-          {displayName && displayName !== item.symbol ? (
-            <span className="ml-1.5 text-xs font-normal text-amber-200/70">({displayName})</span>
-          ) : null}{' '}
-          → {deskFuturesTitle(item.instrument)} {item.side}
-        </div>
-        <span
-          className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-            item.canSize
-              ? 'bg-amber-500/20 text-amber-100'
-              : 'bg-white/10 text-gray-300'
-          }`}
-        >
-          {item.riskLabel}
-        </span>
-      </div>
-      <p className="mt-1 text-xs leading-relaxed text-gray-400">{item.note}</p>
-      <p className="mt-2 text-xs text-gray-300">
-        Stock {item.stockEntry}
-        {item.stockStop != null ? ` / SL ${item.stockStop}` : ''}
-        {item.stockTarget != null ? ` / 1.5R ${item.stockTarget}` : ''}
-        {item.indexEntry != null
-          ? ` · ${item.instrument} ${item.indexEntry}${item.indexStop != null ? ` / SL ${item.indexStop}` : ''}${item.indexTarget != null ? ` / TP ${item.indexTarget}` : ''}`
-          : ''}
-      </p>
-      <CopyChipRow>
-        <CopyChip
-          label="Size"
-          value={item.ticket?.qty ?? item.stockQty}
-          display={item.ticket ? item.ticket.sizeLabel : String(item.stockQty)}
-          tone="size"
-        />
-        <CopyChip label="SL" value={item.ticket?.stop ?? item.stockStop} tone="sl" />
-        <CopyChip label="TP" value={item.ticket?.target ?? item.stockTarget} tone="tp" />
-      </CopyChipRow>
-      <p className="mt-1 text-[11px] text-gray-500">{item.advice.headline}</p>
-      {item.ticket ? (
-        <button
-          type="button"
-          onClick={() => void copy()}
-          className="mt-2 rounded-md border border-amber-400/40 px-2.5 py-1 text-xs font-semibold text-amber-100 hover:bg-amber-500/20"
-        >
-          {copied
-            ? 'Copied'
-            : item.canSize
-              ? `Copy ${item.ticket.sizeLabel} TradingView ticket`
-              : `Next session: ${item.ticket.sizeLabel}`}
-        </button>
-      ) : (
-        <p className="mt-2 text-[11px] text-gray-500">
-          {item.canSize
-            ? 'Index last not available (weekend / outside focus). Look at SL/TP here, place at NY open.'
-            : item.riskLabel}
-        </p>
-      )}
-    </div>
-  )
-}
 
 export function QuestradeBookCard() {
   const [data, setData] = useState<QuestradeBookPayload | { ok: false; error: string } | null>(
@@ -245,8 +166,7 @@ export function QuestradeBookCard() {
     <section className="rounded-xl border border-emerald-500/25 bg-emerald-500/[0.05] p-4">
       <h2 className="text-sm font-semibold text-emerald-100">Questrade book</h2>
       <p className="mt-0.5 text-xs text-gray-400">
-        Read-only. Their share count is their own book. Copy on DOW or NASDAQ at NY
-        open — close at 1.5R or flatten 16:59 ET.
+        Read-only desk position tracking.
       </p>
 
       {error ? <p className="mt-3 text-xs text-amber-200">{error}</p> : null}
@@ -282,27 +202,13 @@ export function QuestradeBookCard() {
       ) : null}
 
       <h3 className="mt-5 text-xs font-semibold uppercase tracking-wide text-gray-500">
-        Working limits — transfer for Tradeify
+        Working limits
       </h3>
       <div className="mt-2 space-y-2">
         {book?.workingLimits.length ? (
           book.workingLimits.map((r) => <Ticket key={r.sourceId} row={r} />)
         ) : (
           <p className="text-xs text-gray-500">No working limits.</p>
-        )}
-      </div>
-
-      <h3 className="mt-5 text-xs font-semibold uppercase tracking-wide text-gray-500">
-        Tradeify look-book
-      </h3>
-      <p className="mt-1 text-[11px] text-gray-500">
-        Click size, SL, or TP to copy the Tradovate number.
-      </p>
-      <div className="mt-2 space-y-2">
-        {book?.transfers.length ? (
-          book.transfers.map((t) => <TransferCard key={t.sourceId} item={t} />)
-        ) : (
-          <p className="text-xs text-gray-500">Nothing to transfer until a limit or open stock prints.</p>
         )}
       </div>
 
