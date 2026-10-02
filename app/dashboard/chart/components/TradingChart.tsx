@@ -167,6 +167,7 @@ import {
   type UserTrendline,
   type UserRangeBox,
   type UserManualFRVP,
+  type UserMeasure,
   computeCustomFixedRangeVolumeProfile,
   computeTrendlineMetrics,
   computeRangeMetrics,
@@ -1318,8 +1319,8 @@ export function TradingChart({
     defaultTakeProfitFixed50: number
   }>>(new Map())
 
-  // ── User Interactive Drawing Tools (Trendline, Action Line, Reaction Line, Range, Manual FRVP) ────────
-  type DrawingToolType = 'NONE' | 'TRENDLINE' | 'ACTION_TRENDLINE' | 'REACTION_TRENDLINE' | 'RANGE' | 'FRVP'
+  // ── User Interactive Drawing Tools (Trendline, Action Line, Reaction Line, Range, Manual FRVP, Measure) ────────
+  type DrawingToolType = 'NONE' | 'TRENDLINE' | 'ACTION_TRENDLINE' | 'REACTION_TRENDLINE' | 'RANGE' | 'FRVP' | 'MEASURE'
   const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingToolType>('NONE')
   const [activeActionTlId, setActiveActionTlId] = useState<string | null>(null)
   const [dismissedBreakoutPrompts, setDismissedBreakoutPrompts] = useState<Set<string>>(() => {
@@ -1387,6 +1388,16 @@ export function TradingChart({
       return []
     }
   })
+  const [measures, setMeasures] = useState<UserMeasure[]>(() => {
+    if (typeof window === 'undefined') return []
+    try {
+      const saved = localStorage.getItem('trading_desk_measures_v1')
+      return saved ? JSON.parse(saved) : []
+    } catch {
+      return []
+    }
+  })
+  const measureBadgeHitsRef = useRef<Map<string, { x: number; y: number; w: number; h: number }>>(new Map())
 
   // ── Leo Long-Term Memory Architecture & TradingView Alarms ────────────────
   const [memories, setMemories] = useState<LeoLongTermMemory[]>(() => loadLongTermMemories())
@@ -1415,10 +1426,11 @@ export function TradingChart({
       localStorage.setItem('trading_desk_trendlines_v1', JSON.stringify(trendlines))
       localStorage.setItem('trading_desk_ranges_v1', JSON.stringify(rangeBoxes))
       localStorage.setItem('trading_desk_frvps_v1', JSON.stringify(manualFrvps))
+      localStorage.setItem('trading_desk_measures_v1', JSON.stringify(measures))
     } catch (e) {
       console.warn('Failed to save user drawings to localStorage:', e)
     }
-  }, [trendlines, rangeBoxes, manualFrvps])
+  }, [trendlines, rangeBoxes, manualFrvps, measures])
   const [drawingDraft, setDrawingDraft] = useState<{
     time: number
     price: number
@@ -1744,6 +1756,10 @@ export function TradingChart({
   const activeManualFrvps = useMemo(
     () => manualFrvps.filter((f) => f.instrument === instrument),
     [manualFrvps, instrument]
+  )
+  const activeMeasures = useMemo(
+    () => measures.filter((m) => !m.instrument || m.instrument === instrument),
+    [measures, instrument]
   )
 
 
@@ -3234,6 +3250,166 @@ export function TradingChart({
       }
     }
 
+    // Helper to paint a measurement box, diagonal line, endpoints, and floating metrics badge
+    const paintMeasureOverlay = (
+      p1: { time: number; price: number; x?: number; y?: number },
+      p2: { time: number; price: number; x?: number; y?: number },
+      id?: string,
+      isDraft: boolean = false
+    ) => {
+      const x1 = timeToX(chart.timeScale(), toChartTime(p1.time, tz), candleTimes, false, barSeconds) ?? p1.x
+      const x2 = timeToX(chart.timeScale(), toChartTime(p2.time, tz), candleTimes, false, barSeconds) ?? p2.x
+      const y1 = series.priceToCoordinate(p1.price) ?? p1.y
+      const y2 = series.priceToCoordinate(p2.price) ?? p2.y
+      if (x1 == null || x2 == null || y1 == null || y2 == null) return
+
+      const minX = Math.min(x1, x2)
+      const maxX = Math.max(x1, x2)
+      const minY = Math.min(y1, y2)
+      const maxY = Math.max(y1, y2)
+      const boxW = Math.max(2, maxX - minX)
+      const boxH = Math.max(2, maxY - minY)
+
+      const dPrice = p2.price - p1.price
+      const isUp = dPrice >= 0
+      const dPriceAbs = Math.abs(dPrice)
+      const pctChange = p1.price !== 0 ? (dPrice / p1.price) * 100 : 0
+      const sign = isUp ? '+' : '-'
+      const arrow = isUp ? '▲' : '▼'
+
+      // TradingView styling: emerald green for bullish/upward measurement, rose red for bearish/downward
+      const fillColor = isUp ? 'rgba(16, 185, 129, 0.14)' : 'rgba(244, 63, 94, 0.14)'
+      const strokeColor = isUp ? 'rgba(16, 185, 129, 0.85)' : 'rgba(244, 63, 94, 0.85)'
+      const accentColor = isUp ? '#34d399' : '#fb7185'
+
+      // 1. Shaded area box
+      ctx.fillStyle = fillColor
+      ctx.fillRect(minX, minY, boxW, boxH)
+
+      // 2. Dashed boundary rectangle
+      ctx.strokeStyle = strokeColor
+      ctx.lineWidth = isDraft ? 1.5 : 1.2
+      ctx.setLineDash([4, 3])
+      ctx.strokeRect(minX, minY, boxW, boxH)
+
+      // 3. Diagonal vector line from anchor p1 to target p2
+      ctx.strokeStyle = strokeColor
+      ctx.lineWidth = 1.5
+      ctx.setLineDash([2, 2])
+      ctx.beginPath()
+      ctx.moveTo(x1, y1)
+      ctx.lineTo(x2, y2)
+      ctx.stroke()
+      ctx.setLineDash([])
+
+      // 4. Anchor dots
+      ctx.fillStyle = accentColor
+      ctx.beginPath()
+      ctx.arc(x1, y1, 4, 0, 2 * Math.PI)
+      ctx.fill()
+      ctx.beginPath()
+      ctx.arc(x2, y2, 4, 0, 2 * Math.PI)
+      ctx.fill()
+
+      // 5. Calculate bar count, time span, and volume across measured range
+      const minTime = Math.min(p1.time, p2.time)
+      const maxTime = Math.max(p1.time, p2.time)
+      const measuredCandles = list.filter((c) => {
+        const ct = Number(c.time)
+        return ct >= minTime && ct <= maxTime
+      })
+      const barsCount = Math.max(1, measuredCandles.length)
+      const deltaSec = Math.abs(p2.time - p1.time)
+      let timeStr = ''
+      if (deltaSec >= 86400) {
+        const days = Math.floor(deltaSec / 86400)
+        const hours = Math.floor((deltaSec % 86400) / 3600)
+        timeStr = `${days}d ${hours}h`
+      } else if (deltaSec >= 3600) {
+        const hours = Math.floor(deltaSec / 3600)
+        const mins = Math.floor((deltaSec % 3600) / 60)
+        timeStr = mins > 0 ? `${hours}h ${mins}m` : `${hours}h`
+      } else {
+        const mins = Math.max(1, Math.round(deltaSec / 60))
+        timeStr = `${mins}m`
+      }
+
+      let totalVol = 0
+      for (const c of measuredCandles) {
+        if (typeof c.volume === 'number') totalVol += c.volume
+      }
+      let volStr = ''
+      if (totalVol > 0) {
+        if (totalVol >= 1_000_000) volStr = ` · Vol ${(totalVol / 1_000_000).toFixed(2)}M`
+        else if (totalVol >= 1_000) volStr = ` · Vol ${(totalVol / 1_000).toFixed(1)}K`
+        else volStr = ` · Vol ${Math.round(totalVol)}`
+      }
+
+      // 6. Floating High-Precision Badge
+      const ptsFormatted = dPriceAbs >= 1000
+        ? dPriceAbs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : dPriceAbs.toFixed(2)
+      const line1 = `${arrow} ${sign}${ptsFormatted} pts (${sign}${Math.abs(pctChange).toFixed(2)}%)`
+      const line2 = `${barsCount} bar${barsCount > 1 ? 's' : ''}, ${timeStr}${volStr}`
+
+      ctx.font = 'bold 11px ui-monospace, SFMono-Regular, monospace'
+      const textW1 = ctx.measureText(line1).width
+      ctx.font = '9.5px ui-monospace, SFMono-Regular, monospace'
+      const textW2 = ctx.measureText(line2).width
+      const badgeW = Math.max(textW1, textW2) + (isDraft ? 24 : 38)
+      const badgeH = 38
+
+      let badgeX = (minX + maxX) / 2 - badgeW / 2
+      let badgeY = isUp ? minY - badgeH - 8 : maxY + 8
+      badgeX = Math.max(4, Math.min(plotW - badgeW - 4, badgeX))
+      if (badgeY < 4) badgeY = maxY + 8
+      if (badgeY + badgeH > plotH - 4) badgeY = Math.max(4, minY - badgeH - 8)
+
+      // Rounded container
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.94)'
+      ctx.strokeStyle = strokeColor
+      ctx.lineWidth = 1.2
+      const r = 6
+      ctx.beginPath()
+      ctx.moveTo(badgeX + r, badgeY)
+      ctx.lineTo(badgeX + badgeW - r, badgeY)
+      ctx.quadraticCurveTo(badgeX + badgeW, badgeY, badgeX + badgeW, badgeY + r)
+      ctx.lineTo(badgeX + badgeW, badgeY + badgeH - r)
+      ctx.quadraticCurveTo(badgeX + badgeW, badgeY + badgeH, badgeX + badgeW - r, badgeY + badgeH)
+      ctx.lineTo(badgeX + r, badgeY + badgeH)
+      ctx.quadraticCurveTo(badgeX, badgeY + badgeH, badgeX, badgeY + badgeH - r)
+      ctx.lineTo(badgeX, badgeY + r)
+      ctx.quadraticCurveTo(badgeX, badgeY, badgeX + r, badgeY)
+      ctx.closePath()
+      ctx.fill()
+      ctx.stroke()
+
+      // Badge texts
+      ctx.font = 'bold 11px ui-monospace, SFMono-Regular, monospace'
+      ctx.fillStyle = accentColor
+      ctx.fillText(line1, badgeX + 10, badgeY + 16)
+
+      ctx.font = '9.5px ui-monospace, SFMono-Regular, monospace'
+      ctx.fillStyle = '#cbd5e1'
+      ctx.fillText(line2, badgeX + 10, badgeY + 31)
+
+      // Dismiss button on pinned badge
+      if (!isDraft && id) {
+        measureBadgeHitsRef.current.set(id, { x: badgeX, y: badgeY, w: badgeW, h: badgeH })
+        const closeX = badgeX + badgeW - 16
+        const closeY = badgeY + 15
+        ctx.font = 'bold 11px system-ui, sans-serif'
+        ctx.fillStyle = '#94a3b8'
+        ctx.fillText('✕', closeX, closeY)
+      }
+    }
+
+    // Render Pinned Measures
+    measureBadgeHitsRef.current.clear()
+    for (const m of activeMeasures) {
+      paintMeasureOverlay(m.p1, m.p2, m.id, false)
+    }
+
     // Helper: given two points, compute where the infinite line exits the canvas rect (extended past latest bar)
     const extendedLine = (ax: number, ay: number, bx: number, by: number): [number, number, number, number] => {
       if (ax === bx) return [ax, -2000, bx, paneH + 2000]
@@ -4027,6 +4203,8 @@ export function TradingChart({
           ctx.fillStyle = '#fef3c7'
           ctx.fillText(`FRVP Start: ${formatEtTime(Math.min(p1.time, p2.time))}`, minX + 6, 24)
           ctx.fillText(`FRVP End: ${formatEtTime(Math.max(p1.time, p2.time))} (Click to compute)`, maxX + 6, 40)
+        } else if (activeDrawingTool === 'MEASURE') {
+          paintMeasureOverlay(p1, p2, undefined, true)
         }
       }
     }
@@ -4109,7 +4287,7 @@ export function TradingChart({
     }
 
     ctx.restore()
-  }, [activeTrendlines, activeRangeBoxes, activeManualFrvps, drawingDraft, activeDrawingTool, showCandlestickPatterns, hideTrendlineBadges, barSeconds])
+  }, [activeTrendlines, activeRangeBoxes, activeManualFrvps, activeMeasures, drawingDraft, activeDrawingTool, showCandlestickPatterns, hideTrendlineBadges, barSeconds])
 
   useEffect(() => {
     paintUserDrawingsRef.current = paintUserDrawings
@@ -5454,17 +5632,26 @@ export function TradingChart({
     requestAnimationFrame(() => paintUserDrawingsRef.current())
   }, [])
 
+  const handleDeleteMeasure = useCallback((id: string) => {
+    setMeasures((prev) => prev.filter((m) => m.id !== id))
+    measureBadgeHitsRef.current.delete(id)
+    requestAnimationFrame(() => paintUserDrawingsRef.current())
+  }, [])
+
   const handleClearAllDrawings = useCallback(() => {
     setTrendlines([])
     setRangeBoxes([])
     setManualFrvps([])
+    setMeasures([])
     setDrawingDraft(null)
     draftMousePosRef.current = null
+    measureBadgeHitsRef.current.clear()
     confirmedBreakoutsRef.current.clear()
     setBrokenActionLineIds([])
     setDismissedBreakoutPrompts(new Set())
     try {
       localStorage.removeItem('trading_desk_dismissed_breakouts_v1')
+      localStorage.removeItem('trading_desk_measures_v1')
     } catch {}
     requestAnimationFrame(() => paintUserDrawingsRef.current())
   }, [])
@@ -10431,6 +10618,24 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               summary: `POC: ${computed.poc.toLocaleString()} | VAH: ${computed.vah.toLocaleString()} | VAL: ${computed.val.toLocaleString()}`,
             })
           }
+        } else if (activeDrawingTool === 'MEASURE') {
+          const newMeasure: UserMeasure = {
+            id: `measure-${Date.now()}`,
+            type: 'MEASURE',
+            p1: { time: p1.time, price: p1.price },
+            p2: { time: p2.time, price: p2.price },
+            instrument,
+          }
+          setMeasures((prev) => [...prev, newMeasure])
+          playTradingViewChime()
+          const dP = p2.price - p1.price
+          const pct = p1.price !== 0 ? (dP / p1.price) * 100 : 0
+          setDrawingToast({
+            type: 'RANGE',
+            id: newMeasure.id,
+            label: 'Measure Locked',
+            summary: `${dP >= 0 ? '+' : ''}${Math.abs(dP).toFixed(2)} pts (${dP >= 0 ? '+' : ''}${pct.toFixed(2)}%) · Click ✕ to remove`,
+          })
         }
 
         setDrawingDraft(null)
@@ -10484,7 +10689,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       }
       container.style.cursor = ''
     }
-  }, [activeDrawingTool, drawingDraft, trendlines.length, rangeBoxes.length, manualFrvps.length, paintUserDrawings, barSeconds, chartReady])
+  }, [activeDrawingTool, drawingDraft, trendlines.length, rangeBoxes.length, manualFrvps.length, measures.length, paintUserDrawings, barSeconds, chartReady])
 
   // ── TradingView-Style Interactive Trendline Drag & Edit Hook ─────────────────
   useEffect(() => {
@@ -10618,6 +10823,35 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
     const onMouseDown = (e: MouseEvent) => {
       if (e.button !== 0) return // Left click only
+
+      const rect = container.getBoundingClientRect()
+      const mouseX = e.clientX - rect.left
+      const mouseY = e.clientY - rect.top
+
+      // 1. Check if user clicked on any pinned measurement badge (e.g. [✕] delete button)
+      for (const [id, hit] of measureBadgeHitsRef.current.entries()) {
+        if (mouseX >= hit.x && mouseX <= hit.x + hit.w && mouseY >= hit.y && mouseY <= hit.y + hit.h) {
+          e.preventDefault()
+          e.stopPropagation()
+          handleDeleteMeasure(id)
+          return
+        }
+      }
+
+      // 2. TradingView-style Shift + Click to instantly start Measure Tool
+      if (e.shiftKey) {
+        const curPrice = priceAtY(e.clientY)
+        const curTime = timeAtX(e.clientX)
+        if (curPrice != null && curTime != null) {
+          e.preventDefault()
+          e.stopPropagation()
+          setActiveDrawingTool('MEASURE')
+          setDrawingDraft({ time: curTime, price: curPrice, x: mouseX, y: mouseY })
+          draftMousePosRef.current = { time: curTime, price: curPrice, x: mouseX, y: mouseY }
+          return
+        }
+      }
+
       const hit = getHandleAt(e.clientX, e.clientY)
       if (!hit) {
         if (selectedTrendlineIdRef.current) {
@@ -10792,7 +11026,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       hoveredHandleRef.current = null
       activeDraggingTlRef.current = null
     }
-  }, [activeDrawingTool, activeTrendlines, chartReady, barSeconds, handleDeleteTrendline])
+  }, [activeDrawingTool, activeTrendlines, chartReady, barSeconds, handleDeleteTrendline, handleDeleteMeasure])
 
   // Clear risk box chart lines
   const clearRiskBoxLines = useCallback(() => {
@@ -11418,6 +11652,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         e.preventDefault()
         setActiveDrawingTool((prev) => (prev === 'FRVP' ? 'NONE' : 'FRVP'))
         setDrawingDraft(null)
+      } else if (key === 'm') {
+        e.preventDefault()
+        setActiveDrawingTool((prev) => (prev === 'MEASURE' ? 'NONE' : 'MEASURE'))
+        setDrawingDraft(null)
       } else if (key === 't') {
         e.preventDefault()
         setDrawTimeActive((prev) => {
@@ -11439,6 +11677,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           setActiveActionTlId(null)
           setDrawingDraft(null)
           draftMousePosRef.current = null
+        } else if (activeMeasures.length > 0) {
+          e.preventDefault()
+          setMeasures((prev) => prev.slice(0, -1))
+          requestAnimationFrame(() => paintUserDrawingsRef.current())
         } else if (riskBoxActive || riskBox) {
           e.preventDefault()
           cancelRiskBox()
@@ -12846,6 +13088,26 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               </span>
             </button>
 
+            {/* Measure Tool (M / Shift+Click) */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveDrawingTool((prev) => (prev === 'MEASURE' ? 'NONE' : 'MEASURE'))
+                setDrawingDraft(null)
+              }}
+              className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
+                activeDrawingTool === 'MEASURE'
+                  ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30 ring-2 ring-emerald-400'
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-emerald-300'
+              }`}
+              title="Measure Price / Range (Hotkey: M / Shift+Click)"
+            >
+              <span>📏</span>
+              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-emerald-200 shadow-xl border border-slate-800 group-hover:block z-50">
+                Measure (M / Shift+Click)
+              </span>
+            </button>
+
             {/* Candlestick Patterns Toggle */}
             <button
               type="button"
@@ -12889,25 +13151,25 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               type="button"
               onClick={() => setDrawingsPanelOpen((prev) => !prev)}
               className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
-                drawingsPanelOpen || activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length > 0
+                drawingsPanelOpen || activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length + activeMeasures.length > 0
                   ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
                   : 'text-slate-400 hover:bg-slate-800 hover:text-cyan-300'
               }`}
               title="Manage Drawings"
             >
               <span>🎨</span>
-              {activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length > 0 && (
+              {activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length + activeMeasures.length > 0 && (
                 <span className="absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-cyan-500 px-0.5 text-[9px] font-bold text-slate-950 shadow">
-                  {activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length}
+                  {activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length + activeMeasures.length}
                 </span>
               )}
               <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-cyan-200 shadow-xl border border-slate-800 group-hover:block z-50">
-                Manage Tools ({activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length})
+                Manage Tools ({activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length + activeMeasures.length})
               </span>
             </button>
 
             {/* Quick Clear — only when drawings exist */}
-            {activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length > 0 && (
+            {activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length + activeMeasures.length > 0 && (
               <button
                 type="button"
                 onClick={handleClearAllDrawings}
@@ -12936,6 +13198,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               {activeDrawingTool === 'REACTION_TRENDLINE' && '📐⚡ Drawing Reaction Trendline (Click 2 swing points)'}
               {activeDrawingTool === 'RANGE' && '⬛ Drawing Range Box (Click 2 corners)'}
               {activeDrawingTool === 'FRVP' && '📊 Drawing Custom FRVP (Click start & end bars)'}
+              {activeDrawingTool === 'MEASURE' && '📏 Drawing Measure (Click 1st point, then 2nd point to pin · Hold Shift anytime)'}
             </span>
             <button
               type="button"
@@ -12960,7 +13223,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 <span>🎨</span>
                 <span>User Tools & Drawings ({instrument})</span>
                 <span className="text-[11px] text-slate-400 font-normal">
-                  ({activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length})
+                  ({activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length + activeMeasures.length})
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -12984,7 +13247,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 >
                   {hideTrendlineBadges ? '🙈 Text Off' : '🏷️ Text On'}
                 </button>
-                {activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length > 0 && (
+                {activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length + activeMeasures.length > 0 && (
                   <button
                     type="button"
                     onClick={handleClearAllDrawings}
@@ -13005,15 +13268,16 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             </div>
 
             <div className="flex-1 overflow-y-auto p-2 space-y-2 text-xs divide-y divide-slate-800/60">
-              {activeTrendlines.length === 0 && activeRangeBoxes.length === 0 && activeManualFrvps.length === 0 && (
+              {activeTrendlines.length === 0 && activeRangeBoxes.length === 0 && activeManualFrvps.length === 0 && activeMeasures.length === 0 && (
                 <div className="py-6 text-center text-slate-500 space-y-1">
-                  <div className="text-2xl">📐 🎯 ⬛ 📊</div>
+                  <div className="text-2xl">📐 🎯 ⬛ 📊 📏</div>
                   <div className="font-semibold text-slate-400">No active drawings on {instrument}</div>
                   <div className="text-[11px] text-slate-500">
                     Press <span className="text-sky-300 font-mono">W</span> for Trendline,{' '}
                     <span className="text-amber-300 font-mono">X</span> for Action Line,{' '}
-                    <span className="text-purple-300 font-mono">D</span> for Range, or{' '}
-                    <span className="text-amber-300 font-mono">V</span> for FRVP.
+                    <span className="text-purple-300 font-mono">D</span> for Range,{' '}
+                    <span className="text-amber-300 font-mono">V</span> for FRVP, or{' '}
+                    <span className="text-emerald-300 font-mono">M</span> (Shift+Click) for Measure.
                   </div>
                 </div>
               )}
@@ -13198,11 +13462,55 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   </div>
                 </div>
               )}
+
+              {/* Measurements */}
+              {activeMeasures.length > 0 && (
+                <div className="pt-1.5 first:pt-0">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 mb-1 px-1">
+                    Measurements ({activeMeasures.length})
+                  </div>
+                  <div className="space-y-1">
+                    {activeMeasures.map((m) => {
+                      const dP = m.p2.price - m.p1.price
+                      const pct = m.p1.price !== 0 ? (dP / m.p1.price) * 100 : 0
+                      const isUp = dP >= 0
+                      return (
+                        <div
+                          key={m.id}
+                          className="group flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-800/40 hover:bg-slate-800/80 border border-slate-700/40 transition"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1 font-semibold text-emerald-300 truncate">
+                              <span>📏</span>
+                              <span className="truncate">
+                                {isUp ? '+' : ''}{dP.toFixed(2)} pts ({isUp ? '+' : ''}{pct.toFixed(2)}%)
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 truncate">
+                              {m.p1.price.toLocaleString()} → {m.p2.price.toLocaleString()}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMeasure(m.id)}
+                              className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                              title="Delete measurement"
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="border-t border-slate-800/80 px-3 py-1.5 bg-slate-900/60 text-[10px] text-slate-400 flex items-center justify-between">
-              <span>Hotkeys: W (Trend) · D (Range) · V (FRVP)</span>
-              <span>Esc cancels</span>
+              <span>Hotkeys: W (Trend) · D (Range) · V (FRVP) · M (Measure)</span>
+              <span>Esc cancels / clears</span>
             </div>
           </div>
         )}

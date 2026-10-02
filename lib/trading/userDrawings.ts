@@ -56,10 +56,19 @@ export interface UserManualFRVP {
   instrument?: string
 }
 
+export interface UserMeasure {
+  id: string
+  type: 'MEASURE'
+  p1: { time: number; price: number }
+  p2: { time: number; price: number }
+  instrument?: string
+}
+
 export interface UserDrawingsState {
   trendlines: UserTrendline[]
   ranges: UserRangeBox[]
   frvps: UserManualFRVP[]
+  measures?: UserMeasure[]
 }
 
 function bucketWidth(mid: number): number {
