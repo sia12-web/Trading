@@ -323,7 +323,7 @@ function PerformanceAnalyticsPanel() {
         </div>
 
         <div className="space-y-1 text-xs font-mono">
-          {calendarWeeks.map((w, idx) => (
+          {calendarWeeks.map((w) => (
             <div key={w.week} className="flex items-center justify-between p-2 rounded bg-white/[0.02] border border-white/5">
               <span className="text-gray-400 text-[11px]">{w.week}</span>
               <div className="flex items-center gap-2">
