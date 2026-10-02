@@ -44,7 +44,6 @@ export default function PerformancePage() {
 
   const [cmcTrades, setCmcTrades] = useState<TradeRecord[]>(DEFAULT_CMC_TRADES)
   const [teamTrades, setTeamTrades] = useState<TradeRecord[]>(DEFAULT_TEAM_TRADES)
-  const [loading, setLoading] = useState(true)
 
   const isCmc = accountMode === 'cmc'
   const accountId = isCmc ? 'CMC-CFD-LIVE-2000' : '1.5KCHCR-LABS004-V2-675081-67067724'
@@ -54,7 +53,6 @@ export default function PerformancePage() {
   // Fetch live trades from API on mount
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
 
     async function loadTrades() {
       try {
@@ -115,8 +113,6 @@ export default function PerformancePage() {
         }
       } catch (err) {
         console.error('Failed to load live performance trades:', err)
-      } finally {
-        if (!cancelled) setLoading(false)
       }
     }
 

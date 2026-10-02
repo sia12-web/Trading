@@ -19,7 +19,6 @@ import {
   DURATION_BUCKETS,
   formatCmeExchangePrice,
   getExchangeTag,
-  type TradeRecord,
 } from '@/lib/trading/performanceMetrics'
 
 type Payload = {
@@ -404,7 +403,6 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
   const ongoingPositions = book?.openPositions ?? []
   const workingLimits = book?.workingLimits ?? []
   const historySignals = data?.history ?? []
-  const openSignals = data?.open ?? []
 
   const totalOngoing = ongoingPositions.length
   const totalLimits = workingLimits.length
@@ -478,8 +476,8 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
               activeTab === 'open' && <p className="text-xs text-gray-500 italic py-2">No active ongoing positions in market.</p>
             ) : (
               <div className="space-y-2">
-                {ongoingPositions.map((pos) => (
-                  <OngoingPositionCard key={pos.orderId || pos.symbol} row={pos} />
+                {ongoingPositions.map((pos, idx) => (
+                  <OngoingPositionCard key={`${pos.symbol}-${idx}`} row={pos} />
                 ))}
               </div>
             )}
@@ -494,8 +492,8 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
               activeTab === 'limits' && <p className="text-xs text-gray-500 italic py-2">No working limit orders pending.</p>
             ) : (
               <div className="space-y-2">
-                {workingLimits.map((limit) => (
-                  <WorkingLimitCard key={limit.orderId || limit.symbol} row={limit} />
+                {workingLimits.map((limit, idx) => (
+                  <WorkingLimitCard key={`${limit.symbol}-${idx}`} row={limit} />
                 ))}
               </div>
             )}
