@@ -272,62 +272,37 @@ export async function GET(request: NextRequest) {
         starting_account: baseAccount,
         ending_equity: Math.round((baseAccount + roundedTotalPnl) * 100) / 100,
         equity_change: roundedTotalPnl,
-        equity_source: hasTopstepx ? 'topstepx_broker' : (equity.equitySource || 'topstepx_broker'),
+        equity_source: 'cmc_broker',
         days,
       },
       entries: mergedEntries,
     })
   } catch (e) {
     console.error('[journal]', e)
-    try {
-      const topstepxRows = getTopstepXJournalRows()
-      const topstepxChallenge = computeTopstepXChallengeState()
-      const allClosed = topstepxRows.filter((t) => t.status === 'closed')
-      const allWins = allClosed.filter((t) => (t.pnl?.dollars ?? 0) > 0)
-      const allLosses = allClosed.filter((t) => (t.pnl?.dollars ?? 0) < 0)
-      const allStops = allClosed.filter((t) => t.exit?.reason_code === 'stop_hit')
-      const allTps = allClosed.filter((t) => t.exit?.reason_code === 'take_profit')
-      const totalPnl = Math.round(allClosed.reduce((s, t) => s + (t.pnl?.dollars ?? 0), 0) * 100) / 100
-      return NextResponse.json({
-        success: true,
-        topstepx_challenge: topstepxChallenge,
-        summary: {
-          trades: topstepxRows.length,
-          open: 0,
-          closed: allClosed.length,
-          wins: allWins.length,
-          losses: allLosses.length,
-          stop_outs: allStops.length,
-          take_profits: allTps.length,
-          win_rate: allClosed.length ? Math.round((allWins.length / allClosed.length) * 100) : null,
-          total_pnl: totalPnl,
-          starting_account: 0,
-          ending_equity: totalPnl,
-          equity_change: totalPnl,
-          equity_source: 'topstepx_broker',
-          days: 30,
-        },
-        entries: topstepxRows,
-      })
-    } catch {
-      return NextResponse.json({
-        success: true,
-        summary: {
-          trades: 0,
-          open: 0,
-          closed: 0,
-          wins: 0,
-          losses: 0,
-          stop_outs: 0,
-          take_profits: 0,
-          total_pnl: 0,
-          starting_account: 50000,
-          ending_equity: 50000,
-          equity_change: 0,
-          days: 30,
-        },
-        entries: [],
-      })
-    }
+    return NextResponse.json({
+      success: true,
+      cmc_account: {
+        accountName: 'CMC Markets CFD',
+        broker: 'CMC Markets CFD',
+        startingCapital: 2000,
+      },
+      summary: {
+        trades: 0,
+        open: 0,
+        closed: 0,
+        wins: 0,
+        losses: 0,
+        stop_outs: 0,
+        take_profits: 0,
+        win_rate: null,
+        total_pnl: 0,
+        starting_account: 2000,
+        ending_equity: 2000,
+        equity_change: 0,
+        equity_source: 'cmc_broker',
+        days: 30,
+      },
+      entries: [],
+    })
   }
 }
