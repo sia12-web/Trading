@@ -39,7 +39,7 @@ describe('Systematic Trendline Strategy & Trend-Borning Zone Engine', () => {
       { time: 1200, open: 2075, high: 2076, low: 2070, close: 2072, volume: 100 },
       { time: 1500, open: 2070, high: 2071, low: 2062, close: 2064, volume: 120 },
       { time: 1800, open: 2063, high: 2064, low: 2058, close: 2060, volume: 90 },
-      { time: 2100, open: 2054, high: 2057, low: 2051, close: 2053, volume: 110 },
+      { time: 2100, open: 2054, high: 2057, low: 2044, close: 2046, volume: 110 },
     ]
 
     const check = checkTrendlineBreakout(mockBearishTrendline, bars)
@@ -798,7 +798,7 @@ describe('Systematic Trendline Strategy & Trend-Borning Zone Engine', () => {
       { time: 2200, open: 52201, high: 52206, low: 52200, close: 52204, volume: 200 }, // Post-anchor bar 1 (strictly above line 52198.67)
       { time: 2500, open: 52204, high: 52208, low: 52203, close: 52206, volume: 220 }, // Post-anchor bar 2 (strictly above line 52202.33)
       { time: 2800, open: 52207, high: 52212, low: 52207, close: 52210, volume: 190 }, // Post-anchor bar 3 (strictly above line 52206.00)
-      { time: 3100, open: 52211, high: 52215, low: 52210, close: 52213, volume: 210 }, // Post-anchor bar 4 (strictly above line 52209.67)
+      { time: 3100, open: 52211, high: 52216, low: 52210, close: 52215, volume: 210 }, // Post-anchor bar 4 (strictly above line 52213.33)
     ]
 
     const check = checkTrendlineBreakout(tl, bars)
@@ -824,8 +824,8 @@ describe('Systematic Trendline Strategy & Trend-Borning Zone Engine', () => {
     const bars: Candle[] = [
       { time: 1000, open: 52185, high: 52188, low: 52184, close: 52186, volume: 100 },
       { time: 1900, open: 52197, high: 52200, low: 52195, close: 52195, volume: 180 }, // Anchor 2 bar
-      { time: 2200, open: 52196, high: 52206, low: 52196, close: 52202, volume: 200 },
-      { time: 2500, open: 52202, high: 52208, low: 52200, close: 52205, volume: 220 },
+      { time: 2200, open: 52196, high: 52206, low: 52196, close: 52204, volume: 200 },
+      { time: 2500, open: 52202, high: 52208, low: 52200, close: 52208, volume: 220 },
       { time: 2800, open: 52205, high: 52212, low: 52204, close: 52210, volume: 190 },
       { time: 3100, open: 52210, high: 52220, low: 52208, close: 52218, volume: 210 },
       { time: 3400, open: 52216, high: 52217, low: 52189, close: 52190, volume: 450 }, // Real breakout bar!

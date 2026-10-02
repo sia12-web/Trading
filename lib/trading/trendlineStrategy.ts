@@ -377,23 +377,32 @@ export function checkTrendlineBreakout(
     if (b.time < minBreakoutSec) continue
     if (b.time <= p2.time) continue
 
-    const trendlinePriceAtBar = p1.price + slopePtsPerSec * (b.time - p1.time)
+    const tStart = b.time
+    const tClose = b.time + barDuration
+    const tlAtStart = p1.price + slopePtsPerSec * (tStart - p1.time)
+    const tlAtClose = p1.price + slopePtsPerSec * (tClose - p1.time)
+    const tlMin = Math.min(tlAtStart, tlAtClose)
+    const tlMax = Math.max(tlAtStart, tlAtClose)
 
     // A candle is only confirmed closed if a subsequent candle exists or its 5m duration has elapsed
+    // -2s tolerance accounts for slight clock skew / 1s interval roundoff
     const isCompletedBar =
       i < bars.length - 1 ||
       (options?.currentTimeSec != null
-        ? options.currentTimeSec >= b.time + barDuration
+        ? options.currentTimeSec >= b.time + barDuration - 2
         : true)
 
     if (dir === 'LONG') {
       // Bearish trendline being broken to upside by buyers
-      if (b.high > trendlinePriceAtBar) {
+      // Wick pierced if high exceeds upper boundary of trendline during the candle
+      if (b.high > tlMax || b.high > tlAtStart) {
         result.isCrossed = true
       }
 
       // Strict 5-minute bar close confirmation ABOVE the trendline
-      if (b.close > trendlinePriceAtBar) {
+      // Candle close occurs at tClose; bar confirmed if close price clears line at close or start
+      const isClosedAbove = b.close > tlAtClose || b.close > tlAtStart
+      if (isClosedAbove) {
         if (!isCompletedBar) {
           // Bar is still actively forming (tick crossed, but bar close is not yet confirmed)
           continue
@@ -403,7 +412,7 @@ export function checkTrendlineBreakout(
         result.breakoutCandle = b
         result.breakoutCandleIndex = i
         result.entryPrice = b.close
-        result.trendlineProjectedAtBreakout = Number(trendlinePriceAtBar.toFixed(2))
+        result.trendlineProjectedAtBreakout = Number((b.close > tlAtClose ? tlAtClose : tlAtStart).toFixed(2))
 
         // Default Stop Loss: Placed below the low of the candle that broke the trendline (1.0 pt safety buffer)
         const sl = Number((b.low - 1.0).toFixed(2))
@@ -419,12 +428,15 @@ export function checkTrendlineBreakout(
       }
     } else {
       // Bullish trendline being broken to downside by sellers (SHORT)
-      if (b.low < trendlinePriceAtBar) {
+      // Wick pierced if low falls below lower boundary of trendline during the candle
+      if (b.low < tlMin) {
         result.isCrossed = true
       }
 
       // Strict 5-minute bar close confirmation BELOW the trendline
-      if (b.close < trendlinePriceAtBar) {
+      // Candle close occurs at tClose; bar confirmed if close price falls below line at close or start
+      const isClosedBelow = b.close < tlAtClose || b.close < tlAtStart
+      if (isClosedBelow) {
         if (!isCompletedBar) {
           // Bar is still actively forming (tick crossed, but bar close is not yet confirmed)
           continue
@@ -434,7 +446,7 @@ export function checkTrendlineBreakout(
         result.breakoutCandle = b
         result.breakoutCandleIndex = i
         result.entryPrice = b.close
-        result.trendlineProjectedAtBreakout = Number(trendlinePriceAtBar.toFixed(2))
+        result.trendlineProjectedAtBreakout = Number((b.close < tlAtClose ? tlAtClose : tlAtStart).toFixed(2))
 
         // Default Stop Loss for Short: Placed above the high of the candle that broke the trendline (+1.0 pt)
         const sl = Number((b.high + 1.0).toFixed(2))
@@ -1974,9 +1986,18 @@ export function resampleCandlesTo5M(candles: Candle[]): Candle[] {
   if (!candles || candles.length === 0) return []
 
   const sorted = [...candles].sort((a, b) => a.time - b.time)
-  // Check if candles are already 5m bars (or larger)
-  if (sorted.length >= 2 && (sorted[1]!.time - sorted[0]!.time) >= 300) {
-    return sorted
+  // Check if candles are already higher timeframe (e.g. 15m, 1h, 1D) by checking median delta
+  if (sorted.length >= 4) {
+    const deltas: number[] = []
+    for (let i = 0; i < Math.min(sorted.length - 1, 10); i++) {
+      const d = sorted[i + 1]!.time - sorted[i]!.time
+      if (d > 0) deltas.push(d)
+    }
+    deltas.sort((a, b) => a - b)
+    const medianDelta = deltas[Math.floor(deltas.length / 2)] ?? 0
+    if (medianDelta > 300) {
+      return sorted
+    }
   }
 
   const BUCKET = 300 // 5 minutes in seconds

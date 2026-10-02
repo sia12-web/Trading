@@ -1833,6 +1833,11 @@ export function TradingChart({
       const mins = Math.floor(rem / 60)
       const secs = rem % 60
       setBarCountdown(`${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`)
+
+      // Immediate 5-minute bar close detection: trigger user drawings repaint the very second a 5m bar finishes
+      if (nowSec % 300 === 0 || rem === barSec) {
+        paintUserDrawingsRef.current?.()
+      }
     }
     updateCountdown()
     const timer = setInterval(updateCountdown, 1000)
@@ -9194,6 +9199,7 @@ export function TradingChart({
       }
       if (isNewBar || fills.length > 0) {
         refreshSessionHighlightsRef.current?.()
+        paintUserDrawingsRef.current?.()
       }
     }
 
@@ -9501,6 +9507,7 @@ export function TradingChart({
           candlesRef.current = nextBars
           syncDeskPlaybookRangesRef.current(nextBars)
           refreshSessionHighlightsRef.current?.()
+          paintUserDrawingsRef.current?.()
         }
         setDataMode('live')
         if (json.source === 'yahoo' || json.source === 'oanda' || json.source === 'databento') {
