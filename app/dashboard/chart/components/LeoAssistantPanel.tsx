@@ -190,6 +190,9 @@ export function LeoAssistantPanel({
     }
   }
 
+  const contextRef = useRef(context)
+  contextRef.current = context
+
   const [messages, setMessagesState] = useState<LeoMessage[]>(() => {
     return leoHistoryByInstrument[context.instrument]?.length
       ? leoHistoryByInstrument[context.instrument]!
@@ -1063,10 +1066,14 @@ export function LeoAssistantPanel({
   // ─── Real-time 1-Second Desk Rule Evaluation Loop ────────────────────────
   useEffect(() => {
     const timer = setInterval(() => {
-      const pos = context.activePosition
-      const curPrice = context.currentPrice
+      if (typeof document !== 'undefined' && document.hidden) return
+
+      const ctx = contextRef.current
+      const pos = ctx.activePosition
+      const curPrice = ctx.currentPrice
 
       setArmedRules((prevRules) => {
+        if (!prevRules || prevRules.length === 0) return prevRules
         let changed = false
         const nextRules = prevRules.map((rule) => {
           if (rule.status !== 'ARMED') return rule
@@ -1134,18 +1141,18 @@ export function LeoAssistantPanel({
             if ((effectiveTargetPx == null || effectiveTargetPx <= 0) && rule.targetReference) {
               const refLower = rule.targetReference.toLowerCase()
               if (refLower.includes('low volume') || refLower.includes('y-val') || refLower.includes('val')) {
-                effectiveTargetPx = context.shortTermMoney?.yval ?? undefined
+                effectiveTargetPx = ctx.shortTermMoney?.yval ?? undefined
               } else if (refLower.includes('y-poc') || refLower.includes('poc')) {
-                effectiveTargetPx = context.shortTermMoney?.ypoc ?? context.intermediateMoney?.poc5d ?? undefined
+                effectiveTargetPx = ctx.shortTermMoney?.ypoc ?? ctx.intermediateMoney?.poc5d ?? undefined
               } else if (refLower.includes('y-low') || refLower.includes('low')) {
-                effectiveTargetPx = context.shortTermMoney?.ylow ?? undefined
+                effectiveTargetPx = ctx.shortTermMoney?.ylow ?? undefined
               } else if (refLower.includes('5d poc')) {
-                effectiveTargetPx = context.intermediateMoney?.poc5d ?? undefined
+                effectiveTargetPx = ctx.intermediateMoney?.poc5d ?? undefined
               }
             }
 
             if (effectiveTargetPx != null && effectiveTargetPx > 0) {
-              const tolerances = getInstrumentTolerances(rule.instrument || context.instrument)
+              const tolerances = getInstrumentTolerances(rule.instrument || ctx.instrument)
               const dist = Math.abs(curPrice - effectiveTargetPx)
               const alertTolerance = Math.max(tolerances.touch * 1.5, 5.0)
 
@@ -1181,17 +1188,17 @@ export function LeoAssistantPanel({
             if ((currentTargetPx == null || currentTargetPx <= 0) && (rule.targetReference || (rule as any).conditions?.targetReference)) {
               const refText = String(rule.targetReference || (rule as any).conditions?.targetReference).toLowerCase()
               if (refText.includes('low volume') || refText.includes('y-val') || refText.includes('val')) {
-                currentTargetPx = context.shortTermMoney?.yval ?? undefined
+                currentTargetPx = ctx.shortTermMoney?.yval ?? undefined
               } else if (refText.includes('y-poc') || refText.includes('poc')) {
-                currentTargetPx = context.shortTermMoney?.ypoc ?? context.intermediateMoney?.poc5d ?? undefined
+                currentTargetPx = ctx.shortTermMoney?.ypoc ?? ctx.intermediateMoney?.poc5d ?? undefined
               } else if (refText.includes('y-low') || refText.includes('low')) {
-                currentTargetPx = context.shortTermMoney?.ylow ?? undefined
+                currentTargetPx = ctx.shortTermMoney?.ylow ?? undefined
               } else if (refText.includes('5d poc')) {
-                currentTargetPx = context.intermediateMoney?.poc5d ?? undefined
+                currentTargetPx = ctx.intermediateMoney?.poc5d ?? undefined
               } else if (refText.includes('y-vah') || refText.includes('vah')) {
-                currentTargetPx = context.shortTermMoney?.yvah ?? undefined
+                currentTargetPx = ctx.shortTermMoney?.yvah ?? undefined
               } else if (refText.includes('y-high') || refText.includes('high')) {
-                currentTargetPx = context.shortTermMoney?.yhigh ?? undefined
+                currentTargetPx = ctx.shortTermMoney?.yhigh ?? undefined
               }
             }
             if (!currentTargetPx || currentTargetPx <= 0) {
@@ -1199,15 +1206,15 @@ export function LeoAssistantPanel({
             }
 
             // Dynamic Trendline Re-Projection Over Time
-            if (rule.drawingType === 'TRENDLINE' && rule.drawingId && context.userDrawings) {
-              const activeTl = context.userDrawings.trendlines.find((t) => t.id === rule.drawingId)
+            if (rule.drawingType === 'TRENDLINE' && rule.drawingId && ctx.userDrawings) {
+              const activeTl = ctx.userDrawings.trendlines.find((t) => t.id === rule.drawingId)
               if (activeTl && Number.isFinite(activeTl.projectedPrice) && activeTl.projectedPrice > 0) {
                 currentTargetPx = activeTl.projectedPrice
               }
             }
 
             // Instrument-calibrated proximity & touch tolerances
-            const tolerances = getInstrumentTolerances(rule.instrument || context.instrument)
+            const tolerances = getInstrumentTolerances(rule.instrument || ctx.instrument)
             const dist = Math.abs(curPrice - currentTargetPx)
 
             const rawPattern = (rule.pattern || (rule as any).conditions?.pattern || '').trim().toUpperCase()
@@ -1231,7 +1238,7 @@ export function LeoAssistantPanel({
             // ── TRENDLINE_BREAKOUT_SYSTEMATIC Rule Handler ──
             if (rule.type === 'TRENDLINE_BREAKOUT_SYSTEMATIC') {
               const tlId = rule.trendlineId || rule.conditions?.trendlineId
-              const activeTl = (context.userDrawings?.trendlines || []).find((t: any) => t.id === tlId)
+              const activeTl = (ctx.userDrawings?.trendlines || []).find((t: any) => t.id === tlId)
               if (activeTl && Boolean(activeTl.isActionTrendline || activeTl.isInitialOvernight) && bars.length > 0) {
                 const candleTl: UserTrendline = {
                   id: activeTl.id,
@@ -1267,7 +1274,7 @@ export function LeoAssistantPanel({
                   const borningRes = evaluateTrendBorningZone({
                     initiatingPoint: initPt,
                     bars,
-                    chartContext: context as any,
+                    chartContext: ctx as any,
                     direction: tradeDir,
                   })
                   borningScore = borningRes.compositeScore
@@ -1277,9 +1284,9 @@ export function LeoAssistantPanel({
                 // Evaluate Dalton Balance Day Chop Shield
                 const chopShield = evaluateChopShield({
                   bars,
-                  yVal: context.shortTermMoney?.yval ?? (context as any).yesterday?.val,
-                  yVah: context.shortTermMoney?.yvah ?? (context as any).yesterday?.vah,
-                  dayType: (context as any).dayType ?? undefined,
+                  yVal: ctx.shortTermMoney?.yval ?? (ctx as any).yesterday?.val,
+                  yVah: ctx.shortTermMoney?.yvah ?? (ctx as any).yesterday?.vah,
+                  dayType: (ctx as any).dayType ?? undefined,
                 })
 
                 const prevProg = rule.conditionProgress || {}
@@ -1356,7 +1363,7 @@ export function LeoAssistantPanel({
                   const tpPx = brkCheck.defaultTakeProfitFixed50 ?? (tradeDir === 'SHORT' ? Number((entryPx - 50).toFixed(2)) : Number((entryPx + 50).toFixed(2)))
 
                   notifySituation({
-                    instrument: rule.instrument || context.instrument,
+                    instrument: rule.instrument || ctx.instrument,
                     direction: tradeDir,
                     price: entryPx,
                     stopLoss: slPx,
@@ -1455,7 +1462,7 @@ export function LeoAssistantPanel({
             const needsCvd = Boolean(rule.cvdDivergence || (rule as any).conditions?.cvdDivergence)
             let cvdMatched = true
             if (needsCvd) {
-              const flow = context.orderFlow
+              const flow = ctx.orderFlow
               if (flow) {
                 if (dir === 'LONG') {
                   cvdMatched = flow.divergence === 'BULLISH_ABSORPTION' || flow.trend === 'BUYER_DOMINANT' || flow.latestBarDelta > 0
@@ -1590,7 +1597,7 @@ export function LeoAssistantPanel({
               }
 
               notifySituation({
-                instrument: rule.instrument || context.instrument,
+                instrument: rule.instrument || ctx.instrument,
                 direction: dir,
                 price: entryPx,
                 stopLoss: sl,
@@ -1614,7 +1621,7 @@ export function LeoAssistantPanel({
         })
 
         // Check dynamic responsive trendline breakdown exit while in position
-        if (context.activePosition && candlesRef.current.length > 0) {
+        if (ctx.activePosition && candlesRef.current.length > 0) {
           const bars: Candle[] = candlesRef.current.map((c: any) => ({
             time: typeof c.time === 'number' ? c.time : 0,
             open: Number(c.open),
@@ -1630,7 +1637,7 @@ export function LeoAssistantPanel({
 
           for (const tr of trendlineRules) {
             const tlId = tr.trendlineId || tr.conditions?.trendlineId
-            const activeTl = (context.userDrawings?.trendlines || []).find((t: any) => t.id === tlId)
+            const activeTl = (ctx.userDrawings?.trendlines || []).find((t: any) => t.id === tlId)
             if (activeTl && bars.length > 0) {
               const candleTl: UserTrendline = {
                 id: activeTl.id,
@@ -1669,7 +1676,7 @@ export function LeoAssistantPanel({
                   macroOrigin: initPt,
                 })
 
-                const curPrice = context.currentPrice ?? bars[bars.length - 1]!.close
+                const curPrice = ctx.currentPrice ?? bars[bars.length - 1]!.close
                 const dynLine = calculateDynamicTrendline({
                   origin: initPt,
                   compositeScore: borningRes.compositeScore,
@@ -1697,7 +1704,7 @@ export function LeoAssistantPanel({
                   void fetch('/api/trading/positions/cancel-working', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ instrument: context.instrument }),
+                    body: JSON.stringify({ instrument: ctx.instrument }),
                   }).catch(() => {})
 
                   if (onClosePosition) {
@@ -1708,7 +1715,7 @@ export function LeoAssistantPanel({
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
                         position_id: (pos as any)?.id || 'active',
-                        instrument: context.instrument,
+                        instrument: ctx.instrument,
                         exit_price: latestCompletedBar.close,
                         exit_reason: 'ai_signal',
                         exit_notes: exitReason,
@@ -1742,7 +1749,7 @@ export function LeoAssistantPanel({
     }, 1000)
 
     return () => clearInterval(timer)
-  }, [context.activePosition, context.currentPrice, context.instrument])
+  }, [])
 
   // Send message to Leo via streaming API
   const handleSendMessage = async (textToSend?: string, pointsToSend?: LeoDataPoint[]) => {

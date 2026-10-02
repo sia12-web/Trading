@@ -3,8 +3,9 @@
  * Stocks and options. Never places or cancels.
  */
 
-import { isTeamTapeSymbol, parseTeamTapeSide, type TeamTapeSide } from '@/lib/trading/teamTape'
+import { isTeamTapeSymbol, parseTeamTapeSide, teamTapeTarget1_5R, type TeamTapeSide } from '@/lib/trading/teamTape'
 import { getSymbolRealName } from '@/lib/trading/symbolNames'
+import { getSymbolMultiplier } from '@/lib/trading/performanceMetrics'
 
 export type QuestradeLevelStatus = 'working' | 'filled' | 'cancelled'
 
@@ -253,7 +254,7 @@ export function parseQuestradeSymbol(raw?: string | null): {
     underlying: key,
     asset: 'stock',
     label: key,
-    multiplier: 1,
+    multiplier: getSymbolMultiplier(key, 'stock'),
   }
 }
 
@@ -354,6 +355,7 @@ function pickLevel(
     entryTime?: string | null
     want: 'sl' | 'tp'
     isEntryLimit?: boolean
+    isOpenPosition?: boolean
   }
 ): QuestradeProtectiveLevel | null {
   const opp = args.entrySide === 'BUY' ? 'SELL' : 'BUY'
@@ -377,6 +379,8 @@ function pickLevel(
   const ranked = levels
     .filter((l) => {
       if (l.kind !== args.want || l.symbol !== args.symbol || l.side !== opp) return false
+      // For open positions, only active working orders are protective; never borrow old cancelled/filled orders
+      if (args.isOpenPosition && l.status !== 'working') return false
       // For take-profit limit orders, prefer profitable target levels if entry price is known
       if (args.want === 'tp' && entryPx != null && entryPx > 0 && l.price > 0) {
         const isProfitable = args.entrySide === 'BUY' ? l.price >= entryPx : l.price <= entryPx
@@ -509,6 +513,7 @@ export function pairQuestradeBook(args: {
     if (!parsed || !side || !entryPx || !(qty > 0)) return null
 
     const isLimit = kind === 'entry_limit'
+    const isOpenPosition = kind === 'open_position'
     const entryTime = orderStamp(entry)
 
     const sl = pickLevel(levels, {
@@ -521,6 +526,7 @@ export function pairQuestradeBook(args: {
       entryTime,
       want: 'sl',
       isEntryLimit: isLimit,
+      isOpenPosition,
     })
     const tp = pickLevel(levels, {
       symbol: parsed.key,
@@ -532,16 +538,21 @@ export function pairQuestradeBook(args: {
       entryTime,
       want: 'tp',
       isEntryLimit: isLimit,
+      isOpenPosition,
     })
     const stop = sl?.price ?? null
-    const target = tp?.price ?? null
+    const target =
+      tp?.price ??
+      (stop != null ? teamTapeTarget1_5R({ side, entry: entryPx, stop }) : null)
     const mark = posNum(pos?.currentPrice)
+    const calculatedPnl =
+      mark != null
+        ? signedNum((mark - entryPx) * qty * (side === 'BUY' ? 1 : -1) * parsed.multiplier)
+        : null
     const livePnl =
-      pos?.openPnl != null
+      pos?.openPnl != null && pos.openPnl !== 0
         ? signedNum(pos.openPnl)
-        : mark != null
-          ? signedNum((mark - entryPx) * qty * (side === 'BUY' ? 1 : -1) * parsed.multiplier)
-          : null
+        : calculatedPnl
     const stockRisk =
       stop != null
         ? Math.round(Math.abs(entryPx - stop) * qty * parsed.multiplier * 100) / 100

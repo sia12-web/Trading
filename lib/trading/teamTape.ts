@@ -30,6 +30,11 @@ export type TeamTapeSignal = {
   target: number | null
   status: TeamTapeStatus
   filledAt?: string | null
+  mark?: number | null
+  livePnl?: number | null
+  multiplier?: number
+  pnl?: number | null
+  exit?: number | null
 }
 
 export type TeamCopyAdvice = {

@@ -4,6 +4,9 @@
  * Monthly P&L Calendar, and formats CME Globex futures exchange prices.
  */
 
+import { FUTURES_POINT_VALUES } from '@/lib/trading/positionSizing'
+import type { QuestradeBookRow } from '@/lib/trading/questradeOrders'
+
 export interface TradeRecord {
   id: string
   symbol: string
@@ -83,6 +86,18 @@ export function getExchangeTag(symbol: string): string {
     return 'CME Globex'
   }
   return 'US Equities/Options'
+}
+
+/** Returns the contract / point multiplier for calculating P&L on futures, options, and stocks */
+export function getSymbolMultiplier(symbol: string, asset: 'stock' | 'option' = 'stock'): number {
+  if (asset === 'option') return 100
+  const sym = (symbol || '').toUpperCase()
+  for (const [key, val] of Object.entries(FUTURES_POINT_VALUES)) {
+    if (sym.includes(key) || sym === key) {
+      return val
+    }
+  }
+  return 1
 }
 
 /** Determine trade duration in seconds */
@@ -293,6 +308,89 @@ export const DEFAULT_TEAM_TRADES: TradeRecord[] = [
     entryTime: '2026-10-01T14:10:00Z',
     exitTime: '2026-10-01T14:45:00Z',
     exchange: 'CBOE Options',
+  },
+]
+
+/** Default NYC Team Tape Desk Ongoing Positions */
+export const DEFAULT_TEAM_POSITIONS: QuestradeBookRow[] = [
+  {
+    sourceId: 'TEAM-POS-201',
+    symbol: 'NVDA',
+    label: 'NVDA',
+    companyName: 'NVIDIA Corporation',
+    realName: 'NVIDIA Corporation',
+    underlying: 'NVDA',
+    asset: 'stock',
+    side: 'BUY',
+    quantity: 100,
+    entry: 124.50,
+    stop: 122.80,
+    target: 128.20,
+    stopStatus: 'working',
+    targetStatus: 'working',
+    mark: 126.80,
+    livePnl: 230.00,
+    status: 'filled',
+    orderType: 'LIMIT',
+    kind: 'open_position',
+    notional: 12680.00,
+    stockRiskDollars: 170.00,
+    multiplier: 1,
+    filledAt: '2026-10-01T14:30:00Z',
+  },
+  {
+    sourceId: 'TEAM-POS-202',
+    symbol: 'TSLA',
+    label: 'TSLA',
+    companyName: 'Tesla Inc.',
+    realName: 'Tesla Inc.',
+    underlying: 'TSLA',
+    asset: 'stock',
+    side: 'SELL',
+    quantity: 50,
+    entry: 254.20,
+    stop: 257.50,
+    target: 248.00,
+    stopStatus: 'working',
+    targetStatus: 'working',
+    mark: 255.80,
+    livePnl: -80.00,
+    status: 'filled',
+    orderType: 'LIMIT',
+    kind: 'open_position',
+    notional: 12790.00,
+    stockRiskDollars: 165.00,
+    multiplier: 1,
+    filledAt: '2026-10-01T15:10:00Z',
+  },
+]
+
+/** Default NYC Team Tape Desk Working Limits */
+export const DEFAULT_TEAM_WORKING_LIMITS: QuestradeBookRow[] = [
+  {
+    sourceId: 'TEAM-LIMIT-301',
+    symbol: 'MSFT',
+    label: 'MSFT',
+    companyName: 'Microsoft Corporation',
+    realName: 'Microsoft Corporation',
+    underlying: 'MSFT',
+    asset: 'stock',
+    side: 'BUY',
+    quantity: 50,
+    entry: 425.00,
+    stop: 418.50,
+    target: 434.75,
+    stopStatus: 'working',
+    targetStatus: 'working',
+    mark: 427.10,
+    livePnl: null,
+    status: 'working',
+    orderType: 'LIMIT',
+    kind: 'entry_limit',
+    notional: 21250.00,
+    stockRiskDollars: 325.00,
+    multiplier: 1,
+    filledAt: '2026-10-01T15:00:00Z',
   },
 ]
 

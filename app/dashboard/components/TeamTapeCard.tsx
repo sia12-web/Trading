@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
-import type { TeamTapeSignal } from '@/lib/trading/teamTape'
+import { teamTapeTarget1_5R, type TeamTapeSignal } from '@/lib/trading/teamTape'
 import type { QuestradeBookPayload } from '@/lib/trading/questradeBook'
 import type { QuestradeBookRow } from '@/lib/trading/questradeOrders'
 import { getSymbolRealName } from '@/lib/trading/symbolNames'
@@ -19,6 +19,7 @@ import {
   DURATION_BUCKETS,
   formatCmeExchangePrice,
   getExchangeTag,
+  getSymbolMultiplier,
 } from '@/lib/trading/performanceMetrics'
 
 type Payload = {
@@ -54,14 +55,42 @@ function pnlClass(n: number | null | undefined): string {
 /** 🟢 Ongoing Position Card */
 function OngoingPositionCard({ row }: { row: QuestradeBookRow }) {
   const isBuy = row.side === 'BUY'
-  const pnl = row.livePnl
+  const mult = row.multiplier ?? getSymbolMultiplier(row.symbol, row.asset)
+
+  // Calculate live PnL accurately
+  const pnl =
+    row.livePnl != null
+      ? row.livePnl
+      : row.mark != null && row.entry != null
+      ? (isBuy ? row.mark - row.entry : row.entry - row.mark) * row.quantity * mult
+      : null
+
+  const sign = pnl != null && pnl > 0 ? '+' : pnl != null && pnl < 0 ? '-' : ''
   const pnlFormatted =
     pnl == null
       ? '—'
-      : `${pnl >= 0 ? '+' : ''}$${Math.abs(pnl).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : `${sign}$${Math.abs(pnl).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
   const meta = getSymbolRealName(row.symbol)
   const displayName = row.companyName || meta.name
   const exTag = getExchangeTag(row.symbol)
+
+  // Calculate projected stop loss and take profit
+  const effectiveTarget =
+    row.target ??
+    (row.stop != null ? teamTapeTarget1_5R({ side: row.side, entry: row.entry, stop: row.stop }) : null)
+
+  const projectedLoss =
+    row.stop != null && row.entry != null
+      ? Math.abs((isBuy ? row.entry - row.stop : row.stop - row.entry) * row.quantity * mult)
+      : row.stockRiskDollars != null
+      ? row.stockRiskDollars
+      : null
+
+  const projectedProfit =
+    effectiveTarget != null && row.entry != null
+      ? Math.abs((isBuy ? effectiveTarget - row.entry : row.entry - effectiveTarget) * row.quantity * mult)
+      : null
 
   return (
     <div className="rounded-lg border border-sky-500/30 bg-sky-950/20 p-3 transition hover:border-sky-500/50">
@@ -95,11 +124,25 @@ function OngoingPositionCard({ row }: { row: QuestradeBookRow }) {
         </div>
         <div>
           <span className="text-[10px] uppercase text-gray-500 block">Stop Loss (SL)</span>
-          <span className="text-red-300">{formatCmeExchangePrice(row.symbol, row.stop)}</span>
+          <div className="flex items-baseline gap-1 flex-wrap">
+            <span className="text-red-300 font-semibold">{formatCmeExchangePrice(row.symbol, row.stop)}</span>
+            {projectedLoss != null && (
+              <span className="text-red-400 text-[11px] font-bold">
+                (-${projectedLoss.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+              </span>
+            )}
+          </div>
         </div>
         <div>
           <span className="text-[10px] uppercase text-gray-500 block">Take Profit (TP)</span>
-          <span className="text-emerald-300">{formatCmeExchangePrice(row.symbol, row.target)}</span>
+          <div className="flex items-baseline gap-1 flex-wrap">
+            <span className="text-emerald-300 font-semibold">{formatCmeExchangePrice(row.symbol, effectiveTarget)}</span>
+            {projectedProfit != null && (
+              <span className="text-emerald-400 text-[11px] font-bold">
+                (+${projectedProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -108,9 +151,27 @@ function OngoingPositionCard({ row }: { row: QuestradeBookRow }) {
 
 /** ⚡ Working Limit Order Card */
 function WorkingLimitCard({ row }: { row: QuestradeBookRow }) {
+  const isBuy = row.side === 'BUY'
+  const mult = row.multiplier ?? getSymbolMultiplier(row.symbol, row.asset)
   const meta = getSymbolRealName(row.symbol)
   const displayName = row.companyName || meta.name
   const exTag = getExchangeTag(row.symbol)
+
+  const effectiveTarget =
+    row.target ??
+    (row.stop != null ? teamTapeTarget1_5R({ side: row.side, entry: row.entry, stop: row.stop }) : null)
+
+  const projectedLoss =
+    row.stop != null && row.entry != null
+      ? Math.abs((isBuy ? row.entry - row.stop : row.stop - row.entry) * row.quantity * mult)
+      : row.stockRiskDollars != null
+      ? row.stockRiskDollars
+      : null
+
+  const projectedProfit =
+    effectiveTarget != null && row.entry != null
+      ? Math.abs((isBuy ? effectiveTarget - row.entry : row.entry - effectiveTarget) * row.quantity * mult)
+      : null
 
   return (
     <div className="rounded-lg border border-amber-500/30 bg-amber-950/20 p-3 transition hover:border-amber-500/50">
@@ -137,11 +198,25 @@ function WorkingLimitCard({ row }: { row: QuestradeBookRow }) {
         </div>
         <div>
           <span className="text-[10px] uppercase text-gray-500 block">SL</span>
-          <span className="text-red-300">{formatCmeExchangePrice(row.symbol, row.stop)}</span>
+          <div className="flex items-baseline gap-1 flex-wrap">
+            <span className="text-red-300 font-semibold">{formatCmeExchangePrice(row.symbol, row.stop)}</span>
+            {projectedLoss != null && (
+              <span className="text-red-400 text-[11px] font-bold">
+                (-${projectedLoss.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+              </span>
+            )}
+          </div>
         </div>
         <div>
           <span className="text-[10px] uppercase text-gray-500 block">TP</span>
-          <span className="text-emerald-300">{formatCmeExchangePrice(row.symbol, row.target)}</span>
+          <div className="flex items-baseline gap-1 flex-wrap">
+            <span className="text-emerald-300 font-semibold">{formatCmeExchangePrice(row.symbol, effectiveTarget)}</span>
+            {projectedProfit != null && (
+              <span className="text-emerald-400 text-[11px] font-bold">
+                (+${projectedProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -154,13 +229,24 @@ function PastOrderCard({ signal }: { signal: TeamTapeSignal }) {
   const meta = getSymbolRealName(signal.symbol)
   const displayName = signal.companyName || meta.name
   const exTag = getExchangeTag(signal.symbol)
+  const mult = signal.multiplier ?? getSymbolMultiplier(signal.symbol)
 
-  // Estimate win / loss outcome if target / stop specified
-  const pnlEstimated =
-    signal.target && signal.entry && signal.stop
-      ? (isBuy ? signal.target - signal.entry : signal.entry - signal.target) * signal.quantity
-      : null
+  // Calculate actual P&L if known
+  let pnlEstimated: number | null = null
+  if (typeof signal.pnl === 'number') {
+    pnlEstimated = signal.pnl
+  } else if (typeof signal.livePnl === 'number') {
+    pnlEstimated = signal.livePnl
+  } else if (signal.exit != null && signal.entry != null) {
+    pnlEstimated = (isBuy ? signal.exit - signal.entry : signal.entry - signal.exit) * signal.quantity * mult
+  }
+
+  const isCancelled = signal.status === 'cancelled'
   const isWin = pnlEstimated != null ? pnlEstimated >= 0 : signal.status === 'filled'
+
+  const effectiveTarget =
+    signal.target ??
+    (signal.stop != null ? teamTapeTarget1_5R({ side: signal.side, entry: signal.entry, stop: signal.stop }) : null)
 
   return (
     <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 transition hover:border-white/20">
@@ -179,16 +265,33 @@ function PastOrderCard({ signal }: { signal: TeamTapeSignal }) {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[11px] text-gray-400">{montrealStamp(signal.filledAt)}</span>
-          <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${isWin ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700/60' : 'bg-red-950/80 text-red-300 border border-red-700/60'}`}>
-            {isWin ? 'WIN' : 'LOSS'}
-          </span>
+          {isCancelled ? (
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700">
+              CANCELLED
+            </span>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${isWin ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700/60' : 'bg-red-950/80 text-red-300 border border-red-700/60'}`}>
+                {isWin ? 'WIN' : 'LOSS'}
+              </span>
+              {pnlEstimated != null && (
+                <span className={`text-xs font-mono font-bold ${pnlEstimated >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {pnlEstimated >= 0 ? '+' : '-'}${Math.abs(pnlEstimated).toFixed(2)}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="mt-2 grid grid-cols-3 sm:grid-cols-4 gap-2 text-xs font-mono bg-black/40 p-2 rounded border border-white/5">
+      <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono bg-black/40 p-2 rounded border border-white/5">
         <div>
           <span className="text-[10px] uppercase text-gray-500 block">Exact Entry</span>
           <span className="text-white font-bold">{formatCmeExchangePrice(signal.symbol, signal.entry)}</span>
+        </div>
+        <div>
+          <span className="text-[10px] uppercase text-gray-500 block">Exit / Mark</span>
+          <span className="text-gray-200">{formatCmeExchangePrice(signal.symbol, signal.exit ?? signal.mark ?? effectiveTarget)}</span>
         </div>
         <div>
           <span className="text-[10px] uppercase text-gray-500 block">Stop Loss (SL)</span>
@@ -196,11 +299,7 @@ function PastOrderCard({ signal }: { signal: TeamTapeSignal }) {
         </div>
         <div>
           <span className="text-[10px] uppercase text-gray-500 block">Take Profit (TP)</span>
-          <span className="text-emerald-300">{formatCmeExchangePrice(signal.symbol, signal.target)}</span>
-        </div>
-        <div>
-          <span className="text-[10px] uppercase text-gray-500 block">Status</span>
-          <span className="text-gray-300 uppercase font-semibold">{signal.status}</span>
+          <span className="text-emerald-300">{formatCmeExchangePrice(signal.symbol, effectiveTarget)}</span>
         </div>
       </div>
     </div>
@@ -211,24 +310,38 @@ function PastOrderCard({ signal }: { signal: TeamTapeSignal }) {
 function PerformanceAnalyticsPanel({ signals }: { signals?: TeamTapeSignal[] }) {
   const tradeRecords = useMemo(() => {
     if (signals && signals.length > 0) {
-      return signals.map((s) => ({
-        id: String(s.sourceId || Math.random()),
-        symbol: String(s.symbol || 'NVDA'),
-        direction: (s.side === 'SELL' ? 'SELL' : 'BUY') as 'BUY' | 'SELL',
-        entry: Number(s.entry || 0),
-        exit: s.target || null,
-        stop: s.stop || null,
-        target: s.target || null,
-        pnl:
-          s.target && s.entry
-            ? (s.side === 'BUY' ? s.target - s.entry : s.entry - s.target) * (s.quantity || 1)
-            : 0,
-        quantity: Number(s.quantity || 1),
-        status: (s.status || 'closed') as 'closed',
-        entryTime: s.filledAt || new Date().toISOString(),
-        exitTime: s.filledAt || null,
-        exchange: getExchangeTag(s.symbol || 'NVDA'),
-      }))
+      return signals
+        .filter((s) => s.status !== 'cancelled')
+        .map((s) => {
+          const sym = String(s.symbol || 'NVDA')
+          const mult = typeof s.multiplier === 'number' && s.multiplier > 0 ? s.multiplier : getSymbolMultiplier(sym)
+          const qty = Number(s.quantity || 1)
+          let calcPnl = 0
+          if (typeof s.pnl === 'number') {
+            calcPnl = s.pnl
+          } else if (typeof s.livePnl === 'number') {
+            calcPnl = s.livePnl
+          } else if (s.exit != null && s.entry != null) {
+            calcPnl = (s.side === 'BUY' ? s.exit - s.entry : s.entry - s.exit) * qty * mult
+          } else if (s.target != null && s.entry != null) {
+            calcPnl = (s.side === 'BUY' ? s.target - s.entry : s.entry - s.target) * qty * mult
+          }
+          return {
+            id: String(s.sourceId || Math.random()),
+            symbol: sym,
+            direction: (s.side === 'SELL' ? 'SELL' : 'BUY') as 'BUY' | 'SELL',
+            entry: Number(s.entry || 0),
+            exit: s.exit ?? s.target ?? null,
+            stop: s.stop || null,
+            target: s.target || null,
+            pnl: calcPnl,
+            quantity: qty,
+            status: (s.status === 'closed' ? 'closed' : 'closed') as 'closed',
+            entryTime: s.filledAt || new Date().toISOString(),
+            exitTime: s.filledAt || null,
+            exchange: getExchangeTag(sym),
+          }
+        })
     }
     return DEFAULT_TEAM_TRADES
   }, [signals])

@@ -21,6 +21,11 @@ import {
 } from '@/lib/trading/teamTape'
 import { loadQuestradeBook } from '@/lib/trading/questradeBook'
 import { getSymbolRealName } from '@/lib/trading/symbolNames'
+import {
+  DEFAULT_TEAM_POSITIONS,
+  DEFAULT_TEAM_WORKING_LIMITS,
+  DEFAULT_TEAM_TRADES,
+} from '@/lib/trading/performanceMetrics'
 
 export const dynamic = 'force-dynamic'
 
@@ -132,6 +137,9 @@ export async function GET(request: Request) {
         target,
         status: 'filled',
         filledAt: p.filledAt,
+        mark: p.mark,
+        livePnl: p.livePnl,
+        multiplier: p.multiplier,
       })
     }
 
@@ -156,6 +164,9 @@ export async function GET(request: Request) {
           target,
           status: 'working',
           filledAt: w.filledAt,
+          mark: w.mark,
+          livePnl: null,
+          multiplier: w.multiplier,
         })
       }
     }
@@ -179,6 +190,9 @@ export async function GET(request: Request) {
           target,
           status: h.status,
           filledAt: h.filledAt,
+          mark: h.mark,
+          livePnl: h.livePnl,
+          multiplier: h.multiplier,
         })
       }
     }
@@ -202,6 +216,66 @@ export async function GET(request: Request) {
       if (!inOpen && !inHistory && !questradeClosedSymbol) {
         open.push(s)
       }
+    }
+  }
+
+  // 3. Fallback to default team positions and history if no live broker or database signals exist
+  if (open.length === 0) {
+    for (const p of DEFAULT_TEAM_POSITIONS) {
+      open.push({
+        sourceId: p.sourceId,
+        symbol: p.symbol,
+        companyName: p.companyName,
+        realName: p.realName,
+        side: p.side,
+        quantity: p.quantity,
+        entry: p.entry,
+        stop: p.stop,
+        target: p.target,
+        status: 'filled',
+        filledAt: p.filledAt,
+        mark: p.mark,
+        livePnl: p.livePnl,
+        multiplier: p.multiplier,
+      })
+    }
+    for (const w of DEFAULT_TEAM_WORKING_LIMITS) {
+      open.push({
+        sourceId: w.sourceId,
+        symbol: w.symbol,
+        companyName: w.companyName,
+        realName: w.realName,
+        side: w.side,
+        quantity: w.quantity,
+        entry: w.entry,
+        stop: w.stop,
+        target: w.target,
+        status: 'working',
+        filledAt: w.filledAt,
+        mark: w.mark,
+        livePnl: null,
+        multiplier: w.multiplier,
+      })
+    }
+  }
+
+  if (history.length === 0) {
+    for (const t of DEFAULT_TEAM_TRADES) {
+      history.push({
+        sourceId: t.id,
+        symbol: t.symbol,
+        companyName: getSymbolRealName(t.symbol).name,
+        realName: getSymbolRealName(t.symbol).name,
+        side: t.direction === 'SELL' || t.direction === 'SHORT' ? 'SELL' : 'BUY',
+        quantity: t.quantity,
+        entry: t.entry,
+        stop: t.stop ?? null,
+        target: t.target ?? null,
+        status: 'closed',
+        filledAt: t.exitTime || t.entryTime,
+        pnl: t.pnl ?? null,
+        exit: t.exit ?? null,
+      })
     }
   }
 

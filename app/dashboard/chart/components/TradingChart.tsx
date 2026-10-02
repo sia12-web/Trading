@@ -400,7 +400,7 @@ const CACHED_PRICE_FRESH_MS = 15_000
 /** Header ticker repaint cadence — the readout subtree only. */
 const PRICE_TICKER_MS = 50
 /** Cadence for the React state that feeds badges / proximity / alert effects. */
-const PRICE_STATE_MS = 200
+const PRICE_STATE_MS = 500
 /** REST reconcile spacing while the SSE push stream is still delivering ticks.
  * Kept at 2 s so the chart keeps updating during low-volatility Asian/overnight
  * sessions even when OANDA emits no price ticks for several seconds. */
@@ -414,6 +414,17 @@ function readDeskBarSpacing(chart: { timeScale: () => { options: () => { barSpac
   } catch {
     return DESK_BAR_SPACING
   }
+}
+
+/** Squared distance from point (px, py) to line segment (x1, y1) - (x2, y2) */
+function distToSegmentSquared(px: number, py: number, x1: number, y1: number, x2: number, y2: number): number {
+  const l2 = (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1)
+  if (l2 === 0) return (px - x1) * (px - x1) + (py - y1) * (py - y1)
+  let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2
+  t = Math.max(0, Math.min(1, t))
+  const projX = x1 + t * (x2 - x1)
+  const projY = y1 + t * (y2 - y1)
+  return (px - projX) * (px - projX) + (py - projY) * (py - projY)
 }
 
 /** Range unlock must not shrink candle barSpacing — restore after LWC relayout. */
@@ -1348,6 +1359,16 @@ export function TradingChart({
       return []
     }
   })
+  const [selectedTrendlineId, setSelectedTrendlineId] = useState<string | null>(null)
+  const selectedTrendlineIdRef = useRef<string | null>(null)
+  selectedTrendlineIdRef.current = selectedTrendlineId
+  const hoveredHandleRef = useRef<{ id: string; type: 'p1' | 'p2' | 'body' | 'mid' } | null>(null)
+  const activeDraggingTlRef = useRef<{
+    id: string
+    p1: { time: number; price: number }
+    p2: { time: number; price: number }
+    direction?: 'BEARISH' | 'BULLISH'
+  } | null>(null)
   const [rangeBoxes, setRangeBoxes] = useState<UserRangeBox[]>(() => {
     if (typeof window === 'undefined') return []
     try {
@@ -1805,6 +1826,7 @@ export function TradingChart({
   }, [])
   useEffect(() => {
     const updateCountdown = () => {
+      if (typeof document !== 'undefined' && document.hidden) return
       const nowSec = Math.floor(Date.now() / 1000)
       const barSec = barSeconds
       const rem = barSec - (nowSec % barSec)
@@ -1814,7 +1836,14 @@ export function TradingChart({
     }
     updateCountdown()
     const timer = setInterval(updateCountdown, 1000)
-    return () => clearInterval(timer)
+    const onVisibility = () => {
+      if (typeof document !== 'undefined' && !document.hidden) updateCountdown()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [barSeconds])
 
   const [showLevels, setShowLevels] = useState(() =>
@@ -2397,6 +2426,7 @@ export function TradingChart({
 
   useEffect(() => {
     const id = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
       const list = candlesRef.current
       if (list.length) syncDeskPlaybookRangesRef.current(list)
     }, 4000)
@@ -2723,11 +2753,24 @@ export function TradingChart({
       canvas.style.height = `${paneH}px`
     }
 
+    let priceAxisW = 82
+    try {
+      priceAxisW = chart.priceScale('right').width() || priceAxisW
+    } catch {}
+    const timeAxisH = 26
+    const plotW = Math.max(0, paneW - priceAxisW)
+    const plotH = Math.max(0, paneH - timeAxisH)
+
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     ctx.save()
     ctx.scale(dpr, dpr)
     ctx.clearRect(0, 0, paneW, paneH)
+
+    // Clip strictly to plot canvas: never bleed into right price scale or bottom time scale
+    ctx.beginPath()
+    ctx.rect(0, 0, plotW, plotH)
+    ctx.clip()
 
     if (timeframe === '1D') {
       ctx.restore()
@@ -2749,8 +2792,8 @@ export function TradingChart({
       const halfBucket = (frvp5d.bucketSize || 1) * 0.5
       const maxBinVol = Math.max(...frvp5d.bins.map((b) => b.volume), 1)
 
-      // Draw volume bars if within visible screen bounds
-      if (xAnchor + maxHistW >= 0 && xAnchor <= paneW && rawXAnchor != null) {
+      // Draw volume bars if within visible screen bounds - unpinned so it scrolls off naturally
+      if (xAnchor + maxHistW >= 0 && xAnchor <= plotW && rawXAnchor != null) {
         for (const bin of frvp5d.bins) {
           const yTop = series.priceToCoordinate(bin.price + halfBucket)
           const yBottom = series.priceToCoordinate(bin.price - halfBucket)
@@ -2758,7 +2801,7 @@ export function TradingChart({
 
           const barY = Math.min(yTop, yBottom)
           const barH = Math.max(1.5, Math.abs(yBottom - yTop) - 0.5)
-          if (barY + barH < 0 || barY > paneH) continue
+          if (barY + barH < 0 || barY > plotH) continue
 
           const totalBarW = (bin.volume / maxBinVol) * maxHistW
           if (totalBarW < 1) continue
@@ -2768,19 +2811,19 @@ export function TradingChart({
           const buyW = totalBarW * buyRatio
           const sellW = totalBarW - buyW
 
-          // Buy volume (cyan)
-          ctx.fillStyle = bin.inValueArea ? 'rgba(6, 182, 212, 0.75)' : 'rgba(6, 182, 212, 0.35)'
-          ctx.fillRect(Math.max(0, xAnchor), barY, buyW, barH)
+          // Buy volume (cyan) - soft TradingView opacity
+          ctx.fillStyle = bin.inValueArea ? 'rgba(6, 182, 212, 0.65)' : 'rgba(6, 182, 212, 0.28)'
+          ctx.fillRect(xAnchor, barY, buyW, barH)
 
           // Sell volume (magenta)
-          ctx.fillStyle = bin.inValueArea ? 'rgba(236, 72, 153, 0.75)' : 'rgba(236, 72, 153, 0.35)'
-          ctx.fillRect(Math.max(0, xAnchor) + buyW, barY, sellW, barH)
+          ctx.fillStyle = bin.inValueArea ? 'rgba(236, 72, 153, 0.65)' : 'rgba(236, 72, 153, 0.28)'
+          ctx.fillRect(xAnchor + buyW, barY, sellW, barH)
         }
       }
 
-      // IT: 5D POC Line — extends only till the last candle (not into whitespace / price axis)
+      // IT: 5D POC Line — extends only till the last candle (never into price axis)
       const yPoc = series.priceToCoordinate(frvp5d.poc)
-      if (yPoc != null && Number.isFinite(yPoc) && yPoc >= 0 && yPoc <= paneH) {
+      if (yPoc != null && Number.isFinite(yPoc) && yPoc >= 0 && yPoc <= plotH) {
         const lineStart = Math.max(0, xAnchor)
         const lastCandle = list[list.length - 1]
         const rawXLast = lastCandle
@@ -2788,19 +2831,21 @@ export function TradingChart({
           : null
         const lineEnd =
           rawXLast != null && Number.isFinite(rawXLast)
-            ? Math.min(paneW, Math.max(lineStart, rawXLast))
-            : Math.min(paneW, lineStart + 160)
+            ? Math.min(plotW, Math.max(lineStart, rawXLast))
+            : Math.min(plotW, lineStart + 160)
 
-        ctx.strokeStyle = '#38bdf8'
-        ctx.lineWidth = 2
-        ctx.beginPath()
-        ctx.moveTo(lineStart, Math.round(yPoc) + 0.5)
-        ctx.lineTo(lineEnd, Math.round(yPoc) + 0.5)
-        ctx.stroke()
+        if (lineEnd > lineStart) {
+          ctx.strokeStyle = '#38bdf8'
+          ctx.lineWidth = 1.5
+          ctx.beginPath()
+          ctx.moveTo(lineStart, Math.round(yPoc) + 0.5)
+          ctx.lineTo(lineEnd, Math.round(yPoc) + 0.5)
+          ctx.stroke()
 
-        ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
-        ctx.fillStyle = '#38bdf8'
-        ctx.fillText(`5D POC ${frvp5d.poc.toLocaleString()}`, lineStart + 6, yPoc - 4)
+          ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
+          ctx.fillStyle = '#38bdf8'
+          ctx.fillText(`5D POC ${frvp5d.poc.toLocaleString()}`, lineStart + 6, yPoc - 4)
+        }
       }
     }
 
@@ -2812,12 +2857,13 @@ export function TradingChart({
       if (rawXYAnchor != null && Number.isFinite(rawXYAnchor)) {
         const yAnchor = rawXYAnchor
         const yEnd = rawXYEnd ?? (yAnchor + 140)
-        const histWYday = Math.min(130, Math.max(40, (yEnd - yAnchor) * 0.75))
+        const availableW = Math.max(0, yEnd - yAnchor)
+        const histWYday = Math.min(130, Math.max(30, availableW > 30 ? availableW * 0.75 : availableW))
         const halfBucket = (yesterdayNyc.bucketSize || 1) * 0.5
         const maxBinVolYday = Math.max(...yesterdayNyc.bins.map((b) => b.volume), 1)
 
-        // Draw volume bars for yesterday
-        if (yAnchor + histWYday >= 0 && yAnchor <= paneW) {
+        // Draw volume bars for yesterday - bounded so it never overlaps with overnight
+        if (yAnchor + histWYday >= 0 && yAnchor <= plotW && availableW > 5) {
           for (const bin of yesterdayNyc.bins) {
             const yTop = series.priceToCoordinate(bin.price + halfBucket)
             const yBottom = series.priceToCoordinate(bin.price - halfBucket)
@@ -2825,9 +2871,9 @@ export function TradingChart({
 
             const barY = Math.min(yTop, yBottom)
             const barH = Math.max(1.5, Math.abs(yBottom - yTop) - 0.5)
-            if (barY + barH < 0 || barY > paneH) continue
+            if (barY + barH < 0 || barY > plotH) continue
 
-            const totalBarW = (bin.volume / maxBinVolYday) * histWYday
+            const totalBarW = Math.min(availableW, (bin.volume / maxBinVolYday) * histWYday)
             if (totalBarW < 1) continue
 
             const buyVol = bin.buyVolume ?? (bin.volume * 0.5)
@@ -2836,30 +2882,32 @@ export function TradingChart({
             const sellW = totalBarW - buyW
 
             // Buy volume: warm amber
-            ctx.fillStyle = bin.inValueArea ? 'rgba(245, 158, 11, 0.78)' : 'rgba(245, 158, 11, 0.38)'
+            ctx.fillStyle = bin.inValueArea ? 'rgba(245, 158, 11, 0.70)' : 'rgba(245, 158, 11, 0.30)'
             ctx.fillRect(yAnchor, barY, buyW, barH)
 
             // Sell volume: warm coral/rose
-            ctx.fillStyle = bin.inValueArea ? 'rgba(244, 63, 94, 0.78)' : 'rgba(244, 63, 94, 0.38)'
+            ctx.fillStyle = bin.inValueArea ? 'rgba(244, 63, 94, 0.70)' : 'rgba(244, 63, 94, 0.30)'
             ctx.fillRect(yAnchor + buyW, barY, sellW, barH)
           }
         }
 
-        // ST: Y-POC Line — stays inside yesterday's session, does not extend past yesterday
+        // ST: Y-POC Line — stays inside yesterday's session, bounded cleanly
         const yPocYday = series.priceToCoordinate(yesterdayNyc.poc)
-        if (yPocYday != null && Number.isFinite(yPocYday) && yPocYday >= 0 && yPocYday <= paneH && yAnchor <= paneW) {
+        if (yPocYday != null && Number.isFinite(yPocYday) && yPocYday >= 0 && yPocYday <= plotH && yAnchor <= plotW) {
           const lineStart = Math.max(0, yAnchor)
-          const lineEnd = Math.min(paneW, Math.max(lineStart, yEnd))
-          ctx.strokeStyle = '#d97706'
-          ctx.lineWidth = 2
-          ctx.beginPath()
-          ctx.moveTo(lineStart, Math.round(yPocYday) + 0.5)
-          ctx.lineTo(lineEnd, Math.round(yPocYday) + 0.5)
-          ctx.stroke()
+          const lineEnd = Math.min(plotW, Math.max(lineStart, yEnd))
+          if (lineEnd > lineStart) {
+            ctx.strokeStyle = '#d97706'
+            ctx.lineWidth = 1.5
+            ctx.beginPath()
+            ctx.moveTo(lineStart, Math.round(yPocYday) + 0.5)
+            ctx.lineTo(lineEnd, Math.round(yPocYday) + 0.5)
+            ctx.stroke()
 
-          ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
-          ctx.fillStyle = '#d97706'
-          ctx.fillText(`Y-POC ${yesterdayNyc.poc.toLocaleString()}`, lineStart + 6, yPocYday - 4)
+            ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
+            ctx.fillStyle = '#d97706'
+            ctx.fillText(`Y-POC ${yesterdayNyc.poc.toLocaleString()}`, lineStart + 6, yPocYday - 4)
+          }
         }
       }
     }
@@ -2874,12 +2922,13 @@ export function TradingChart({
       if (rawXOnAnchor != null && Number.isFinite(rawXOnAnchor)) {
         const onAnchor = rawXOnAnchor
         const onEnd = rawXOnEnd ?? (onAnchor + 140)
-        const histWOn = Math.min(130, Math.max(40, (onEnd - onAnchor) * 0.75))
+        const availableW = Math.max(0, onEnd - onAnchor)
+        const histWOn = Math.min(130, Math.max(30, availableW > 30 ? availableW * 0.75 : availableW))
         const halfBucket = (on.bucketSize || 1) * 0.5
         const maxBinVolOn = Math.max(...onBins.map((b) => b.volume), 1)
 
-        // Draw volume bars for overnight
-        if (onAnchor + histWOn >= 0 && onAnchor <= paneW) {
+        // Draw volume bars for overnight - bounded cleanly
+        if (onAnchor + histWOn >= 0 && onAnchor <= plotW && availableW > 5) {
           for (const bin of onBins) {
             const yTop = series.priceToCoordinate(bin.price + halfBucket)
             const yBottom = series.priceToCoordinate(bin.price - halfBucket)
@@ -2887,9 +2936,9 @@ export function TradingChart({
 
             const barY = Math.min(yTop, yBottom)
             const barH = Math.max(1.5, Math.abs(yBottom - yTop) - 0.5)
-            if (barY + barH < 0 || barY > paneH) continue
+            if (barY + barH < 0 || barY > plotH) continue
 
-            const totalBarW = (bin.volume / maxBinVolOn) * histWOn
+            const totalBarW = Math.min(availableW, (bin.volume / maxBinVolOn) * histWOn)
             if (totalBarW < 1) continue
 
             const buyVol = bin.buyVolume ?? (bin.volume * 0.5)
@@ -2898,30 +2947,32 @@ export function TradingChart({
             const sellW = totalBarW - buyW
 
             // Buy volume: sky-blue
-            ctx.fillStyle = bin.inValueArea ? 'rgba(14, 165, 233, 0.78)' : 'rgba(14, 165, 233, 0.38)'
+            ctx.fillStyle = bin.inValueArea ? 'rgba(14, 165, 233, 0.70)' : 'rgba(14, 165, 233, 0.30)'
             ctx.fillRect(onAnchor, barY, buyW, barH)
 
             // Sell volume: violet
-            ctx.fillStyle = bin.inValueArea ? 'rgba(139, 92, 246, 0.78)' : 'rgba(139, 92, 246, 0.38)'
+            ctx.fillStyle = bin.inValueArea ? 'rgba(139, 92, 246, 0.70)' : 'rgba(139, 92, 246, 0.30)'
             ctx.fillRect(onAnchor + buyW, barY, sellW, barH)
           }
         }
 
         // ST: ON-POC Line — extends till the last minute before NYC opens (9:29 AM)
         const yPocOn = series.priceToCoordinate(on.poc)
-        if (yPocOn != null && Number.isFinite(yPocOn) && yPocOn >= 0 && yPocOn <= paneH && onAnchor <= paneW) {
+        if (yPocOn != null && Number.isFinite(yPocOn) && yPocOn >= 0 && yPocOn <= plotH && onAnchor <= plotW) {
           const lineStart = Math.max(0, onAnchor)
-          const lineEnd = Math.min(paneW, Math.max(lineStart, onEnd))
-          ctx.strokeStyle = '#0284c7'
-          ctx.lineWidth = 2
-          ctx.beginPath()
-          ctx.moveTo(lineStart, Math.round(yPocOn) + 0.5)
-          ctx.lineTo(lineEnd, Math.round(yPocOn) + 0.5)
-          ctx.stroke()
+          const lineEnd = Math.min(plotW, Math.max(lineStart, onEnd))
+          if (lineEnd > lineStart) {
+            ctx.strokeStyle = '#0284c7'
+            ctx.lineWidth = 1.5
+            ctx.beginPath()
+            ctx.moveTo(lineStart, Math.round(yPocOn) + 0.5)
+            ctx.lineTo(lineEnd, Math.round(yPocOn) + 0.5)
+            ctx.stroke()
 
-          ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
-          ctx.fillStyle = '#0284c7'
-          ctx.fillText(`ON-POC ${on.poc.toLocaleString()}`, lineStart + 6, yPocOn - 4)
+            ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
+            ctx.fillStyle = '#0284c7'
+            ctx.fillText(`ON-POC ${on.poc.toLocaleString()}`, lineStart + 6, yPocOn - 4)
+          }
         }
       }
     }
@@ -3214,7 +3265,17 @@ export function TradingChart({
       return { x: curX, y: curY }
     }
 
-    for (const tl of activeTrendlines) {
+    for (const rawTl of activeTrendlines) {
+      const isDraggingThis = activeDraggingTlRef.current?.id === rawTl.id
+      const tl = isDraggingThis && activeDraggingTlRef.current
+        ? {
+            ...rawTl,
+            p1: activeDraggingTlRef.current.p1,
+            p2: activeDraggingTlRef.current.p2,
+            direction: activeDraggingTlRef.current.direction || rawTl.direction,
+          }
+        : rawTl
+
       const x1 = timeToX(chart.timeScale(), toChartTime(tl.p1.time, tz), candleTimes)
       const x2 = timeToX(chart.timeScale(), toChartTime(tl.p2.time, tz), candleTimes)
       const y1 = series.priceToCoordinate(tl.p1.price)
@@ -3224,6 +3285,23 @@ export function TradingChart({
 
         const isActionTl = Boolean(tl.isActionTrendline || tl.isInitialOvernight)
         const tlColor = isActionTl ? '#f59e0b' : (tl.color || '#38bdf8')
+        const isSelected = selectedTrendlineIdRef.current === tl.id
+        const isHovered = hoveredHandleRef.current?.id === tl.id
+        const p1Hovered = isHovered && hoveredHandleRef.current?.type === 'p1'
+        const p2Hovered = isHovered && hoveredHandleRef.current?.type === 'p2'
+        const midHovered = isHovered && (hoveredHandleRef.current?.type === 'mid' || hoveredHandleRef.current?.type === 'body')
+
+        // Selection glow / halo along the line (TradingView style)
+        if (isSelected) {
+          ctx.save()
+          ctx.strokeStyle = isActionTl ? 'rgba(245, 158, 11, 0.32)' : 'rgba(56, 189, 248, 0.32)'
+          ctx.lineWidth = isActionTl ? 8 : 7
+          ctx.beginPath()
+          ctx.moveTo(ex1, ey1)
+          ctx.lineTo(ex2, ey2)
+          ctx.stroke()
+          ctx.restore()
+        }
 
         // Extended line
         ctx.strokeStyle = tlColor
@@ -3234,27 +3312,87 @@ export function TradingChart({
         ctx.lineTo(ex2, ey2)
         ctx.stroke()
 
-        // P1 handle dot (user's first click)
+        // P1 handle (TradingView interactive anchor: white circle, colored ring, drop shadow)
+        const r1 = p1Hovered ? 8 : (isSelected ? 7 : (isActionTl ? 5.5 : 4.5))
+        ctx.save()
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.7)'
+        ctx.shadowBlur = 4
+        ctx.fillStyle = '#ffffff'
+        ctx.beginPath()
+        ctx.arc(x1, y1, r1, 0, 2 * Math.PI)
+        ctx.fill()
+        ctx.strokeStyle = p1Hovered ? '#ffffff' : tlColor
+        ctx.lineWidth = p1Hovered ? 3 : 2
+        ctx.stroke()
         ctx.fillStyle = tlColor
         ctx.beginPath()
-        ctx.arc(x1, y1, isActionTl ? 5 : 4, 0, 2 * Math.PI)
+        ctx.arc(x1, y1, Math.max(2, r1 - 3), 0, 2 * Math.PI)
         ctx.fill()
-        ctx.strokeStyle = '#ffffff'
-        ctx.lineWidth = 1.5
-        ctx.stroke()
+        ctx.restore()
 
-        // P2 handle dot (user's second click)
+        // P2 handle (TradingView interactive anchor)
+        const r2 = p2Hovered ? 8 : (isSelected ? 7 : (isActionTl ? 5.5 : 4.5))
+        ctx.save()
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.7)'
+        ctx.shadowBlur = 4
+        ctx.fillStyle = '#ffffff'
+        ctx.beginPath()
+        ctx.arc(x2, y2, r2, 0, 2 * Math.PI)
+        ctx.fill()
+        ctx.strokeStyle = p2Hovered ? '#ffffff' : tlColor
+        ctx.lineWidth = p2Hovered ? 3 : 2
+        ctx.stroke()
         ctx.fillStyle = tlColor
         ctx.beginPath()
-        ctx.arc(x2, y2, isActionTl ? 5 : 4, 0, 2 * Math.PI)
+        ctx.arc(x2, y2, Math.max(2, r2 - 3), 0, 2 * Math.PI)
         ctx.fill()
-        ctx.strokeStyle = '#ffffff'
-        ctx.lineWidth = 1.5
-        ctx.stroke()
+        ctx.restore()
 
-        // Midpoint badge coordinates
+        // Midpoint handle (TradingView translation handle)
         const mx = (x1 + x2) / 2
         const my = (y1 + y2) / 2
+        if (isSelected || isHovered) {
+          ctx.save()
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.7)'
+          ctx.shadowBlur = 3
+          ctx.fillStyle = '#ffffff'
+          ctx.beginPath()
+          ctx.arc(mx, my, midHovered ? 6 : 4, 0, 2 * Math.PI)
+          ctx.fill()
+          ctx.strokeStyle = tlColor
+          ctx.lineWidth = 2
+          ctx.stroke()
+          ctx.fillStyle = tlColor
+          ctx.beginPath()
+          ctx.arc(mx, my, Math.max(1.5, (midHovered ? 6 : 4) - 2), 0, 2 * Math.PI)
+          ctx.fill()
+          ctx.restore()
+        }
+
+        // Live coordinate readout tooltip while dragging anchor handle (TradingView style)
+        if (isDraggingThis) {
+          const dragHandle = hoveredHandleRef.current?.type
+          const tooltipX = dragHandle === 'p1' ? x1 : x2
+          const tooltipY = dragHandle === 'p1' ? y1 : y2
+          const targetPx = dragHandle === 'p1' ? tl.p1.price : tl.p2.price
+          const readout = `${targetPx.toFixed(2)}`
+          ctx.save()
+          ctx.font = 'bold 10px ui-monospace, SFMono-Regular, monospace'
+          const tw = ctx.measureText(readout).width + 12
+          const th = 18
+          const bx = Math.min(paneW - tw - 6, tooltipX + 12)
+          const by = Math.max(6, tooltipY - 24)
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.94)'
+          ctx.fillRect(bx, by, tw, th)
+          ctx.strokeStyle = tlColor
+          ctx.lineWidth = 1.5
+          ctx.strokeRect(bx, by, tw, th)
+          ctx.fillStyle = '#ffffff'
+          ctx.fillText(readout, bx + 6, by + 12)
+          ctx.restore()
+        }
+
+        // Midpoint badge coordinates
         const pDiff = tl.p2.price - tl.p1.price
         const dir = pDiff > 0 ? '↗' : pDiff < 0 ? '↘' : '→'
 
@@ -4518,6 +4656,7 @@ export function TradingChart({
 
   useEffect(() => {
     const checkActive = () => {
+      if (typeof document !== 'undefined' && document.hidden) return
       const active = isPriceQuestioningSessionActive(Date.now(), critiqueStartOptionRef.current)
       setIsCritiqueSessionActiveState(active)
       if (!active) {
@@ -6268,7 +6407,7 @@ export function TradingChart({
 
   useOverlayLayoutEffect(() => {
     applyOverlayLayout()
-  })
+  }, [applyOverlayLayout])
 
   useEffect(() => {
     const host = chartFrameRef.current
@@ -9351,8 +9490,10 @@ export function TradingChart({
     void pollQuote()
     void refreshCandles()
     if (tickIntervalRef.current) clearInterval(tickIntervalRef.current)
-    if (candleRefreshRef.current) clearInterval(candleRefreshRef.current)
-    candleRefreshRef.current = setInterval(refreshCandles, candleIntervalMs)
+    candleRefreshRef.current = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
+      void refreshCandles()
+    }, candleIntervalMs)
 
     // Primary tip: OANDA pricing stream via SSE (push on every tick)
     let es: EventSource | null = null
@@ -9436,6 +9577,7 @@ export function TradingChart({
 
     // Backup REST poll — frequent only when SSE is unhealthy
     tickIntervalRef.current = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
       if (!tipOpen()) return
       if (sseHealthy && Date.now() - lastSseMessageAt < SSE_STALE_MS) return
       void pollQuote()
@@ -9444,6 +9586,7 @@ export function TradingChart({
     // stretched to 20s while push ticks arrive, still 4s once SSE goes quiet.
     let lastReconcileAt = Date.now()
     const reconcile = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
       if (!tipOpen()) return
       const now = Date.now()
       if (
@@ -10311,6 +10454,314 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       container.style.cursor = ''
     }
   }, [activeDrawingTool, drawingDraft, trendlines.length, rangeBoxes.length, manualFrvps.length, paintUserDrawings, barSeconds, chartReady])
+
+  // ── TradingView-Style Interactive Trendline Drag & Edit Hook ─────────────────
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container || !chartReady || activeDrawingTool !== 'NONE') return
+
+    const priceAtY = (clientY: number): number | null => {
+      if (!candleRef.current) return null
+      const price = priceFromClientY(container, candleRef.current, clientY)
+      if (price == null) return null
+      return Math.round(price * 100) / 100
+    }
+
+    const timeAtX = (clientX: number): number | null => {
+      const chart = chartRef.current
+      if (!chart || !container) return null
+      const rect = container.getBoundingClientRect()
+      const x = clientX - rect.left
+      const list = candlesRef.current
+      if (!(list.length > 0)) return null
+      const logical = logicalFromPixel(chart.timeScale(), x, list.length)
+      if (logical == null) return null
+      const times = list.map((c) => Number(c.time))
+      return unixFromLogical(logical, times, barSeconds)
+    }
+
+    const getHandleAt = (clientX: number, clientY: number): {
+      tl: UserTrendline
+      handle: 'p1' | 'p2' | 'body' | 'mid'
+      dist: number
+    } | null => {
+      const chart = chartRef.current
+      const series = candleRef.current
+      const list = candlesRef.current
+      if (!chart || !series || !container || list.length === 0) return null
+
+      const rect = container.getBoundingClientRect()
+      const mouseX = clientX - rect.left
+      const mouseY = clientY - rect.top
+      const tz = chartTzRef.current
+      const candleTimes =
+        candleTimesRef.current.length === list.length
+          ? candleTimesRef.current
+          : list.map((c) => toChartTime(c.time as number, tz))
+
+      let bestHit: { tl: UserTrendline; handle: 'p1' | 'p2' | 'body' | 'mid'; dist: number } | null = null
+
+      for (const tl of activeTrendlines) {
+        const x1 = timeToX(chart.timeScale(), toChartTime(tl.p1.time, tz), candleTimes)
+        const x2 = timeToX(chart.timeScale(), toChartTime(tl.p2.time, tz), candleTimes)
+        const y1 = series.priceToCoordinate(tl.p1.price)
+        const y2 = series.priceToCoordinate(tl.p2.price)
+        if (x1 == null || x2 == null || y1 == null || y2 == null) continue
+
+        // Check P1 (hit tolerance 14px)
+        const d1 = Math.hypot(mouseX - x1, mouseY - y1)
+        if (d1 <= 14) {
+          if (!bestHit || d1 < bestHit.dist) {
+            bestHit = { tl, handle: 'p1', dist: d1 }
+            continue
+          }
+        }
+
+        // Check P2 (hit tolerance 14px)
+        const d2 = Math.hypot(mouseX - x2, mouseY - y2)
+        if (d2 <= 14) {
+          if (!bestHit || d2 < bestHit.dist) {
+            bestHit = { tl, handle: 'p2', dist: d2 }
+            continue
+          }
+        }
+
+        // Check midpoint (hit tolerance 12px)
+        const mx = (x1 + x2) / 2
+        const my = (y1 + y2) / 2
+        const dMid = Math.hypot(mouseX - mx, mouseY - my)
+        if (dMid <= 12) {
+          if (!bestHit || dMid < bestHit.dist) {
+            bestHit = { tl, handle: 'mid', dist: dMid }
+            continue
+          }
+        }
+
+        // Check line segment body (hit tolerance 9px)
+        const dSegSq = distToSegmentSquared(mouseX, mouseY, x1, y1, x2, y2)
+        const dSeg = Math.sqrt(dSegSq)
+        if (dSeg <= 9) {
+          if (!bestHit || dSeg < bestHit.dist) {
+            bestHit = { tl, handle: 'body', dist: dSeg }
+          }
+        }
+      }
+      return bestHit
+    }
+
+    let isDragging = false
+    let dragData: {
+      tlId: string
+      handle: 'p1' | 'p2' | 'body' | 'mid'
+      startPrice: number
+      startTime: number
+      startP1: { time: number; price: number }
+      startP2: { time: number; price: number }
+      originalTl: UserTrendline
+    } | null = null
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (isDragging) return
+      const hit = getHandleAt(e.clientX, e.clientY)
+      if (hit) {
+        if (hit.handle === 'p1' || hit.handle === 'p2') {
+          container.style.cursor = 'crosshair'
+        } else {
+          container.style.cursor = 'move'
+        }
+        if (
+          hoveredHandleRef.current?.id !== hit.tl.id ||
+          hoveredHandleRef.current?.type !== hit.handle
+        ) {
+          hoveredHandleRef.current = { id: hit.tl.id, type: hit.handle }
+          paintUserDrawingsRef.current()
+        }
+      } else {
+        if (hoveredHandleRef.current !== null) {
+          hoveredHandleRef.current = null
+          container.style.cursor = ''
+          paintUserDrawingsRef.current()
+        }
+      }
+    }
+
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return // Left click only
+      const hit = getHandleAt(e.clientX, e.clientY)
+      if (!hit) {
+        if (selectedTrendlineIdRef.current) {
+          setSelectedTrendlineId(null)
+          paintUserDrawingsRef.current()
+        }
+        return
+      }
+
+      // Stop propagation to prevent Lightweight Charts pan/drag
+      e.preventDefault()
+      e.stopPropagation()
+
+      setSelectedTrendlineId(hit.tl.id)
+      const curPrice = priceAtY(e.clientY) ?? hit.tl.p1.price
+      const curTime = timeAtX(e.clientX) ?? hit.tl.p1.time
+
+      isDragging = true
+      dragData = {
+        tlId: hit.tl.id,
+        handle: hit.handle,
+        startPrice: curPrice,
+        startTime: curTime,
+        startP1: { ...hit.tl.p1 },
+        startP2: { ...hit.tl.p2 },
+        originalTl: { ...hit.tl },
+      }
+
+      container.style.cursor = hit.handle === 'body' || hit.handle === 'mid' ? 'grabbing' : 'crosshair'
+
+      const onWindowMouseMove = (ev: MouseEvent) => {
+        if (!isDragging || !dragData) return
+        ev.preventDefault()
+        ev.stopPropagation()
+
+        const p = priceAtY(ev.clientY)
+        const t = timeAtX(ev.clientX)
+        if (p == null || t == null) return
+
+        let nextP1 = { ...dragData.startP1 }
+        let nextP2 = { ...dragData.startP2 }
+
+        if (dragData.handle === 'p1') {
+          nextP1 = { time: t, price: p }
+        } else if (dragData.handle === 'p2') {
+          nextP2 = { time: t, price: p }
+        } else {
+          // 'body' or 'mid' - translate entire trendline
+          const dPrice = p - dragData.startPrice
+          const dTime = t - dragData.startTime
+          nextP1 = {
+            time: dragData.startP1.time + dTime,
+            price: Math.round((dragData.startP1.price + dPrice) * 100) / 100,
+          }
+          nextP2 = {
+            time: dragData.startP2.time + dTime,
+            price: Math.round((dragData.startP2.price + dPrice) * 100) / 100,
+          }
+        }
+
+        const pDiff = nextP2.price - nextP1.price
+        const inferredDir: 'BEARISH' | 'BULLISH' = pDiff < 0 ? 'BEARISH' : 'BULLISH'
+
+        activeDraggingTlRef.current = {
+          id: dragData.tlId,
+          p1: nextP1,
+          p2: nextP2,
+          direction: inferredDir,
+        }
+
+        paintUserDrawingsRef.current()
+      }
+
+      const onWindowMouseUp = () => {
+        window.removeEventListener('mousemove', onWindowMouseMove, true)
+        window.removeEventListener('mouseup', onWindowMouseUp, true)
+
+        if (!isDragging || !dragData) return
+        isDragging = false
+
+        const finalDragged = activeDraggingTlRef.current
+        const orig = dragData.originalTl
+        const tlId = dragData.tlId
+        dragData = null
+        activeDraggingTlRef.current = null
+
+        container.style.cursor = ''
+
+        if (finalDragged) {
+          // Invalidate breakout cache so engine recalculates against the new adjusted line
+          confirmedBreakoutsRef.current.delete(tlId)
+
+          setTrendlines((prev) =>
+            prev.map((t) => {
+              if (t.id !== tlId) return t
+              const pDiff = finalDragged.p2.price - finalDragged.p1.price
+              const inferredDir: 'BEARISH' | 'BULLISH' = pDiff < 0 ? 'BEARISH' : 'BULLISH'
+              const tradeDir: 'LONG' | 'SHORT' = inferredDir === 'BEARISH' ? 'LONG' : 'SHORT'
+              const updatedLabel = t.isActionTrendline
+                ? `Action Trendline (${tradeDir === 'LONG' ? 'Long on Break' : 'Short on Break'})`
+                : t.isReactionTrendline
+                ? `Reaction Trendline (${tradeDir === 'LONG' ? 'Long Active' : 'Short Active'})`
+                : t.label
+
+              return {
+                ...t,
+                p1: finalDragged.p1,
+                p2: finalDragged.p2,
+                direction: inferredDir,
+                label: updatedLabel,
+              }
+            })
+          )
+
+          playTradingViewChime()
+          setDrawingToast({
+            type: 'TRENDLINE',
+            id: tlId,
+            label: orig.label || (orig.isActionTrendline ? 'Action Trendline' : 'Trendline'),
+            summary: `Updated: ${finalDragged.p1.price.toFixed(2)} → ${finalDragged.p2.price.toFixed(2)} (${finalDragged.p2.price >= finalDragged.p1.price ? '+' : ''}${(finalDragged.p2.price - finalDragged.p1.price).toFixed(1)} pts)`,
+          })
+        }
+      }
+
+      window.addEventListener('mousemove', onWindowMouseMove, true)
+      window.addEventListener('mouseup', onWindowMouseUp, true)
+    }
+
+    // Keyboard delete / backspace support (TradingView standard)
+    const onKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement
+      const isInputActive =
+        activeEl &&
+        (activeEl.tagName === 'INPUT' ||
+          activeEl.tagName === 'TEXTAREA' ||
+          (activeEl as HTMLElement).isContentEditable)
+      if (isInputActive) return
+
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTrendlineIdRef.current) {
+        e.preventDefault()
+        const targetId = selectedTrendlineIdRef.current
+        handleDeleteTrendline(targetId)
+        setSelectedTrendlineId(null)
+        setDrawingToast({
+          type: 'TRENDLINE',
+          id: targetId,
+          label: 'Trendline Deleted',
+          summary: 'Drawing removed from chart',
+        })
+      }
+    }
+
+    container.addEventListener('mousemove', onMouseMove, true)
+    container.addEventListener('mousedown', onMouseDown, true)
+    window.addEventListener('keydown', onKeyDown)
+
+    const canvases = Array.from(container.querySelectorAll('canvas'))
+    for (const c of canvases) {
+      c.addEventListener('mousemove', onMouseMove, true)
+      c.addEventListener('mousedown', onMouseDown, true)
+    }
+
+    return () => {
+      container.removeEventListener('mousemove', onMouseMove, true)
+      container.removeEventListener('mousedown', onMouseDown, true)
+      window.removeEventListener('keydown', onKeyDown)
+      for (const c of canvases) {
+        c.removeEventListener('mousemove', onMouseMove, true)
+        c.removeEventListener('mousedown', onMouseDown, true)
+      }
+      container.style.cursor = ''
+      hoveredHandleRef.current = null
+      activeDraggingTlRef.current = null
+    }
+  }, [activeDrawingTool, activeTrendlines, chartReady, barSeconds, handleDeleteTrendline])
 
   // Clear risk box chart lines
   const clearRiskBoxLines = useCallback(() => {

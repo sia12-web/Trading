@@ -399,11 +399,41 @@ export function timeToX(
   const t1 = candleTimes[hi]!
   const x0 = toCoord(t0)
   const x1 = toCoord(t1)
-  if (x0 === null && x1 === null) return null
-  if (x0 === null) return x1
-  if (x1 === null) return x0
-  const f = (t - t0) / (t1 - t0 || 1)
-  return x0 + (x1 - x0) * f
+  if (x0 !== null && x1 !== null) {
+    const f = (t - t0) / (t1 - t0 || 1)
+    return x0 + (x1 - x0) * f
+  }
+  if (x0 === null && x1 !== null) {
+    if (hi + 1 < candleTimes.length) {
+      const x2 = toCoord(candleTimes[hi + 1]!)
+      if (x2 !== null && x2 !== x1) {
+        const barSpacing = (x2 - x1) / ((candleTimes[hi + 1]! - t1) / step || 1)
+        return x1 - barSpacing * ((t1 - t) / step)
+      }
+    }
+    return x1
+  }
+  if (x1 === null && x0 !== null) {
+    if (lo - 1 >= 0) {
+      const xPrev = toCoord(candleTimes[lo - 1]!)
+      if (xPrev !== null && xPrev !== x0) {
+        const barSpacing = (x0 - xPrev) / ((t0 - candleTimes[lo - 1]!) / step || 1)
+        return x0 + barSpacing * ((t - t0) / step)
+      }
+    }
+    return x0
+  }
+  if (typeof (timeScale as any).logicalToCoordinate === 'function') {
+    const l0 = (timeScale as any).logicalToCoordinate(lo)
+    const l1 = (timeScale as any).logicalToCoordinate(hi)
+    if (l0 !== null && l1 !== null) {
+      const f = (t - t0) / (t1 - t0 || 1)
+      return l0 + (l1 - l0) * f
+    }
+    if (l0 !== null) return l0
+    if (l1 !== null) return l1
+  }
+  return null
 }
 
 /**

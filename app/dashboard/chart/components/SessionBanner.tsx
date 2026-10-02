@@ -147,8 +147,9 @@ export function SessionBanner({
 
   useEffect(() => {
     const timer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
       setFeedSnap(getFeedMetricsSnapshot())
-    }, 2500)
+    }, 5000)
     return () => clearInterval(timer)
   }, [])
   const [htfStatus, setHtfStatus] = useState<string | null>(null)
@@ -498,13 +499,21 @@ export function SessionBanner({
   useEffect(() => {
     setMounted(true)
     const tick = () => {
+      if (typeof document !== 'undefined' && document.hidden) return
       const c = formatDeskClock(gate?.market)
       setClockNow(c.time)
       setClockLabel(c.label)
     }
     tick()
     const id = setInterval(tick, 1000)
-    return () => clearInterval(id)
+    const onVisibility = () => {
+      if (typeof document !== 'undefined' && !document.hidden) tick()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [gate?.market])
 
   useEffect(() => {
@@ -513,7 +522,10 @@ export function SessionBanner({
 
   useEffect(() => {
     refresh()
-    const id = setInterval(refresh, 10_000)
+    const id = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
+      refresh()
+    }, 10_000)
     return () => clearInterval(id)
   }, [refresh])
 

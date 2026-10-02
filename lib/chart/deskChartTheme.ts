@@ -57,7 +57,7 @@ export const DESK_CHART_THEME = {
     entireTextOnly: true,
     ticksVisible: true,
     minimumWidth: 82,
-    scaleMargins: { top: 0.1, bottom: 0.1 },
+    scaleMargins: { top: 0.08, bottom: 0.24 },
   },
   timeScale: {
     borderColor: DESK_CHART_BORDER,

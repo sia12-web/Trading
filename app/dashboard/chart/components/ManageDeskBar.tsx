@@ -398,7 +398,10 @@ export function ManageDeskBar({
 
   useEffect(() => {
     void pollAi()
-    const id = setInterval(() => void pollAi(), 12000)
+    const id = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
+      void pollAi()
+    }, 12000)
     return () => clearInterval(id)
   }, [pollAi])
 
@@ -470,14 +473,12 @@ export function ManageDeskBar({
 
   useEffect(() => {
     void pollReconcile()
-    const id = setInterval(() => void pollReconcile(), 4000)
+    const id = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
+      void pollReconcile()
+    }, 4000)
     return () => clearInterval(id)
   }, [pollReconcile])
-
-  useEffect(() => {
-    if (currentPrice == null) return
-    void pollReconcile()
-  }, [currentPrice, pollReconcile])
 
   // Auto-exit when live price hits stop or take-profit
   useEffect(() => {
