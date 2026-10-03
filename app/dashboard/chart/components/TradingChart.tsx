@@ -2737,9 +2737,9 @@ export function TradingChart({
         rawBars,
         newsEvents,
         instrument,
-        yesterdayStartUnix,
         undefined,
-        false
+        undefined,
+        true
       )
     } else {
       spikesRef.current = []
@@ -4537,85 +4537,162 @@ export function TradingChart({
         }
       }
 
-      // 5. Draw Emotional News Moves (Precomputed from analytics cache)
+      // 5. Draw Abnormal News Moves & Highlight Reaction Bars (2-3 bars) with Sentence Badges
       const newsMoves = newsMovesRef.current
       const nowSec = Math.floor(Date.now() / 1000)
 
       for (const move of newsMoves) {
-        // Skip completed/done news moves: broken corridors or events older than 24h
-        const isBroken = move.status === 'BROKEN_ABOVE' || move.status === 'BROKEN_BELOW'
-        const isOld = move.reactionEndTime < nowSec - 24 * 3600
-        if (isBroken || isOld) continue
-
         const xStart = timeToX(chart.timeScale(), toChartTime(move.reactionStartTime, tz), candleTimes)
-        if (xStart == null || !Number.isFinite(xStart) || xStart > paneW + 30) continue
+        if (xStart == null || !Number.isFinite(xStart) || xStart > paneW + 80) continue
 
         const xEnd = timeToX(chart.timeScale(), toChartTime(move.reactionEndTime, tz), candleTimes) ?? xStart
-        const shelfRight = Math.min(paneW, Math.max(xStart + 120, xStart + 240))
-        if (shelfRight < -20) continue
+        if (Math.max(xStart, xEnd) < -80) continue
 
         const yH = series.priceToCoordinate(move.newsHigh)
         const yL = series.priceToCoordinate(move.newsLow)
         const yBase = series.priceToCoordinate(move.basePrice)
+        if (yH == null || yL == null || !Number.isFinite(yH) || !Number.isFinite(yL)) continue
 
-        // Draw subtle reaction corridor
-        if (yH != null && yL != null && Number.isFinite(yH) && Number.isFinite(yL)) {
-          const topY = Math.min(yH, yL)
-          const botY = Math.max(yH, yL)
-          const corridorW = Math.max(14, (xEnd - xStart) + 12)
-          ctx.fillStyle = 'rgba(168, 85, 247, 0.08)'
-          ctx.fillRect(xStart - 6, topY, corridorW, Math.max(4, botY - topY))
-          ctx.strokeStyle = 'rgba(168, 85, 247, 0.35)'
-          ctx.lineWidth = 1
-          ctx.setLineDash([2, 3])
-          ctx.strokeRect(xStart - 6, topY, corridorW, Math.max(4, botY - topY))
-          ctx.setLineDash([])
+        // Measure candle width on current zoom level so the highlight encapsulates all reaction bars cleanly
+        const barSpan = candleTimes.length >= 2
+          ? Math.abs(
+              (timeToX(chart.timeScale(), candleTimes[Math.min(candleTimes.length - 1, 1)]!, candleTimes) ?? 0) -
+              (timeToX(chart.timeScale(), candleTimes[0]!, candleTimes) ?? 0)
+            )
+          : 12
+        const halfBar = Math.max(4, Math.min(26, barSpan * 0.55))
+        const minX = Math.min(xStart, xEnd) - halfBar
+        const maxX = Math.max(xStart, xEnd) + halfBar
+        const corridorW = Math.max(16, maxX - minX)
+
+        const topY = Math.min(yH, yL) - 4
+        const botY = Math.max(yH, yL) + 4
+        const corridorH = Math.max(14, botY - topY)
+
+        // Directional styling: Emerald for Bullish Drive, Rose for Bearish Flush, Purple for Whipsaw
+        const isBull = move.direction === 'BULLISH_DRIVE'
+        const isBear = move.direction === 'BEARISH_DRIVE'
+        const themeColor = isBull ? '#10b981' : isBear ? '#f43f5e' : '#a855f7'
+        const bgFill = isBull ? 'rgba(16, 185, 129, 0.14)' : isBear ? 'rgba(244, 63, 94, 0.14)' : 'rgba(168, 85, 247, 0.14)'
+        const borderStroke = isBull ? 'rgba(16, 185, 129, 0.65)' : isBear ? 'rgba(244, 63, 94, 0.65)' : 'rgba(168, 85, 247, 0.65)'
+        const textFill = isBull ? '#6ee7b7' : isBear ? '#fda4af' : '#e9d5ff'
+
+        ctx.save()
+
+        // ── A. Highlight the 2–3 Reaction Bars (Luminous column + dashed boundary)
+        ctx.fillStyle = bgFill
+        ctx.beginPath()
+        if (typeof (ctx as any).roundRect === 'function') {
+          (ctx as any).roundRect(minX, topY, corridorW, corridorH, 5)
+        } else {
+          ctx.rect(minX, topY, corridorW, corridorH)
         }
+        ctx.fill()
 
-        // News High Shelf (Rose)
-        if (yH != null && Number.isFinite(yH) && yH >= 0 && yH <= paneH) {
-          ctx.strokeStyle = '#f43f5e'
-          ctx.lineWidth = 1.3
-          ctx.setLineDash([4, 3])
+        ctx.strokeStyle = borderStroke
+        ctx.lineWidth = 1.3
+        ctx.setLineDash([4, 3])
+        ctx.stroke()
+        ctx.setLineDash([])
+
+        // News High Wick Bracket
+        ctx.strokeStyle = themeColor
+        ctx.lineWidth = 1.5
+        ctx.beginPath()
+        ctx.moveTo(minX, Math.round(topY + 4) + 0.5)
+        ctx.lineTo(maxX, Math.round(topY + 4) + 0.5)
+        ctx.stroke()
+
+        // News Low Wick Bracket
+        ctx.beginPath()
+        ctx.moveTo(minX, Math.round(botY - 4) + 0.5)
+        ctx.lineTo(maxX, Math.round(botY - 4) + 0.5)
+        ctx.stroke()
+
+        // ── B. Small Sentence Badge Up To Those Bars
+        if (!hideTrendlineBadges) {
+          const sentence =
+            move.headlineSentence ||
+            `⚡ ${move.eventName} (${isBull ? '▲Surge' : isBear ? '▼Flush' : '±Whip'} ${move.moveRange.toFixed(1)}pts in ${move.barCount || 2} bars)`
+          ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace'
+          const metrics = ctx.measureText(sentence)
+          const pillW = metrics.width + 16
+          const pillH = 18
+
+          // Position directly above the high of the reaction bars (clamped to pane top)
+          const badgeY = Math.max(14, topY - pillH - 6)
+          const badgeX = Math.max(6, Math.min(paneW - pillW - 6, (minX + maxX) * 0.5 - pillW * 0.5))
+
+          // Dark slate pill background with colored border
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.92)'
           ctx.beginPath()
-          ctx.moveTo(xStart, Math.round(yH) + 0.5)
-          ctx.lineTo(shelfRight, Math.round(yH) + 0.5)
+          if (typeof (ctx as any).roundRect === 'function') {
+            (ctx as any).roundRect(badgeX, badgeY, pillW, pillH, 9)
+          } else {
+            ctx.rect(badgeX, badgeY, pillW, pillH)
+          }
+          ctx.fill()
+
+          ctx.strokeStyle = borderStroke
+          ctx.lineWidth = 1.2
           ctx.stroke()
-          ctx.setLineDash([])
+
+          // Dotted connector from pill down to the candle wicks if there is gap
+          if (topY - (badgeY + pillH) >= 4) {
+            ctx.strokeStyle = borderStroke
+            ctx.lineWidth = 1
+            ctx.setLineDash([2, 2])
+            ctx.beginPath()
+            ctx.moveTo((minX + maxX) * 0.5, badgeY + pillH)
+            ctx.lineTo((minX + maxX) * 0.5, topY + 2)
+            ctx.stroke()
+            ctx.setLineDash([])
+          }
+
+          // Sentence text
+          ctx.fillStyle = textFill
+          ctx.fillText(sentence, badgeX + 8, badgeY + 13)
         }
 
-        // News Low Shelf (Emerald)
-        if (yL != null && Number.isFinite(yL) && yL >= 0 && yL <= paneH) {
-          ctx.strokeStyle = '#10b981'
-          ctx.lineWidth = 1.3
-          ctx.setLineDash([4, 3])
-          ctx.beginPath()
-          ctx.moveTo(xStart, Math.round(yL) + 0.5)
-          ctx.lineTo(shelfRight, Math.round(yL) + 0.5)
-          ctx.stroke()
-          ctx.setLineDash([])
+        // ── C. Active Reaction Shelf Lines (Only for current day / active setups)
+        const isBroken = move.status === 'BROKEN_ABOVE' || move.status === 'BROKEN_BELOW'
+        const isActive = !isBroken && nowSec - move.reactionEndTime <= 24 * 3600
+
+        if (isActive) {
+          const shelfRight = Math.min(paneW, Math.max(maxX + 80, maxX + 200))
+          if (shelfRight > maxX + 10) {
+            // News High Shelf
+            ctx.strokeStyle = '#f43f5e'
+            ctx.lineWidth = 1.3
+            ctx.setLineDash([4, 3])
+            ctx.beginPath()
+            ctx.moveTo(maxX, Math.round(yH) + 0.5)
+            ctx.lineTo(shelfRight, Math.round(yH) + 0.5)
+            ctx.stroke()
+
+            // News Low Shelf
+            ctx.strokeStyle = '#10b981'
+            ctx.beginPath()
+            ctx.moveTo(maxX, Math.round(yL) + 0.5)
+            ctx.lineTo(shelfRight, Math.round(yL) + 0.5)
+            ctx.stroke()
+            ctx.setLineDash([])
+
+            // Pre-News Base Line
+            if (yBase != null && Number.isFinite(yBase) && yBase >= 0 && yBase <= paneH) {
+              ctx.strokeStyle = 'rgba(192, 132, 252, 0.5)'
+              ctx.lineWidth = 1
+              ctx.setLineDash([2, 2])
+              ctx.beginPath()
+              ctx.moveTo(maxX, Math.round(yBase) + 0.5)
+              ctx.lineTo(maxX + 80, Math.round(yBase) + 0.5)
+              ctx.stroke()
+              ctx.setLineDash([])
+            }
+          }
         }
 
-        // Pre-News Base Line
-        if (yBase != null && Number.isFinite(yBase) && yBase >= 0 && yBase <= paneH) {
-          ctx.strokeStyle = 'rgba(192, 132, 252, 0.5)'
-          ctx.lineWidth = 1
-          ctx.setLineDash([2, 2])
-          ctx.beginPath()
-          ctx.moveTo(xStart, Math.round(yBase) + 0.5)
-          ctx.lineTo(xStart + 90, Math.round(yBase) + 0.5)
-          ctx.stroke()
-          ctx.setLineDash([])
-        }
-
-        // Emotional Move tag (hidden when user toggles Labels: OFF)
-        const tagY = yH != null ? yH - 12 : 30
-        if (!hideTrendlineBadges && tagY >= 10 && tagY <= paneH) {
-          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-          ctx.fillStyle = '#e879f9'
-          const dirLabel = move.direction === 'WHIPSAW' ? '±Whip' : move.direction === 'BULLISH_DRIVE' ? '▲Drive' : '▼Flush'
-          ctx.fillText(`⚡ ${move.eventName} (${dirLabel} ${move.moveRange.toFixed(1)}pts)`, xStart + 4, tagY)
-        }
+        ctx.restore()
       }
     }
 
@@ -4830,10 +4907,7 @@ export function TradingChart({
 
   const emotionalNewsMoves: EmotionalNewsMove[] = useMemo(() => {
     const list = candles || []
-    if (!list.length) return []
-    const yesterdayStartUnix = yesterdayNyc
-      ? yesterdayNyc.openUnix - 16 * 3600
-      : ((list[list.length - 1]!.time as number) - 86400 * 2)
+    if (!list.length || timeframe === '1D') return []
     return detectEmotionalNewsMoves(
       list.map((c) => ({
         time: c.time as number,
@@ -4845,11 +4919,11 @@ export function TradingChart({
       })),
       newsEvents,
       instrument,
-      yesterdayStartUnix,
       undefined,
-      false
+      undefined,
+      true
     )
-  }, [candles, newsEvents, instrument, yesterdayNyc?.openUnix])
+  }, [candles, newsEvents, instrument, timeframe])
 
   // ── Leo AI Desk Assistant Live State & Telemetry Context ──────────────────
   const [leoPanelOpen, setLeoPanelOpen] = useState(false)

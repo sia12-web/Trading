@@ -586,6 +586,8 @@ export interface EmotionalNewsMove {
   status: 'WITHIN_RANGE' | 'REJECTED_HIGH' | 'REJECTED_LOW' | 'BROKEN_ABOVE' | 'BROKEN_BELOW'
   isRetested: boolean
   retestTime?: number
+  barCount?: number
+  headlineSentence?: string
 }
 
 export interface CalendarEventParam {
@@ -630,29 +632,29 @@ function parseCalendarTimeUnix(time: string | number | null | undefined, _nowMs:
  * Routine candle fluctuations below these thresholds must NEVER be annotated as emotional news moves or flushes.
  */
 const MIN_DRAMATIC_NEWS_MOVE_PTS: Record<string, number> = {
-  DOW: 60.0,
-  YM: 60.0,
-  MYM: 60.0,
-  US30: 60.0,
-  NIKKEI: 120.0,
-  NKD: 120.0,
-  JP225: 120.0,
-  NASDAQ: 40.0,
-  NQ: 40.0,
-  MNQ: 40.0,
-  ES: 15.0,
-  MES: 15.0,
-  SPX: 15.0,
-  RTY: 12.0,
-  RUSSELL: 12.0,
-  GOLD: 8.0,
-  GC: 8.0,
-  MGC: 8.0,
-  SILVER: 0.35,
-  SI: 0.35,
-  CRUDE: 0.75,
-  CL: 0.75,
-  OIL: 0.75,
+  DOW: 50.0,
+  YM: 50.0,
+  MYM: 50.0,
+  US30: 50.0,
+  NIKKEI: 100.0,
+  NKD: 100.0,
+  JP225: 100.0,
+  NASDAQ: 35.0,
+  NQ: 35.0,
+  MNQ: 35.0,
+  ES: 12.0,
+  MES: 12.0,
+  SPX: 12.0,
+  RTY: 10.0,
+  RUSSELL: 10.0,
+  GOLD: 6.0,
+  GC: 6.0,
+  MGC: 6.0,
+  SILVER: 0.30,
+  SI: 0.30,
+  CRUDE: 0.60,
+  CL: 0.60,
+  OIL: 0.60,
 }
 
 /**
@@ -670,7 +672,7 @@ export function isEventDomesticToInstrument(country: string | undefined, event: 
 
   if (isUsIndex || isGold) {
     if (c === 'US' || c === 'USD' || c.includes('UNITED STATES')) return true
-    if (/\b(fomc|fed\b|powell|cpi|ppi|nfp|non-farm|payroll|pce|gdp|ism\b)\b/i.test(ev)) return true
+    if (/\b(fomc|fed\b|powell|cpi|ppi|nfp|non-farm|payroll|pce|gdp|ism\b|retail sales|jobless|michigan|rates|unemployment)\b/i.test(ev)) return true
     return false
   }
 
@@ -682,7 +684,7 @@ export function isEventDomesticToInstrument(country: string | undefined, event: 
   }
 
   if (isCrude) {
-    if (/\b(crude|oil|eia|petroleum|gasoline|opec|natural gas|api)\b/i.test(ev)) return true
+    if (/\b(crude|oil|eia|petroleum|gasoline|opec|natural gas|api|distillates|refinery|inventory)\b/i.test(ev)) return true
     if (c === 'US' || c === 'USD') return true
     return false
   }
@@ -731,18 +733,28 @@ export function detectEmotionalNewsMoves(
     const eventUnix = parseCalendarTimeUnix(e.time, nowMs)
     if (!eventUnix) continue
 
+    const barStep = scoped.length >= 2 ? Math.max(60, scoped[1]!.time - scoped[0]!.time) : 300
+
     let eventIdx = -1
     let minDiff = Infinity
     for (let i = 0; i < scoped.length; i++) {
-      const diff = Math.abs(scoped[i]!.time - eventUnix)
-      if (diff <= 300 && diff < minDiff) {
+      const bTime = scoped[i]!.time
+      const nextTime = i + 1 < scoped.length ? scoped[i + 1]!.time : bTime + barStep
+      if (eventUnix >= bTime && eventUnix < nextTime) {
+        eventIdx = i
+        break
+      }
+      const diff = Math.abs(bTime - eventUnix)
+      if (diff <= barStep && diff < minDiff) {
         minDiff = diff
         eventIdx = i
       }
     }
     if (eventIdx === -1) continue
 
-    const reactionEndIdx = Math.min(scoped.length - 1, eventIdx + 2)
+    // Reaction covers 2 or 3 bars: 3 bars on fast timeframes (<=5m), 2 bars on higher timeframes (15m/30m)
+    const reactionSpanBars = barStep >= 900 ? 1 : 2
+    const reactionEndIdx = Math.min(scoped.length - 1, eventIdx + reactionSpanBars)
     const reactionBars = scoped.slice(eventIdx, reactionEndIdx + 1)
     if (reactionBars.length === 0) continue
 
@@ -761,15 +773,14 @@ export function detectEmotionalNewsMoves(
     const moveRange = Number((nHigh - nLow).toFixed(2))
     if (moveRange <= 0) continue
 
-    // The move must be genuinely DRAMATIC:
-    // Minimum points must be at least the instrument threshold and at least 0.12% of price (or 1.5x for foreign events)
-    const minRequiredPts = Math.max(baseThreshold, basePrice > 0 ? basePrice * 0.0012 : baseThreshold) * (isDomestic ? 1.0 : 1.5)
+    // The move must be genuinely DRAMATIC / abnormal for the instrument:
+    const minRequiredPts = Math.max(baseThreshold, basePrice > 0 ? basePrice * 0.0012 : baseThreshold) * (isDomestic ? 1.0 : 1.4)
     if (moveRange < minRequiredPts) {
-      // Market did not move enough to qualify as a dramatic news move (e.g. 12 or 17 pts on Dow / Nikkei is trivial noise)
+      // Market did not move enough to qualify as abnormal volatility
       continue
     }
 
-    // Verify that the market ACTUALLY reacted dramatically compared to pre-news baseline
+    // Verify that the market ACTUALLY reacted with abnormal expansion compared to pre-news baseline
     const lookback = Math.min(10, eventIdx)
     let preRangeSum = 0
     let preVolSum = 0
@@ -779,20 +790,22 @@ export function detectEmotionalNewsMoves(
         preVolSum += Math.max(0, scoped[j]!.volume > 0 ? scoped[j]!.volume : 1)
       }
     }
-    const avgPreRange = lookback > 0 ? preRangeSum / lookback : 1
+    const avgPreRange = lookback > 0 ? preRangeSum / lookback : (baseThreshold * 0.5)
     const avgPreVol = lookback > 0 ? preVolSum / lookback : 1
-    const reactionExpansion = avgPreRange > 0 ? moveRange / avgPreRange : 1
+    const reactionExpansion = avgPreRange > 0 ? moveRange / avgPreRange : 1.5
     const volumeExpansion = avgPreVol > 0 ? (nVol / reactionBars.length) / avgPreVol : 1
-    const singleBarExpansion = avgPreRange > 0 ? maxSingleBarRange / avgPreRange : 1
+    const singleBarExpansion = avgPreRange > 0 ? maxSingleBarRange / avgPreRange : 1.2
 
-    const minReactionExp = isDomestic ? 1.75 : 2.5
-    const minVolExp = isDomestic ? 1.4 : 2.0
+    const minReactionExp = isDomestic ? 1.4 : 1.85
     const isDramaticExpansion =
-      (reactionExpansion >= minReactionExp && (volumeExpansion >= minVolExp || reactionExpansion >= minReactionExp * 1.25)) &&
-      singleBarExpansion >= 1.35
+      reactionExpansion >= minReactionExp ||
+      singleBarExpansion >= 1.4 ||
+      maxSingleBarRange >= baseThreshold * 0.85 ||
+      moveRange >= baseThreshold * 1.15 ||
+      (reactionExpansion >= 1.25 && volumeExpansion >= 1.4)
 
     if (!isDramaticExpansion) {
-      // Market did not dramatically react to this news event — skip
+      // Not abnormal volatility
       continue
     }
 
@@ -855,6 +868,17 @@ export function detectEmotionalNewsMoves(
 
     const impact: 'High' | 'Medium' | 'Low' = isExplicitHigh ? 'High' : 'Medium'
 
+    const cleanEventName = e.event
+      .replace(/\s*\([^)]*\)/g, '')
+      .replace(/\s*m\/m|\s*y\/y|\s*q\/q/gi, '')
+      .trim()
+    const dirWord = direction === 'BULLISH_DRIVE' ? '▲ Surge' : direction === 'BEARISH_DRIVE' ? '▼ Flush' : '± Whipsaw'
+    const barCount = reactionBars.length
+    const barText = `${barCount} bar${barCount > 1 ? 's' : ''}`
+    const ptsText = `${moveRange.toFixed(moveRange < 10 ? 2 : 1)}pts`
+    const volExpansionStr = reactionExpansion >= 1.6 ? ` · Abnormal ${reactionExpansion.toFixed(1)}x Vol` : ' · Abnormal Volatility'
+    const headlineSentence = `⚡ ${cleanEventName}: ${dirWord} ${ptsText} (${barText})${volExpansionStr}`
+
     moves.push({
       id: `news-move-${eventUnix}-${e.event.replace(/\s+/g, '-').toLowerCase()}`,
       eventName: e.event,
@@ -873,11 +897,14 @@ export function detectEmotionalNewsMoves(
       status,
       isRetested,
       retestTime,
+      barCount,
+      headlineSentence,
     })
   }
 
-  // 2. Unscheduled Volatility Spikes (only if explicitly enabled; disabled by default to avoid classifying regular spikes as news)
+  // 2. Unscheduled Volatility Spikes (only if explicitly enabled)
   if (allowUnscheduledSpikes && scoped.length >= 6) {
+    const barStep = scoped.length >= 2 ? Math.max(60, scoped[1]!.time - scoped[0]!.time) : 300
     const minLookback = 5
     for (let i = minLookback; i < scoped.length; i++) {
       if (processedIndices.has(i)) continue
@@ -896,12 +923,31 @@ export function detectEmotionalNewsMoves(
       const curRange = curBar.high - curBar.low
       const curVol = Math.max(0, curBar.volume > 0 ? curBar.volume : 1)
 
-      if (avgRange > 0 && curRange >= 2.5 * avgRange && curVol >= 1.8 * avgVol && curRange >= baseThreshold) {
+      const isAbnormalSpike =
+        avgRange > 0 &&
+        curRange >= 2.0 * avgRange &&
+        curRange >= baseThreshold &&
+        (avgVol <= 1 || curVol >= 1.3 * avgVol || curRange >= 2.8 * avgRange)
+
+      if (isAbnormalSpike) {
+        const spikeEndIdx = Math.min(scoped.length - 1, i + (barStep >= 900 ? 0 : 1))
+        const spikeBars = scoped.slice(i, spikeEndIdx + 1)
+        const barCount = spikeBars.length
+        let sHigh = -Infinity
+        let sLow = Infinity
+        let sVol = 0
+        for (const b of spikeBars) {
+          if (b.high > sHigh) sHigh = b.high
+          if (b.low < sLow) sLow = b.low
+          sVol += Math.max(0, b.volume > 0 ? b.volume : 1)
+        }
+        const spikeRange = Number((sHigh - sLow).toFixed(2))
         const basePrice = curBar.open
-        const upSpread = curBar.high - basePrice
-        const downSpread = basePrice - curBar.low
-        const isBearishFlush = downSpread >= 0.65 * curRange && curBar.close <= basePrice - 0.50 * curRange
-        const isBullishDrive = upSpread >= 0.65 * curRange && curBar.close >= basePrice + 0.50 * curRange
+        const upSpread = sHigh - basePrice
+        const downSpread = basePrice - sLow
+        const lastReactionClose = spikeBars[spikeBars.length - 1]!.close
+        const isBearishFlush = downSpread >= 0.60 * spikeRange && lastReactionClose <= basePrice - 0.40 * spikeRange
+        const isBullishDrive = upSpread >= 0.60 * spikeRange && lastReactionClose >= basePrice + 0.40 * spikeRange
         const direction: 'WHIPSAW' | 'BULLISH_DRIVE' | 'BEARISH_DRIVE' = isBearishFlush
           ? 'BEARISH_DRIVE'
           : isBullishDrive
@@ -911,20 +957,25 @@ export function detectEmotionalNewsMoves(
         let status: EmotionalNewsMove['status'] = 'WITHIN_RANGE'
         let isRetested = false
         let retestTime: number | undefined
-        for (let k = i + 1; k < scoped.length; k++) {
+        for (let k = spikeEndIdx + 1; k < scoped.length; k++) {
           const b = scoped[k]!
-          if (b.close > curBar.high) status = 'BROKEN_ABOVE'
-          else if (b.close < curBar.low) status = 'BROKEN_BELOW'
-          else if (b.high >= curBar.high - 0.15 * curRange && b.close < curBar.high - 0.25 * curRange) {
+          if (b.close > sHigh) status = 'BROKEN_ABOVE'
+          else if (b.close < sLow) status = 'BROKEN_BELOW'
+          else if (b.high >= sHigh - 0.15 * spikeRange && b.close < sHigh - 0.25 * spikeRange) {
             status = 'REJECTED_HIGH'
             isRetested = true
             retestTime = b.time
-          } else if (b.low <= curBar.low + 0.15 * curRange && b.close > curBar.low + 0.25 * curRange) {
+          } else if (b.low <= sLow + 0.15 * spikeRange && b.close > sLow + 0.25 * spikeRange) {
             status = 'REJECTED_LOW'
             isRetested = true
             retestTime = b.time
           }
         }
+
+        const dirWord = direction === 'BULLISH_DRIVE' ? '▲ Surge' : direction === 'BEARISH_DRIVE' ? '▼ Flush' : '± Spike'
+        const barText = `${barCount} bar${barCount > 1 ? 's' : ''}`
+        const ptsText = `${spikeRange.toFixed(spikeRange < 10 ? 2 : 1)}pts`
+        const headlineSentence = `⚡ Volatility Spike: ${dirWord} ${ptsText} (${barText} · ${(curRange / avgRange).toFixed(1)}x ATR)`
 
         moves.push({
           id: `news-spike-${curBar.time}`,
@@ -932,21 +983,24 @@ export function detectEmotionalNewsMoves(
           impact: 'High',
           newsTime: curBar.time,
           reactionStartTime: curBar.time,
-          reactionEndTime: curBar.time,
-          newsHigh: Number(curBar.high.toFixed(2)),
-          newsLow: Number(curBar.low.toFixed(2)),
+          reactionEndTime: scoped[spikeEndIdx]!.time,
+          newsHigh: Number(sHigh.toFixed(2)),
+          newsLow: Number(sLow.toFixed(2)),
           basePrice: Number(basePrice.toFixed(2)),
-          moveRange: Number(curRange.toFixed(2)),
-          volume: curVol,
+          moveRange: spikeRange,
+          volume: sVol,
           direction,
-          description: `Sudden volatility impulse: ${curRange.toFixed(1)} pts (${(curRange / avgRange).toFixed(1)}x ATR)`,
+          description: `Sudden volatility impulse: ${spikeRange.toFixed(1)} pts (${(curRange / avgRange).toFixed(1)}x ATR)`,
           status,
           isRetested,
           retestTime,
+          barCount,
+          headlineSentence,
         })
 
-        processedIndices.add(i)
-        processedIndices.add(i + 1)
+        for (let k = i; k <= spikeEndIdx; k++) {
+          processedIndices.add(k)
+        }
       }
     }
   }
