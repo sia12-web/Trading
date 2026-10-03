@@ -2602,10 +2602,10 @@ export function LeoAssistantPanel({
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleSendMessage(`Leo, analyze order flow delta vs VWAP on ${context.instrument} and advise trade setup.`)}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-950/60 hover:bg-purple-900/80 border border-purple-500/50 text-[9.5px] font-mono text-purple-200 shrink-0 transition shadow-sm"
+                  onClick={() => handleSendMessage(`Leo, audit order flow delta vs VWAP on ${context.instrument}, check absorption and exhaustion, and advise trade setup.`)}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-950/60 hover:bg-cyan-900/80 border border-cyan-500/50 text-[9.5px] font-mono text-cyan-200 shrink-0 transition shadow-sm"
                 >
-                  <span>⚡</span> Order Flow Setup
+                  <span>⚡</span> Audit Order Flow
                 </button>
                 <button
                   type="button"

@@ -12658,31 +12658,56 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
                 return (
                   <>
-                    {nycActive && (
+                    {nycActive ? (
                       <>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!leoPanelOpen) return
-                            setLeoExternalPoints([
-                              {
-                                id: 'ctx-day-type',
-                                label: 'Day Type',
-                                value: dayTypeEval.badgeText,
-                                tier: 'CONTEXT',
-                                category: 'DAY_TYPE',
-                                description: dayTypeEval.description || 'Current Dalton Day Type',
-                              },
-                            ])
-                          }}
-                          className={`${leoPanelOpen ? 'hover:opacity-80 cursor-pointer' : 'cursor-default'} transition flex items-center gap-1 select-none`}
-                          title={leoPanelOpen ? 'Click to send Day Type to Leo AI' : (dayTypeEval.description || 'Current Dalton Day Type')}
-                        >
-                          <span className="text-gray-500">Day: </span>
-                          <span className={`text-purple-300 font-semibold ${leoPanelOpen ? 'underline decoration-dotted decoration-purple-400/50 underline-offset-2' : ''}`}>
-                            {dayTypeOverride ? '🤖 ' : ''}{dayTypeEval.badgeText}{dayTypeOverride ? ' (AI Overwrite)' : ''}
-                          </span>
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLeoExternalPoints([
+                                {
+                                  id: 'ctx-day-type',
+                                  label: 'Day Type',
+                                  value: dayTypeEval.badgeText,
+                                  tier: 'CONTEXT',
+                                  category: 'DAY_TYPE',
+                                  description: dayTypeEval.description || 'Current Dalton Day Type',
+                                },
+                              ])
+                              setLeoPanelOpen(true)
+                              setLeoAutoPrompt(`Leo, summarize key auction tails, session profile distribution, and Dalton day type for ${instrument}.`)
+                            }}
+                            className="hover:opacity-80 cursor-pointer transition flex items-center gap-1 select-none"
+                            title="Click to ask Leo about Dalton Day Type"
+                          >
+                            <span className="text-gray-500">Day: </span>
+                            <span className="text-purple-300 font-semibold underline decoration-dotted decoration-purple-400/50 underline-offset-2">
+                              {dayTypeOverride ? '🤖 ' : ''}{dayTypeEval.badgeText}{dayTypeOverride ? ' (AI Overwrite)' : ''}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLeoExternalPoints([
+                                {
+                                  id: 'ctx-day-type',
+                                  label: 'Day Type',
+                                  value: dayTypeEval.badgeText,
+                                  tier: 'CONTEXT',
+                                  category: 'DAY_TYPE',
+                                  description: dayTypeEval.description || 'Current Dalton Day Type',
+                                },
+                              ])
+                              setLeoPanelOpen(true)
+                              setLeoAutoPrompt(`Leo, summarize key auction tails, session profile distribution, and Dalton day type for ${instrument}.`)
+                            }}
+                            className="transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-purple-950/50 hover:bg-purple-900/70 border border-purple-800/40 hover:border-purple-500 text-[10px] text-purple-300 hover:text-white cursor-pointer ml-0.5"
+                            title="Ask Leo to evaluate Dalton Day Type and auction tails"
+                          >
+                            <span>🤖</span>
+                            <span className="font-mono">Ask Leo</span>
+                          </button>
+                        </div>
                         {dayTypeOverride && (
                           <button
                             type="button"
@@ -12720,6 +12745,36 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                             {openingBadge}
                           </span>
                         </button>
+                        <span className="text-gray-600 text-[10px]">|</span>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-1">
+                          <span className="text-gray-500">Day: </span>
+                          <span className="text-purple-400/80 font-semibold">Pre-Session</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLeoExternalPoints([
+                                {
+                                  id: 'ctx-day-type',
+                                  label: 'Pre-Market / Globex Structure',
+                                  value: 'Pre-Session Waiting',
+                                  tier: 'CONTEXT',
+                                  category: 'DAY_TYPE',
+                                  description: 'Market is in Globex / Pre-session. Cash open is 09:30 ET.',
+                                },
+                              ])
+                              setLeoPanelOpen(true)
+                              setLeoAutoPrompt(`Leo, what Dalton day type development should we anticipate today on ${instrument} based on overnight inventory and yesterday profile?`)
+                            }}
+                            className="transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-purple-950/50 hover:bg-purple-900/70 border border-purple-800/40 hover:border-purple-500 text-[10px] text-purple-300 hover:text-white cursor-pointer ml-0.5"
+                            title="Ask Leo to evaluate expected Dalton Day Type for upcoming session"
+                          >
+                            <span>🤖</span>
+                            <span className="font-mono">Ask Leo</span>
+                          </button>
+                        </div>
                         <span className="text-gray-600 text-[10px]">|</span>
                       </>
                     )}
@@ -12789,7 +12844,90 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   </span>
                 )}
               </button>
+
+              {/* Ask Leo: Audit Order Flow */}
+              <button
+                type="button"
+                onClick={() => {
+                  const curPrice =
+                    livePrice ??
+                    lastCandleRef.current?.close ??
+                    candlesRef.current[candlesRef.current.length - 1]?.close ??
+                    0
+                  const v = currentVwap?.vwap ?? 0
+                  const diff = v > 0 && curPrice > 0 ? (curPrice - v).toFixed(1) : '0'
+                  const divState = sessionOrderFlow?.divergence ?? 'NONE'
+                  const cumDelta = sessionOrderFlow?.sessionCvd ?? 0
+                  setLeoExternalPoints([
+                    {
+                      id: 'ctx-order-flow',
+                      label: `Order Flow & CVD (${instrument})`,
+                      value: `Delta: ${cumDelta.toLocaleString()} | Div: ${divState}`,
+                      tier: 'ORDER_FLOW',
+                      category: 'CVD',
+                      description: `Session cumulative volume delta: ${cumDelta.toLocaleString()}. Order flow divergence: ${divState}. Price vs VWAP: ${diff} pts.`,
+                    },
+                  ])
+                  setLeoPanelOpen(true)
+                  setLeoAutoPrompt(`Leo, audit order flow delta vs VWAP on ${instrument}. Analyze buyer/seller absorption, CVD divergences, and confirm if Tier-2 execution criteria are met.`)
+                }}
+                className="transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-cyan-950/40 hover:bg-cyan-900/60 border border-cyan-800/40 hover:border-cyan-500 text-[10px] text-cyan-300 hover:text-white cursor-pointer"
+                title="Ask Leo to Audit Order Flow & CVD delta vs VWAP"
+              >
+                <span>🤖</span>
+                <span className="font-mono">Audit Order Flow</span>
+              </button>
+
               <span className="text-gray-600 text-[10px]">|</span>
+
+              {/* Ask Leo: Compare Range Volume */}
+              <button
+                type="button"
+                onClick={() => {
+                  const curPrice =
+                    livePrice ??
+                    lastCandleRef.current?.close ??
+                    candlesRef.current[candlesRef.current.length - 1]?.close ??
+                    0
+                  const ranges: LeoDataPoint[] = (activeRangeBoxes || []).map((r) => {
+                    const low = Math.min(r.p1.price, r.p2.price)
+                    const high = Math.max(r.p1.price, r.p2.price)
+                    const mid = ((low + high) / 2).toFixed(1)
+                    return {
+                      id: r.id,
+                      label: r.label || `Range [${low.toFixed(1)} - ${high.toFixed(1)}]`,
+                      value: `Mid: ${mid}`,
+                      tier: 'DRAWING',
+                      category: 'RANGE',
+                      description: `User-defined range box ${low.toFixed(1)} to ${high.toFixed(1)}. Current price is ${curPrice.toFixed(1)}.`,
+                    }
+                  })
+                  setLeoExternalPoints(
+                    ranges.length > 0
+                      ? ranges
+                      : [
+                          {
+                            id: 'range-volume-comp',
+                            label: `Range Volume Analysis (${instrument})`,
+                            value: 'Active Ranges',
+                            tier: 'DRAWING',
+                            category: 'RANGE',
+                            description: `Compare volume across drawn ranges and fixed volume profiles for ${instrument}.`,
+                          },
+                        ]
+                  )
+                  setLeoPanelOpen(true)
+                  setLeoAutoPrompt('Leo, compare the volume traded in these ranges and evaluate whether they will act as good or bad support or resistance.')
+                }}
+                className="transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-800/40 hover:border-emerald-500 text-[10px] text-emerald-300 hover:text-white cursor-pointer"
+                title="Ask Leo to compare volume across ranges and evaluate support/resistance quality"
+              >
+                <span>📈</span>
+                <span className="font-mono">Compare Range Volume</span>
+              </button>
+
+              <span className="text-gray-600 text-[10px]">|</span>
+
               {/* 5-Month Anchored VWAP & Bands Toggle */}
               <button
                 type="button"
@@ -12804,29 +12942,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                       })
                       .catch(() => {})
                   }
-                  setShow5mAvwapOnChart((prev) => {
-                    const next = !prev
-                    if (next) {
-                      const curPrice =
-                        livePrice ??
-                        lastCandleRef.current?.close ??
-                        candlesRef.current[candlesRef.current.length - 1]?.close ??
-                        0
-                      const v = avwap5mBenchmark?.vwap ?? currentVwap?.vwap ?? 0
-                      const diff = v > 0 && curPrice > 0 ? (curPrice - v).toFixed(1) : '0'
-                      setLeoExternalPoints([
-                        {
-                          id: '5m-avwap-level',
-                          label: `5M AVWAP (${instrument})`,
-                          value: `${v > 0 ? v.toLocaleString() : 'Active'}${curPrice > 0 ? ` (Delta: ${Number(diff) >= 0 ? '+' : ''}${diff} pts)` : ''}`,
-                          tier: 'LT',
-                          category: 'VWAP',
-                          description: `5-Month CME Globex Anchored VWAP is ${v.toLocaleString()}. Current Price is ${curPrice.toLocaleString()} (${Number(diff) >= 0 ? '+' : ''}${diff} pts vs AVWAP).`,
-                        },
-                      ])
-                    }
-                    return next
-                  })
+                  setShow5mAvwapOnChart((prev) => !prev)
                 }}
                 className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer ${
                   show5mAvwapOnChart
@@ -12840,37 +12956,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 <span className={`font-mono font-bold ${show5mAvwapOnChart ? 'text-emerald-300' : 'text-zinc-400'}`}>
                   {show5mAvwapOnChart ? 'ON' : 'OFF'}
                 </span>
-              </button>
-
-              {/* Send 5M AVWAP to Leo AI Button */}
-              <button
-                type="button"
-                onClick={() => {
-                  const curPrice =
-                    livePrice ??
-                    lastCandleRef.current?.close ??
-                    candlesRef.current[candlesRef.current.length - 1]?.close ??
-                    0
-                  const v = avwap5mBenchmark?.vwap ?? currentVwap?.vwap ?? 0
-                  const diff = v > 0 && curPrice > 0 ? (curPrice - v).toFixed(1) : '0'
-                  setLeoExternalPoints([
-                    {
-                      id: '5m-avwap-level',
-                      label: `5M AVWAP (${instrument})`,
-                      value: `${v > 0 ? v.toLocaleString() : 'Active'}${curPrice > 0 ? ` (Delta: ${Number(diff) >= 0 ? '+' : ''}${diff} pts)` : ''}`,
-                      tier: 'LT',
-                      category: 'VWAP',
-                      description: `5-Month CME Globex Anchored VWAP is ${v.toLocaleString()}. Current Price is ${curPrice.toLocaleString()} (${Number(diff) >= 0 ? '+' : ''}${diff} pts vs AVWAP).`,
-                    },
-                  ])
-                  setLeoPanelOpen(true)
-                  setLeoAutoPrompt(`Analyze price location, distance, and auction risk relative to the 5-Month Anchored VWAP (${v > 0 ? v.toLocaleString() : 'benchmark'}) and institutional bands.`)
-                }}
-                className="transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-zinc-800/60 hover:bg-zinc-800 border border-zinc-700/40 hover:border-emerald-500/40 text-[10px] text-zinc-300 hover:text-white cursor-pointer"
-                title="Send 5-Month Anchored VWAP to Leo AI"
-              >
-                <span>🤖</span>
-                <span className="hidden sm:inline font-mono">Ask Leo</span>
               </button>
 
               <span className="text-gray-600 text-[10px]">|</span>
