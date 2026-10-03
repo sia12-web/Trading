@@ -98,6 +98,8 @@ export interface AnchoredVwapBenchmark5M {
   sigma1Lower: number
   sigma2Upper: number
   sigma2Lower: number
+  sigma3Upper?: number
+  sigma3Lower?: number
   barCount?: number
   baseline?: {
     sumPV: number
@@ -505,6 +507,8 @@ export function compute5MonthAnchoredVwapFromDailyBars(
     sigma1Lower: Number((vwap - std).toFixed(2)),
     sigma2Upper: Number((vwap + 2 * std).toFixed(2)),
     sigma2Lower: Number((vwap - 2 * std).toFixed(2)),
+    sigma3Upper: Number((vwap + 3 * std).toFixed(2)),
+    sigma3Lower: Number((vwap - 3 * std).toFixed(2)),
     barCount,
     baseline: {
       sumPV,

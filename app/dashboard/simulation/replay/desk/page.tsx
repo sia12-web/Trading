@@ -1249,8 +1249,17 @@ function SimulationDeskInner() {
       ...ignoreScale,
     }
     const vwapSeries = {
-      upper3: chart.addLineSeries({ ...bandOpts, title: '+3σ' }),
-      upper2: chart.addLineSeries({ ...bandOpts, title: '+2σ' }),
+      upper3: chart.addLineSeries({
+        ...bandOpts,
+        lineStyle: LineStyle.Dashed,
+        color: 'rgba(239, 68, 68, 0.35)',
+        title: '+3σ Ext',
+      }),
+      upper2: chart.addLineSeries({
+        ...bandOpts,
+        color: 'rgba(59, 130, 246, 0.5)',
+        title: '+2σ',
+      }),
       upper1: chart.addLineSeries({ ...bandOpts, title: '+1σ' }),
       vwap: chart.addLineSeries({
         color: VWAP_COLORS.vwap,
@@ -1263,8 +1272,17 @@ function SimulationDeskInner() {
         ...ignoreScale,
       }),
       lower1: chart.addLineSeries({ ...bandOpts, title: '-1σ' }),
-      lower2: chart.addLineSeries({ ...bandOpts, title: '-2σ' }),
-      lower3: chart.addLineSeries({ ...bandOpts, title: '-3σ' }),
+      lower2: chart.addLineSeries({
+        ...bandOpts,
+        color: 'rgba(184, 160, 74, 0.5)',
+        title: '-2σ',
+      }),
+      lower3: chart.addLineSeries({
+        ...bandOpts,
+        lineStyle: LineStyle.Dashed,
+        color: 'rgba(16, 185, 129, 0.35)',
+        title: '-3σ Ext',
+      }),
     }
 
     // Initial Balance — right-scale H/L labels only (no spanning line)

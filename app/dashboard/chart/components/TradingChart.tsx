@@ -1558,6 +1558,8 @@ export function TradingChart({
   const frvpLinesRef = useRef<IPriceLine[]>([])
   const paintFrvp5dRef = useRef<(overrideBars?: OHLCV[]) => void>(() => { })
   const [avwap5mBenchmark, setAvwap5mBenchmark] = useState<AnchoredVwapBenchmark5M | null>(null)
+  const [show5mAvwapModal, setShow5mAvwapModal] = useState(false)
+  const [show5mAvwapOnChart, setShow5mAvwapOnChart] = useState(false) // Invisible on chart by default
   const avwap5mLinesRef = useRef<IPriceLine[]>([])
   const paint5mAvwapBenchmarkRef = useRef<() => void>(() => { })
   const showVwap = true
@@ -2675,6 +2677,9 @@ export function TradingChart({
       }
     }
     avwap5mLinesRef.current = []
+    // Keep 5-Month AVWAP invisible on chart unless user explicitly turns it on
+    if (!show5mAvwapOnChart) return
+
     const price =
       avwap5mBenchmark?.vwap ??
       (timeframe === '1D' && latestVwapBandsRef.current?.lastVwap ? latestVwapBandsRef.current.lastVwap : null)
@@ -2693,7 +2698,7 @@ export function TradingChart({
     } catch {
       /* ignore */
     }
-  }, [timeframe, avwap5mBenchmark])
+  }, [timeframe, avwap5mBenchmark, show5mAvwapOnChart])
 
   // ── Precompute Overlay Analytics (Offload from scroll/zoom hot path) ──────────
   useEffect(() => {
@@ -6709,6 +6714,9 @@ export function TradingChart({
       ) {
         return
       }
+      if (e.key === 'Escape') {
+        setShow5mAvwapModal(false)
+      }
       if (e.key === 'q' || e.key === 'Q') {
         if (!isPriceQuestioningSessionActive(Date.now(), critiqueStartOptionRef.current)) {
           return
@@ -7831,8 +7839,17 @@ export function TradingChart({
       ...ignoreScale,
     }
     const vwapSeries = {
-      upper3: chart.addLineSeries({ ...bandOpts, title: '' }),
-      upper2: chart.addLineSeries({ ...bandOpts, title: '' }),
+      upper3: chart.addLineSeries({
+        ...bandOpts,
+        lineStyle: LineStyle.Dashed,
+        color: 'rgba(239, 68, 68, 0.35)',
+        title: '+3σ Ext',
+      }),
+      upper2: chart.addLineSeries({
+        ...bandOpts,
+        color: 'rgba(59, 130, 246, 0.5)',
+        title: '+2σ',
+      }),
       upper1: chart.addLineSeries({ ...bandOpts, color: '#3b82f6', lineWidth: 2, lastValueVisible: true, title: '+1σ' }),
       vwap: chart.addLineSeries({
         color: '#10b981',
@@ -7845,8 +7862,17 @@ export function TradingChart({
         ...ignoreScale,
       }),
       lower1: chart.addLineSeries({ ...bandOpts, color: '#b8a04a', lineWidth: 2, lastValueVisible: true, title: '-1σ' }),
-      lower2: chart.addLineSeries({ ...bandOpts, title: '' }),
-      lower3: chart.addLineSeries({ ...bandOpts, title: '' }),
+      lower2: chart.addLineSeries({
+        ...bandOpts,
+        color: 'rgba(184, 160, 74, 0.5)',
+        title: '-2σ',
+      }),
+      lower3: chart.addLineSeries({
+        ...bandOpts,
+        lineStyle: LineStyle.Dashed,
+        color: 'rgba(16, 185, 129, 0.35)',
+        title: '-3σ Ext',
+      }),
     }
 
     // Initial Balance — right-scale H/L labels hidden
@@ -9033,7 +9059,8 @@ export function TradingChart({
 
     const vs = vwapSeriesRef.current
     if (vs) {
-      if (showVwap && bands) {
+      const shouldRenderBands = timeframe === '1D' ? show5mAvwapOnChart : showVwap
+      if (shouldRenderBands && bands) {
         const shift = (rows: Array<{ time: number; value: number }>) =>
           timeframe === '1D'
             ? toDailyLinePoints(rows)
@@ -9281,7 +9308,8 @@ export function TradingChart({
       }
     }
 
-    if (bands && bands.vwap) {
+    const shouldRenderBands = timeframe === '1D' ? show5mAvwapOnChart : showVwap
+    if (bands && bands.vwap && shouldRenderBands) {
       const tz = chartTzRef.current
       const shift = <T extends { time: number | UTCTimestamp; value: number }>(rows: T[]) =>
         timeframe === '1D'
@@ -9299,8 +9327,16 @@ export function TradingChart({
       try { if (bands.lower2) vs.lower2.setData(shift(bands.lower2)) } catch {}
       try { if (bands.upper3) vs.upper3.setData(shift(bands.upper3)) } catch {}
       try { if (bands.lower3) vs.lower3.setData(shift(bands.lower3)) } catch {}
+    } else {
+      try { vs.vwap.setData([]) } catch {}
+      try { vs.upper1.setData([]) } catch {}
+      try { vs.lower1.setData([]) } catch {}
+      try { vs.upper2.setData([]) } catch {}
+      try { vs.lower2.setData([]) } catch {}
+      try { vs.upper3.setData([]) } catch {}
+      try { vs.lower3.setData([]) } catch {}
     }
-  }, [avwap5mBenchmark, instrument, timeframe])
+  }, [avwap5mBenchmark, instrument, timeframe, show5mAvwapOnChart])
 
 
   // ── Session color boxes (cached spans + imperative paint = smooth pan)
@@ -12940,18 +12976,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               {/* Anchored VWAP HUD Indicator */}
               <div
                 className="flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold"
-                title={`${timeframe === '1D' ? '5-Month' : 'Session'} Anchored VWAP${currentVwap ? ` · Level: ${currentVwap.vwap.toLocaleString()}${livePrice ? ` · Distance: ${(livePrice - currentVwap.vwap).toFixed(1)}pts` : ''}` : ''}${avwap5mBenchmark && timeframe !== '1D' ? ` · 5M Macro AVWAP: ${avwap5mBenchmark.vwap.toLocaleString()}` : ''}`}
+                title={`Session Anchored VWAP${currentVwap ? ` · Level: ${currentVwap.vwap.toLocaleString()}${livePrice ? ` · Distance: ${(livePrice - currentVwap.vwap).toFixed(1)}pts` : ''}` : ''}`}
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                <span className="text-gray-400 font-semibold">{timeframe === '1D' ? '5M VWAP:' : 'VWAP:'}</span>
+                <span className="text-gray-400 font-semibold">VWAP:</span>
                 <span className="font-mono font-bold">
                   {currentVwap ? currentVwap.vwap.toLocaleString() : '...'}
                 </span>
-                {timeframe !== '1D' && avwap5mBenchmark && (
-                  <span className="text-emerald-400/80 font-mono text-[10px] ml-0.5" title="Macro 5-Month Anchored VWAP">
-                    (5M: {avwap5mBenchmark.vwap.toLocaleString()})
-                  </span>
-                )}
               </div>
               <span className="text-gray-600 text-[10px]">|</span>
               {/* Interactive CVD Sub-Chart Pane Button */}
@@ -12980,6 +13011,27 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     }`} />
                   </span>
                 )}
+              </button>
+              <span className="text-gray-600 text-[10px]">|</span>
+              {/* 5-Month Anchored VWAP (5M AVWAP) Button */}
+              <button
+                type="button"
+                onClick={() => setShow5mAvwapModal((prev) => !prev)}
+                className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer ${
+                  show5mAvwapModal
+                    ? 'bg-emerald-500/25 text-emerald-200 border border-emerald-400/60 shadow-sm font-semibold ring-1 ring-emerald-400/30'
+                    : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40 hover:border-emerald-500/40'
+                }`}
+                title="5-Month Macro Anchored VWAP (Click to view last 5 months benchmark & simplified ±1σ/±2σ/±3σ bands without chart clutter)"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-gray-400 font-semibold">5M AVWAP:</span>
+                <span className="font-mono font-bold text-emerald-300">
+                  {avwap5mBenchmark ? avwap5mBenchmark.vwap.toLocaleString() : '...'}
+                </span>
+                <span className="text-[9px] text-zinc-400 bg-zinc-800 px-1 py-0.2 rounded border border-zinc-700 font-mono">
+                  5 MO
+                </span>
               </button>
               {isCritiqueSessionActiveState && (
                 <>
@@ -15330,6 +15382,289 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             </button>
           </div>
         )}
+
+        {/* ── 5-Month Macro Anchored VWAP (5M AVWAP) Benchmark Modal ── */}
+        {show5mAvwapModal && (() => {
+          const vwap = avwap5mBenchmark?.vwap ?? 0
+          const p = livePrice ?? (candles.length > 0 ? candles[candles.length - 1]!.close : vwap)
+          const diff = Number((p - vwap).toFixed(2))
+          const pct = vwap > 0 ? Number(((diff / vwap) * 100).toFixed(2)) : 0
+
+          const sigma1Upper = avwap5mBenchmark?.sigma1Upper ?? Number((vwap * 1.01).toFixed(2))
+          const sigma1Lower = avwap5mBenchmark?.sigma1Lower ?? Number((vwap * 0.99).toFixed(2))
+          const sigma2Upper = avwap5mBenchmark?.sigma2Upper ?? Number((vwap * 1.02).toFixed(2))
+          const sigma2Lower = avwap5mBenchmark?.sigma2Lower ?? Number((vwap * 0.98).toFixed(2))
+          const std = Math.max(0.01, sigma1Upper > vwap ? sigma1Upper - vwap : vwap - sigma1Lower)
+          const sigma3Upper = avwap5mBenchmark?.sigma3Upper ?? Number((vwap + 3 * std).toFixed(2))
+          const sigma3Lower = avwap5mBenchmark?.sigma3Lower ?? Number((vwap - 3 * std).toFixed(2))
+
+          let regime = 'VALUE EQUILIBRIUM'
+          let regimeBadge = 'text-emerald-300 bg-emerald-500/15 border-emerald-500/30'
+          let regimeDesc = 'Price is fluctuating within the institutional ±1σ normal distribution zone (68% expectation).'
+
+          if (p > sigma3Upper) {
+            regime = 'EXTREME EXHAUSTION (> +3σ)'
+            regimeBadge = 'text-rose-400 bg-rose-500/20 border-rose-500/40 animate-pulse'
+            regimeDesc = 'Extreme 5-month statistical deviation. High exhaustion risk. Routine long breakouts are high risk; wait for mean reversion or high-volume absorption.'
+          } else if (p > sigma2Upper) {
+            regime = 'BULLISH OVEREXTENSION (+2σ to +3σ)'
+            regimeBadge = 'text-amber-300 bg-amber-500/20 border-amber-500/40'
+            regimeDesc = 'Beyond the 95% statistical boundary. Long momentum stretched; watch for mean reversion back toward Value Area High.'
+          } else if (p > sigma1Upper) {
+            regime = 'INSTITUTIONAL MARKUP (+1σ to +2σ)'
+            regimeBadge = 'text-cyan-300 bg-cyan-500/15 border-cyan-500/30'
+            regimeDesc = 'Trading above value high. Buyer dominance driving multi-month trending expansion.'
+          } else if (p < sigma3Lower) {
+            regime = 'EXTREME EXHAUSTION (< -3σ)'
+            regimeBadge = 'text-rose-400 bg-rose-500/20 border-rose-500/40 animate-pulse'
+            regimeDesc = 'Extreme 5-month statistical deviation to downside. Liquidation/panic exhaustion risk; shorting into this zone carries poor risk-reward.'
+          } else if (p < sigma2Lower) {
+            regime = 'BEARISH OVEREXTENSION (-2σ to -3σ)'
+            regimeBadge = 'text-amber-300 bg-amber-500/20 border-amber-500/40'
+            regimeDesc = 'Below the 95% statistical boundary. Short momentum stretched; watch for responsive institutional buyers.'
+          } else if (p < sigma1Lower) {
+            regime = 'INSTITUTIONAL MARKDOWN (-1σ to -2σ)'
+            regimeBadge = 'text-amber-300 bg-amber-500/15 border-amber-500/30'
+            regimeDesc = 'Trading below value low. Seller dominance driving multi-month discount expansion.'
+          }
+
+          const span = Math.max(1, sigma3Upper - sigma3Lower)
+          const gaugePct = Math.min(98, Math.max(2, ((p - sigma3Lower) / span) * 100))
+
+          return (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-sm animate-in fade-in duration-200"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) setShow5mAvwapModal(false)
+              }}
+            >
+              <div className="relative w-full max-w-2xl max-h-[90vh] flex flex-col bg-[#0c1017] border border-emerald-500/40 rounded-2xl shadow-2xl overflow-hidden font-sans text-slate-200">
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-800 bg-gradient-to-r from-emerald-950/40 via-slate-900 to-slate-900">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold text-xs font-mono">
+                      5M
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-extrabold text-sm tracking-wide text-emerald-300 uppercase">
+                          5-Month Anchored VWAP Benchmark
+                        </h3>
+                        <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          Live Globex
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-zinc-400">
+                        {instrument} · Anchored to CME Daily Globex · <span className="text-zinc-300 font-mono">Invisible on Chart Screen</span>
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShow5mAvwapModal(false)}
+                    className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-800 transition text-sm cursor-pointer"
+                    title="Close (Esc)"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Body */}
+                <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
+                  {/* Philosophy / Discipline Callout */}
+                  <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-200/90 leading-relaxed text-[11px]">
+                    <div className="font-bold text-emerald-300 mb-0.5 flex items-center gap-1.5">
+                      <span>🎯</span>
+                      <span>Disciplined Benchmark Simplification</span>
+                    </div>
+                    Seven bands quietly create excuses to enter bad trades. For clean, objective decision-making, we keep only the <strong className="text-white">AVWAP Center Line</strong>, <strong className="text-white">±1σ Value Area</strong>, <strong className="text-white">±2σ Statistical Boundary</strong>, and <strong className="text-white">±3σ strictly as an extreme exhaustion reference</strong>. Bands ±4σ through ±7σ are eliminated.
+                  </div>
+
+                  {/* Top Stats Cards */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="p-3 rounded-xl bg-zinc-900/90 border border-zinc-800 flex flex-col justify-between">
+                      <span className="text-zinc-400 text-[10px] uppercase font-semibold">5M AVWAP Center</span>
+                      <div className="text-xl font-mono font-bold text-emerald-400 mt-1">
+                        {vwap ? vwap.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '...'}
+                      </div>
+                      <span className="text-[10px] text-zinc-500 mt-1">
+                        Anchor: {avwap5mBenchmark?.anchorDate ?? '5 Months Ago'}
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-zinc-900/90 border border-zinc-800 flex flex-col justify-between">
+                      <span className="text-zinc-400 text-[10px] uppercase font-semibold">Live Price vs 5M AVWAP</span>
+                      <div className="text-xl font-mono font-bold text-white mt-1">
+                        {p.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                      <span className={`text-[10px] font-mono font-bold mt-1 ${diff >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {diff >= 0 ? '+' : ''}{diff.toFixed(1)} pts ({diff >= 0 ? '+' : ''}{pct.toFixed(2)}%)
+                      </span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-zinc-900/90 border border-zinc-800 flex flex-col justify-between">
+                      <span className="text-zinc-400 text-[10px] uppercase font-semibold">Macro Regime</span>
+                      <div className="mt-1">
+                        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${regimeBadge}`}>
+                          {regime}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-zinc-400 mt-1 line-clamp-1" title={regimeDesc}>
+                        {regimeDesc}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Visual Position Gauge */}
+                  <div className="p-3 rounded-xl bg-zinc-900/80 border border-zinc-800">
+                    <div className="flex justify-between text-[10px] font-mono text-zinc-400 mb-1.5">
+                      <span className="text-rose-400">-3σ Ext</span>
+                      <span className="text-amber-400">-2σ</span>
+                      <span className="text-yellow-400">-1σ</span>
+                      <span className="text-emerald-400 font-bold">5M AVWAP</span>
+                      <span className="text-cyan-400">+1σ</span>
+                      <span className="text-blue-400">+2σ</span>
+                      <span className="text-rose-400">+3σ Ext</span>
+                    </div>
+                    <div className="relative h-3 w-full bg-gradient-to-r from-rose-950 via-zinc-800 to-rose-950 rounded-full overflow-hidden border border-zinc-700/60">
+                      {/* ±1σ Value Zone fill */}
+                      <div className="absolute top-0 bottom-0 left-[33.3%] right-[33.3%] bg-emerald-500/25 border-x border-emerald-400/40" />
+                      {/* Center line mark */}
+                      <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-0.5 bg-emerald-400" />
+                      {/* Current price marker */}
+                      <div
+                        className="absolute top-0 bottom-0 w-2.5 -translate-x-1/2 bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.9)] border border-slate-900"
+                        style={{ left: `${gaugePct}%` }}
+                        title={`Price: ${p.toFixed(2)} (${gaugePct.toFixed(1)}% of ±3σ span)`}
+                      />
+                    </div>
+                    <div className="flex justify-between items-center text-[10px] text-zinc-500 font-mono mt-1.5">
+                      <span>{sigma3Lower.toLocaleString()}</span>
+                      <span className="text-white font-bold">Current: {p.toLocaleString()}</span>
+                      <span>{sigma3Upper.toLocaleString()}</span>
+                    </div>
+                  </div>
+
+                  {/* Standard Deviation Bands Table */}
+                  <div className="rounded-xl border border-zinc-800 overflow-hidden">
+                    <table className="w-full text-left font-mono text-[11px]">
+                      <thead className="bg-zinc-900/90 text-zinc-400 text-[10px] uppercase border-b border-zinc-800">
+                        <tr>
+                          <th className="py-2 px-3">Band Level</th>
+                          <th className="py-2 px-3 text-right">Price</th>
+                          <th className="py-2 px-3 text-right">Distance</th>
+                          <th className="py-2 px-3">Strategic Role</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-800/60 bg-[#0c1017]">
+                        <tr className="hover:bg-zinc-800/30 text-rose-300">
+                          <td className="py-2 px-3 font-bold flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                            +3σ Band
+                          </td>
+                          <td className="py-2 px-3 text-right font-bold">{sigma3Upper.toLocaleString()}</td>
+                          <td className="py-2 px-3 text-right text-zinc-400 font-bold">+{(sigma3Upper - vwap).toFixed(1)}</td>
+                          <td className="py-2 px-3 text-[10px] text-zinc-400 font-sans">Extreme Overbought Reference (Exhaustion only)</td>
+                        </tr>
+                        <tr className="hover:bg-zinc-800/30 text-blue-300">
+                          <td className="py-2 px-3 font-bold flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                            +2σ Band
+                          </td>
+                          <td className="py-2 px-3 text-right font-bold">{sigma2Upper.toLocaleString()}</td>
+                          <td className="py-2 px-3 text-right text-zinc-400">+{(sigma2Upper - vwap).toFixed(1)}</td>
+                          <td className="py-2 px-3 text-[10px] text-zinc-400 font-sans">Institutional Expansion Upper Limit (95% Boundary)</td>
+                        </tr>
+                        <tr className="hover:bg-zinc-800/30 text-cyan-300">
+                          <td className="py-2 px-3 font-bold flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                            +1σ Band
+                          </td>
+                          <td className="py-2 px-3 text-right font-bold">{sigma1Upper.toLocaleString()}</td>
+                          <td className="py-2 px-3 text-right text-zinc-400">+{(sigma1Upper - vwap).toFixed(1)}</td>
+                          <td className="py-2 px-3 text-[10px] text-zinc-400 font-sans">Value Area High (68% Value Boundary)</td>
+                        </tr>
+                        <tr className="bg-emerald-500/10 text-emerald-300 font-bold">
+                          <td className="py-2.5 px-3 flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                            5M AVWAP
+                          </td>
+                          <td className="py-2.5 px-3 text-right text-emerald-300">{vwap.toLocaleString()}</td>
+                          <td className="py-2.5 px-3 text-right text-emerald-400/80">0.0</td>
+                          <td className="py-2.5 px-3 text-[10px] text-emerald-200/90 font-sans">Macro Volume-Weighted Equilibrium ({avwap5mBenchmark?.barCount ?? '100+'} Globex sessions)</td>
+                        </tr>
+                        <tr className="hover:bg-zinc-800/30 text-yellow-300">
+                          <td className="py-2 px-3 font-bold flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
+                            -1σ Band
+                          </td>
+                          <td className="py-2 px-3 text-right font-bold">{sigma1Lower.toLocaleString()}</td>
+                          <td className="py-2 px-3 text-right text-zinc-400">-{(vwap - sigma1Lower).toFixed(1)}</td>
+                          <td className="py-2 px-3 text-[10px] text-zinc-400 font-sans">Value Area Low (68% Value Boundary)</td>
+                        </tr>
+                        <tr className="hover:bg-zinc-800/30 text-amber-300">
+                          <td className="py-2 px-3 font-bold flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                            -2σ Band
+                          </td>
+                          <td className="py-2 px-3 text-right font-bold">{sigma2Lower.toLocaleString()}</td>
+                          <td className="py-2 px-3 text-right text-zinc-400">-{(vwap - sigma2Lower).toFixed(1)}</td>
+                          <td className="py-2 px-3 text-[10px] text-zinc-400 font-sans">Institutional Expansion Lower Limit (95% Boundary)</td>
+                        </tr>
+                        <tr className="hover:bg-zinc-800/30 text-rose-300">
+                          <td className="py-2 px-3 font-bold flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                            -3σ Band
+                          </td>
+                          <td className="py-2 px-3 text-right font-bold">{sigma3Lower.toLocaleString()}</td>
+                          <td className="py-2 px-3 text-right text-zinc-400 font-bold">-{(vwap - sigma3Lower).toFixed(1)}</td>
+                          <td className="py-2 px-3 text-[10px] text-zinc-400 font-sans">Extreme Oversold Reference (Exhaustion only)</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Screen Visibility Control & System Update Status */}
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-zinc-900/90 border border-zinc-800 text-[11px]">
+                    <div className="flex items-center gap-2">
+                      <span className="text-zinc-400">Chart Screen Projection:</span>
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={show5mAvwapOnChart}
+                          onChange={(e) => setShow5mAvwapOnChart(e.target.checked)}
+                          className="rounded border-zinc-700 bg-zinc-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-0 cursor-pointer"
+                        />
+                        <span className={show5mAvwapOnChart ? 'text-emerald-300 font-semibold' : 'text-zinc-400'}>
+                          {show5mAvwapOnChart ? 'Visible on Chart Canvas' : 'Invisible on Screen (Default Clean Desk)'}
+                        </span>
+                      </label>
+                    </div>
+                    <div className="text-[10px] text-zinc-500 font-mono flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      Auto-updating continuously
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div className="flex items-center justify-between px-5 py-3 border-t border-zinc-800 bg-zinc-950 text-[11px]">
+                  <span className="text-zinc-500">
+                    Press <span className="font-mono text-zinc-400">Esc</span> or click outside to dismiss
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShow5mAvwapModal(false)}
+                    className="px-3 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition font-medium cursor-pointer"
+                  >
+                    Close Window
+                  </button>
+                </div>
+              </div>
+            </div>
+          )
+        })()}
 
         {/* ── Auction Price Critique & "Questioning" Desk Modal ── */}
         {showQuestioningModal && livePriceCritique && (
