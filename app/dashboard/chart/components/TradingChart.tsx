@@ -13135,18 +13135,15 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 setActiveDrawingTool((prev) => (prev === 'TRENDLINE' ? 'NONE' : 'TRENDLINE'))
                 setDrawingDraft(null)
               }}
-              className={`group relative flex h-9 px-2.5 items-center gap-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`flex h-9 px-2.5 items-center gap-1.5 rounded-lg text-xs font-bold transition-all ${
                 activeDrawingTool === 'TRENDLINE'
                   ? 'bg-sky-500 text-slate-950 shadow-lg shadow-sky-500/40 ring-2 ring-sky-300'
                   : 'text-sky-300 hover:bg-slate-800 hover:text-sky-100 bg-slate-900/60 border border-sky-500/30'
               }`}
-              title="Draw Trendline from Spring or Upthrust (Hotkey: W or X)"
+              title="Trendline (Hotkey: W or X)"
             >
               <span className="text-sm">📐</span>
               <span className="hidden md:inline font-mono">Trendline</span>
-              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-sky-200 shadow-xl border border-sky-800/80 group-hover:block z-50">
-                Trendline (W or X) · Spring & Upthrust Factor Evaluation
-              </span>
             </button>
 
             {/* Range Box (D) */}
@@ -13156,7 +13153,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 setActiveDrawingTool((prev) => (prev === 'RANGE' ? 'NONE' : 'RANGE'))
                 setDrawingDraft(null)
               }}
-              className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
+              className={`flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
                 activeDrawingTool === 'RANGE'
                   ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
                   : 'text-slate-400 hover:bg-slate-800 hover:text-purple-300'
@@ -13164,9 +13161,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               title="Draw Range / Box (Hotkey: D)"
             >
               <span>⬛</span>
-              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-purple-200 shadow-xl border border-slate-800 group-hover:block z-50">
-                Range / Box (D)
-              </span>
             </button>
 
             {/* Manual FRVP (V) */}
@@ -13176,7 +13170,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 setActiveDrawingTool((prev) => (prev === 'FRVP' ? 'NONE' : 'FRVP'))
                 setDrawingDraft(null)
               }}
-              className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
+              className={`flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
                 activeDrawingTool === 'FRVP'
                   ? 'bg-amber-600 text-white shadow-lg shadow-amber-600/30'
                   : 'text-slate-400 hover:bg-slate-800 hover:text-amber-300'
@@ -13184,9 +13178,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               title="Draw Fixed Range Volume Profile (Hotkey: V)"
             >
               <span>📈</span>
-              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-amber-200 shadow-xl border border-slate-800 group-hover:block z-50">
-                Manual FRVP (V)
-              </span>
             </button>
 
             {/* Measure Tool (M / Shift+Click) */}
@@ -13196,7 +13187,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 setActiveDrawingTool((prev) => (prev === 'MEASURE' ? 'NONE' : 'MEASURE'))
                 setDrawingDraft(null)
               }}
-              className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
+              className={`flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
                 activeDrawingTool === 'MEASURE'
                   ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30 ring-2 ring-emerald-400'
                   : 'text-slate-400 hover:bg-slate-800 hover:text-emerald-300'
@@ -13204,16 +13195,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               title="Measure Price / Range (Hotkey: M / Shift+Click)"
             >
               <span>📏</span>
-              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-emerald-200 shadow-xl border border-slate-800 group-hover:block z-50">
-                Measure (M / Shift+Click)
-              </span>
             </button>
 
             {/* Candlestick Patterns Toggle */}
             <button
               type="button"
               onClick={() => setShowCandlestickPatterns((prev) => !prev)}
-              className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
+              className={`flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
                 showCandlestickPatterns
                   ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30'
                   : 'text-slate-400 hover:bg-slate-800 hover:text-emerald-300'
@@ -13221,16 +13209,13 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               title="Toggle Candlestick Pattern Markers"
             >
               <span>🕯️</span>
-              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-emerald-200 shadow-xl border border-slate-800 group-hover:block z-50">
-                Candlestick Patterns ({showCandlestickPatterns ? 'ON' : 'OFF'})
-              </span>
             </button>
 
             {/* CVD Sub-Chart Toggle */}
             <button
               type="button"
               onClick={() => setShowCvdSubPane((prev) => !prev)}
-              className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
+              className={`flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
                 showCvdSubPane
                   ? 'bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/30 font-bold'
                   : 'text-slate-400 hover:bg-slate-800 hover:text-cyan-300'
@@ -13238,9 +13223,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               title="Toggle CVD Sub-Chart Pane"
             >
               <span>📊</span>
-              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-cyan-200 shadow-xl border border-slate-800 group-hover:block z-50">
-                CVD Sub-Chart ({showCvdSubPane ? 'ON' : 'OFF'})
-              </span>
             </button>
 
 
