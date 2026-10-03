@@ -2740,6 +2740,66 @@ export function LeoAssistantPanel({
                 type="button"
                 onClick={() =>
                   handleSendMessage(
+                    `Leo, audit order flow delta vs VWAP on ${context.instrument}. Analyze buyer/seller absorption, CVD divergences, and confirm if execution criteria are met.`
+                  )
+                }
+                className="px-2 py-0.5 rounded-md bg-cyan-950/60 hover:bg-cyan-900/80 border border-cyan-500/50 text-cyan-200 shrink-0 transition shadow-sm font-semibold"
+                title="Audit Order Flow & CVD delta vs VWAP"
+              >
+                🤖 Audit Order Flow
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  handleSendMessage(
+                    `Leo, compare volume across our drawn range boxes and fixed volume profiles for ${context.instrument}, evaluating support/resistance quality.`
+                  )
+                }
+                className="px-2 py-0.5 rounded-md bg-emerald-950/60 hover:bg-emerald-900/80 border border-emerald-500/50 text-emerald-200 shrink-0 transition shadow-sm font-semibold"
+                title="Compare volume across ranges and profiles"
+              >
+                📈 Compare Range Volume
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  handleSendMessage(
+                    `Leo, analyze price location and distance relative to the 5-Month Anchored VWAP and institutional bands on ${context.instrument}.`
+                  )
+                }
+                className="px-2 py-0.5 rounded-md bg-emerald-950/60 hover:bg-emerald-900/80 border border-emerald-500/50 text-emerald-200 shrink-0 transition shadow-sm font-semibold"
+                title="Analyze 5-Month Anchored VWAP"
+              >
+                ⚓ 5M AVWAP Benchmark
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  handleSendMessage(
+                    `Leo, summarize upcoming Tier-1 macro news catalysts and economic events for ${context.instrument}.`
+                  )
+                }
+                className="px-2 py-0.5 rounded-md bg-amber-950/60 hover:bg-amber-900/80 border border-amber-500/50 text-amber-200 shrink-0 transition shadow-sm font-semibold"
+                title="Check macro news catalysts"
+              >
+                ⚡ News Catalysts
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  handleSendMessage(
+                    `Leo, rank the 5 markets (NQ, ES, YM, Gold, Oil) on Participation x Location x Structure using VIX, OVX, and GVZ gauges.`
+                  )
+                }
+                className="px-2 py-0.5 rounded-md bg-purple-950/60 hover:bg-purple-900/80 border border-purple-500/50 text-purple-200 shrink-0 transition shadow-sm font-semibold"
+                title="Rank 5 markets on Participation x Location x Structure"
+              >
+                🎯 Rank 5 Markets
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  handleSendMessage(
                     `Leo, what are our must-act levels, dealer gamma walls, and CTA triggers for ${context.instrument}?`
                   )
                 }
@@ -2747,18 +2807,6 @@ export function LeoAssistantPanel({
                 title="Quick query Big Money levels"
               >
                 🎯 Big Money Triggers
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  handleSendMessage(
-                    `Leo, audit our session market structure, opening type, and CVD order flow for ${context.instrument}.`
-                  )
-                }
-                className="px-2 py-0.5 rounded-md bg-neutral-800/80 hover:bg-purple-950/60 border border-neutral-700/60 hover:border-purple-600/60 text-neutral-300 hover:text-purple-200 shrink-0 transition"
-                title="Audit active session and order flow"
-              >
-                📊 Session & CVD
               </button>
               <button
                 type="button"

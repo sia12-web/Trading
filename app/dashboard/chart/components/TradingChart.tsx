@@ -1529,9 +1529,9 @@ export function TradingChart({
   const frvpLinesRef = useRef<IPriceLine[]>([])
   const paintFrvp5dRef = useRef<(overrideBars?: OHLCV[]) => void>(() => { })
   const [avwap5mBenchmark, setAvwap5mBenchmark] = useState<AnchoredVwapBenchmark5M | null>(null)
-  const [show5mAvwapOnChart, setShow5mAvwapOnChart] = useState(false)
+  const [show5mAvwapOnChart] = useState(false)
   const [avwap5mBandCount] = useState<2 | 3>(3) // 2 or 3 standard deviation bands
-  const [showNewsOnChart, setShowNewsOnChart] = useState(false) // News markers off by default; filtered to latest Tier-1 event
+  const [showNewsOnChart] = useState(false) // News markers off by default; filtered to latest Tier-1 event
   const [showSdBands] = useState(true) // Standard Deviation bands enabled with AVWAP
   const avwap5mLinesRef = useRef<IPriceLine[]>([])
   const paint5mAvwapBenchmarkRef = useRef<() => void>(() => { })
@@ -12843,139 +12843,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     }`} />
                   </span>
                 )}
-              </button>
-
-              {/* Ask Leo: Audit Order Flow */}
-              <button
-                type="button"
-                onClick={() => {
-                  const curPrice =
-                    livePrice ??
-                    lastCandleRef.current?.close ??
-                    candlesRef.current[candlesRef.current.length - 1]?.close ??
-                    0
-                  const v = currentVwap?.vwap ?? 0
-                  const diff = v > 0 && curPrice > 0 ? (curPrice - v).toFixed(1) : '0'
-                  const divState = sessionOrderFlow?.divergence ?? 'NONE'
-                  const cumDelta = sessionOrderFlow?.sessionCvd ?? 0
-                  setLeoExternalPoints([
-                    {
-                      id: 'ctx-order-flow',
-                      label: `Order Flow & CVD (${instrument})`,
-                      value: `Delta: ${cumDelta.toLocaleString()} | Div: ${divState}`,
-                      tier: 'ORDER_FLOW',
-                      category: 'CVD',
-                      description: `Session cumulative volume delta: ${cumDelta.toLocaleString()}. Order flow divergence: ${divState}. Price vs VWAP: ${diff} pts.`,
-                    },
-                  ])
-                  setLeoPanelOpen(true)
-                  setLeoAutoPrompt(`Leo, audit order flow delta vs VWAP on ${instrument}. Analyze buyer/seller absorption, CVD divergences, and confirm if Tier-2 execution criteria are met.`)
-                }}
-                className="transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-cyan-950/40 hover:bg-cyan-900/60 border border-cyan-800/40 hover:border-cyan-500 text-[10px] text-cyan-300 hover:text-white cursor-pointer"
-                title="Ask Leo to Audit Order Flow & CVD delta vs VWAP"
-              >
-                <span>🤖</span>
-                <span className="font-mono">Audit Order Flow</span>
-              </button>
-
-              <span className="text-gray-600 text-[10px]">|</span>
-
-              {/* Ask Leo: Compare Range Volume */}
-              <button
-                type="button"
-                onClick={() => {
-                  const curPrice =
-                    livePrice ??
-                    lastCandleRef.current?.close ??
-                    candlesRef.current[candlesRef.current.length - 1]?.close ??
-                    0
-                  const ranges: LeoDataPoint[] = (activeRangeBoxes || []).map((r) => {
-                    const low = Math.min(r.p1.price, r.p2.price)
-                    const high = Math.max(r.p1.price, r.p2.price)
-                    const mid = ((low + high) / 2).toFixed(1)
-                    return {
-                      id: r.id,
-                      label: r.label || `Range [${low.toFixed(1)} - ${high.toFixed(1)}]`,
-                      value: `Mid: ${mid}`,
-                      tier: 'DRAWING',
-                      category: 'RANGE',
-                      description: `User-defined range box ${low.toFixed(1)} to ${high.toFixed(1)}. Current price is ${curPrice.toFixed(1)}.`,
-                    }
-                  })
-                  setLeoExternalPoints(
-                    ranges.length > 0
-                      ? ranges
-                      : [
-                          {
-                            id: 'range-volume-comp',
-                            label: `Range Volume Analysis (${instrument})`,
-                            value: 'Active Ranges',
-                            tier: 'DRAWING',
-                            category: 'RANGE',
-                            description: `Compare volume across drawn ranges and fixed volume profiles for ${instrument}.`,
-                          },
-                        ]
-                  )
-                  setLeoPanelOpen(true)
-                  setLeoAutoPrompt('Leo, compare the volume traded in these ranges and evaluate whether they will act as good or bad support or resistance.')
-                }}
-                className="transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-800/40 hover:border-emerald-500 text-[10px] text-emerald-300 hover:text-white cursor-pointer"
-                title="Ask Leo to compare volume across ranges and evaluate support/resistance quality"
-              >
-                <span>📈</span>
-                <span className="font-mono">Compare Range Volume</span>
-              </button>
-
-              <span className="text-gray-600 text-[10px]">|</span>
-
-              {/* 5-Month Anchored VWAP & Bands Toggle */}
-              <button
-                type="button"
-                onClick={() => {
-                  if (!avwap5mBenchmark) {
-                    fetch(`/api/trading/context-55?instrument=${instrument}`)
-                      .then((r) => r.json())
-                      .then((d) => {
-                        if (d?.ok && d.avwap5m) {
-                          setAvwap5mBenchmark(d.avwap5m)
-                        }
-                      })
-                      .catch(() => {})
-                  }
-                  setShow5mAvwapOnChart((prev) => !prev)
-                }}
-                className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer ${
-                  show5mAvwapOnChart
-                    ? 'bg-emerald-500/25 text-emerald-200 border border-emerald-400/60 shadow-sm font-semibold'
-                    : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
-                }`}
-                title="Toggle 5-Month Anchored VWAP & Standard Deviation Bands (±1σ, ±2σ, ±3σ) on chart"
-              >
-                <span className={`w-1.5 h-1.5 rounded-full ${show5mAvwapOnChart ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-500'}`} />
-                <span className="text-gray-400 font-semibold">5M AVWAP:</span>
-                <span className={`font-mono font-bold ${show5mAvwapOnChart ? 'text-emerald-300' : 'text-zinc-400'}`}>
-                  {show5mAvwapOnChart ? 'ON' : 'OFF'}
-                </span>
-              </button>
-
-              <span className="text-gray-600 text-[10px]">|</span>
-
-              {/* News On/Off Toggle (Moved next to 5M AVWAP per user request) */}
-              <button
-                type="button"
-                onClick={() => setShowNewsOnChart((prev) => !prev)}
-                className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer ${
-                  showNewsOnChart
-                    ? 'bg-amber-500/25 text-amber-200 border border-amber-400/60 shadow-sm font-semibold'
-                    : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
-                }`}
-                title="Toggle Tier-1 Macro News Events on chart (Filtered to at most latest significant catalyst)"
-              >
-                <span className={`w-1.5 h-1.5 rounded-full ${showNewsOnChart ? 'bg-amber-400 animate-pulse' : 'bg-zinc-500'}`} />
-                <span className="text-gray-400 font-semibold">News:</span>
-                <span className={`font-mono font-bold ${showNewsOnChart ? 'text-amber-300' : 'text-zinc-400'}`}>
-                  {showNewsOnChart ? 'ON' : 'OFF'}
-                </span>
               </button>
               {isCritiqueSessionActiveState && (
                 <>
