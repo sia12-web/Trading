@@ -238,44 +238,6 @@ Fetches or stores persistent Higher Timeframe memory zones.
 
 ---
 
-### 3.3 `POST /api/trading/ai-team`
-Runs the multi-agent AI Stacked consensus engine combining the Macro Strategist, Order Flow Specialist, and Institutional Hedging Model.
-
-- **Request Body**:
-  ```json
-  {
-    "instrument": "NASDAQ",
-    "livePrice": 29012.5,
-    "chartContext": {
-      "instrument": "NASDAQ",
-      "currentPrice": 29012.5,
-      "recentCandles": [...]
-    }
-  }
-  ```
-- **Response Format (`200 OK`)**:
-  ```json
-  {
-    "success": true,
-    "report": {
-      "consensus": "CAUTIOUS_BULLISH",
-      "confidence": 85,
-      "summary": "Dealer gamma flip at 29,012 provides upside acceleration potential.",
-      "tacticalLevels": [
-        { "name": "Dealer Put Wall", "price": 28886.34, "role": "SUPPORT" },
-        { "name": "Zero Gamma Flip", "price": 29012.07, "role": "INFLECTION" }
-      ]
-    },
-    "telemetry": {
-      "gammaRegime": "POSITIVE_GAMMA",
-      "putCallRatio": 0.82,
-      "dealerFlip": 29012.07
-    }
-  }
-  ```
-
----
-
 ## 4. Desk Operational & Attendance Endpoints
 
 ### 4.1 `POST /api/trading/clock-in`

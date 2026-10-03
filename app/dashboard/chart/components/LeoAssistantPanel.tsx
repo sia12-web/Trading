@@ -10,8 +10,6 @@ import {
 } from '@/lib/ai/leoAssistant'
 import { playTradingViewChime, primeAudioContext } from '@/lib/chart/soundEffects'
 import { warningToast } from '@/lib/utils/toastUtils'
-import type { TeamConsensusReport } from '@/lib/ai/stack/types'
-import type { InstitutionalHedgingTelemetry } from '@/lib/ai/stack/models/institutionalHedgingModel'
 import type { DayTypeEvaluation, MarketDayType } from '@/lib/chart/context55'
 import { detectCandlestickPatterns, type Candle } from '@/lib/trading/candlestickPatterns'
 import { isArmedRuleExpired, isNycSessionActive } from '@/lib/trading/sessionGate'
@@ -39,6 +37,7 @@ import {
   resampleCandlesTo5M,
 } from '@/lib/trading/trendlineStrategy'
 import type { UserTrendline } from '@/lib/trading/userDrawings'
+import { WyckoffRulesPanel } from './WyckoffRulesPanel'
 
 export interface ArmedDeskRule {
   id: string
@@ -286,74 +285,8 @@ export function LeoAssistantPanel({
     }
   }, [inputPrompt])
 
-  // Session playbook lifecycle window: Pre-market playbook valid until 09:15 ET; NYC live reaction testing after 09:15 ET
-  const isPreSessionPlaybookWindow = (() => {
-    try {
-      const nyTime = new Date().toLocaleTimeString('en-US', {
-        timeZone: 'America/New_York',
-        hour12: false,
-        hour: '2-digit',
-        minute: '2-digit',
-      })
-      const [hh, mm] = nyTime.split(':').map(Number)
-      const nyDec = (hh || 0) + (mm || 0) / 60
-      return nyDec < 9.25 // Before 09:15 AM ET
-    } catch {
-      return false
-    }
-  })()
-
-  // Multi-Agent Stack (AI Stacked) State
-  const [activeTab, setActiveTab] = useState<'CHAT' | 'AI_STACK'>('CHAT')
-  const [teamReport, setTeamReport] = useState<TeamConsensusReport | null>(null)
-  const [hedgingTelemetry, setHedgingTelemetry] = useState<InstitutionalHedgingTelemetry | null>(null)
-  const [isLoadingTeam, setIsLoadingTeam] = useState(false)
-  const [teamError, setTeamError] = useState<string | null>(null)
-
-  const fetchAiTeamConsensus = async () => {
-    setIsLoadingTeam(true)
-    setTeamError(null)
-    try {
-      const activeCandles = (candlesRef.current && candlesRef.current.length > 0 ? candlesRef.current : candles || []).slice(-100)
-      const res = await fetch('/api/trading/ai-team', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          instrument: context.instrument,
-          livePrice: context.currentPrice,
-          chartContext: context,
-          candles: activeCandles.map((c) => ({
-            time: typeof c.time === 'number' ? c.time : Math.floor(new Date(c.time).getTime() / 1000),
-            open: c.open,
-            high: c.high,
-            low: c.low,
-            close: c.close,
-            volume: c.volume ?? 1,
-          })),
-        }),
-      })
-      const data = await res.json()
-      if (data.success && data.report) {
-        setTeamReport(data.report)
-        setHedgingTelemetry(data.telemetry)
-      } else {
-        setTeamError(data.error || 'Failed to synthesize team consensus')
-      }
-    } catch (e: any) {
-      setTeamError(e?.message || 'Network error fetching team consensus')
-    } finally {
-      setIsLoadingTeam(false)
-    }
-  }
-
-  // Refetch when switching instruments if AI Stack tab is active
-  useEffect(() => {
-    setTeamReport(null)
-    setHedgingTelemetry(null)
-    if (activeTab === 'AI_STACK') {
-      fetchAiTeamConsensus()
-    }
-  }, [context.instrument, activeTab])
+  // Active Panel Tab: Chat vs Wyckoff Strategy Rules (22 Rules Reference)
+  const [activeTab, setActiveTab] = useState<'CHAT' | 'STRATEGY_RULES'>('CHAT')
 
   // Voice state (Web Speech Recognition - Continuous Mode)
   const [isListening, setIsListening] = useState(false)
@@ -1838,7 +1771,6 @@ export function LeoAssistantPanel({
           chartContext: {
             ...context,
             selectedDataPoints: points,
-            hedgingTelemetry: hedgingTelemetry ?? undefined,
           },
         }),
       })
@@ -2082,20 +2014,15 @@ export function LeoAssistantPanel({
             </button>
             <button
               type="button"
-              onClick={() => {
-                setActiveTab('AI_STACK')
-                if (!teamReport && !isLoadingTeam) {
-                  fetchAiTeamConsensus()
-                }
-              }}
+              onClick={() => setActiveTab('STRATEGY_RULES')}
               className={`flex-1 py-1.5 px-2 rounded-lg text-[10.5px] font-mono font-bold transition-all flex items-center justify-center gap-1.5 ${
-                activeTab === 'AI_STACK'
-                  ? 'bg-gradient-to-r from-amber-950/80 to-purple-950/80 text-amber-200 border border-amber-500/60 shadow-sm'
+                activeTab === 'STRATEGY_RULES'
+                  ? 'bg-emerald-950/80 text-emerald-200 border border-emerald-500/60 shadow-sm'
                   : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900/60 border border-transparent'
               }`}
             >
-              <span>🛡️</span>
-              <span>AI Stacked & Hedging</span>
+              <span>📜</span>
+              <span>Wyckoff 22 Rules</span>
             </button>
           </div>
 
@@ -2663,13 +2590,15 @@ export function LeoAssistantPanel({
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setActiveTab('AI_STACK')
-                    if (!teamReport && !isLoadingTeam) fetchAiTeamConsensus()
-                  }}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-950/60 hover:bg-amber-900/80 border border-amber-500/50 text-[9.5px] font-mono text-amber-200 shrink-0 transition shadow-sm"
+                  onClick={() =>
+                    handleSendMessage(
+                      `Leo, audit the 4 Wyckoff execution setups for ${context.instrument} (Spring, Upthrust, Breakout Retest, Breakdown Retest). Tell me if price is interacting with our frozen pre-market Tier 1 zones.`
+                    )
+                  }
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-950/60 hover:bg-emerald-900/80 border border-emerald-500/50 text-[9.5px] font-mono text-emerald-200 shrink-0 transition shadow-sm"
+                  title="Audit 4 Wyckoff setups at frozen Tier 1 zones"
                 >
-                  <span>🛡️</span> Where big guys hedge?
+                  <span>🏛️</span> Audit 4 Setups
                 </button>
                 <button
                   type="button"
@@ -2938,388 +2867,13 @@ export function LeoAssistantPanel({
           </div>
         </>
       ) : (
-        <div className="flex-1 overflow-y-auto p-3 space-y-3 font-sans text-xs flex flex-col min-h-0 select-text">
-          {/* Loading state */}
-          {isLoadingTeam && (
-            <div className="flex flex-col items-center justify-center py-16 space-y-3 text-neutral-400 my-auto">
-              <div className="w-8 h-8 rounded-full border-2 border-purple-500 border-t-transparent animate-spin" />
-              <div className="font-mono text-xs text-purple-300 font-bold">
-                Synthesizing AI Stack & Big Money Telemetry...
-              </div>
-              <div className="text-[10px] text-neutral-500 text-center max-w-[280px]">
-                Auditing dealer gamma, systematic CTA bands, basis arbitrage, and running anti-hallucination verification
-              </div>
-            </div>
-          )}
-
-          {/* Error state */}
-          {!isLoadingTeam && teamError && (
-            <div className="p-3 rounded-xl bg-rose-950/50 border border-rose-800/60 text-rose-300 space-y-2">
-              <div className="font-mono font-bold flex items-center gap-1.5">
-                <span>⚠️</span> Team Consensus Error
-              </div>
-              <div className="text-[11px] text-rose-200">{teamError}</div>
-              <button
-                type="button"
-                onClick={fetchAiTeamConsensus}
-                className="px-2.5 py-1 rounded bg-rose-900 hover:bg-rose-800 text-white font-mono text-[10px]"
-              >
-                Retry Consensus
-              </button>
-            </div>
-          )}
-
-          {/* Empty / Not Loaded Yet */}
-          {!isLoadingTeam && !teamReport && !teamError && (
-            <div className="flex flex-col items-center justify-center py-12 space-y-3 text-neutral-400 my-auto text-center">
-              <span className="text-3xl">🛡️</span>
-              <div className="font-mono text-xs text-neutral-200 font-bold">
-                Institutional Hedging Stack
-              </div>
-              <div className="text-[10px] text-neutral-400 max-w-[260px]">
-                Detect where market makers and systematic CTAs must hedge futures positions on {context.instrument}.
-              </div>
-              <button
-                type="button"
-                onClick={fetchAiTeamConsensus}
-                className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-mono text-xs font-semibold shadow-md transition-all"
-              >
-                Run Team Audit
-              </button>
-            </div>
-          )}
-
-          {/* Report Loaded */}
-          {!isLoadingTeam && teamReport && (
-            <>
-              {/* 0. Session Playbook Lifecycle Window Banner */}
-              <div
-                className={`p-2.5 rounded-xl border space-y-1 shrink-0 ${
-                  isPreSessionPlaybookWindow
-                    ? 'bg-emerald-950/40 border-emerald-800/60'
-                    : 'bg-amber-950/40 border-amber-800/60'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span
-                    className={`font-mono text-[10px] font-bold flex items-center gap-1.5 ${
-                      isPreSessionPlaybookWindow ? 'text-emerald-300' : 'text-amber-300'
-                    }`}
-                  >
-                    <span>{isPreSessionPlaybookWindow ? '🟢' : '🟡'}</span>
-                    {isPreSessionPlaybookWindow
-                      ? 'Pre-Session Playbook Window (Active until 09:15 ET)'
-                      : 'NYC Session Active (Pre-Session Closed at 09:15 ET)'}
-                  </span>
-                  <span
-                    className={`text-[8.5px] font-mono font-bold px-1.5 py-0.5 rounded border ${
-                      isPreSessionPlaybookWindow
-                        ? 'bg-emerald-900/60 text-emerald-300 border-emerald-700/60'
-                        : 'bg-amber-900/60 text-amber-300 border-amber-700/60'
-                    }`}
-                  >
-                    {isPreSessionPlaybookWindow ? 'PLANNING PHASE' : 'REACTION VERIFICATION'}
-                  </span>
-                </div>
-                <div
-                  className={`text-[10px] leading-tight ${
-                    isPreSessionPlaybookWindow ? 'text-emerald-200/80' : 'text-amber-200/80'
-                  }`}
-                >
-                  {isPreSessionPlaybookWindow
-                    ? 'Big Money dealer gamma & CTA triggers establish the pre-market blueprint. Use "Discuss Playbook" to lock your execution plan before cash open.'
-                    : 'Pre-market levels are theoretical until price approaches. Only when the market actually reacts (holds or breaches) does a level become actionable.'}
-                </div>
-              </div>
-
-              {/* 1. Executive Team Consensus Hero Card */}
-              <div className="p-3 rounded-xl bg-neutral-900/90 border border-neutral-800/90 space-y-2 shadow-lg shrink-0">
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-[10px] uppercase tracking-wider text-neutral-400 font-bold flex items-center gap-1">
-                    <span>🏛️</span> Executive Consensus
-                  </span>
-                  <span
-                    className={`px-2 py-0.5 rounded-full font-mono text-[10px] font-extrabold border ${
-                      teamReport.consensusBias === 'BULLISH'
-                        ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/80'
-                        : teamReport.consensusBias === 'BEARISH'
-                        ? 'bg-rose-950/80 text-rose-300 border-rose-700/80'
-                        : teamReport.consensusBias === 'VOLATILE'
-                        ? 'bg-amber-950/80 text-amber-300 border-amber-700/80'
-                        : 'bg-sky-950/80 text-sky-300 border-sky-700/80'
-                    }`}
-                  >
-                    {teamReport.consensusBias} ({teamReport.consensusConfidence}% Conviction)
-                  </span>
-                </div>
-
-                {/* Anti-Hallucination & Consequence Verifier Badge */}
-                <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-neutral-950/80 border border-neutral-800 text-[10px] font-mono">
-                  <div className="flex items-center gap-1.5">
-                    <span className={teamReport.verification.passedVerification ? 'text-emerald-400' : 'text-amber-400'}>
-                      {teamReport.verification.passedVerification ? '🛡️' : '⚠️'}
-                    </span>
-                    <span className="text-neutral-300 font-semibold">Verifier Critic:</span>
-                    <span className={teamReport.verification.passedVerification ? 'text-emerald-300' : 'text-amber-300'}>
-                      {teamReport.verification.passedVerification ? 'Ground Truth Verified' : 'Flags Raised'}
-                    </span>
-                  </div>
-                  <span className="text-neutral-400 font-bold">
-                    {teamReport.verification.groundingScore}% Grounded
-                  </span>
-                </div>
-
-                {/* Any Contradictions / Warnings Detected */}
-                {teamReport.verification.riskConsequences.length > 0 && (
-                  <div className="p-2 rounded-lg bg-amber-950/40 border border-amber-800/50 space-y-1">
-                    <span className="text-[10px] font-mono font-bold text-amber-300 flex items-center gap-1">
-                      <span>⚠️</span> Risk & Contradiction Alerts:
-                    </span>
-                    {teamReport.verification.riskConsequences.map((c, idx) => (
-                      <div key={idx} className="text-[10px] text-amber-200/90 leading-tight">
-                        • {c}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* 2. PLACES THEY MUST ACT (Big Money Institutional Hedging) */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between px-1">
-                  <span className="font-mono text-[10.5px] font-bold text-amber-300 flex items-center gap-1.5">
-                    <span>🎯</span> Places They Must Act (CME Big Money)
-                  </span>
-                  <span className="text-[9px] font-mono text-neutral-500">
-                    Dealer & CTA Triggers
-                  </span>
-                </div>
-
-                {teamReport.placesTheyMustAct.length === 0 ? (
-                  <div className="p-3 rounded-xl bg-neutral-900/60 border border-neutral-800 text-neutral-400 text-center text-xs">
-                    No critical must-act threshold within immediate range.
-                  </div>
-                ) : (
-                  <div className="space-y-1.5">
-                    {teamReport.placesTheyMustAct.map((place, idx) => {
-                      const diff = (context.currentPrice || teamReport.livePrice) - place.price
-                      const diffFormatted = diff >= 0 ? `+${diff.toFixed(1)}` : `${diff.toFixed(1)}`
-
-                      return (
-                        <div
-                          key={idx}
-                          className="p-2.5 rounded-xl bg-neutral-900/80 border border-neutral-800 hover:border-amber-500/50 transition-all space-y-1"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-mono font-extrabold text-sm text-white">
-                                {place.price.toLocaleString()}
-                              </span>
-                              <span
-                                className={`font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border ${
-                                  place.urgency === 'EXTREME'
-                                    ? 'bg-rose-950 text-rose-300 border-rose-700'
-                                    : place.urgency === 'HIGH'
-                                    ? 'bg-amber-950 text-amber-300 border-amber-700'
-                                    : 'bg-sky-950 text-sky-300 border-sky-700'
-                                }`}
-                              >
-                                {place.urgency}
-                              </span>
-                              <span className="font-mono text-[9px] text-purple-300 bg-purple-950/60 border border-purple-800/60 px-1 py-0.5 rounded">
-                                {place.type.replace('_', ' ')}
-                              </span>
-                            </div>
-
-                            <div className="flex items-center gap-1.5">
-                              <span
-                                className={`font-mono text-[10px] font-bold ${
-                                  diff >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                                }`}
-                              >
-                                {diffFormatted} pts
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setAttachedPoints((prev) => [
-                                    ...prev,
-                                    {
-                                      id: `must-act-${place.price}-${idx}`,
-                                      label: place.type,
-                                      value: place.price,
-                                      tier: 'ST',
-                                      category: 'EXTREME',
-                                      description: place.description,
-                                    },
-                                  ])
-                                  setActiveTab('CHAT')
-                                }}
-                                className="px-1.5 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-[9px] font-mono text-neutral-200 transition"
-                                title="Attach this level to Leo Chat"
-                              >
-                                📌 Attach
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="text-[10px] text-neutral-300 leading-relaxed font-sans">
-                            {place.description}
-                          </div>
-
-                          {/* Live Market Reaction Status */}
-                          {place.reactionStatus && (
-                            <div className="flex items-center justify-between mt-1 pt-1 border-t border-neutral-800/70 text-[9px] font-mono">
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <span
-                                  className={`px-1.5 py-0.5 rounded text-[8px] font-extrabold border shrink-0 ${
-                                    place.reactionStatus === 'HELD'
-                                      ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
-                                      : place.reactionStatus === 'BREACHED'
-                                      ? 'bg-rose-950 text-rose-300 border-rose-700'
-                                      : place.reactionStatus === 'TESTING'
-                                      ? 'bg-amber-950 text-amber-300 border-amber-700 animate-pulse'
-                                      : 'bg-neutral-800 text-neutral-400 border-neutral-700'
-                                  }`}
-                                >
-                                  {place.reactionStatus === 'HELD'
-                                    ? '🛡️ HELD / DEFENDED'
-                                    : place.reactionStatus === 'BREACHED'
-                                    ? '⚠️ BREACHED'
-                                    : place.reactionStatus === 'TESTING'
-                                    ? '🎯 TESTING NOW'
-                                    : '⏳ PENDING TEST'}
-                                </span>
-                                <span className="text-neutral-400 truncate">{place.reactionDetail}</span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* 3. MULTI-AGENT SPECIALIST BREAKDOWN */}
-              <div className="space-y-2 pt-1">
-                <div className="font-mono text-[10.5px] font-bold text-purple-300 flex items-center gap-1.5 px-1">
-                  <span>🤖</span> Specialist Breakdown Matrix
-                </div>
-
-                {/* Aegis: Hedging & Gamma */}
-                <div className="p-2.5 rounded-xl bg-neutral-900/70 border border-purple-900/40 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-[10px] font-bold text-purple-200">
-                      Aegis (Hedging & Dealer Positioning)
-                    </span>
-                    <span className="font-mono text-[9px] px-1.5 py-0.2 rounded bg-purple-950 text-purple-300 border border-purple-800">
-                      {teamReport.agentBreakdowns.institutionalHedging.bias}
-                    </span>
-                  </div>
-                  {hedgingTelemetry && (
-                    <div className="grid grid-cols-2 gap-1.5 text-[9.5px] font-mono">
-                      <div className="p-1.5 rounded bg-neutral-950/70 border border-neutral-800/80">
-                        <div className="text-neutral-500 text-[8.5px]">Dealer Gamma</div>
-                        <div className="text-amber-300 font-bold">{hedgingTelemetry.dealerGamma.currentRegime}</div>
-                        <div className="text-neutral-400 text-[8.5px]">Zero: {hedgingTelemetry.dealerGamma.zeroGammaLevel}</div>
-                      </div>
-                      <div className="p-1.5 rounded bg-neutral-950/70 border border-neutral-800/80">
-                        <div className="text-neutral-500 text-[8.5px]">CTA Systematic</div>
-                        <div className="text-sky-300 font-bold">{hedgingTelemetry.ctaBands.trendBias}</div>
-                        <div className="text-neutral-400 text-[8.5px]">Liq: {hedgingTelemetry.ctaBands.ctaLiquidationTrigger}</div>
-                      </div>
-                    </div>
-                  )}
-                  <div className="text-[10px] text-neutral-300 leading-snug">
-                    {teamReport.agentBreakdowns.institutionalHedging.suggestedAction}
-                  </div>
-                </div>
-
-                {/* Leo: Order Flow Microstructure */}
-                <div className="p-2.5 rounded-xl bg-neutral-900/70 border border-sky-900/40 space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-[10px] font-bold text-sky-200">
-                      Leo (Microstructure & Order Flow)
-                    </span>
-                    <span className="font-mono text-[9px] px-1.5 py-0.2 rounded bg-sky-950 text-sky-300 border border-sky-800">
-                      {teamReport.agentBreakdowns.microstructure.bias}
-                    </span>
-                  </div>
-                  <div className="text-[10px] text-neutral-300 leading-snug">
-                    {teamReport.agentBreakdowns.microstructure.thesis}
-                  </div>
-                </div>
-
-                {/* News AI: Macro Sentiment */}
-                <div className="p-2.5 rounded-xl bg-neutral-900/70 border border-amber-900/40 space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-[10px] font-bold text-amber-200">
-                      News AI (Macro Catalysts)
-                    </span>
-                    <span className="font-mono text-[9px] px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 border border-amber-800">
-                      {teamReport.agentBreakdowns.macroNews.bias}
-                    </span>
-                  </div>
-                  <div className="text-[10px] text-neutral-300 leading-snug">
-                    {teamReport.agentBreakdowns.macroNews.thesis}
-                  </div>
-                </div>
-              </div>
-
-              {/* Cost & Refresh Information */}
-              <div className="pt-2 flex items-center justify-between text-[9px] font-mono text-neutral-400 px-1 mt-auto">
-                <span className="flex items-center gap-1">
-                  <span className="text-emerald-400 font-bold">⚡</span>
-                  <span>Free Local Engine ($0.00 API Cost)</span>
-                </span>
-                {teamReport && (
-                  <span className="text-neutral-500">
-                    Computed {new Date(teamReport.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                  </span>
-                )}
-              </div>
-
-              {/* Bottom Actions */}
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={fetchAiTeamConsensus}
-                  disabled={isLoadingTeam}
-                  className="flex-1 py-2 px-3 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-200 font-mono text-[10.5px] font-semibold transition flex items-center justify-center gap-1.5 active:scale-95"
-                  title="Re-evaluates dealer gamma, CTA bands, and live market reactions locally ($0.00 API cost)"
-                >
-                  <span>⚡</span>
-                  <span>Refresh Consensus</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab('CHAT')
-                    if (isPreSessionPlaybookWindow) {
-                      handleSendMessage(
-                        `Leo, walk me through our pre-session hedging playbook around the ${teamReport.placesTheyMustAct.length} must-act levels and our execution rules for ${context.instrument} before the NYC open.`
-                      )
-                    } else {
-                      handleSendMessage(
-                        `Leo, the NYC session is active (pre-session window closed at 09:15 ET). Review how the market is actually reacting to our must-act levels: which levels have held, which have breached, and how does this affect our active trade management on ${context.instrument}?`
-                      )
-                    }
-                  }}
-                  className="flex-1 py-2 px-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-mono text-[10.5px] font-bold transition flex items-center justify-center gap-1.5 active:scale-95 shadow-md"
-                  title={
-                    isPreSessionPlaybookWindow
-                      ? 'Discuss pre-session game plan before cash open'
-                      : 'Discuss live market reactions to must-act levels (pre-session window closed at 09:15 ET)'
-                  }
-                >
-                  <span>💬</span>
-                  <span>{isPreSessionPlaybookWindow ? 'Discuss Playbook' : 'Discuss Live Reactions'}</span>
-                </button>
-              </div>
-            </>
-          )}
-        </div>
+        <WyckoffRulesPanel
+          instrument={context.instrument}
+          onAskLeo={(prompt: string) => {
+            setActiveTab('CHAT')
+            handleSendMessage(prompt)
+          }}
+        />
       )}
     </div>
   )}
