@@ -17,6 +17,111 @@ import type {
   RadarMarket,
 } from '@/lib/trading/crossMarketRadar'
 
+export interface GlobexSessionStatus {
+  isOpen: boolean
+  sessionName: 'ASIA' | 'LONDON' | 'NEW_YORK' | 'CLOSED'
+  statusBadge: string
+  subText: string
+  etTimeStr: string
+}
+
+export function getGlobexSessionStatus(): GlobexSessionStatus {
+  const now = new Date()
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    weekday: 'short',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false,
+  })
+
+  const parts = formatter.formatToParts(now)
+  let weekday = 'Sun'
+  let hour = 0
+  let minute = 0
+
+  for (const part of parts) {
+    if (part.type === 'weekday') weekday = part.value
+    if (part.type === 'hour') hour = parseInt(part.value, 10)
+    if (part.type === 'minute') minute = parseInt(part.value, 10)
+  }
+
+  const totalMinutes = hour * 60 + minute
+  const etTimeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')} ET`
+
+  // Weekend Close: Friday 17:00 ET through Sunday 18:00 ET
+  if (weekday === 'Fri' && hour >= 17) {
+    return {
+      isOpen: false,
+      sessionName: 'CLOSED',
+      statusBadge: '🌙 MARKET CLOSED',
+      subText: 'Weekend Close · Resumes Sun 18:00 ET',
+      etTimeStr,
+    }
+  }
+  if (weekday === 'Sat') {
+    return {
+      isOpen: false,
+      sessionName: 'CLOSED',
+      statusBadge: '🌙 MARKET CLOSED',
+      subText: 'Weekend Close · Resumes Sun 18:00 ET',
+      etTimeStr,
+    }
+  }
+  if (weekday === 'Sun' && hour < 18) {
+    return {
+      isOpen: false,
+      sessionName: 'CLOSED',
+      statusBadge: '🌙 MARKET CLOSED',
+      subText: 'Weekend Close · Resumes 18:00 ET (Asia Open)',
+      etTimeStr,
+    }
+  }
+
+  // Daily Settlement Halt: Monday through Thursday 17:00 to 18:00 ET
+  if (['Mon', 'Tue', 'Wed', 'Thu'].includes(weekday) && hour >= 17 && hour < 18) {
+    return {
+      isOpen: false,
+      sessionName: 'CLOSED',
+      statusBadge: '⏸️ DAILY HALT',
+      subText: 'CME Settlement · Resumes 18:00 ET',
+      etTimeStr,
+    }
+  }
+
+  // Active Globex Sessions:
+  // Asia Session: 18:00 to 03:00 ET
+  if (hour >= 18 || hour < 3) {
+    return {
+      isOpen: true,
+      sessionName: 'ASIA',
+      statusBadge: '🟢 ASIA LIVE',
+      subText: 'Asia / Tokyo Session (18:00 - 03:00 ET)',
+      etTimeStr,
+    }
+  }
+
+  // London Session: 03:00 to 09:30 ET
+  if (hour >= 3 && totalMinutes < 9 * 60 + 30) {
+    return {
+      isOpen: true,
+      sessionName: 'LONDON',
+      statusBadge: '🟢 LONDON LIVE',
+      subText: 'London / European Session (03:00 - 09:30 ET)',
+      etTimeStr,
+    }
+  }
+
+  // New York Session: 09:30 to 17:00 ET
+  return {
+    isOpen: true,
+    sessionName: 'NEW_YORK',
+    statusBadge: '🟢 NY REGULAR LIVE',
+    subText: 'US Cash Session (09:30 - 17:00 ET)',
+    etTimeStr,
+  }
+}
+
 interface CrossMarketRadarStripProps {
   currentInstrument: string
   onSelectInstrument?: (instrument: string) => void
@@ -32,6 +137,7 @@ export function CrossMarketRadarStrip({
   const [radar, setRadar] = useState<CrossMarketRadarReport | null>(null)
   const [selectedCard, setSelectedCard] = useState<MarketOpportunityCard | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [sessionStatus, setSessionStatus] = useState<GlobexSessionStatus>(getGlobexSessionStatus)
 
   useEffect(() => {
     let isMounted = true
@@ -54,9 +160,14 @@ export function CrossMarketRadarStrip({
 
     fetchRadarData()
     const timer = setInterval(fetchRadarData, 30_000)
+    const sessionTimer = setInterval(() => {
+      setSessionStatus(getGlobexSessionStatus())
+    }, 10_000)
+
     return () => {
       isMounted = false
       clearInterval(timer)
+      clearInterval(sessionTimer)
     }
   }, [])
 
@@ -130,6 +241,26 @@ export function CrossMarketRadarStrip({
           </div>
         </div>
 
+        {/* Center: Globex Session Status Indicator */}
+        <div
+          className={`px-2.5 py-0.5 rounded border text-[10.5px] font-mono flex items-center gap-1.5 shrink-0 transition-all ${
+            sessionStatus.isOpen
+              ? 'border-emerald-500/50 bg-emerald-950/40 text-emerald-300'
+              : 'border-amber-600/50 bg-amber-950/50 text-amber-300'
+          }`}
+          title={`${sessionStatus.subText} · ${sessionStatus.etTimeStr}`}
+        >
+          <span
+            className={`w-1.5 h-1.5 rounded-full ${
+              sessionStatus.isOpen ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+            }`}
+          />
+          <span className="font-extrabold">{sessionStatus.statusBadge}</span>
+          <span className="text-[9.5px] text-gray-400 hidden xl:inline">
+            ({sessionStatus.subText})
+          </span>
+        </div>
+
         {/* Right: 5-Market Opportunity Radar */}
         <div className="flex items-center gap-1.5 overflow-x-auto font-mono">
           <span className="text-[9px] uppercase tracking-wider text-gray-400 font-bold mr-1">
@@ -173,7 +304,11 @@ export function CrossMarketRadarStrip({
                 className={`relative px-2 py-0.5 rounded text-[10.5px] border flex items-center gap-1 transition ${badgeBg} ${
                   isCurrent ? 'ring-1 ring-white/60' : ''
                 }`}
-                title={`Click to inspect ${m.contractLabel} (${m.summaryLine})`}
+                title={
+                  !sessionStatus.isOpen
+                    ? `[OFF-SESSION · Prior Friday Close] Click to inspect ${m.contractLabel} (${m.summaryLine})`
+                    : `Click to inspect ${m.contractLabel} (${m.summaryLine})`
+                }
               >
                 {m.isTopPick && (
                   <span className="text-[9px] text-amber-300 font-extrabold animate-bounce">★</span>
@@ -228,7 +363,18 @@ export function CrossMarketRadarStrip({
       {/* Detail Popover Drawer */}
       {selectedCard && (
         <div className="px-3 py-2 border-t border-surface-800 bg-surface-900/95 flex flex-col md:flex-row md:items-center justify-between gap-2 text-[11px] animate-fadeIn">
-          <div className="flex-1 space-y-1">
+          <div className="flex-1 space-y-1.5">
+            {!sessionStatus.isOpen && (
+              <div className="px-2.5 py-1 bg-amber-950/40 border border-amber-500/40 rounded text-[10.5px] text-amber-200 flex items-center gap-2">
+                <span className="text-sm shrink-0">🌙</span>
+                <span className="leading-tight">
+                  <strong className="text-amber-300">Market is Currently Closed ({sessionStatus.subText}).</strong>{' '}
+                  <span className="text-gray-300">
+                    Grade and metrics shown reflect Friday&apos;s close. Live participation and real-time triggers will activate when the Globex session opens (Sun 18:00 ET Asia / Mon 03:00 ET London / 09:30 ET NY).
+                  </span>
+                </span>
+              </div>
+            )}
             <div className="flex items-center gap-2">
               <span className="font-extrabold text-white text-xs">
                 {selectedCard.contractLabel}

@@ -1419,7 +1419,7 @@ export function TradingChart({
   const draftMousePosRef = useRef<{ time: number; price: number; x: number; y: number } | null>(null)
   const [drawingsPanelOpen, setDrawingsPanelOpen] = useState(false)
   const [drawingToast, setDrawingToast] = useState<{
-    type: 'TRENDLINE' | 'RANGE' | 'FRVP'
+    type: 'TRENDLINE' | 'RANGE' | 'FRVP' | 'AVWAP_5M'
     id: string
     label: string
     summary: string
@@ -1530,9 +1530,10 @@ export function TradingChart({
   const paintFrvp5dRef = useRef<(overrideBars?: OHLCV[]) => void>(() => { })
   const [avwap5mBenchmark, setAvwap5mBenchmark] = useState<AnchoredVwapBenchmark5M | null>(null)
   const [show5mAvwapModal, setShow5mAvwapModal] = useState(false)
-  const [show5mAvwapOnChart, setShow5mAvwapOnChart] = useState(false) // Controlled by bottom dock button
+  const [show5mAvwapOnChart, setShow5mAvwapOnChart] = useState(false)
+  const [avwap5mBandCount, setAvwap5mBandCount] = useState<2 | 3>(3) // 2 or 3 standard deviation bands
   const [showNewsOnChart, setShowNewsOnChart] = useState(false) // News markers off by default; filtered to latest Tier-1 event
-  const [showSdBands, setShowSdBands] = useState(false) // Standard Deviation bands ("CDs") off by default (clean desk)
+  const [showSdBands, setShowSdBands] = useState(true) // Standard Deviation bands enabled with AVWAP
   const avwap5mLinesRef = useRef<IPriceLine[]>([])
   const paint5mAvwapBenchmarkRef = useRef<() => void>(() => { })
   const showVwap = true
@@ -2644,28 +2645,107 @@ export function TradingChart({
       }
     }
     avwap5mLinesRef.current = []
-    // Keep 5-Month AVWAP invisible on chart unless user explicitly turns it on
+    // Keep 5-Month AVWAP and bands invisible on chart unless user explicitly turns it on
     if (!show5mAvwapOnChart) return
 
-    const price =
-      avwap5mBenchmark?.vwap ??
-      (timeframe === '1D' && latestVwapBandsRef.current?.lastVwap ? latestVwapBandsRef.current.lastVwap : null)
+    const bm = avwap5mBenchmark
+    const fallbackPrice =
+      timeframe === '1D' && latestVwapBandsRef.current?.lastVwap ? latestVwapBandsRef.current.lastVwap : null
+    const price = bm?.vwap ?? fallbackPrice
     if (!host || !price) return
 
     try {
+      // 1. Central 5-Month Anchored VWAP (Macro Benchmark)
       const vwapLine = host.createPriceLine({
-        price,
+        price: Number(price.toFixed(2)),
         color: '#10b981',
-        lineWidth: 1,
-        lineStyle: LineStyle.Dashed,
+        lineWidth: 2,
+        lineStyle: LineStyle.Solid,
         axisLabelVisible: true,
         title: `5M AVWAP ${price.toLocaleString()}`,
       })
       avwap5mLinesRef.current.push(vwapLine)
+
+      // 2. Standard Deviation Bands (±1σ, ±2σ, and optional ±3σ)
+      if (bm && showSdBands) {
+        // ±1σ Bands (68% Value Area)
+        if (Number.isFinite(bm.sigma1Upper)) {
+          const u1 = host.createPriceLine({
+            price: Number(bm.sigma1Upper.toFixed(2)),
+            color: '#34d399',
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: `5M +1σ ${bm.sigma1Upper.toLocaleString()}`,
+          })
+          avwap5mLinesRef.current.push(u1)
+        }
+        if (Number.isFinite(bm.sigma1Lower)) {
+          const l1 = host.createPriceLine({
+            price: Number(bm.sigma1Lower.toFixed(2)),
+            color: '#34d399',
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: `5M -1σ ${bm.sigma1Lower.toLocaleString()}`,
+          })
+          avwap5mLinesRef.current.push(l1)
+        }
+
+        // ±2σ Bands (95% Value Area / Exhaustion Extremes)
+        if (Number.isFinite(bm.sigma2Upper)) {
+          const u2 = host.createPriceLine({
+            price: Number(bm.sigma2Upper.toFixed(2)),
+            color: '#06b6d4',
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: `5M +2σ ${bm.sigma2Upper.toLocaleString()}`,
+          })
+          avwap5mLinesRef.current.push(u2)
+        }
+        if (Number.isFinite(bm.sigma2Lower)) {
+          const l2 = host.createPriceLine({
+            price: Number(bm.sigma2Lower.toFixed(2)),
+            color: '#06b6d4',
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: `5M -2σ ${bm.sigma2Lower.toLocaleString()}`,
+          })
+          avwap5mLinesRef.current.push(l2)
+        }
+
+        // ±3σ Bands (99.7% Tail Extreme - rendered in 3-band mode)
+        if (avwap5mBandCount === 3) {
+          if (bm.sigma3Upper && Number.isFinite(bm.sigma3Upper)) {
+            const u3 = host.createPriceLine({
+              price: Number(bm.sigma3Upper.toFixed(2)),
+              color: '#818cf8',
+              lineWidth: 1,
+              lineStyle: LineStyle.LargeDashed,
+              axisLabelVisible: true,
+              title: `5M +3σ ${bm.sigma3Upper.toLocaleString()}`,
+            })
+            avwap5mLinesRef.current.push(u3)
+          }
+          if (bm.sigma3Lower && Number.isFinite(bm.sigma3Lower)) {
+            const l3 = host.createPriceLine({
+              price: Number(bm.sigma3Lower.toFixed(2)),
+              color: '#818cf8',
+              lineWidth: 1,
+              lineStyle: LineStyle.LargeDashed,
+              axisLabelVisible: true,
+              title: `5M -3σ ${bm.sigma3Lower.toLocaleString()}`,
+            })
+            avwap5mLinesRef.current.push(l3)
+          }
+        }
+      }
     } catch {
       /* ignore */
     }
-  }, [timeframe, avwap5mBenchmark, show5mAvwapOnChart])
+  }, [timeframe, avwap5mBenchmark, show5mAvwapOnChart, showSdBands, avwap5mBandCount])
 
   // ── Precompute Overlay Analytics (Offload from scroll/zoom hot path) ──────────
   useEffect(() => {
@@ -5363,13 +5443,31 @@ export function TradingChart({
 
   // ── Ask Leo about a user-drawn tool (Trendline, Range, FRVP) ───────────────
   const handleAskLeoAboutDrawing = useCallback(
-    (type: 'TRENDLINE' | 'RANGE' | 'FRVP', id: string) => {
+    (type: 'TRENDLINE' | 'RANGE' | 'FRVP' | 'AVWAP_5M', id: string) => {
       const curPrice =
         livePrice ??
         lastCandleRef.current?.close ??
         candlesRef.current[candlesRef.current.length - 1]?.close ??
         0
       const curTime = Math.floor(Date.now() / 1000)
+
+      if (type === 'AVWAP_5M') {
+        const p = curPrice
+        const v = avwap5mBenchmark?.vwap ?? 0
+        const diff = (p - v).toFixed(2)
+        setLeoExternalPoints([
+          {
+            id: '5m-avwap-benchmark',
+            label: `5M AVWAP (${instrument})`,
+            value: `${v.toLocaleString()} (Delta: ${diff})`,
+            tier: 'LT',
+            category: 'VWAP',
+            description: `5-Month CME Globex Anchored VWAP is ${v.toLocaleString()}. Current Price is ${p.toLocaleString()} (${Number(diff) >= 0 ? '+' : ''}${diff} pts vs AVWAP). Bands: +1σ ${avwap5mBenchmark?.sigma1Upper?.toLocaleString() ?? 'N/A'}, -1σ ${avwap5mBenchmark?.sigma1Lower?.toLocaleString() ?? 'N/A'}, +2σ ${avwap5mBenchmark?.sigma2Upper?.toLocaleString() ?? 'N/A'}, -2σ ${avwap5mBenchmark?.sigma2Lower?.toLocaleString() ?? 'N/A'}, +3σ ${avwap5mBenchmark?.sigma3Upper?.toLocaleString() ?? 'N/A'}, -3σ ${avwap5mBenchmark?.sigma3Lower?.toLocaleString() ?? 'N/A'}.`,
+          },
+        ])
+        setLeoPanelOpen(true)
+        return
+      }
 
       if (type === 'TRENDLINE') {
         const tl = trendlines.find((t) => t.id === id)
@@ -5465,7 +5563,7 @@ export function TradingChart({
         setLeoPanelOpen(true)
       }
     },
-    [trendlines, rangeBoxes, manualFrvps, livePrice]
+    [trendlines, rangeBoxes, manualFrvps, livePrice, instrument, avwap5mBenchmark]
   )
 
   const handleAskLeoAboutMemory = useCallback(
@@ -12696,6 +12794,60 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   </span>
                 )}
               </button>
+              <span className="text-gray-600 text-[10px]">|</span>
+              {/* 5-Month Anchored VWAP & Standard Deviation Bands (±1σ, ±2σ, ±3σ) Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!avwap5mBenchmark) {
+                    fetch(`/api/trading/context-55?instrument=${instrument}`)
+                      .then((r) => r.json())
+                      .then((d) => {
+                        if (d?.ok && d.avwap5m) {
+                          setAvwap5mBenchmark(d.avwap5m)
+                        }
+                      })
+                      .catch(() => {})
+                  }
+                  setShow5mAvwapOnChart((prev) => {
+                    const next = !prev
+                    setDrawingToast({
+                      type: 'AVWAP_5M',
+                      id: 'avwap-5m-toggle',
+                      label: next ? '5M AVWAP & Bands Enabled' : '5M AVWAP & Bands Disabled',
+                      summary: next
+                        ? `5-Month Anchored VWAP + ±1σ, ±2σ, ±3σ standard deviation bands rendered on chart`
+                        : `5-Month Anchored VWAP and bands removed from chart`,
+                    })
+                    return next
+                  })
+                }}
+                className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer ${
+                  show5mAvwapOnChart
+                    ? 'bg-emerald-500/25 text-emerald-200 border border-emerald-400/60 shadow-sm font-semibold'
+                    : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
+                }`}
+                title="Toggle 5-Month Anchored VWAP & Standard Deviation Bands (±1σ, ±2σ, ±3σ) on chart"
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${show5mAvwapOnChart ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-500'}`} />
+                <span className="text-gray-400 font-semibold">5M AVWAP:</span>
+                <span className={`font-mono font-bold ${show5mAvwapOnChart ? 'text-emerald-300' : 'text-zinc-400'}`}>
+                  {show5mAvwapOnChart ? 'ON' : 'OFF'}
+                </span>
+                {avwap5mBenchmark && (
+                  <span className="text-[10px] font-mono text-emerald-400/90 hidden sm:inline">
+                    {avwap5mBenchmark.vwap.toLocaleString()}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShow5mAvwapModal((prev) => !prev)}
+                className="px-1 py-0.5 rounded text-[10px] text-zinc-400 hover:text-white hover:bg-zinc-800 transition cursor-pointer"
+                title="View 5-Month AVWAP Macro Stats & Institutional Value Levels"
+              >
+                ℹ️
+              </button>
               {isCritiqueSessionActiveState && (
                 <>
                   <span className="text-gray-600 text-[10px]">|</span>
@@ -14074,40 +14226,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           )
         })()}
 
-        {/* Floating Bottom Control Dock: 5M AVWAP & News Clean Toggles */}
+        {/* Floating Bottom Control Dock: News Clean Toggle */}
         <div className="absolute bottom-2.5 left-3 z-20 flex items-center gap-1.5 bg-neutral-950/85 backdrop-blur-md border border-neutral-800/90 rounded-lg p-1 shadow-xl select-none">
-          {/* 5-Month Anchored VWAP toggle (Clean line, NO SDs / "CDs") */}
-          <button
-            type="button"
-            onClick={() => setShow5mAvwapOnChart((prev) => !prev)}
-            className={`px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide transition flex items-center gap-1.5 cursor-pointer ${
-              show5mAvwapOnChart
-                ? 'bg-emerald-500/25 border border-emerald-500/50 text-emerald-200 shadow-sm'
-                : 'bg-neutral-900 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-400 hover:text-neutral-200'
-            }`}
-            title="Toggle 5-Month Anchored VWAP line on chart (SD bands disabled for clean desk)"
-          >
-            <span className={`w-1.5 h-1.5 rounded-full ${show5mAvwapOnChart ? 'bg-emerald-400 animate-pulse' : 'bg-neutral-600'}`} />
-            <span>5M AVWAP</span>
-            <span className={`font-mono text-[9px] px-1 py-0.2 rounded border ${
-              show5mAvwapOnChart ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-300' : 'bg-neutral-800 border-neutral-700 text-neutral-400'
-            }`}>
-              {show5mAvwapOnChart ? 'ON' : 'OFF'}
-            </span>
-          </button>
-
-          {/* Details / Benchmark info modal opener */}
-          <button
-            type="button"
-            onClick={() => setShow5mAvwapModal((prev) => !prev)}
-            className="px-1 py-0.5 rounded text-[9px] font-mono text-neutral-500 hover:text-neutral-300 hover:bg-neutral-800 border border-transparent hover:border-neutral-700 transition cursor-pointer"
-            title="View 5-Month AVWAP Macro Stats & Institutional Value Levels"
-          >
-            ℹ️
-          </button>
-
-          <span className="text-neutral-700 text-[10px]">|</span>
-
           {/* News Markers Toggle */}
           <button
             type="button"
@@ -15246,7 +15366,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   <div className="flex items-center justify-between p-3 rounded-xl bg-zinc-900/90 border border-zinc-800 text-[11px]">
                     <div className="flex flex-wrap items-center gap-4">
                       <div className="flex items-center gap-2">
-                        <span className="text-zinc-400">AVWAP Line:</span>
+                        <span className="text-zinc-400">5M AVWAP & Bands:</span>
                         <label className="flex items-center gap-2 cursor-pointer select-none">
                           <input
                             type="checkbox"
@@ -15260,7 +15380,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                         </label>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-zinc-400">±1/2/3σ Bands:</span>
+                        <span className="text-zinc-400">SD Bands:</span>
                         <label className="flex items-center gap-2 cursor-pointer select-none">
                           <input
                             type="checkbox"
@@ -15268,10 +15388,37 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                             onChange={(e) => setShowSdBands(e.target.checked)}
                             className="rounded border-zinc-700 bg-zinc-800 text-cyan-500 focus:ring-cyan-500 focus:ring-offset-0 cursor-pointer"
                           />
-                          <span className={showSdBands ? 'text-cyan-300 font-semibold' : 'text-zinc-500'}>
-                            {showSdBands ? 'SD Bands Shown' : 'Suppressed (Default)'}
+                          <span className={showSdBands ? 'text-cyan-300 font-semibold' : 'text-zinc-400'}>
+                            {showSdBands ? 'Bands ON' : 'Bands OFF'}
                           </span>
                         </label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-zinc-400">Band Count:</span>
+                        <div className="flex items-center gap-1 bg-zinc-800 p-0.5 rounded border border-zinc-700">
+                          <button
+                            type="button"
+                            onClick={() => setAvwap5mBandCount(2)}
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer transition ${
+                              avwap5mBandCount === 2
+                                ? 'bg-cyan-500 text-slate-950 shadow'
+                                : 'text-zinc-400 hover:text-white'
+                            }`}
+                          >
+                            2 Bands (±1σ, ±2σ)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAvwap5mBandCount(3)}
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer transition ${
+                              avwap5mBandCount === 3
+                                ? 'bg-cyan-500 text-slate-950 shadow'
+                                : 'text-zinc-400 hover:text-white'
+                            }`}
+                          >
+                            3 Bands (±1σ, ±2σ, ±3σ)
+                          </button>
+                        </div>
                       </div>
                     </div>
                     <div className="text-[10px] text-zinc-500 font-mono flex items-center gap-1.5">
