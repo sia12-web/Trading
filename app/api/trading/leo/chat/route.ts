@@ -12,7 +12,6 @@ import {
   compareMultipleRanges,
   formatRangeVolumeComparisonReport,
 } from '@/lib/trading/rangeVolumeComparison'
-import { buildInstitutionalHedgingTelemetry } from '@/lib/ai/stack/models/institutionalHedgingModel'
 import { getCrossMarketVolatility } from '@/lib/trading/crossMarketVolatility'
 import { buildCrossMarketRadarReport } from '@/lib/trading/crossMarketRadar'
 
@@ -101,29 +100,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // 4. Institutional Hedging Telemetry injection for Leo
-      if (!chartContext.hedgingTelemetry) {
-        try {
-          const bars = chartContext.recentCandles || []
-          chartContext.hedgingTelemetry = buildInstitutionalHedgingTelemetry({
-            instrument: chartContext.instrument,
-            currentPrice: chartContext.currentPrice ?? 20000,
-            candles: bars.map((b) => ({
-              time: b.time,
-              open: b.open,
-              high: b.high,
-              low: b.low,
-              close: b.close,
-              volume: b.volume ?? 1,
-            })),
-            observedBasis: null,
-          })
-        } catch {
-          // ignore hedging telemetry computation errors
-        }
-      }
-
-      // 5. Cross-Asset Volatility & 5-Market Radar Telemetry injection
+      // 4. Cross-Asset Volatility & 5-Market Radar Telemetry injection
       if (!chartContext.crossMarketVolatility) {
         try {
           const vol = await getCrossMarketVolatility()
