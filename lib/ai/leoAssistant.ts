@@ -663,13 +663,8 @@ export function extractChartDataPoints(ctx: LeoChatContext): LeoDataPoint[] {
   // 6. User-Drawn Chart Tools & Manual References
   if (ctx.userDrawings) {
     for (const t of ctx.userDrawings.trendlines) {
-      const isAction = Boolean(t.isActionTrendline || t.isInitialOvernight)
-      const isReaction = Boolean(t.isReactionTrendline)
-      const typeLabel = isReaction
-        ? '📐 Reaction Trendline'
-        : isAction
-        ? `🎯 ${t.label || 'Action Trendline (Initial)'}`
-        : (t.label || 'Trendline')
+      const isSpring = Boolean(t.label?.toLowerCase().includes('spring') || t.slopeDirection === 'ASCENDING')
+      const typeLabel = `📐 ${t.label || (isSpring ? 'Trendline (Spring Origin)' : 'Trendline (Upthrust Origin)')}`
 
       const runwayDesc = t.horizontalRunway
         ? ` Runway: ${t.horizontalRunway.runwayPts.toFixed(1)} pts (${t.horizontalRunway.runwayRatio}:1 R:R, ${t.horizontalRunway.quality}). Target: ${t.horizontalRunway.nearestTargetLabel ?? 'N/A'}.`
@@ -684,11 +679,7 @@ export function extractChartDataPoints(ctx: LeoChatContext): LeoDataPoint[] {
         value: `${t.startPrice.toLocaleString()} → ${t.endPrice.toLocaleString()}`,
         tier: 'DRAWING',
         category: 'TRENDLINE',
-        description: isAction
-          ? `🎯 INITIAL ACTION TRENDLINE [${t.slopeDirection}]: Hand-drawn action line. Projected level: ${t.projectedPrice}. Price is ${t.priceRelation} (${t.distancePts != null ? `${t.distancePts} pts` : ''}).${runwayDesc}${velocityDesc}`
-          : isReaction
-          ? `📐 REACTION TRENDLINE [${t.slopeDirection}]: Trailing exit / momentum guide. Projected level: ${t.projectedPrice}. Price is ${t.priceRelation}.${runwayDesc}${velocityDesc}`
-          : `Manual Trendline [${t.slopeDirection}]: ${t.startTimeEt} to ${t.endTimeEt} (${t.slopePtsPer5mBar >= 0 ? '+' : ''}${t.slopePtsPer5mBar} pts/5m). Price is ${t.priceRelation} (${t.distancePts != null ? `${t.distancePts} pts` : ''}).${runwayDesc}${velocityDesc}`,
+        description: `Trendline [${t.slopeDirection}]: ${t.startTimeEt} to ${t.endTimeEt} (${t.slopePtsPer5mBar >= 0 ? '+' : ''}${t.slopePtsPer5mBar} pts/5m). Origin: ${isSpring ? 'Spring (Support Sweep)' : 'Upthrust (Resistance Sweep)'}. Projected level: ${t.projectedPrice}. Price is ${t.priceRelation} (${t.distancePts != null ? `${t.distancePts} pts` : ''}).${runwayDesc}${velocityDesc}`,
       })
     }
     for (const r of ctx.userDrawings.ranges) {
@@ -1234,7 +1225,7 @@ ${
               'MANUAL TRENDLINES:',
               ...ctx.userDrawings.trendlines.map(
                 (t) =>
-                  `- ${t.isActionTrendline ? '🎯 [INITIAL ACTION TRENDLINE FROM OVERNIGHT]' : (t.label || 'Trendline')}: Start ${t.startPrice} (${t.startTimeEt}) → End ${t.endPrice} (${t.endTimeEt}) [${t.slopeDirection}, ${t.slopePtsPer5mBar >= 0 ? '+' : ''}${t.slopePtsPer5mBar} pts/5m]. Projected level: ${t.projectedPrice}. Current price is ${t.priceRelation} (${t.distancePts != null ? `${t.distancePts} pts` : ''}).${t.isActionTrendline ? ' (Armed for NYC Systematic Breakout Reaction)' : ''}`
+                  `- ${t.label || 'Trendline'}: Start ${t.startPrice} (${t.startTimeEt}) → End ${t.endPrice} (${t.endTimeEt}) [${t.slopeDirection}, ${t.slopePtsPer5mBar >= 0 ? '+' : ''}${t.slopePtsPer5mBar} pts/5m]. Projected level: ${t.projectedPrice}. Current price is ${t.priceRelation} (${t.distancePts != null ? `${t.distancePts} pts` : ''}).`
               ),
             ]
           : []),

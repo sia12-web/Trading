@@ -100,7 +100,7 @@ import type { UserTrendline } from '../lib/trading/userDrawings'
   // Find next target for long at 4212 with 10 pts risk
   const targetLong = findNextStructuralTarget(4212, 'LONG', zones, 10)
   assert.ok(targetLong.targetPrice > 4212, 'Target must be above entry')
-  assert.equal(targetLong.targetZoneLabel, '5M-AVWAP') // 4235 is the first major zone above 4212 + 4
+  assert.equal(targetLong.targetZoneLabel, 'ON-POC') // Overnight POC (4240) is the first structural zone above 4212 + 8
 }
 
 // 3. Setup 1: Wyckoff Spring at Demand Line with CVD Absorption & >= 2R Room
@@ -234,4 +234,137 @@ import type { UserTrendline } from '../lib/trading/userDrawings'
   assert.ok(setup.badgeText.includes('Upthrust'))
 }
 
+// 6. Trendline drawn from a Spring: All Factors & Points Scoring (0-100 pts)
+{
+  const springTl: UserTrendline = {
+    id: 'tl-spring-scored',
+    type: 'TRENDLINE',
+    p1: { time: 1900, price: 4203 }, // P1 anchored directly at the Spring low
+    p2: { time: 2500, price: 4220 }, // Projecting upward
+  }
+
+  const bars: WyckoffBar[] = [
+    { time: 1000, open: 4215, high: 4218, low: 4211, close: 4214, volume: 1000, cvd: 100 },
+    { time: 1300, open: 4214, high: 4216, low: 4210, close: 4212, volume: 1100, cvd: 90 },
+    { time: 1600, open: 4212, high: 4213, low: 4208, close: 4210, volume: 1500, cvd: 70 },
+    // Spring Sweep Candle: Low 4203, long 60% bottom wick, high volume 4800, CVD plunged -220
+    { time: 1900, open: 4210, high: 4211, low: 4203, close: 4209, volume: 4800, cvd: -220 },
+    { time: 2200, open: 4209, high: 4216, low: 4208, close: 4215, volume: 3500, cvd: -180 },
+  ]
+
+  const mockCtx: WyckoffChartContext = {
+    frvp5d: {
+      poc: 4255,
+      vah: 4290,
+      val: 4210, // Spring sweeps 4210 VAL
+      high: 4310,
+      low: 4180,
+      totalVolume: 500000,
+      buyVolume: 250000,
+      sellVolume: 250000,
+      bins: [],
+      timeStart: 0,
+      timeEnd: 0,
+    },
+    yesterday: {
+      date: '2026-10-01',
+      openUnix: 0,
+      closeUnix: 0,
+      yh: 4295,
+      yl: 4205,
+      poc: 4250,
+      vah: 4285,
+      val: 4210, // Yesterday VAL confluence
+      profile: null as any,
+    },
+    avwap5m: {
+      vwap: 4215, // Proximal to 5M AVWAP
+      sigma1Upper: 4240,
+      sigma1Lower: 4190,
+      sigma2Upper: 4265,
+      sigma2Lower: 4165,
+      sigma3Upper: 4290,
+      sigma3Lower: 4140,
+      anchorTimestamp: 0,
+    },
+  }
+
+  // Import directly or call
+  const { evaluateSpringOrUpthrustTrendline } = require('../lib/trading/wyckoffStrategy')
+  const evalResult = evaluateSpringOrUpthrustTrendline(springTl, bars, mockCtx)
+
+  assert.equal(evalResult.originType, 'SPRING')
+  assert.ok(evalResult.totalScore >= 75, `Spring total score should be high quality (got ${evalResult.totalScore})`)
+  assert.ok(['A+', 'A'].includes(evalResult.grade), `Grade should be A or A+ (got ${evalResult.grade})`)
+  assert.ok(evalResult.factors.location.score >= 10, 'Location should award points for zone sweep')
+  assert.ok(evalResult.factors.volumeEffortVsResult.score >= 15, 'Volume should award high points for RVOL')
+  assert.ok(evalResult.factors.candleExcess.score >= 14, 'Candle excess tail should award high points')
+  assert.ok(evalResult.factors.cvdAbsorption.score >= 10, 'CVD absorption should award points')
+  assert.ok(evalResult.factors.avwap5m.score >= 7, 'AVWAP proximity should award points')
+  assert.ok(evalResult.factors.roundNumber.score >= 4, 'Century handle $4200 should award points')
+  assert.ok(evalResult.is2RValid, 'Must have >= 2R room to 5D POC')
+  assert.ok(evalResult.stopLoss <= 4203, 'Stop loss must be below spring low')
+  assert.ok(evalResult.badgeLabel.includes('Spring'), 'Badge label must state Spring')
+  assert.ok(evalResult.badgeLabel.includes('pts'), 'Badge label must state points score')
+}
+
+// 7. Trendline drawn from an Upthrust: All Factors & Points Scoring (0-100 pts)
+{
+  const upthrustTl: UserTrendline = {
+    id: 'tl-upthrust-scored',
+    type: 'TRENDLINE',
+    p1: { time: 1600, price: 4297 }, // P1 anchored directly at the Upthrust high
+    p2: { time: 2400, price: 4275 }, // Projecting downward
+  }
+
+  const bars: WyckoffBar[] = [
+    { time: 1000, open: 4280, high: 4285, low: 4278, close: 4284, volume: 1000, cvd: 100 },
+    { time: 1300, open: 4284, high: 4288, low: 4282, close: 4287, volume: 1200, cvd: 150 },
+    // Upthrust Sweep Candle: High 4297, long 65% top wick, volume 5500, CVD 500
+    { time: 1600, open: 4287, high: 4297, low: 4286, close: 4289, volume: 5500, cvd: 500 },
+    { time: 1900, open: 4289, high: 4291, low: 4280, close: 4283, volume: 3800, cvd: 510 },
+  ]
+
+  const mockCtx: WyckoffChartContext = {
+    frvp5d: {
+      poc: 4255, // 4289 - 4255 = 34 pts reward, Risk = 4298 - 4289 = 9 pts -> 3.7R
+      vah: 4295, // Swept 5D VAH at 4295
+      val: 4210,
+      high: 4310,
+      low: 4180,
+      totalVolume: 500000,
+      buyVolume: 250000,
+      sellVolume: 250000,
+      bins: [],
+      timeStart: 0,
+      timeEnd: 0,
+    },
+    yesterday: {
+      date: '2026-10-01',
+      openUnix: 0,
+      closeUnix: 0,
+      yh: 4295,
+      yl: 4205,
+      poc: 4250,
+      vah: 4295, // Yesterday VAH confluence
+      val: 4210,
+      profile: null as any,
+    },
+  }
+
+  const { evaluateSpringOrUpthrustTrendline } = require('../lib/trading/wyckoffStrategy')
+  const evalResult = evaluateSpringOrUpthrustTrendline(upthrustTl, bars, mockCtx)
+
+  assert.equal(evalResult.originType, 'UPTHRUST')
+  assert.ok(evalResult.totalScore >= 75, `Upthrust total score should be high quality (got ${evalResult.totalScore})`)
+  assert.ok(['A+', 'A'].includes(evalResult.grade), `Grade should be A or A+ (got ${evalResult.grade})`)
+  assert.ok(evalResult.factors.location.score >= 10, 'Location should award points for VAH sweep')
+  assert.ok(evalResult.factors.volumeEffortVsResult.score >= 15, 'Volume should award high points for RVOL')
+  assert.ok(evalResult.factors.candleExcess.score >= 14, 'Candle excess top wick should award high points')
+  assert.ok(evalResult.is2RValid, 'Must be valid >= 2R')
+  assert.ok(evalResult.stopLoss >= 4297, 'Stop loss must be above upthrust high')
+  assert.ok(evalResult.badgeLabel.includes('Upthrust'), 'Badge label must state Upthrust')
+}
+
 console.log('wyckoff_strategy: all tests passed!')
+

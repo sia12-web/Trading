@@ -203,18 +203,26 @@ export function findNextStructuralTarget(
   zones: WyckoffPreMarkedZone[],
   minRisk: number
 ): { targetPrice: number; targetZoneLabel: string } {
+  // Target zones are exclusively the major structural zones (5D, Yesterday, Overnight).
+  // AVWAP is background context only and does not establish structural take-profit zones (Rule 2E).
+  const structuralZones = zones.filter((z) => z.source !== 'AVWAP')
+
   if (direction === 'LONG') {
-    // Look for first resistance above entry + at least a fraction of risk
-    const candidates = zones.filter((z) => z.price > entryPrice + minRisk * 0.4)
+    // For Long trades, target opposing resistance or composite confluence above entry
+    const candidates = structuralZones.filter(
+      (z) => (z.type === 'RESISTANCE' || z.type === 'CONFLUENCE') && z.price > entryPrice + 1.0
+    )
     if (candidates.length > 0) {
       const closest = candidates[0]!
       return { targetPrice: closest.price, targetZoneLabel: closest.name }
     }
-    // If no zone exists above (all-time highs or unmapped), default to 2.5R projection
+    // If no structural zone exists above (all-time highs or unmapped), default to 2.5R projection
     return { targetPrice: Number((entryPrice + minRisk * 2.5).toFixed(2)), targetZoneLabel: 'Projected 2.5R' }
   } else {
-    // Look for first support below entry - at least a fraction of risk
-    const candidates = zones.filter((z) => z.price < entryPrice - minRisk * 0.4).reverse()
+    // For Short trades, target opposing support or composite confluence below entry
+    const candidates = structuralZones
+      .filter((z) => (z.type === 'SUPPORT' || z.type === 'CONFLUENCE') && z.price < entryPrice - 1.0)
+      .reverse()
     if (candidates.length > 0) {
       const closest = candidates[0]!
       return { targetPrice: closest.price, targetZoneLabel: closest.name }
@@ -590,6 +598,419 @@ export function evaluateWyckoffSetup(
     effortVsResult: 'NORMAL',
     badgeText: `${roleLabel}: ${latestLinePx.toFixed(1)}`,
     statusTag: 'MONITORING',
+    color,
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Spring / Upthrust Trendline Institutional Scoring Engine (0-100 Points)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface TrendlineFactorScore {
+  name: string
+  score: number
+  maxScore: number
+  details: string
+}
+
+export interface SpringUpthrustEvaluation {
+  originType: 'SPRING' | 'UPTHRUST'
+  originPrice: number
+  originTime: number
+  totalScore: number // 0-100
+  grade: 'A+' | 'A' | 'B' | 'C'
+  factors: {
+    location: TrendlineFactorScore // max 25
+    volumeEffortVsResult: TrendlineFactorScore // max 20
+    candleExcess: TrendlineFactorScore // max 20
+    cvdAbsorption: TrendlineFactorScore // max 15
+    avwap5m: TrendlineFactorScore // max 10
+    roundNumber: TrendlineFactorScore // max 5
+    rewardRisk: TrendlineFactorScore // max 5
+  }
+  entryPrice: number
+  stopLoss: number
+  targetPrice: number
+  targetZoneLabel: string
+  riskPoints: number
+  rewardPoints: number
+  rrRatio: number
+  is2RValid: boolean
+  badgeLabel: string
+  summary: string
+  color: string
+}
+
+/**
+ * Evaluates the Trendline drawn from a Spring or an Upthrust.
+ * Computes all institutional factors and awards points (0-100) to that Spring or Upthrust:
+ * 1. Location & Pre-marked Structural Zones (Max 25 pts)
+ * 2. Volume & Effort-vs-Result Absorption (Max 20 pts)
+ * 3. Candlestick Reversal & Excess Tail (Max 20 pts)
+ * 4. CVD Order Flow Absorption Divergence (Max 15 pts)
+ * 5. 5-Month Macro Anchored VWAP Alignment (Max 10 pts)
+ * 6. Psychological Round Number Confluence (Max 5 pts)
+ * 7. Mandatory >= 2R Target & Rule 17 Filter (Max 5 pts + Filter)
+ */
+export function evaluateSpringOrUpthrustTrendline(
+  tl: UserTrendline,
+  bars: WyckoffBar[],
+  context: WyckoffChartContext
+): SpringUpthrustEvaluation {
+  const fallbackPrice = tl.p1?.price ?? 0
+  const fallbackTime = tl.p1?.time ?? 0
+
+  if (!bars || bars.length === 0) {
+    return {
+      originType: tl.p2.price >= tl.p1.price ? 'SPRING' : 'UPTHRUST',
+      originPrice: fallbackPrice,
+      originTime: fallbackTime,
+      totalScore: 50,
+      grade: 'C',
+      factors: {
+        location: { name: 'Structural Location', score: 12, maxScore: 25, details: 'Insufficient bars for zone sweep check' },
+        volumeEffortVsResult: { name: 'Volume & Effort vs Result', score: 10, maxScore: 20, details: 'Baseline volume' },
+        candleExcess: { name: 'Excess Tail & Candle Reversal', score: 10, maxScore: 20, details: 'Baseline candle structure' },
+        cvdAbsorption: { name: 'CVD Absorption', score: 7, maxScore: 15, details: 'No CVD delta available' },
+        avwap5m: { name: '5M Macro AVWAP Alignment', score: 5, maxScore: 10, details: 'Neutral AVWAP baseline' },
+        roundNumber: { name: 'Psychological Handle', score: 3, maxScore: 5, details: 'Neutral strike level' },
+        rewardRisk: { name: '2R Target (Rule 17)', score: 3, maxScore: 5, details: 'Pending projection' },
+      },
+      entryPrice: fallbackPrice,
+      stopLoss: fallbackPrice,
+      targetPrice: fallbackPrice,
+      targetZoneLabel: 'N/A',
+      riskPoints: 0,
+      rewardPoints: 0,
+      rrRatio: 0,
+      is2RValid: true,
+      badgeLabel: `📐 Trendline · Monitoring (${fallbackPrice.toFixed(1)})`,
+      summary: 'Trendline initialized · Monitoring price action',
+      color: '#38bdf8',
+    }
+  }
+
+  // Find candle closest to p1 (origin of the Spring or Upthrust)
+  let closestIdx = 0
+  let minDiff = Infinity
+  for (let i = 0; i < bars.length; i++) {
+    const diff = Math.abs(bars[i]!.time - tl.p1.time)
+    if (diff < minDiff) {
+      minDiff = diff
+      closestIdx = i
+    }
+  }
+  const originBar = bars[closestIdx]!
+
+  // Determine whether this trendline is drawn from a Spring (support/low sweep) or Upthrust (resistance/high sweep)
+  const isLabeledSpring = Boolean(tl.label?.toLowerCase().includes('spring') || tl.direction === 'BULLISH')
+  const isLabeledUpthrust = Boolean(tl.label?.toLowerCase().includes('upthrust') || tl.direction === 'BEARISH')
+
+  let originType: 'SPRING' | 'UPTHRUST' = 'SPRING'
+  if (isLabeledSpring) {
+    originType = 'SPRING'
+  } else if (isLabeledUpthrust) {
+    originType = 'UPTHRUST'
+  } else {
+    // Detect by anchor position relative to origin candle:
+    // If p1 is near the low or the line slopes upward -> Spring
+    // If p1 is near the high or the line slopes downward -> Upthrust
+    const barMid = (originBar.high + originBar.low) / 2
+    if (tl.p1.price <= barMid || Math.abs(tl.p1.price - originBar.low) < Math.abs(tl.p1.price - originBar.high) || tl.p2.price > tl.p1.price) {
+      originType = 'SPRING'
+    } else {
+      originType = 'UPTHRUST'
+    }
+  }
+
+  const isSpring = originType === 'SPRING'
+  const originPrice = isSpring ? Math.min(tl.p1.price, originBar.low) : Math.max(tl.p1.price, originBar.high)
+  const originTime = originBar.time
+
+  const preMarkedZones = buildPreMarkedZones(context)
+  const locTol = Math.max(4.0, originPrice * 0.0015) // Dynamic point tolerance based on price scale
+
+  // ── FACTOR 1: Structural Location & Confluence (Max 25 pts) ──
+  let locScore = 0
+  const matchedZones: string[] = []
+
+  if (isSpring) {
+    // For Spring: Check sweep of support/confluence levels (Yesterday VAL, 5D LVN, Overnight Low, POCs)
+    for (const z of preMarkedZones) {
+      if (Math.abs(originPrice - z.price) <= locTol || (originBar.low <= z.price && originBar.close >= z.price - locTol * 0.5)) {
+        if (z.name.includes('Y-VAL') || z.name.includes('Y-POC')) locScore += 10
+        else if (z.name.includes('5D LVN') || z.name.includes('5D POC')) locScore += 8
+        else if (z.name.includes('ON-Low') || z.name.includes('ON-POC') || z.name.includes('London-Low')) locScore += 8
+        else locScore += 6
+        matchedZones.push(z.name)
+      }
+    }
+    if (matchedZones.length === 0) {
+      locScore = 12 // baseline zone location
+    }
+  } else {
+    // For Upthrust: Check sweep of resistance/confluence levels (Yesterday VAH, 5D HVN, Overnight High, POCs)
+    for (const z of preMarkedZones) {
+      if (Math.abs(originPrice - z.price) <= locTol || (originBar.high >= z.price && originBar.close <= z.price + locTol * 0.5)) {
+        if (z.name.includes('Y-VAH') || z.name.includes('Y-POC')) locScore += 10
+        else if (z.name.includes('5D HVN') || z.name.includes('5D POC')) locScore += 8
+        else if (z.name.includes('ON-High') || z.name.includes('ON-POC') || z.name.includes('London-High')) locScore += 8
+        else locScore += 6
+        matchedZones.push(z.name)
+      }
+    }
+    if (matchedZones.length === 0) {
+      locScore = 12
+    }
+  }
+  locScore = Math.min(25, Math.max(8, locScore))
+  const locDetails = matchedZones.length > 0
+    ? `Swept ${matchedZones.slice(0, 3).join(' + ')} (${locScore}/25 pts)`
+    : `Predetermined structural area (${locScore}/25 pts)`
+
+  // ── FACTOR 2: Initiation Volume Quality & Effort-vs-Result (Max 20 pts) ──
+  const lookbackStart = Math.max(0, closestIdx - 20)
+  let volSum = 0
+  let volCount = 0
+  for (let i = lookbackStart; i < closestIdx; i++) {
+    volSum += bars[i]!.volume || 1
+    volCount++
+  }
+  const avgVol = volCount > 0 ? volSum / volCount : 1
+
+  const clusterStart = Math.max(0, closestIdx - 1)
+  const clusterEnd = Math.min(bars.length - 1, closestIdx + 1)
+  let clusterSum = 0
+  let clusterCount = 0
+  for (let i = clusterStart; i <= clusterEnd; i++) {
+    clusterSum += bars[i]!.volume || 1
+    clusterCount++
+  }
+  const clusterVol = clusterCount > 0 ? clusterSum / clusterCount : originBar.volume || 1
+  const rvol = Number((clusterVol / Math.max(1, avgVol)).toFixed(2))
+
+  let volScore = 6
+  let volDetails = ''
+  if (rvol >= 2.0) {
+    volScore = 20
+    volDetails = `RVOL ${rvol}x: Heavy institutional volume & absorption (20/20 pts)`
+  } else if (rvol >= 1.5) {
+    volScore = 15
+    volDetails = `RVOL ${rvol}x: Strong participation (15/20 pts)`
+  } else if (rvol >= 1.0) {
+    volScore = 10
+    volDetails = `RVOL ${rvol}x: Normal participation (10/20 pts)`
+  } else {
+    volScore = 5
+    volDetails = `RVOL ${rvol}x: Light volume test (5/20 pts)`
+  }
+
+  // ── FACTOR 3: Candlestick Reversal & Excess Rejection Tail (Max 20 pts) ──
+  const barRange = Math.max(0.1, originBar.high - originBar.low)
+  let candleScore = 6
+  let candleDetails = ''
+
+  if (isSpring) {
+    const lowerWick = Math.max(0, Math.min(originBar.open, originBar.close) - originBar.low)
+    const wickRatio = Number((lowerWick / barRange).toFixed(2))
+    const isBullClose = originBar.close >= originBar.open || originBar.close >= originBar.low + barRange * 0.6
+
+    if (wickRatio >= 0.45 && isBullClose) {
+      candleScore = 20
+      candleDetails = `Buying Excess Tail (${Math.round(wickRatio * 100)}% wick) + Bullish Reclaim (20/20 pts)`
+    } else if (wickRatio >= 0.35 || isBullClose) {
+      candleScore = 14
+      candleDetails = `Rejection lower shadow (${Math.round(wickRatio * 100)}% wick) (14/20 pts)`
+    } else {
+      candleScore = 8
+      candleDetails = `Standard support reaction candle (8/20 pts)`
+    }
+  } else {
+    const upperWick = Math.max(0, originBar.high - Math.max(originBar.open, originBar.close))
+    const wickRatio = Number((upperWick / barRange).toFixed(2))
+    const isBearClose = originBar.close <= originBar.open || originBar.close <= originBar.high - barRange * 0.6
+
+    if (wickRatio >= 0.45 && isBearClose) {
+      candleScore = 20
+      candleDetails = `Selling Excess Tail (${Math.round(wickRatio * 100)}% wick) + Bearish Rejection (20/20 pts)`
+    } else if (wickRatio >= 0.35 || isBearClose) {
+      candleScore = 14
+      candleDetails = `Rejection upper shadow (${Math.round(wickRatio * 100)}% wick) (14/20 pts)`
+    } else {
+      candleScore = 8
+      candleDetails = `Standard resistance reaction candle (8/20 pts)`
+    }
+  }
+
+  // ── FACTOR 4: Order Flow & CVD Absorption Confirmation (Max 15 pts) ──
+  let cvdScore = 6
+  let cvdDetails = 'Order flow neutral'
+
+  // Look at CVD around origin bar
+  const prevBar = closestIdx > 0 ? bars[closestIdx - 1] : null
+  const nextBar = closestIdx < bars.length - 1 ? bars[closestIdx + 1] : null
+
+  if (originBar.cvd != null) {
+    if (isSpring) {
+      // Bullish absorption: CVD plunged / lower low but price held or closed high
+      const cvdDiverged =
+        (prevBar?.cvd != null && originBar.cvd <= prevBar.cvd && originBar.close >= prevBar.close) ||
+        (nextBar?.cvd != null && nextBar.cvd <= originBar.cvd && nextBar.close >= originBar.close) ||
+        rvol >= 1.5
+      if (cvdDiverged) {
+        cvdScore = 15
+        cvdDetails = 'Bullish Absorption: Aggressive market sellers absorbed by limit bids (15/15 pts)'
+      } else {
+        cvdScore = 10
+        cvdDetails = 'Mild buyer absorption detected (10/15 pts)'
+      }
+    } else {
+      // Bearish absorption: CVD spiked / higher high but price failed or closed low
+      const cvdDiverged =
+        (prevBar?.cvd != null && originBar.cvd >= prevBar.cvd && originBar.close <= prevBar.close) ||
+        (nextBar?.cvd != null && nextBar.cvd >= originBar.cvd && nextBar.close <= originBar.close) ||
+        rvol >= 1.5
+      if (cvdDiverged) {
+        cvdScore = 15
+        cvdDetails = 'Bearish Absorption: Aggressive market buyers absorbed by passive offers (15/15 pts)'
+      } else {
+        cvdScore = 10
+        cvdDetails = 'Mild seller absorption detected (10/15 pts)'
+      }
+    }
+  } else {
+    cvdScore = rvol >= 1.4 ? 12 : 7
+    cvdDetails = rvol >= 1.4 ? 'Effort vs Result: High volume absorption (12/15 pts)' : 'CVD baseline estimate (7/15 pts)'
+  }
+
+  // ── FACTOR 5: 5-Month Macro Anchored VWAP Alignment (Max 10 pts) ──
+  const avwapPrice = context.avwap5m?.vwap
+  let avwapScore = 4
+  let avwapDetails = 'Macro AVWAP neutral'
+  if (avwapPrice && Number.isFinite(avwapPrice)) {
+    const distToAvwap = Math.abs(originPrice - avwapPrice)
+    if (distToAvwap <= 15) {
+      avwapScore = 10
+      avwapDetails = `Aligned within ±15 pts of 5M AVWAP (${distToAvwap.toFixed(1)} pts) (10/10 pts)`
+    } else if (distToAvwap <= 35) {
+      avwapScore = 7
+      avwapDetails = `Proximal within ±35 pts of 5M AVWAP (${distToAvwap.toFixed(1)} pts) (7/10 pts)`
+    } else {
+      avwapScore = 3
+      avwapDetails = `${distToAvwap.toFixed(1)} pts from 5M AVWAP (3/10 pts)`
+    }
+  }
+
+  // ── FACTOR 6: Psychological Round Numbers (Max 5 pts) ──
+  const century = Math.round(originPrice / 100) * 100
+  const halfCentury = Math.round(originPrice / 50) * 50
+  let roundScore = 1
+  let roundDetails = 'Standard non-round price level'
+
+  if (Math.abs(originPrice - century) <= 5.0) {
+    roundScore = 5
+    roundDetails = `Near Century Strike $${century.toLocaleString()} (5/5 pts)`
+  } else if (Math.abs(originPrice - halfCentury) <= 5.0) {
+    roundScore = 4
+    roundDetails = `Near Half-Century Strike $${halfCentury.toLocaleString()} (4/5 pts)`
+  }
+
+  // ── FACTOR 7: Mandatory >= 2R Target & Rule 17 Filter (Max 5 pts + Filter) ──
+  let entryPrice = 0
+  let stopLoss = 0
+  let riskPoints = 0
+  let targetPrice = 0
+  let targetZoneLabel = 'N/A'
+  let rewardPoints = 0
+  let rrRatio = 0
+  let is2RValid = false
+  let rrScore = 0
+  let rrDetails = ''
+
+  const buffer = Math.max(0.5, barRange * 0.15)
+
+  if (isSpring) {
+    stopLoss = Number((originPrice - buffer).toFixed(2))
+    entryPrice = Number(originBar.close.toFixed(2))
+    riskPoints = Number(Math.max(0.5, entryPrice - stopLoss).toFixed(2))
+    const tgt = findNextStructuralTarget(entryPrice, 'LONG', preMarkedZones, riskPoints)
+    targetPrice = tgt.targetPrice
+    targetZoneLabel = tgt.targetZoneLabel
+    rewardPoints = Number((targetPrice - entryPrice).toFixed(2))
+    rrRatio = Number((rewardPoints / riskPoints).toFixed(2))
+    is2RValid = rrRatio >= 2.0
+
+    if (is2RValid) {
+      rrScore = 5
+      rrDetails = `Rule 17 Passed: ${rrRatio}R reward to ${targetZoneLabel} (5/5 pts)`
+    } else {
+      rrScore = 0
+      rrDetails = `Rule 17 Filter: Only ${rrRatio}R to ${targetZoneLabel} (< 2R required, skip trade)`
+    }
+  } else {
+    stopLoss = Number((originPrice + buffer).toFixed(2))
+    entryPrice = Number(originBar.close.toFixed(2))
+    riskPoints = Number(Math.max(0.5, stopLoss - entryPrice).toFixed(2))
+    const tgt = findNextStructuralTarget(entryPrice, 'SHORT', preMarkedZones, riskPoints)
+    targetPrice = tgt.targetPrice
+    targetZoneLabel = tgt.targetZoneLabel
+    rewardPoints = Number((entryPrice - targetPrice).toFixed(2))
+    rrRatio = Number((rewardPoints / riskPoints).toFixed(2))
+    is2RValid = rrRatio >= 2.0
+
+    if (is2RValid) {
+      rrScore = 5
+      rrDetails = `Rule 17 Passed: ${rrRatio}R reward to ${targetZoneLabel} (5/5 pts)`
+    } else {
+      rrScore = 0
+      rrDetails = `Rule 17 Filter: Only ${rrRatio}R to ${targetZoneLabel} (< 2R required, skip trade)`
+    }
+  }
+
+  // Calculate Composite Total Score (0-100)
+  const totalScore = Math.min(100, Math.max(0, locScore + volScore + candleScore + cvdScore + avwapScore + roundScore + rrScore))
+
+  let grade: SpringUpthrustEvaluation['grade'] = 'C'
+  if (totalScore >= 85) grade = 'A+'
+  else if (totalScore >= 70) grade = 'A'
+  else if (totalScore >= 55) grade = 'B'
+  else grade = 'C'
+
+  const color = is2RValid
+    ? (isSpring ? '#10b981' : '#f43f5e')
+    : '#eab308'
+
+  const badgeLabel = is2RValid
+    ? `📐 Trendline · ${isSpring ? 'Spring' : 'Upthrust'} (${totalScore}/100 pts · Grade ${grade}) | Stop: ${stopLoss.toFixed(1)} | Tgt: ${targetPrice.toFixed(1)} (${rrRatio}R)`
+    : `📐 Trendline · ${isSpring ? 'Spring' : 'Upthrust'} (${totalScore} pts · ⚠️ <2R Skip) | Stop: ${stopLoss.toFixed(1)} | Tgt: ${targetPrice.toFixed(1)} (${rrRatio}R)`
+
+  const summary = `${isSpring ? 'Spring' : 'Upthrust'} @ ${originPrice.toFixed(1)}: Score ${totalScore}/100 (${grade}). ${locDetails}. ${volDetails}. ${candleDetails}. ${cvdDetails}. ${rrDetails}.`
+
+  return {
+    originType,
+    originPrice,
+    originTime,
+    totalScore,
+    grade,
+    factors: {
+      location: { name: 'Structural Location', score: locScore, maxScore: 25, details: locDetails },
+      volumeEffortVsResult: { name: 'Volume & Effort vs Result', score: volScore, maxScore: 20, details: volDetails },
+      candleExcess: { name: 'Excess Tail & Reversal Candle', score: candleScore, maxScore: 20, details: candleDetails },
+      cvdAbsorption: { name: 'CVD Absorption Divergence', score: cvdScore, maxScore: 15, details: cvdDetails },
+      avwap5m: { name: '5M Macro AVWAP Alignment', score: avwapScore, maxScore: 10, details: avwapDetails },
+      roundNumber: { name: 'Psychological Handle', score: roundScore, maxScore: 5, details: roundDetails },
+      rewardRisk: { name: '2R Target & Room (Rule 17)', score: rrScore, maxScore: 5, details: rrDetails },
+    },
+    entryPrice,
+    stopLoss,
+    targetPrice,
+    targetZoneLabel,
+    riskPoints,
+    rewardPoints,
+    rrRatio,
+    is2RValid,
+    badgeLabel,
+    summary,
     color,
   }
 }

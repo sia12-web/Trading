@@ -206,8 +206,8 @@ import {
   calculateEmpiricalSpeedlines,
 } from '@/lib/trading/trendlineStrategy'
 import {
-  classifyWyckoffLine,
   evaluateWyckoffSetup,
+  evaluateSpringOrUpthrustTrendline,
   type WyckoffBar,
   type WyckoffChartContext,
 } from '@/lib/trading/wyckoffStrategy'
@@ -3578,9 +3578,6 @@ export function TradingChart({
           ctx.restore()
         }
 
-        // Midpoint badge coordinates
-        const pDiff = tl.p2.price - tl.p1.price
-
         // ── Wyckoff Structure Line Engine (Supply / Demand, Spring, Upthrust, JAC Breakout, CVD & 2R Check) ──
         const wyckoffBars: WyckoffBar[] = list.map((c: any) => ({
           time: typeof c.time === 'number' ? c.time : 0,
@@ -3599,11 +3596,15 @@ export function TradingChart({
           avwap5m: avwap5mBenchmark,
         }
 
+        // ── Wyckoff Spring / Upthrust Evaluation & Factor Scoring Engine (0-100 pts) ──
+        const springUpthrust = evaluateSpringOrUpthrustTrendline(tl, wyckoffBars, wyckoffCtx)
+        const isSpring = springUpthrust.originType === 'SPRING'
+        const isSupply = !isSpring
+
         const wyckoffSetup = evaluateWyckoffSetup(tl, wyckoffBars, wyckoffCtx)
-        const isSupply = wyckoffSetup.lineRole === 'SUPPLY_LINE'
 
         // Midpoint badge render
-        const labelText = `📐 ${wyckoffSetup.roleLabel} (${pDiff >= 0 ? '+' : ''}${pDiff.toFixed(1)} pts) · ${wyckoffSetup.statusTag}`
+        const labelText = `📐 Trendline · ${springUpthrust.originType} (${springUpthrust.totalScore}/100 pts · Grade ${springUpthrust.grade}) | Stop: ${springUpthrust.stopLoss.toFixed(1)} | Tgt: ${springUpthrust.targetPrice.toFixed(1)} (${springUpthrust.rrRatio}R)`
 
         if (!hideTrendlineBadges) {
           ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
@@ -3614,7 +3615,7 @@ export function TradingChart({
 
           ctx.fillStyle = isSupply ? 'rgba(30, 20, 5, 0.94)' : 'rgba(15, 23, 42, 0.90)'
           ctx.fillRect(midBx, midBy, badgeW, badgeH)
-          ctx.strokeStyle = wyckoffSetup.color
+          ctx.strokeStyle = springUpthrust.color
           ctx.lineWidth = 1.2
           ctx.strokeRect(midBx, midBy, badgeW, badgeH)
 
@@ -3622,60 +3623,160 @@ export function TradingChart({
           ctx.fillText(labelText, midBx + 6, midBy + 11)
         }
 
-        // Render Wyckoff Setup Telemetry & Invalidation/Target Visuals
-        if (wyckoffSetup.setupType !== 'NONE') {
-          const hasStop = wyckoffSetup.stopLoss && Number.isFinite(wyckoffSetup.stopLoss)
-          const hasTarget = wyckoffSetup.targetPrice && Number.isFinite(wyckoffSetup.targetPrice)
-          const yStop = hasStop ? series.priceToCoordinate(wyckoffSetup.stopLoss) : null
-          const yTgt = hasTarget ? series.priceToCoordinate(wyckoffSetup.targetPrice) : null
+        // Render Stop Loss level (dashed red/rose) from Spring / Upthrust Evaluation
+        const hasStop = springUpthrust.stopLoss && Number.isFinite(springUpthrust.stopLoss)
+        const hasTarget = springUpthrust.targetPrice && Number.isFinite(springUpthrust.targetPrice)
+        const yStop = hasStop ? series.priceToCoordinate(springUpthrust.stopLoss) : null
+        const yTgt = hasTarget ? series.priceToCoordinate(springUpthrust.targetPrice) : null
 
-          // Draw Stop Loss level (dashed red/rose)
-          if (yStop != null && Number.isFinite(yStop)) {
+        if (yStop != null && Number.isFinite(yStop)) {
+          ctx.strokeStyle = '#f43f5e'
+          ctx.lineWidth = 1.3
+          ctx.setLineDash([4, 3])
+          ctx.beginPath()
+          ctx.moveTo(ex1, Math.round(yStop) + 0.5)
+          ctx.lineTo(ex2, Math.round(yStop) + 0.5)
+          ctx.stroke()
+          ctx.setLineDash([])
+
+          if (!hideTrendlineBadges) {
+            ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+            const slText = `🛑 Stop (${isSpring ? 'Spring Low' : 'Upthrust High'}): ${springUpthrust.stopLoss.toFixed(1)} [${springUpthrust.riskPoints.toFixed(1)}pts]`
+            const slW = ctx.measureText(slText).width + 10
+            ctx.fillStyle = 'rgba(76, 5, 25, 0.94)'
+            ctx.fillRect(ex2 - slW - 10, yStop - 16, slW, 15)
             ctx.strokeStyle = '#f43f5e'
-            ctx.lineWidth = 1.3
-            ctx.setLineDash([4, 3])
-            ctx.beginPath()
-            ctx.moveTo(ex1, Math.round(yStop) + 0.5)
-            ctx.lineTo(ex2, Math.round(yStop) + 0.5)
-            ctx.stroke()
-            ctx.setLineDash([])
-
-            if (!hideTrendlineBadges) {
-              ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-              const slText = `🛑 Stop (${wyckoffSetup.setupType === 'SPRING' ? 'Spring Low' : 'Upthrust High'}): ${wyckoffSetup.stopLoss.toFixed(1)} [${wyckoffSetup.riskPoints}pts]`
-              const slW = ctx.measureText(slText).width + 10
-              ctx.fillStyle = 'rgba(76, 5, 25, 0.94)'
-              ctx.fillRect(ex2 - slW - 10, yStop - 16, slW, 15)
-              ctx.strokeStyle = '#f43f5e'
-              ctx.strokeRect(ex2 - slW - 10, yStop - 16, slW, 15)
-              ctx.fillStyle = '#fecdd3'
-              ctx.fillText(slText, ex2 - slW - 5, yStop - 5)
-            }
+            ctx.strokeRect(ex2 - slW - 10, yStop - 16, slW, 15)
+            ctx.fillStyle = '#fecdd3'
+            ctx.fillText(slText, ex2 - slW - 5, yStop - 5)
           }
+        }
 
-          // Draw Target level (dashed emerald)
-          if (yTgt != null && Number.isFinite(yTgt)) {
+        // Render Target level (dashed emerald) from Spring / Upthrust Evaluation
+        if (yTgt != null && Number.isFinite(yTgt)) {
+          ctx.strokeStyle = '#10b981'
+          ctx.lineWidth = 1.3
+          ctx.setLineDash([4, 3])
+          ctx.beginPath()
+          ctx.moveTo(ex1, Math.round(yTgt) + 0.5)
+          ctx.lineTo(ex2, Math.round(yTgt) + 0.5)
+          ctx.stroke()
+          ctx.setLineDash([])
+
+          if (!hideTrendlineBadges) {
+            ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+            const tgtText = `🎯 Target (${springUpthrust.targetZoneLabel}): ${springUpthrust.targetPrice.toFixed(1)} [${springUpthrust.rewardPoints.toFixed(1)}pts · ${springUpthrust.rrRatio}R] ${springUpthrust.is2RValid ? '✅' : '⚠️ <2R'}`
+            const tgtW = ctx.measureText(tgtText).width + 10
+            ctx.fillStyle = 'rgba(6, 78, 59, 0.94)'
+            ctx.fillRect(ex2 - tgtW - 10, yTgt - 16, tgtW, 15)
             ctx.strokeStyle = '#10b981'
-            ctx.lineWidth = 1.3
-            ctx.setLineDash([4, 3])
-            ctx.beginPath()
-            ctx.moveTo(ex1, Math.round(yTgt) + 0.5)
-            ctx.lineTo(ex2, Math.round(yTgt) + 0.5)
-            ctx.stroke()
-            ctx.setLineDash([])
-
-            if (!hideTrendlineBadges) {
-              ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-              const tgtText = `🎯 Target (${wyckoffSetup.targetZoneLabel}): ${wyckoffSetup.targetPrice.toFixed(1)} [${wyckoffSetup.rewardPoints}pts · ${wyckoffSetup.rrRatio}R]`
-              const tgtW = ctx.measureText(tgtText).width + 10
-              ctx.fillStyle = 'rgba(6, 78, 59, 0.94)'
-              ctx.fillRect(ex2 - tgtW - 10, yTgt - 16, tgtW, 15)
-              ctx.strokeStyle = '#10b981'
-              ctx.strokeRect(ex2 - tgtW - 10, yTgt - 16, tgtW, 15)
-              ctx.fillStyle = '#a7f3d0'
-              ctx.fillText(tgtText, ex2 - tgtW - 5, yTgt - 5)
-            }
+            ctx.strokeRect(ex2 - tgtW - 10, yTgt - 16, tgtW, 15)
+            ctx.fillStyle = '#a7f3d0'
+            ctx.fillText(tgtText, ex2 - tgtW - 5, yTgt - 5)
           }
+        }
+
+        // On-Chart Factor Points Breakdown Card (renders when trendline is hovered or selected)
+        if ((isSelected || isHovered) && !hideTrendlineBadges) {
+          ctx.save()
+          const cardW = 340
+          const cardH = 224
+          const cardX = Math.min(paneW - cardW - 12, Math.max(12, mx + 16))
+          const cardY = Math.min(paneH - cardH - 12, Math.max(12, my - cardH / 2))
+
+          // Card Background & Drop Shadow
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.75)'
+          ctx.shadowBlur = 12
+          ctx.fillStyle = 'rgba(10, 15, 30, 0.96)'
+          ctx.beginPath()
+          if (typeof (ctx as any).roundRect === 'function') {
+            ;(ctx as any).roundRect(cardX, cardY, cardW, cardH, 8)
+          } else {
+            ctx.rect(cardX, cardY, cardW, cardH)
+          }
+          ctx.fill()
+          ctx.shadowBlur = 0
+
+          // Card Border
+          ctx.strokeStyle = springUpthrust.color
+          ctx.lineWidth = 1.5
+          ctx.stroke()
+
+          // Header Bar
+          ctx.fillStyle = isSpring ? 'rgba(6, 78, 59, 0.4)' : 'rgba(136, 19, 55, 0.4)'
+          ctx.beginPath()
+          if (typeof (ctx as any).roundRect === 'function') {
+            ;(ctx as any).roundRect(cardX, cardY, cardW, 28, [8, 8, 0, 0])
+          } else {
+            ctx.rect(cardX, cardY, cardW, 28)
+          }
+          ctx.fill()
+
+          // Header Text
+          ctx.font = 'bold 11px ui-monospace, SFMono-Regular, monospace'
+          ctx.fillStyle = '#ffffff'
+          ctx.textAlign = 'left'
+          ctx.textBaseline = 'middle'
+          ctx.fillText(`📐 Trendline · Wyckoff ${springUpthrust.originType} (${springUpthrust.totalScore}/100 pts · Grade ${springUpthrust.grade})`, cardX + 10, cardY + 14)
+
+          // Subtitle / Quick status
+          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+          ctx.fillStyle = springUpthrust.is2RValid ? '#34d399' : '#fbbf24'
+          ctx.textAlign = 'right'
+          ctx.fillText(springUpthrust.is2RValid ? 'QUALIFIED >= 2R' : 'FILTERED (< 2R)', cardX + cardW - 10, cardY + 14)
+
+          // Factor Rows
+          const fList = [
+            springUpthrust.factors.location,
+            springUpthrust.factors.volumeEffortVsResult,
+            springUpthrust.factors.candleExcess,
+            springUpthrust.factors.cvdAbsorption,
+            springUpthrust.factors.avwap5m,
+            springUpthrust.factors.roundNumber,
+            springUpthrust.factors.rewardRisk,
+          ]
+
+          let curY = cardY + 42
+          for (const f of fList) {
+            ctx.textAlign = 'left'
+            ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+            ctx.fillStyle = '#cbd5e1'
+            ctx.fillText(f.name, cardX + 10, curY)
+
+            // Factor score on right
+            const scoreStr = `${f.score}/${f.maxScore} pts`
+            ctx.textAlign = 'right'
+            ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+            ctx.fillStyle = f.score >= f.maxScore * 0.7 ? '#34d399' : f.score >= f.maxScore * 0.4 ? '#fbbf24' : '#f87171'
+            ctx.fillText(scoreStr, cardX + cardW - 10, curY)
+
+            // Factor detail summary
+            ctx.textAlign = 'left'
+            ctx.font = '8px ui-monospace, SFMono-Regular, monospace'
+            ctx.fillStyle = '#94a3b8'
+            const detailText = f.details.length > 58 ? f.details.slice(0, 56) + '…' : f.details
+            ctx.fillText(detailText, cardX + 10, curY + 11)
+
+            curY += 21
+          }
+
+          // Bottom Trade Plan strip
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.8)'
+          ctx.fillRect(cardX, cardY + cardH - 24, cardW, 24)
+          ctx.strokeStyle = 'rgba(51, 65, 85, 0.6)'
+          ctx.beginPath()
+          ctx.moveTo(cardX, cardY + cardH - 24)
+          ctx.lineTo(cardX + cardW, cardY + cardH - 24)
+          ctx.stroke()
+
+          ctx.font = 'bold 8.5px ui-monospace, SFMono-Regular, monospace'
+          ctx.fillStyle = '#e2e8f0'
+          ctx.textAlign = 'left'
+          ctx.textBaseline = 'middle'
+          ctx.fillText(`Stop: ${springUpthrust.stopLoss.toFixed(1)} (${springUpthrust.riskPoints.toFixed(1)}pts) | Tgt: ${springUpthrust.targetZoneLabel} ${springUpthrust.targetPrice.toFixed(1)} (${springUpthrust.rewardPoints.toFixed(1)}pts · ${springUpthrust.rrRatio}R)`, cardX + 8, cardY + cardH - 12)
+
+          ctx.restore()
+        }
 
           // Draw Setup Alert Pill at the trigger candle
           if (!hideTrendlineBadges && wyckoffSetup.triggerTime) {
@@ -3716,7 +3817,6 @@ export function TradingChart({
           }
         }
       }
-    }
 
     // 4. In-progress Drawing Draft Preview
     if (drawingDraft && draftMousePosRef.current) {
@@ -10461,12 +10561,19 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             isCarriedFromOvernight,
           }
 
-          const wyckoffClass = classifyWyckoffLine(tempTl, rawBars)
+          const wyckoffCtx: WyckoffChartContext = {
+            yesterday: yesterdayNyc,
+            overnight: overnightInventory,
+            frvp5d,
+            avwap5m: avwap5mBenchmark,
+          }
+
+          const evaluation = evaluateSpringOrUpthrustTrendline(tempTl, rawBars, wyckoffCtx)
 
           const newTl: UserTrendline = {
             ...tempTl,
-            color: wyckoffClass.color,
-            label: wyckoffClass.label,
+            color: evaluation.color,
+            label: `Trendline · ${evaluation.originType} (${evaluation.totalScore} pts)`,
           }
           setTrendlines((prev) => [...prev, newTl])
 
@@ -10474,8 +10581,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           setDrawingToast({
             type: 'TRENDLINE',
             id: newTl.id,
-            label: newTl.label || 'Wyckoff Structure Line',
-            summary: `📐 ${wyckoffClass.label} drawn. Monitoring for Spring / Upthrust & >= 2R setups.`,
+            label: `Trendline · ${evaluation.originType} (${evaluation.totalScore}/100 pts · Grade ${evaluation.grade})`,
+            summary: `${evaluation.summary} | Stop: ${evaluation.stopLoss.toFixed(1)} | Target: ${evaluation.targetZoneLabel} (${evaluation.targetPrice.toFixed(1)}, ${evaluation.rrRatio}R) · ${evaluation.is2RValid ? '✅ Valid >= 2R' : '⚠️ Filtered (< 2R)'}`,
           })
         } else if (activeDrawingTool === 'RANGE') {
           const newRange: UserRangeBox = {
@@ -10844,22 +10951,53 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           // Invalidate breakout cache so engine recalculates against the new adjusted line
           confirmedBreakoutsRef.current.delete(tlId)
 
+          const rawBars: WyckoffBar[] = (candlesRef.current || []).map((c: any) => ({
+            time: typeof c.time === 'number' ? c.time : 0,
+            open: Number(c.open),
+            high: Number(c.high),
+            low: Number(c.low),
+            close: Number(c.close),
+            volume: Number(c.volume || 1),
+            cvd: typeof c.cvd === 'number' ? c.cvd : undefined,
+          }))
+
+          const wyckoffCtx: WyckoffChartContext = {
+            yesterday: yesterdayNyc,
+            overnight: overnightInventory,
+            frvp5d,
+            avwap5m: avwap5mBenchmark,
+          }
+
+          let evalSummary = ''
+          let evalLabel = 'Trendline'
+
           setTrendlines((prev) =>
             prev.map((t) => {
               if (t.id !== tlId) return t
               const pDiff = finalDragged.p2.price - finalDragged.p1.price
               const inferredDir: 'BEARISH' | 'BULLISH' = pDiff < 0 ? 'BEARISH' : 'BULLISH'
-              const isSupply = pDiff < 0
-              const updatedLabel = isSupply ? 'Wyckoff Supply Line (Creek)' : 'Wyckoff Demand Line (Ice)'
-              const updatedColor = isSupply ? '#f59e0b' : '#38bdf8'
+
+              const evaluation = evaluateSpringOrUpthrustTrendline(
+                {
+                  ...t,
+                  p1: finalDragged.p1,
+                  p2: finalDragged.p2,
+                  direction: inferredDir,
+                },
+                rawBars,
+                wyckoffCtx
+              )
+
+              evalLabel = `Trendline · ${evaluation.originType} (${evaluation.totalScore} pts)`
+              evalSummary = `Updated: ${finalDragged.p1.price.toFixed(1)} → ${finalDragged.p2.price.toFixed(1)} | Target: ${evaluation.targetZoneLabel} (${evaluation.targetPrice.toFixed(1)}, ${evaluation.rrRatio}R)`
 
               return {
                 ...t,
                 p1: finalDragged.p1,
                 p2: finalDragged.p2,
                 direction: inferredDir,
-                label: updatedLabel,
-                color: updatedColor,
+                label: evalLabel,
+                color: evaluation.color,
               }
             })
           )
@@ -10868,8 +11006,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           setDrawingToast({
             type: 'TRENDLINE',
             id: tlId,
-            label: finalDragged.p2.price < finalDragged.p1.price ? 'Wyckoff Supply Line (Creek)' : 'Wyckoff Demand Line (Ice)',
-            summary: `Updated: ${finalDragged.p1.price.toFixed(2)} → ${finalDragged.p2.price.toFixed(2)} (${finalDragged.p2.price >= finalDragged.p1.price ? '+' : ''}${(finalDragged.p2.price - finalDragged.p1.price).toFixed(1)} pts)`,
+            label: evalLabel,
+            summary: evalSummary,
           })
         }
       }
@@ -11565,7 +11703,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         e.preventDefault()
         togglePriceAlert()
       } else if (key === 'escape') {
-        if (activeDrawingTool !== 'NONE' || drawingDraft) {
+        if (selectedTrendlineId) {
+          e.preventDefault()
+          setSelectedTrendlineId(null)
+          requestAnimationFrame(() => paintUserDrawingsRef.current())
+        } else if (activeDrawingTool !== 'NONE' || drawingDraft) {
           e.preventDefault()
           setActiveDrawingTool('NONE')
           setDrawingDraft(null)
@@ -12650,6 +12792,49 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             ref={userDrawingsCanvasRef}
             className="pointer-events-none absolute inset-0 z-[6]"
           />
+
+          {/* Selected Trendline Floating Action Banner */}
+          {selectedTrendlineId && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2.5 rounded-full bg-slate-950/95 border border-sky-500/70 px-4 py-1.5 text-xs shadow-2xl backdrop-blur-md animate-in fade-in select-none">
+              <span className="inline-block h-2 w-2 rounded-full bg-sky-400 animate-pulse" />
+              <span className="font-semibold text-slate-200">
+                {(() => {
+                  const tl = trendlines.find((t) => t.id === selectedTrendlineId)
+                  if (!tl) return 'Trendline Selected'
+                  return `📐 Trendline Selected (${tl.p1.price.toFixed(1)} → ${tl.p2.price.toFixed(1)})`
+                })()}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedTrendlineId) {
+                    const targetId = selectedTrendlineId
+                    handleDeleteTrendline(targetId)
+                    setSelectedTrendlineId(null)
+                    setDrawingToast({
+                      type: 'TRENDLINE',
+                      id: targetId,
+                      label: 'Trendline Removed',
+                      summary: 'Drawing deleted from chart',
+                    })
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-600/90 hover:bg-rose-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
+                title="Remove this Trendline (or press Delete/Backspace)"
+              >
+                <span>🗑️</span>
+                <span>Remove Trendline</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedTrendlineId(null)}
+                className="text-slate-400 hover:text-white text-xs font-bold px-1.5 py-0.5 rounded hover:bg-slate-800 transition cursor-pointer"
+                title="Deselect (or press Esc)"
+              >
+                ✕
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Synchronized CVD Sub-Chart Pane with TradingView Draggable Resizer */}
@@ -12795,7 +12980,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
           {/* Tool buttons — horizontal row */}
           <div className="flex flex-row items-center gap-1 py-1 pr-1.5">
-            {/* Wyckoff Structure Line (W or X) */}
+            {/* Trendline (W or X) */}
             <button
               type="button"
               onClick={() => {
@@ -12804,15 +12989,15 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               }}
               className={`group relative flex h-9 px-2.5 items-center gap-1.5 rounded-lg text-xs font-bold transition-all ${
                 activeDrawingTool === 'TRENDLINE'
-                  ? 'bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/40 ring-2 ring-amber-300'
-                  : 'text-amber-300 hover:bg-slate-800 hover:text-amber-100 bg-slate-900/60 border border-amber-500/30'
+                  ? 'bg-sky-500 text-slate-950 shadow-lg shadow-sky-500/40 ring-2 ring-sky-300'
+                  : 'text-sky-300 hover:bg-slate-800 hover:text-sky-100 bg-slate-900/60 border border-sky-500/30'
               }`}
-              title="Draw Wyckoff Structure Line (Hotkey: W or X) · Supply (Creek) & Demand (Ice)"
+              title="Draw Trendline from Spring or Upthrust (Hotkey: W or X)"
             >
               <span className="text-sm">📐</span>
-              <span className="hidden md:inline font-mono">Wyckoff Line</span>
-              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-amber-200 shadow-xl border border-amber-800/80 group-hover:block z-50">
-                Wyckoff Structure Line (W or X) · Supply & Demand
+              <span className="hidden md:inline font-mono">Trendline</span>
+              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-sky-200 shadow-xl border border-sky-800/80 group-hover:block z-50">
+                Trendline (W or X) · Spring & Upthrust Factor Evaluation
               </span>
             </button>
 
@@ -12961,7 +13146,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full bg-slate-950/90 border border-cyan-500/60 px-4 py-1.5 text-xs font-medium text-cyan-200 shadow-2xl backdrop-blur-sm animate-pulse">
             <span className="inline-block h-2 w-2 rounded-full bg-cyan-400" />
             <span>
-              {activeDrawingTool === 'TRENDLINE' && '📐 Drawing Wyckoff Structure Line (Click 2 swing points · Auto-classifies Supply / Demand)'}
+              {activeDrawingTool === 'TRENDLINE' && '📐 Drawing Trendline (Click 1: Spring/Upthrust anchor · Click 2: Projection)'}
               {activeDrawingTool === 'RANGE' && '⬛ Drawing Range Box (Click 2 corners)'}
               {activeDrawingTool === 'FRVP' && '📊 Drawing Custom FRVP (Click start & end bars)'}
               {activeDrawingTool === 'MEASURE' && '📏 Drawing Measure (Click 1st point, then 2nd point to pin · Hold Shift anytime)'}
@@ -13038,7 +13223,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   <div className="text-2xl">📐 🎯 ⬛ 📊 📏</div>
                   <div className="font-semibold text-slate-400">No active drawings on {instrument}</div>
                   <div className="text-[11px] text-slate-500">
-                    Press <span className="text-amber-300 font-mono">W</span> or <span className="text-amber-300 font-mono">X</span> for Wyckoff Line,{' '}
+                    Press <span className="text-sky-300 font-mono">W</span> or <span className="text-sky-300 font-mono">X</span> for Trendline,{' '}
                     <span className="text-purple-300 font-mono">D</span> for Range,{' '}
                     <span className="text-amber-300 font-mono">V</span> for FRVP, or{' '}
                     <span className="text-emerald-300 font-mono">M</span> (Shift+Click) for Measure.
@@ -13049,12 +13234,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               {/* Trendlines */}
               {activeTrendlines.length > 0 && (
                 <div className="pt-1.5 first:pt-0">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400 mb-1 px-1">
-                    Wyckoff Structure Lines ({activeTrendlines.length})
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-sky-400 mb-1 px-1">
+                    Trendlines ({activeTrendlines.length})
                   </div>
                   <div className="space-y-1">
                     {activeTrendlines.map((tl) => {
-                      const isSupply = tl.label?.includes('Supply') || tl.p2.price < tl.p1.price
+                      const isSpring = tl.label?.includes('Spring') || tl.p2.price >= tl.p1.price
                       return (
                         <div
                           key={tl.id}
@@ -13063,16 +13248,16 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                           <div className="min-w-0 flex-1">
                             <div
                               className={`flex items-center gap-1 font-semibold truncate ${
-                                isSupply ? 'text-amber-300' : 'text-sky-300'
+                                isSpring ? 'text-emerald-300' : 'text-rose-300'
                               }`}
                             >
                               <span>📐</span>
                               <span className="truncate">
-                                {tl.label || (isSupply ? 'Wyckoff Supply Line (Creek)' : 'Wyckoff Demand Line (Ice)')}
+                                {tl.label || (isSpring ? 'Trendline · Spring' : 'Trendline · Upthrust')}
                               </span>
                             </div>
                             <div className="text-[10px] text-slate-400 truncate">
-                              {tl.p1.price.toLocaleString()} → {tl.p2.price.toLocaleString()} ({isSupply ? 'Supply / Creek' : 'Demand / Ice'})
+                              {tl.p1.price.toLocaleString()} → {tl.p2.price.toLocaleString()} ({isSpring ? 'Spring Origin' : 'Upthrust Origin'})
                             </div>
                           </div>
                         <div className="flex items-center gap-1 shrink-0">
