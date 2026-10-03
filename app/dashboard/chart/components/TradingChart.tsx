@@ -5108,8 +5108,12 @@ export function TradingChart({
       instrument,
       currentPrice: curPrice,
       currentTimeEt: nowEtStr,
-      dayType: isNycSessionActive() ? (dayTypeEval?.badgeText ?? null) : null,
-      openingType: isNycSessionActive() ? (openingBadge ?? null) : null,
+      dayType: isNycSessionActive()
+        ? (dayTypeEval?.badgeText ?? null)
+        : (dayTypeEval?.badgeText ? `${dayTypeEval.badgeText} (FINAL / SESSION CLOSED)` : 'Session Closed (Final Day Type)'),
+      openingType: isNycSessionActive()
+        ? (openingBadge ?? null)
+        : (openingBadge ? `${openingBadge} (FINAL / COMPLETED)` : 'Session Closed'),
       sessionDetails: {
         sessionName,
         sessionPhase,
@@ -12750,26 +12754,48 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     ) : (
                       <>
                         <div className="flex items-center gap-1">
-                          <span className="text-gray-500">Day: </span>
-                          <span className="text-purple-400/80 font-semibold">Pre-Session</span>
                           <button
                             type="button"
                             onClick={() => {
                               setLeoExternalPoints([
                                 {
                                   id: 'ctx-day-type',
-                                  label: 'Pre-Market / Globex Structure',
-                                  value: 'Pre-Session Waiting',
+                                  label: 'Day Type (Closed Session)',
+                                  value: `${dayTypeEval.badgeText} (FINAL / SESSION CLOSED)`,
                                   tier: 'CONTEXT',
                                   category: 'DAY_TYPE',
-                                  description: 'Market is in Globex / Pre-session. Cash open is 09:30 ET.',
+                                  description: dayTypeEval.description || 'Final settled Dalton Day Type for closed session',
                                 },
                               ])
                               setLeoPanelOpen(true)
-                              setLeoAutoPrompt(`Leo, what Dalton day type development should we anticipate today on ${instrument} based on overnight inventory and yesterday profile?`)
+                              setLeoAutoPrompt(`Leo, summarize key auction tails, session profile distribution, and final Dalton day type for today's closed session on ${instrument}.`)
+                            }}
+                            className="hover:opacity-80 cursor-pointer transition flex items-center gap-1 select-none"
+                            title="Click to ask Leo about settled Dalton Day Type for closed session"
+                          >
+                            <span className="text-gray-500">Day: </span>
+                            <span className="text-purple-300 font-semibold underline decoration-dotted decoration-purple-400/50 underline-offset-2">
+                              {dayTypeEval.badgeText} (Closed)
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLeoExternalPoints([
+                                {
+                                  id: 'ctx-day-type',
+                                  label: 'Day Type (Closed Session)',
+                                  value: `${dayTypeEval.badgeText} (FINAL / SESSION CLOSED)`,
+                                  tier: 'CONTEXT',
+                                  category: 'DAY_TYPE',
+                                  description: dayTypeEval.description || 'Final settled Dalton Day Type for closed session',
+                                },
+                              ])
+                              setLeoPanelOpen(true)
+                              setLeoAutoPrompt(`Leo, summarize key auction tails, session profile distribution, and final Dalton day type for today's closed session on ${instrument}.`)
                             }}
                             className="transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-purple-950/50 hover:bg-purple-900/70 border border-purple-800/40 hover:border-purple-500 text-[10px] text-purple-300 hover:text-white cursor-pointer ml-0.5"
-                            title="Ask Leo to evaluate expected Dalton Day Type for upcoming session"
+                            title="Ask Leo to evaluate final Dalton Day Type for closed session"
                           >
                             <span>🤖</span>
                             <span className="font-mono">Ask Leo</span>
