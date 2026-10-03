@@ -63,6 +63,7 @@ import {
   detectDistributionReferences,
   detectEmotionalNewsMoves,
   shouldAnchorVwapToNews,
+  isVeryImportantMacroEvent,
   type EmotionalNewsMove,
   type SessionExtreme,
 } from '@/lib/chart/excesses'
@@ -201,17 +202,15 @@ import {
   type OrderFlowSummary,
 } from '@/lib/trading/orderFlowDelta'
 import {
-  checkTrendlineBreakout,
-  findInitiatingPoint,
-  findBreakoutSwingAnchor,
-  evaluateTrendBorningZone,
-  detectFlagAndSecondaryBreakout,
-  calculateDynamicTrendline,
-  checkDynamicTrendlineExit,
-  resampleCandlesTo5M,
   evaluateHorizontalRunway,
   calculateEmpiricalSpeedlines,
 } from '@/lib/trading/trendlineStrategy'
+import {
+  classifyWyckoffLine,
+  evaluateWyckoffSetup,
+  type WyckoffBar,
+  type WyckoffChartContext,
+} from '@/lib/trading/wyckoffStrategy'
 import {
   evaluatePriceQuestioning,
   isPriceQuestioningSessionActive,
@@ -1327,43 +1326,15 @@ export function TradingChart({
     defaultTakeProfitFixed50: number
   }>>(new Map())
 
-  // ── User Interactive Drawing Tools (Trendline, Action Line, Reaction Line, Range, Manual FRVP, Measure) ────────
-  type DrawingToolType = 'NONE' | 'TRENDLINE' | 'ACTION_TRENDLINE' | 'REACTION_TRENDLINE' | 'RANGE' | 'FRVP' | 'MEASURE'
+  // ── User Interactive Drawing Tools (Wyckoff Structure Line, Range, Manual FRVP, Measure) ────────
+  type DrawingToolType = 'NONE' | 'TRENDLINE' | 'RANGE' | 'FRVP' | 'MEASURE'
   const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingToolType>('NONE')
-  const [activeActionTlId, setActiveActionTlId] = useState<string | null>(null)
-  const [dismissedBreakoutPrompts, setDismissedBreakoutPrompts] = useState<Set<string>>(() => {
-    if (typeof window === 'undefined') return new Set()
-    try {
-      const saved = localStorage.getItem('trading_desk_dismissed_breakouts_v1')
-      return saved ? new Set(JSON.parse(saved)) : new Set()
-    } catch {
-      return new Set()
-    }
-  })
-
-  const dismissBreakoutPrompt = useCallback((id: string) => {
-    setDismissedBreakoutPrompts((prev) => {
-      const next = new Set(prev).add(id)
-      try {
-        localStorage.setItem('trading_desk_dismissed_breakouts_v1', JSON.stringify(Array.from(next)))
-      } catch {}
-      return next
-    })
-  }, [])
-  const [brokenActionLineIds, setBrokenActionLineIds] = useState<string[]>([])
   const [trendlines, setTrendlines] = useState<UserTrendline[]>(() => {
     if (typeof window === 'undefined') return []
     try {
       const saved = localStorage.getItem('trading_desk_trendlines_v1')
       if (!saved) return []
-      const parsed: UserTrendline[] = JSON.parse(saved)
-      // System integrity: Reaction lines MUST be anchored to an existing Action Trendline
-      const actionIds = new Set(
-        parsed.filter((t) => t.isActionTrendline || t.isInitialOvernight).map((t) => t.id)
-      )
-      return parsed.filter(
-        (t) => !t.isReactionTrendline || (t.parentActionTrendlineId && actionIds.has(t.parentActionTrendlineId))
-      )
+      return JSON.parse(saved)
     } catch {
       return []
     }
@@ -1559,7 +1530,9 @@ export function TradingChart({
   const paintFrvp5dRef = useRef<(overrideBars?: OHLCV[]) => void>(() => { })
   const [avwap5mBenchmark, setAvwap5mBenchmark] = useState<AnchoredVwapBenchmark5M | null>(null)
   const [show5mAvwapModal, setShow5mAvwapModal] = useState(false)
-  const [show5mAvwapOnChart, setShow5mAvwapOnChart] = useState(false) // Invisible on chart by default
+  const [show5mAvwapOnChart, setShow5mAvwapOnChart] = useState(false) // Controlled by bottom dock button
+  const [showNewsOnChart, setShowNewsOnChart] = useState(false) // News markers off by default; filtered to latest Tier-1 event
+  const [showSdBands, setShowSdBands] = useState(false) // Standard Deviation bands ("CDs") off by default (clean desk)
   const avwap5mLinesRef = useRef<IPriceLine[]>([])
   const paint5mAvwapBenchmarkRef = useRef<() => void>(() => { })
   const showVwap = true
@@ -1754,12 +1727,6 @@ export function TradingChart({
     () => trendlines.filter((t) => t.instrument === instrument),
     [trendlines, instrument]
   )
-  const hasBrokenAction = useMemo(() => {
-    if (brokenActionLineIds.length > 0) return true
-    return activeTrendlines.some(
-      (t) => (t.isActionTrendline || t.isInitialOvernight) && confirmedBreakoutsRef.current.has(t.id)
-    )
-  }, [brokenActionLineIds, activeTrendlines])
   const activeRangeBoxes = useMemo(
     () => rangeBoxes.filter((r) => r.instrument === instrument),
     [rangeBoxes, instrument]
@@ -2739,14 +2706,23 @@ export function TradingChart({
     if (timeframe !== '1D') {
       spikesRef.current = detectSpikes(rawBars, instrument, yesterdayStartUnix)
       distRefsRef.current = detectDistributionReferences(rawBars, instrument, yesterdayStartUnix)
-      newsMovesRef.current = detectEmotionalNewsMoves(
+      const allNews = detectEmotionalNewsMoves(
         rawBars,
         newsEvents,
         instrument,
+        yesterdayStartUnix,
         undefined,
-        undefined,
-        true
+        false // Routine 2x ATR bars are NOT breaking news! No more routine spike clutter!
       )
+      // Keep ONLY the single latest most significant Tier-1 macro news move within active trading (last 36h)
+      const nowSec = Math.floor(Date.now() / 1000)
+      const significant = allNews.filter(
+        (m) =>
+          !m.eventName.includes('Breaking News Volatility Spike') &&
+          (isVeryImportantMacroEvent(m.eventName, m.country) || m.impact === 'High') &&
+          nowSec - m.reactionEndTime <= 36 * 3600
+      )
+      newsMovesRef.current = significant.length > 0 ? [significant[significant.length - 1]!] : []
     } else {
       spikesRef.current = []
       distRefsRef.current = []
@@ -3493,8 +3469,8 @@ export function TradingChart({
       if (x1 != null && x2 != null && y1 != null && y2 != null) {
         const [ex1, ey1, ex2, ey2] = extendedLine(x1, y1, x2, y2)
 
-        const isActionTl = Boolean(tl.isActionTrendline || tl.isInitialOvernight)
-        const tlColor = isActionTl ? '#f59e0b' : (tl.color || '#38bdf8')
+        const isSupplyLine = Boolean(tl.label?.includes('Supply') || tl.p2.price < tl.p1.price)
+        const tlColor = isSupplyLine ? '#f59e0b' : (tl.color || '#38bdf8')
         const isSelected = selectedTrendlineIdRef.current === tl.id
         const isHovered = hoveredHandleRef.current?.id === tl.id
         const p1Hovered = isHovered && hoveredHandleRef.current?.type === 'p1'
@@ -3504,8 +3480,8 @@ export function TradingChart({
         // Selection glow / halo along the line (TradingView style)
         if (isSelected) {
           ctx.save()
-          ctx.strokeStyle = isActionTl ? 'rgba(245, 158, 11, 0.32)' : 'rgba(56, 189, 248, 0.32)'
-          ctx.lineWidth = isActionTl ? 8 : 7
+          ctx.strokeStyle = isSupplyLine ? 'rgba(245, 158, 11, 0.32)' : 'rgba(56, 189, 248, 0.32)'
+          ctx.lineWidth = 8
           ctx.beginPath()
           ctx.moveTo(ex1, ey1)
           ctx.lineTo(ex2, ey2)
@@ -3515,7 +3491,7 @@ export function TradingChart({
 
         // Extended line
         ctx.strokeStyle = tlColor
-        ctx.lineWidth = isActionTl ? 2.5 : 2
+        ctx.lineWidth = 2.5
         ctx.setLineDash([])
         ctx.beginPath()
         ctx.moveTo(ex1, ey1)
@@ -3523,7 +3499,7 @@ export function TradingChart({
         ctx.stroke()
 
         // P1 handle (TradingView interactive anchor: white circle, colored ring, drop shadow)
-        const r1 = p1Hovered ? 8 : (isSelected ? 7 : (isActionTl ? 5.5 : 4.5))
+        const r1 = p1Hovered ? 8 : (isSelected ? 7 : 5)
         ctx.save()
         ctx.shadowColor = 'rgba(0, 0, 0, 0.7)'
         ctx.shadowBlur = 4
@@ -3541,7 +3517,7 @@ export function TradingChart({
         ctx.restore()
 
         // P2 handle (TradingView interactive anchor)
-        const r2 = p2Hovered ? 8 : (isSelected ? 7 : (isActionTl ? 5.5 : 4.5))
+        const r2 = p2Hovered ? 8 : (isSelected ? 7 : 5)
         ctx.save()
         ctx.shadowColor = 'rgba(0, 0, 0, 0.7)'
         ctx.shadowBlur = 4
@@ -3604,535 +3580,143 @@ export function TradingChart({
 
         // Midpoint badge coordinates
         const pDiff = tl.p2.price - tl.p1.price
-        const dir = pDiff > 0 ? '↗' : pDiff < 0 ? '↘' : '→'
 
-        // Dynamic session detection: check anchor time, fallback to tl.sessionOrigin, fallback to current time
-        const anchorTime = Math.min(tl.p1.time, tl.p2.time)
-        const deskSess = nyDeskSessionAt(anchorTime) ?? (tl.sessionOrigin ? (tl.sessionOrigin === 'NYC' ? 'New York' : tl.sessionOrigin) : nyDeskSessionAt(Math.floor(Date.now() / 1000)))
-        const resolvedOrigin: 'Asia' | 'London' | 'NYC' =
-          deskSess === 'Asia' ? 'Asia' : deskSess === 'London' ? 'London' : deskSess === 'New York' ? 'NYC' : (tl.sessionOrigin || 'Asia')
+        // ── Wyckoff Structure Line Engine (Supply / Demand, Spring, Upthrust, JAC Breakout, CVD & 2R Check) ──
+        const wyckoffBars: WyckoffBar[] = list.map((c: any) => ({
+          time: typeof c.time === 'number' ? c.time : 0,
+          open: Number(c.open),
+          high: Number(c.high),
+          low: Number(c.low),
+          close: Number(c.close),
+          volume: Number(c.volume || 1),
+          cvd: typeof c.cvd === 'number' ? c.cvd : undefined,
+        }))
 
-        // ── Systematic Trend-Borning Zone & Responsive Angle Engine (Action Trendlines ONLY) ──
-        let actionLifecycleTag = ' · ARMED ⏳'
-        let systematicLayersToRender: (() => void) | null = null
-
-        if (isActionTl && pDiff !== 0 && list.length > 0) {
-          const isLong = pDiff < 0
-          const setupDir: 'LONG' | 'SHORT' = isLong ? 'LONG' : 'SHORT'
-
-          const rawBars: Candle[] = list.map((c: any) => ({
-            time: typeof c.time === 'number' ? c.time : 0,
-            open: Number(c.open),
-            high: Number(c.high),
-            low: Number(c.low),
-            close: Number(c.close),
-            volume: Number(c.volume || 1),
-          }))
-          const bars5m: Candle[] = resampleCandlesTo5M(rawBars)
-          const nowSec = Math.floor(Date.now() / 1000)
-
-          const breakout = checkTrendlineBreakout(tl, bars5m, {
-            direction: setupDir,
-            currentTimeSec: nowSec,
-            barDurationSec: 300,
-          })
-
-          // Invalidate stale breakout cache if user adjusted, dragged, or modified the trendline anchors
-          const existingBrk = confirmedBreakoutsRef.current.get(tl.id)
-          if (existingBrk) {
-            if (
-              existingBrk.p1Time !== tl.p1.time ||
-              existingBrk.p1Price !== tl.p1.price ||
-              existingBrk.p2Time !== tl.p2.time ||
-              existingBrk.p2Price !== tl.p2.price
-            ) {
-              confirmedBreakoutsRef.current.delete(tl.id)
-            }
-          }
-
-          // Maintain persistent breakout state so intra-bar ticks or rebuilds do not cause reaction line to flicker
-          if (breakout.isConfirmed5mClose && breakout.breakoutCandle) {
-            confirmedBreakoutsRef.current.set(tl.id, {
-              p1Time: tl.p1.time,
-              p1Price: tl.p1.price,
-              p2Time: tl.p2.time,
-              p2Price: tl.p2.price,
-              breakoutCandle: breakout.breakoutCandle,
-              breakoutIndex: breakout.breakoutCandleIndex ?? (bars5m.length - 1),
-              entryPrice: breakout.entryPrice ?? breakout.breakoutCandle.close,
-              defaultStopLoss: breakout.defaultStopLoss ?? (isLong ? breakout.breakoutCandle.low - 1 : breakout.breakoutCandle.high + 1),
-              defaultTakeProfitFixed50: breakout.defaultTakeProfitFixed50 ?? (isLong ? breakout.breakoutCandle.close + 50 : breakout.breakoutCandle.close - 50),
-            })
-          } else if (!breakout.isConfirmed5mClose) {
-            confirmedBreakoutsRef.current.delete(tl.id)
-          }
-
-          const cachedBrk = confirmedBreakoutsRef.current.get(tl.id)
-          const hasConfirmedBreakout = breakout.isConfirmed5mClose || Boolean(cachedBrk)
-          const activeBreakoutCandle = breakout.breakoutCandle || cachedBrk?.breakoutCandle
-          const activeBreakoutIndex = breakout.breakoutCandleIndex ?? cachedBrk?.breakoutIndex ?? (bars5m.length - 1)
-          const activeEntryPrice = breakout.entryPrice ?? cachedBrk?.entryPrice
-          const activeStopLoss = breakout.defaultStopLoss ?? cachedBrk?.defaultStopLoss
-          const activeTakeProfit = breakout.defaultTakeProfitFixed50 ?? cachedBrk?.defaultTakeProfitFixed50
-
-          // Crucial: The Trend-Borning Zone, entry targets, and reaction line ONLY exist once a breakout is confirmed!
-          // Prior to confirmed breakout, the Action Trendline is in ARMED / MONITORING state with zero visual clutter.
-          if (hasConfirmedBreakout && activeBreakoutCandle) {
-            const initPt = findInitiatingPoint(tl, bars5m, activeBreakoutIndex, { direction: setupDir })
-
-            if (initPt) {
-              const mockChartCtx: any = {
-                yesterday: yesterdayNyc ? { poc: yesterdayNyc.poc, high: yesterdayNyc.yh, low: yesterdayNyc.yl, vah: yesterdayNyc.vah, val: yesterdayNyc.val } : null,
-                overnight: overnightInventory ? {
-                  overnight: { poc: overnightInventory.overnight?.poc, high: overnightInventory.overnight?.high, low: overnightInventory.overnight?.low },
-                  asia: { poc: overnightInventory.asia?.poc, high: overnightInventory.asia?.high, low: overnightInventory.asia?.low },
-                  london: { poc: overnightInventory.london?.poc, high: overnightInventory.london?.high, low: overnightInventory.london?.low },
-                } : null,
-                frvp5d: frvp5d ? { poc: frvp5d.poc, vah: frvp5d.vah, val: frvp5d.val, high: frvp5d.high, low: frvp5d.low } : null,
-                avwap5m: avwap5mBenchmark ? {
-                  vwap: avwap5mBenchmark.vwap,
-                  sigma1Upper: avwap5mBenchmark.sigma1Upper,
-                  sigma1Lower: avwap5mBenchmark.sigma1Lower,
-                  sigma2Upper: avwap5mBenchmark.sigma2Upper,
-                  sigma2Lower: avwap5mBenchmark.sigma2Lower,
-                } : null,
-              }
-
-              const horizontalRunway = evaluateHorizontalRunway({
-                entryPrice: activeEntryPrice ?? activeBreakoutCandle.close,
-                stopLossPrice: activeStopLoss ?? (isLong ? activeBreakoutCandle.low - 1 : activeBreakoutCandle.high + 1),
-                direction: setupDir,
-                chartContext: mockChartCtx,
-              })
-
-              const borningZone = evaluateTrendBorningZone({
-                initiatingPoint: initPt,
-                bars: bars5m,
-                chartContext: mockChartCtx,
-                direction: setupDir,
-              })
-
-              const flagState = detectFlagAndSecondaryBreakout({
-                origin: initPt,
-                breakoutCandle: activeBreakoutCandle,
-                bars: bars5m,
-                direction: setupDir,
-                structuralZone: borningZone.structuralZone,
-              })
-
-              // Find local pre-breakout swing anchor under breakout candle (prevents distant tail from forcing unnatural steep line)
-              const localSwingAnchor = findBreakoutSwingAnchor({
-                bars: bars5m,
-                breakoutIndex: activeBreakoutIndex,
-                direction: setupDir,
-                macroOrigin: initPt,
-              })
-
-              // Check if user drew a manual Reaction Trendline for this Action Breakout
-              const matchedUserReactionTl = trendlines.find(
-                (t) =>
-                  t.isReactionTrendline &&
-                  (t.parentActionTrendlineId === tl.id ||
-                    (!t.parentActionTrendlineId && Math.abs(t.p1.time - activeBreakoutCandle.time) <= 7200))
-              )
-
-              const curPx = list[list.length - 1]?.close ?? initPt.price
-              const curSec = Math.floor(Date.now() / 1000)
-              const dynamicLine = calculateDynamicTrendline({
-                origin: initPt,
-                compositeScore: borningZone.compositeScore,
-                higherLows: flagState.confirmedPivots,
-                currentPrice: curPx,
-                currentTime: curSec,
-                bars: bars5m,
-                direction: setupDir,
-                breakoutCandle: activeBreakoutCandle,
-                flagState,
-                structuralZone: borningZone.structuralZone,
-                reactionAnchor: localSwingAnchor,
-                userReactionTrendline: matchedUserReactionTl,
-              })
-
-              // Check if subsequent completed 5-minute candles have crossed / negated the Reaction Trendline
-              let reactionBrokenBar: Candle | null = null
-              let reactionExitPrice: number | null = null
-
-              for (let bIdx = activeBreakoutIndex + 1; bIdx < bars5m.length; bIdx++) {
-                const bar = bars5m[bIdx]!
-                const exitCheck = checkDynamicTrendlineExit(dynamicLine, bar, {
-                  currentTimeSec: curSec,
-                  barDurationSec: 300,
-                  structuralZone: borningZone.structuralZone,
-                })
-                if (exitCheck.shouldExit) {
-                  reactionBrokenBar = bar
-                  reactionExitPrice = exitCheck.exitPrice ?? bar.close
-                  break
-                }
-              }
-
-              const isReactionBroken = Boolean(reactionBrokenBar)
-              if (isReactionBroken) {
-                actionLifecycleTag = ' · [COMPLETED]'
-              } else if (matchedUserReactionTl) {
-                actionLifecycleTag = ' · 📐 USER REACTION TL'
-              } else if (flagState.isSecondaryBreakout) {
-                actionLifecycleTag = ' · 🚩⚡ 2ND BREAKOUT'
-              } else if (flagState.isDeepDip) {
-                actionLifecycleTag = ' · 🔄 1ST DIP RANGE'
-              } else if (flagState.phase === 'FLAG_FORMING') {
-                actionLifecycleTag = ' · 🚩 FLAG FORMING'
-              } else {
-                actionLifecycleTag = ' · BREAKOUT ACTIVE ⚡'
-              }
-
-              systematicLayersToRender = () => {
-                // 1. Draw Initiating Point & Structural Band
-                const initX = timeToX(chart.timeScale(), toChartTime(initPt.time, tz), candleTimes)
-                const initY = series.priceToCoordinate(initPt.price)
-
-              // Draw Structural Borning Zone Band [zoneLow, zoneHigh]
-              const sz = borningZone.structuralZone
-              if (sz) {
-                const yLow = series.priceToCoordinate(sz.zoneLow)
-                const yHigh = series.priceToCoordinate(sz.zoneHigh)
-                if (yLow != null && yHigh != null) {
-                  const bandTop = Math.min(yLow, yHigh)
-                  const bandHeight = Math.max(4, Math.abs(yLow - yHigh))
-                  const initXPos = initX != null ? Math.max(0, initX - 20) : 0
-
-                  // If reaction line was already broken/completed, dim the band
-                  const bandAlpha = isReactionBroken ? '0.04' : '0.10'
-                  const borderAlpha = isReactionBroken ? '0.2' : '0.4'
-                  ctx.fillStyle = isLong ? `rgba(234, 179, 8, ${bandAlpha})` : `rgba(239, 68, 68, ${bandAlpha})`
-                  ctx.fillRect(initXPos, bandTop, paneW - initXPos, bandHeight)
-                  ctx.strokeStyle = isLong ? `rgba(234, 179, 8, ${borderAlpha})` : `rgba(239, 68, 68, ${borderAlpha})`
-                  ctx.lineWidth = 1
-                  ctx.setLineDash([3, 3])
-                  ctx.strokeRect(initXPos, bandTop, paneW - initXPos, bandHeight)
-                  ctx.setLineDash([])
-
-                  if (initX != null && !isReactionBroken && !hideTrendlineBadges) {
-                    const zVolText = `📦 ${isLong ? 'Bull' : 'Bear'} Zone [${sz.zoneLow.toFixed(1)}–${sz.zoneHigh.toFixed(1)}] · Vol: ${sz.totalZoneVolume.toLocaleString()}${sz.historicalVolumeRatio ? ` (${sz.historicalVolumeRatio}x)` : ''}`
-                    ctx.font = 'bold 8.5px ui-monospace, SFMono-Regular, monospace'
-                    const zW = ctx.measureText(zVolText).width + 8
-                    const zH = 14
-                    const { x: zBx, y: zBy } = allocateBadgePos(initXPos + 6, bandTop + 2, zW, zH, false)
-                    ctx.fillStyle = 'rgba(15, 23, 42, 0.92)'
-                    ctx.fillRect(zBx, zBy, zW, zH)
-                    ctx.fillStyle = isLong ? '#fcd34d' : '#fca5a5'
-                    ctx.fillText(zVolText, zBx + 4, zBy + 10)
-                  }
-                }
-              }
-
-              if (initX != null && initY != null) {
-                ctx.beginPath()
-                ctx.arc(initX, initY, 5, 0, 2 * Math.PI)
-                ctx.fillStyle = isReactionBroken ? 'rgba(100, 116, 139, 0.4)' : (isLong ? 'rgba(234, 179, 8, 0.5)' : 'rgba(239, 68, 68, 0.5)')
-                ctx.fill()
-                ctx.strokeStyle = isReactionBroken ? '#64748b' : (isLong ? '#eab308' : '#ef4444')
-                ctx.lineWidth = 1.5
-                ctx.stroke()
-
-                if (!hideTrendlineBadges) {
-                  const bStatus = isReactionBroken ? ' [COMPLETED]' : ''
-                  const bText = `🎯 ${isLong ? 'BULL' : 'BEAR'} ORIGIN: ${initPt.price.toFixed(2)} · ${borningZone.compositeScore}/100 (${borningZone.grade})${bStatus}`
-                  ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-                  const bW = ctx.measureText(bText).width + 10
-                  const bH = 16
-                  const targetY = isLong ? initY + 14 : initY - 30
-                  const { x: bBx, y: bBy } = allocateBadgePos(initX - bW / 2, targetY, bW, bH, !isLong)
-
-                  // Small leader line from pivot dot to badge
-                  ctx.strokeStyle = isReactionBroken ? 'rgba(100, 116, 139, 0.5)' : (isLong ? 'rgba(234, 179, 8, 0.6)' : 'rgba(239, 68, 68, 0.6)')
-                  ctx.lineWidth = 1
-                  ctx.beginPath()
-                  ctx.moveTo(initX, initY)
-                  ctx.lineTo(initX, isLong ? bBy : bBy + bH)
-                  ctx.stroke()
-
-                  ctx.fillStyle = isReactionBroken ? 'rgba(30, 41, 59, 0.94)' : 'rgba(15, 23, 42, 0.94)'
-                  ctx.fillRect(bBx, bBy, bW, bH)
-                  ctx.strokeStyle = isReactionBroken ? '#64748b' : (isLong ? '#eab308' : '#ef4444')
-                  ctx.lineWidth = 1
-                  ctx.strokeRect(bBx, bBy, bW, bH)
-                  ctx.fillStyle = isReactionBroken ? '#94a3b8' : (isLong ? '#fef08a' : '#fca5a5')
-                  ctx.fillText(bText, bBx + 5, bBy + 11)
-                }
-              }
-
-              // 2. Draw Higher Lows / Lower Highs (limit to at most 2 most recent significant pivots to prevent visual clutter)
-              const visiblePivots = (flagState.confirmedPivots || []).slice(1).slice(-2)
-              for (const hl of visiblePivots) {
-                const hlX = timeToX(chart.timeScale(), toChartTime(hl.time, tz), candleTimes)
-                const hlY = series.priceToCoordinate(hl.price)
-                if (hlX != null && hlY != null) {
-                  ctx.beginPath()
-                  ctx.arc(hlX, hlY, 3.5, 0, 2 * Math.PI)
-                  ctx.fillStyle = isLong ? '#38bdf8' : '#f43f5e'
-                  ctx.fill()
-                  ctx.strokeStyle = '#ffffff'
-                  ctx.lineWidth = 1
-                  ctx.stroke()
-
-                  if (!hideTrendlineBadges) {
-                    const hlLabel = `${hl.timingLabel} · ${hl.price.toFixed(1)}`
-                    ctx.font = 'bold 8.5px ui-monospace, SFMono-Regular, monospace'
-                    const hlW = ctx.measureText(hlLabel).width + 8
-                    const hlH = 14
-                    const targetY = isLong ? hlY + 8 : hlY - 22
-                    const { x: hlBx, y: hlBy } = allocateBadgePos(hlX - hlW / 2, targetY, hlW, hlH, !isLong)
-
-                    ctx.fillStyle = 'rgba(15, 23, 42, 0.92)'
-                    ctx.fillRect(hlBx, hlBy, hlW, hlH)
-                    ctx.strokeStyle = isLong ? '#38bdf8' : '#f43f5e'
-                    ctx.lineWidth = 1
-                    ctx.strokeRect(hlBx, hlBy, hlW, hlH)
-                    ctx.fillStyle = isLong ? '#7dd3fc' : '#fda4af'
-                    ctx.fillText(hlLabel, hlBx + 4, hlBy + 10)
-                  }
-                }
-              }
-
-              // Draw Flag Forming Badge if price is consolidating post-breakout
-              if (flagState.phase === 'FLAG_FORMING' && !isReactionBroken && !hideTrendlineBadges) {
-                const flagX = timeToX(chart.timeScale(), toChartTime(flagState.flagExtremeTime, tz), candleTimes)
-                const flagY = series.priceToCoordinate(flagState.flagExtremePrice)
-                if (flagX != null && flagY != null) {
-                  const fText = isLong
-                    ? `🚩 BULL FLAG (Low ${flagState.flagExtremePrice.toFixed(1)} · Trigger > ${flagState.polePrice.toFixed(1)})`
-                    : `🚩 BEAR FLAG (High ${flagState.flagExtremePrice.toFixed(1)} · Trigger < ${flagState.polePrice.toFixed(1)})`
-                  ctx.font = 'bold 8.5px ui-monospace, SFMono-Regular, monospace'
-                  const fW = ctx.measureText(fText).width + 8
-                  const fH = 14
-                  const targetY = isLong ? flagY + 10 : flagY - 24
-                  const { x: fBx, y: fBy } = allocateBadgePos(flagX - fW / 2, targetY, fW, fH, !isLong)
-                  ctx.fillStyle = 'rgba(15, 23, 42, 0.94)'
-                  ctx.fillRect(fBx, fBy, fW, fH)
-                  ctx.strokeStyle = '#38bdf8'
-                  ctx.lineWidth = 1
-                  ctx.strokeRect(fBx, fBy, fW, fH)
-                  ctx.fillStyle = '#7dd3fc'
-                  ctx.fillText(fText, fBx + 4, fBy + 10)
-                }
-              }
-
-              // Draw Confirmed Secondary Breakout Marker
-              if (flagState.isSecondaryBreakout && flagState.secondaryBreakoutCandle && !isReactionBroken && !hideTrendlineBadges) {
-                const sbX = timeToX(chart.timeScale(), toChartTime(flagState.secondaryBreakoutCandle.time, tz), candleTimes)
-                const sbY = series.priceToCoordinate(flagState.secondaryBreakoutCandle.close)
-                if (sbX != null && sbY != null) {
-                  const sbText = isLong
-                    ? `🚩⚡ 2ND BREAKOUT: > ${flagState.polePrice.toFixed(1)} (HL1 Confirmed)`
-                    : `🚩⚡ 2ND BREAKDOWN: < ${flagState.polePrice.toFixed(1)} (LH1 Confirmed)`
-                  ctx.font = 'bold 8.5px ui-monospace, SFMono-Regular, monospace'
-                  const sbW = ctx.measureText(sbText).width + 8
-                  const sbH = 14
-                  const targetY = isLong ? sbY - 26 : sbY + 12
-                  const { x: sbBx, y: sbBy } = allocateBadgePos(sbX - sbW / 2, targetY, sbW, sbH, isLong)
-                  ctx.fillStyle = 'rgba(15, 23, 42, 0.94)'
-                  ctx.fillRect(sbBx, sbBy, sbW, sbH)
-                  ctx.strokeStyle = isLong ? '#22c55e' : '#ef4444'
-                  ctx.lineWidth = 1
-                  ctx.strokeRect(sbBx, sbBy, sbW, sbH)
-                  ctx.fillStyle = isLong ? '#86efac' : '#fca5a5'
-                  ctx.fillText(sbText, sbBx + 4, sbBy + 10)
-                }
-              }
-
-              // 3. Draw Confirmed 5m Breakout Candle Marker & Entry Target
-              const brkX = timeToX(chart.timeScale(), toChartTime(activeBreakoutCandle.time, tz), candleTimes)
-              const brkY = series.priceToCoordinate(activeBreakoutCandle.close)
-              if (brkX != null && brkY != null) {
-                ctx.beginPath()
-                if (isLong) {
-                  // Up triangle
-                  ctx.moveTo(brkX, brkY - 12)
-                  ctx.lineTo(brkX - 6, brkY - 2)
-                  ctx.lineTo(brkX + 6, brkY - 2)
-                } else {
-                  // Down triangle
-                  ctx.moveTo(brkX, brkY + 12)
-                  ctx.lineTo(brkX - 6, brkY + 2)
-                  ctx.lineTo(brkX + 6, brkY + 2)
-                }
-                ctx.closePath()
-                ctx.fillStyle = isLong ? '#22c55e' : '#ef4444'
-                ctx.fill()
-
-                if (!hideTrendlineBadges) {
-                  const brkIcon = isLong ? '🚀 5M LONG ENTRY' : '🔻 5M SHORT ENTRY'
-                  const targetInfo = horizontalRunway.nearestResistance
-                    ? `🎯 Target: ${horizontalRunway.nearestResistance.price.toFixed(1)} (${horizontalRunway.nearestResistance.label} · ${horizontalRunway.runwayRatio}:1 Runway)`
-                    : `TP ${activeTakeProfit?.toFixed(2)}`
-                  const trapWarning = horizontalRunway.quality === 'TIGHT_RUNWAY' ? ' ⚠️ TIGHT RUNWAY' : ''
-                  const brkText = `${brkIcon}: ${activeEntryPrice?.toFixed(2)} · SL ${activeStopLoss?.toFixed(2)} · ${targetInfo}${trapWarning}`
-                  ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-                  const brkW = ctx.measureText(brkText).width + 10
-                  const brkH = 16
-                  const prefY = isLong ? brkY - 34 : brkY + 18
-                  const { x: brkBx, y: brkBy } = allocateBadgePos(brkX - brkW / 2, prefY, brkW, brkH, isLong)
-
-                  ctx.fillStyle = 'rgba(15, 23, 42, 0.95)'
-                  ctx.fillRect(brkBx, brkBy, brkW, brkH)
-                  ctx.strokeStyle = horizontalRunway.quality === 'TIGHT_RUNWAY' ? '#f59e0b' : isLong ? '#22c55e' : '#ef4444'
-                  ctx.lineWidth = 1
-                  ctx.strokeRect(brkBx, brkBy, brkW, brkH)
-                  ctx.fillStyle = horizontalRunway.quality === 'TIGHT_RUNWAY' ? '#fcd34d' : isLong ? '#86efac' : '#fca5a5'
-                  ctx.fillText(brkText, brkBx + 5, brkBy + 11)
-                }
-              }
-
-              // 4. Draw Dynamic Responsive Reaction Trendline
-              const dX1 = timeToX(chart.timeScale(), toChartTime(dynamicLine.p1.time, tz), candleTimes)
-              const dY1 = series.priceToCoordinate(dynamicLine.p1.price)
-
-              if (dX1 != null && dY1 != null) {
-                if (isReactionBroken && reactionBrokenBar) {
-                  // The reaction trendline was CROSSED/NEGATED by a 5m close!
-                  // Terminate the ray at the breaking candle instead of projecting forward infinitely
-                  const exitX = timeToX(chart.timeScale(), toChartTime(reactionBrokenBar.time, tz), candleTimes) ?? (dX1 + 100)
-                  const exitY = series.priceToCoordinate(reactionBrokenBar.close) ?? dY1
-
-                  ctx.strokeStyle = '#64748b' // Muted slate indicating completed/broken line
-                  ctx.lineWidth = 1.5
-                  ctx.setLineDash([4, 4])
-                  ctx.beginPath()
-                  ctx.moveTo(dX1, dY1)
-                  ctx.lineTo(exitX, exitY)
-                  ctx.stroke()
-                  ctx.setLineDash([])
-
-                  if (!hideTrendlineBadges) {
-                    // Invalidation / Exit Marker at crossing candle
-                    const exitText = `🛑 REACTION BROKEN: 5M Close @ ${reactionExitPrice?.toFixed(2)} (Cycle Negated)`
-                    ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-                    const eW = ctx.measureText(exitText).width + 10
-                    const eH = 16
-                    const prefExitY = isLong ? exitY + 18 : exitY - 34
-                    const { x: eBx, y: eBy } = allocateBadgePos(exitX - eW / 2, prefExitY, eW, eH, !isLong)
-
-                    ctx.fillStyle = 'rgba(30, 41, 59, 0.95)'
-                    ctx.fillRect(eBx, eBy, eW, eH)
-                    ctx.strokeStyle = '#ef4444'
-                    ctx.lineWidth = 1.5
-                    ctx.strokeRect(eBx, eBy, eW, eH)
-                    ctx.fillStyle = '#fca5a5'
-                    ctx.fillText(exitText, eBx + 5, eBy + 11)
-                  }
-                } else {
-                  // Active reaction trendline protecting the live trade
-                  const lastBarTime = (list[list.length - 1]?.time as number) || (dynamicLine.p1.time + 300)
-                  const refBarTime = lastBarTime > dynamicLine.p1.time ? lastBarTime : dynamicLine.p1.time + 300
-                  const refPrice = dynamicLine.p1.price + (dynamicLine.slopePtsPerSec * (refBarTime - dynamicLine.p1.time))
-
-                  let dX2 = timeToX(chart.timeScale(), toChartTime(refBarTime, tz), candleTimes)
-                  let dY2: number | null = series.priceToCoordinate(refPrice)
-
-                  if (dX2 == null) {
-                    dX2 = dX1 + 120
-                    dY2 = dY1 + (isLong ? -50 : 50)
-                  }
-                  if (dY2 == null) {
-                    dY2 = series.priceToCoordinate(dynamicLine.p2.price) ?? dY1
-                  }
-
-                  const [dex1, dey1, dex2, dey2] = extendedLine(dX1, dY1, dX2, dY2)
-                  const isDrying = dynamicLine.swingVolumeProgression?.trend === 'DECLINING'
-                  const isDecaying = dynamicLine.isStalling || isDrying
-
-                  const healthyColor = isLong ? '#22c55e' : '#f43f5e'
-                  ctx.strokeStyle = isDecaying ? '#f97316' : healthyColor
-                  ctx.lineWidth = 2.5
-                  ctx.setLineDash(isDecaying ? [6, 3] : [])
-                  ctx.beginPath()
-                  ctx.moveTo(dex1, dey1)
-                  ctx.lineTo(dex2, dey2)
-                  ctx.stroke()
-                  ctx.setLineDash([])
-
-                  if (!hideTrendlineBadges) {
-                    const dynIcon = isLong ? '📈' : '📉'
-                    let lineTypeTitle = 'Reaction Line'
-                    let slopeMode = ' · Projected'
-                    if (dynamicLine.isUserReactionTrendline) {
-                      lineTypeTitle = 'User Reaction Line'
-                      slopeMode = ' · Manual Empirical'
-                    } else if (dynamicLine.isEmpiricalPivotSlope && (dynamicLine.activePivotCount ?? 0) >= 2) {
-                      slopeMode = ' · 2-Point Structural'
-                    } else if (flagState.isDeepDip) {
-                      lineTypeTitle = isLong ? 'Range Support Floor' : 'Range Resistance Ceiling'
-                      slopeMode = ` · 1st Dip Retest [${dynamicLine.p1.price.toFixed(1)}]`
-                    } else if (flagState.phase === 'FLAG_FORMING') {
-                      slopeMode = ' · Trailing Support (Flag)'
-                    } else if (flagState.phase === 'INCUBATION') {
-                      slopeMode = ' · Trailing Support'
-                    }
-                    const dynText = `${dynIcon} ${lineTypeTitle} (${Math.abs(dynamicLine.effectiveSlopePtsPer5m)} pts/5m${slopeMode})${dynamicLine.isStalling && flagState.phase !== 'FLAG_FORMING' ? ' ⚡ STALL' : ''}`
-                    ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-                    const dW = ctx.measureText(dynText).width + 10
-                    const dH = 16
-
-                    const midAnchorX = (dX1 + Math.min(paneW - 40, dX2)) / 2
-                    const midAnchorY = (dY1 + dY2) / 2
-                    const { x: dynBx, y: dynBy } = allocateBadgePos(midAnchorX - dW / 2, midAnchorY - 18, dW, dH, true)
-
-                    ctx.fillStyle = isDecaying ? 'rgba(67, 20, 7, 0.95)' : isLong ? 'rgba(6, 78, 59, 0.95)' : 'rgba(76, 5, 25, 0.95)'
-                    ctx.fillRect(dynBx, dynBy, dW, dH)
-                    ctx.strokeStyle = isDecaying ? '#f97316' : healthyColor
-                    ctx.lineWidth = 1
-                    ctx.strokeRect(dynBx, dynBy, dW, dH)
-                    ctx.fillStyle = isDecaying ? '#fdba74' : isLong ? '#6ee7b7' : '#fda4af'
-                    ctx.fillText(dynText, dynBx + 5, dynBy + 11)
-                  }
-                }
-              }
-            }
-          }
+        const wyckoffCtx: WyckoffChartContext = {
+          yesterday: yesterdayNyc,
+          overnight: overnightInventory,
+          frvp5d,
+          avwap5m: avwap5mBenchmark,
         }
-      }
+
+        const wyckoffSetup = evaluateWyckoffSetup(tl, wyckoffBars, wyckoffCtx)
+        const isSupply = wyckoffSetup.lineRole === 'SUPPLY_LINE'
 
         // Midpoint badge render
-        const sessTag = isActionTl ? ` [${resolvedOrigin}]` : ''
-        const labelText = isActionTl
-          ? `🎯 ACTION LINE${sessTag} ${dir} (${pDiff >= 0 ? '+' : ''}${pDiff.toFixed(1)} pts)${actionLifecycleTag}`
-          : `📐 ${tl.label || 'Trendline'} ${dir} (${pDiff >= 0 ? '+' : ''}${pDiff.toFixed(1)} pts)`
+        const labelText = `📐 ${wyckoffSetup.roleLabel} (${pDiff >= 0 ? '+' : ''}${pDiff.toFixed(1)} pts) · ${wyckoffSetup.statusTag}`
 
         if (!hideTrendlineBadges) {
           ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
           const textW = ctx.measureText(labelText).width
-          const badgeW = textW + 10
+          const badgeW = textW + 12
           const badgeH = 16
           const { x: midBx, y: midBy } = allocateBadgePos(mx - badgeW / 2, my - 18, badgeW, badgeH, true)
 
-          ctx.fillStyle = isActionTl ? 'rgba(30, 20, 5, 0.94)' : 'rgba(15, 23, 42, 0.90)'
+          ctx.fillStyle = isSupply ? 'rgba(30, 20, 5, 0.94)' : 'rgba(15, 23, 42, 0.90)'
           ctx.fillRect(midBx, midBy, badgeW, badgeH)
-          ctx.strokeStyle = isActionTl ? '#f59e0b' : '#38bdf8'
-          ctx.lineWidth = isActionTl ? 1.5 : 1
+          ctx.strokeStyle = wyckoffSetup.color
+          ctx.lineWidth = 1.2
           ctx.strokeRect(midBx, midBy, badgeW, badgeH)
 
-          ctx.fillStyle = isActionTl ? '#fef08a' : '#7dd3fc'
-          ctx.fillText(labelText, midBx + 5, midBy + 11)
+          ctx.fillStyle = isSupply ? '#fef08a' : '#7dd3fc'
+          ctx.fillText(labelText, midBx + 6, midBy + 11)
         }
 
-        // Execute systematic layers if active (confirmed breakout)
-        if (systematicLayersToRender) {
-          systematicLayersToRender()
+        // Render Wyckoff Setup Telemetry & Invalidation/Target Visuals
+        if (wyckoffSetup.setupType !== 'NONE') {
+          const hasStop = wyckoffSetup.stopLoss && Number.isFinite(wyckoffSetup.stopLoss)
+          const hasTarget = wyckoffSetup.targetPrice && Number.isFinite(wyckoffSetup.targetPrice)
+          const yStop = hasStop ? series.priceToCoordinate(wyckoffSetup.stopLoss) : null
+          const yTgt = hasTarget ? series.priceToCoordinate(wyckoffSetup.targetPrice) : null
+
+          // Draw Stop Loss level (dashed red/rose)
+          if (yStop != null && Number.isFinite(yStop)) {
+            ctx.strokeStyle = '#f43f5e'
+            ctx.lineWidth = 1.3
+            ctx.setLineDash([4, 3])
+            ctx.beginPath()
+            ctx.moveTo(ex1, Math.round(yStop) + 0.5)
+            ctx.lineTo(ex2, Math.round(yStop) + 0.5)
+            ctx.stroke()
+            ctx.setLineDash([])
+
+            if (!hideTrendlineBadges) {
+              ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+              const slText = `🛑 Stop (${wyckoffSetup.setupType === 'SPRING' ? 'Spring Low' : 'Upthrust High'}): ${wyckoffSetup.stopLoss.toFixed(1)} [${wyckoffSetup.riskPoints}pts]`
+              const slW = ctx.measureText(slText).width + 10
+              ctx.fillStyle = 'rgba(76, 5, 25, 0.94)'
+              ctx.fillRect(ex2 - slW - 10, yStop - 16, slW, 15)
+              ctx.strokeStyle = '#f43f5e'
+              ctx.strokeRect(ex2 - slW - 10, yStop - 16, slW, 15)
+              ctx.fillStyle = '#fecdd3'
+              ctx.fillText(slText, ex2 - slW - 5, yStop - 5)
+            }
+          }
+
+          // Draw Target level (dashed emerald)
+          if (yTgt != null && Number.isFinite(yTgt)) {
+            ctx.strokeStyle = '#10b981'
+            ctx.lineWidth = 1.3
+            ctx.setLineDash([4, 3])
+            ctx.beginPath()
+            ctx.moveTo(ex1, Math.round(yTgt) + 0.5)
+            ctx.lineTo(ex2, Math.round(yTgt) + 0.5)
+            ctx.stroke()
+            ctx.setLineDash([])
+
+            if (!hideTrendlineBadges) {
+              ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+              const tgtText = `🎯 Target (${wyckoffSetup.targetZoneLabel}): ${wyckoffSetup.targetPrice.toFixed(1)} [${wyckoffSetup.rewardPoints}pts · ${wyckoffSetup.rrRatio}R]`
+              const tgtW = ctx.measureText(tgtText).width + 10
+              ctx.fillStyle = 'rgba(6, 78, 59, 0.94)'
+              ctx.fillRect(ex2 - tgtW - 10, yTgt - 16, tgtW, 15)
+              ctx.strokeStyle = '#10b981'
+              ctx.strokeRect(ex2 - tgtW - 10, yTgt - 16, tgtW, 15)
+              ctx.fillStyle = '#a7f3d0'
+              ctx.fillText(tgtText, ex2 - tgtW - 5, yTgt - 5)
+            }
+          }
+
+          // Draw Setup Alert Pill at the trigger candle
+          if (!hideTrendlineBadges && wyckoffSetup.triggerTime) {
+            const trigX = timeToX(chart.timeScale(), toChartTime(wyckoffSetup.triggerTime, tz), candleTimes)
+            const trigY = series.priceToCoordinate(wyckoffSetup.entryPrice)
+            if (trigX != null && trigY != null && Number.isFinite(trigX) && Number.isFinite(trigY)) {
+              // Glow marker on trigger candle
+              ctx.fillStyle = wyckoffSetup.color
+              ctx.beginPath()
+              ctx.arc(trigX, trigY, 4, 0, Math.PI * 2)
+              ctx.fill()
+
+              ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
+              const bText = wyckoffSetup.badgeText
+              const bW = ctx.measureText(bText).width + 16
+              const bH = 18
+              const bX = Math.max(10, Math.min(paneW - bW - 10, trigX - bW / 2))
+              const bY = isSupply ? trigY - 26 : trigY + 12
+
+              ctx.fillStyle = 'rgba(15, 23, 42, 0.95)'
+              ctx.beginPath()
+              if (typeof (ctx as any).roundRect === 'function') {
+                (ctx as any).roundRect(bX, bY, bW, bH, 6)
+              } else {
+                ctx.rect(bX, bY, bW, bH)
+              }
+              ctx.fill()
+
+              ctx.strokeStyle = wyckoffSetup.color
+              ctx.lineWidth = 1.3
+              ctx.stroke()
+
+              ctx.fillStyle = wyckoffSetup.is2RValid ? '#f8fafc' : '#fef08a'
+              ctx.textAlign = 'left'
+              ctx.textBaseline = 'middle'
+              ctx.fillText(bText, bX + 8, bY + bH * 0.5)
+            }
+          }
         }
       }
     }
-
-    // Synchronize currently broken action lines into state for toolbar locks
-    const currentBrokenIds = activeTrendlines
-      .filter((t) => (t.isActionTrendline || t.isInitialOvernight) && confirmedBreakoutsRef.current.has(t.id))
-      .map((t) => t.id)
-    setBrokenActionLineIds((prev) => {
-      if (prev.length === currentBrokenIds.length && prev.every((id, i) => id === currentBrokenIds[i])) {
-        return prev
-      }
-      return currentBrokenIds
-    })
 
     // 4. In-progress Drawing Draft Preview
     if (drawingDraft && draftMousePosRef.current) {
@@ -4144,13 +3728,13 @@ export function TradingChart({
       const y2 = series.priceToCoordinate(p2.price) ?? p2.y
 
       if (x1 != null && x2 != null && y1 != null && y2 != null) {
-        if (activeDrawingTool === 'TRENDLINE' || activeDrawingTool === 'ACTION_TRENDLINE' || activeDrawingTool === 'REACTION_TRENDLINE') {
-          const isAction = activeDrawingTool === 'ACTION_TRENDLINE'
-          const isReaction = activeDrawingTool === 'REACTION_TRENDLINE'
-          const draftColor = isAction ? '#f59e0b' : '#38bdf8'
+        if (activeDrawingTool === 'TRENDLINE') {
+          const isSupplyDraft = p2.price <= p1.price
+          const draftColor = isSupplyDraft ? '#f59e0b' : '#38bdf8'
+          const roleDraft = isSupplyDraft ? 'Supply (Creek)' : 'Demand (Ice)'
           const [dex1, dey1, dex2, dey2] = extendedLine(x1, y1, x2, y2)
           ctx.strokeStyle = draftColor
-          ctx.lineWidth = isAction || isReaction ? 2.5 : 2
+          ctx.lineWidth = 2
           ctx.setLineDash([4, 4])
           ctx.beginPath()
           ctx.moveTo(dex1, dey1)
@@ -4160,26 +3744,16 @@ export function TradingChart({
 
           ctx.fillStyle = draftColor
           ctx.beginPath()
-          ctx.arc(x1, y1, isAction || isReaction ? 5 : 4, 0, 2 * Math.PI)
+          ctx.arc(x1, y1, 5, 0, 2 * Math.PI)
           ctx.fill()
           ctx.beginPath()
-          ctx.arc(x2, y2, isAction || isReaction ? 5 : 4, 0, 2 * Math.PI)
+          ctx.arc(x2, y2, 5, 0, 2 * Math.PI)
           ctx.fill()
 
           ctx.font = 'bold 10px ui-monospace, SFMono-Regular, monospace'
-          ctx.fillStyle = isAction ? '#fef08a' : isReaction ? '#67e8f9' : '#bae6fd'
-          const p1Label = isAction
-            ? `🎯 Action P1: ${p1.price.toLocaleString()}`
-            : isReaction
-            ? `📐⚡ Reaction P1 (Swing Anchor): ${p1.price.toLocaleString()}`
-            : `P1: ${p1.price.toLocaleString()}`
-          const p2Label = isAction
-            ? `🎯 Action P2: ${p2.price.toLocaleString()} (Click to arm)`
-            : isReaction
-            ? `📐⚡ Reaction P2 (Higher Low): ${p2.price.toLocaleString()} (Click to bind)`
-            : `P2: ${p2.price.toLocaleString()} (Click to finish)`
-          ctx.fillText(p1Label, x1 + 8, y1 - 4)
-          ctx.fillText(p2Label, x2 + 8, y2 - 4)
+          ctx.fillStyle = isSupplyDraft ? '#fef08a' : '#bae6fd'
+          ctx.fillText(`📐 Wyckoff ${roleDraft} P1: ${p1.price.toLocaleString()}`, x1 + 8, y1 - 4)
+          ctx.fillText(`📐 P2: ${p2.price.toLocaleString()} (${p2.price >= p1.price ? '+' : ''}${(p2.price - p1.price).toFixed(1)} pts)`, x2 + 8, y2 - 4)
         } else if (activeDrawingTool === 'RANGE') {
           const minX = Math.min(x1, p2.x)
           const maxX = Math.max(x1, p2.x)
@@ -4543,11 +4117,12 @@ export function TradingChart({
         }
       }
 
-      // 5. Draw Abnormal News Moves & Highlight Reaction Bars (2-3 bars) with Sentence Badges
-      const newsMoves = newsMovesRef.current
-      const nowSec = Math.floor(Date.now() / 1000)
+      // 5. Draw Abnormal News Moves & Highlight Reaction Bars (2-3 bars) with Sentence Badges (Clean desk: only when toggled ON)
+      if (showNewsOnChart) {
+        const newsMoves = newsMovesRef.current
+        const nowSec = Math.floor(Date.now() / 1000)
 
-      for (const move of newsMoves) {
+        for (const move of newsMoves) {
         const xStart = timeToX(chart.timeScale(), toChartTime(move.reactionStartTime, tz), candleTimes)
         if (xStart == null || !Number.isFinite(xStart) || xStart > paneW + 80) continue
 
@@ -4834,9 +4409,10 @@ export function TradingChart({
         ctx.restore()
       }
     }
+  }
 
     ctx.restore()
-  }, [instrument, frvp5d, newsEvents, timeframe, hideTrendlineBadges])
+  }, [instrument, frvp5d, newsEvents, timeframe, hideTrendlineBadges, showNewsOnChart])
 
   useEffect(() => {
     paintExcessesAndRoundedRef.current = paintExcessesAndRounded
@@ -4851,7 +4427,7 @@ export function TradingChart({
     const host = newsMarkersOverlayRef.current
     const chart = chartRef.current
     const list = candlesRef.current
-    if (!host || !chart || !containerRef.current || list.length === 0 || newsEvents.length === 0 || timeframe === '1D') {
+    if (!host || !chart || !containerRef.current || list.length === 0 || newsEvents.length === 0 || timeframe === '1D' || !showNewsOnChart) {
       if (host) host.innerHTML = ''
       return
     }
@@ -4944,7 +4520,7 @@ export function TradingChart({
         </div>
       `
     }
-  }, [newsEvents, timeframe])
+  }, [newsEvents, timeframe, showNewsOnChart])
 
   useEffect(() => {
     paintNewsMarkersRef.current = paintNewsMarkers
@@ -5841,19 +5417,8 @@ export function TradingChart({
   }, [livePrice, instrument])
 
   const handleDeleteTrendline = useCallback((id: string) => {
-    // Delete target trendline AND any reaction trendline bound to this action trendline
-    setTrendlines((prev) => prev.filter((t) => t.id !== id && t.parentActionTrendlineId !== id))
+    setTrendlines((prev) => prev.filter((t) => t.id !== id))
     confirmedBreakoutsRef.current.delete(id)
-    setBrokenActionLineIds((prev) => prev.filter((bId) => bId !== id))
-    setDismissedBreakoutPrompts((prev) => {
-      if (!prev.has(id)) return prev
-      const next = new Set(prev)
-      next.delete(id)
-      try {
-        localStorage.setItem('trading_desk_dismissed_breakouts_v1', JSON.stringify(Array.from(next)))
-      } catch {}
-      return next
-    })
     requestAnimationFrame(() => paintUserDrawingsRef.current())
   }, [])
 
@@ -5882,10 +5447,7 @@ export function TradingChart({
     draftMousePosRef.current = null
     measureBadgeHitsRef.current.clear()
     confirmedBreakoutsRef.current.clear()
-    setBrokenActionLineIds([])
-    setDismissedBreakoutPrompts(new Set())
     try {
-      localStorage.removeItem('trading_desk_dismissed_breakouts_v1')
       localStorage.removeItem('trading_desk_measures_v1')
     } catch {}
     requestAnimationFrame(() => paintUserDrawingsRef.current())
@@ -7850,7 +7412,7 @@ export function TradingChart({
         color: 'rgba(59, 130, 246, 0.5)',
         title: '+2σ',
       }),
-      upper1: chart.addLineSeries({ ...bandOpts, color: '#3b82f6', lineWidth: 2, lastValueVisible: true, title: '+1σ' }),
+      upper1: chart.addLineSeries({ ...bandOpts, color: '#3b82f6', lineWidth: 2, lastValueVisible: false, title: '+1σ' }),
       vwap: chart.addLineSeries({
         color: '#10b981',
         lineWidth: 2,
@@ -7861,7 +7423,7 @@ export function TradingChart({
         title: 'AVWAP',
         ...ignoreScale,
       }),
-      lower1: chart.addLineSeries({ ...bandOpts, color: '#b8a04a', lineWidth: 2, lastValueVisible: true, title: '-1σ' }),
+      lower1: chart.addLineSeries({ ...bandOpts, color: '#b8a04a', lineWidth: 2, lastValueVisible: false, title: '-1σ' }),
       lower2: chart.addLineSeries({
         ...bandOpts,
         color: 'rgba(184, 160, 74, 0.5)',
@@ -9071,12 +8633,21 @@ export function TradingChart({
                 ).map((r) => ({ time: r.time as UTCTimestamp, value: r.value }))
               )
         try { vs.vwap.setData(shift(bands.vwap) as any) } catch {}
-        try { vs.upper1.setData(shift(bands.upper1) as any) } catch {}
-        try { vs.lower1.setData(shift(bands.lower1) as any) } catch {}
-        try { vs.upper2.setData(shift(bands.upper2) as any) } catch {}
-        try { vs.lower2.setData(shift(bands.lower2) as any) } catch {}
-        try { vs.upper3.setData(bands.upper3 ? (shift(bands.upper3) as any) : []) } catch {}
-        try { vs.lower3.setData(bands.lower3 ? (shift(bands.lower3) as any) : []) } catch {}
+        if (showSdBands) {
+          try { vs.upper1.setData(shift(bands.upper1) as any) } catch {}
+          try { vs.lower1.setData(shift(bands.lower1) as any) } catch {}
+          try { vs.upper2.setData(shift(bands.upper2) as any) } catch {}
+          try { vs.lower2.setData(shift(bands.lower2) as any) } catch {}
+          try { vs.upper3.setData(bands.upper3 ? (shift(bands.upper3) as any) : []) } catch {}
+          try { vs.lower3.setData(bands.lower3 ? (shift(bands.lower3) as any) : []) } catch {}
+        } else {
+          try { vs.upper1.setData([]) } catch {}
+          try { vs.lower1.setData([]) } catch {}
+          try { vs.upper2.setData([]) } catch {}
+          try { vs.lower2.setData([]) } catch {}
+          try { vs.upper3.setData([]) } catch {}
+          try { vs.lower3.setData([]) } catch {}
+        }
       } else {
         try { vs.vwap.setData([]) } catch {}
         try { vs.upper1.setData([]) } catch {}
@@ -9321,12 +8892,21 @@ export function TradingChart({
               ).map((r) => ({ time: r.time as UTCTimestamp, value: r.value }))
             )
       try { if (bands.vwap) vs.vwap.setData(shift(bands.vwap)) } catch {}
-      try { if (bands.upper1) vs.upper1.setData(shift(bands.upper1)) } catch {}
-      try { if (bands.lower1) vs.lower1.setData(shift(bands.lower1)) } catch {}
-      try { if (bands.upper2) vs.upper2.setData(shift(bands.upper2)) } catch {}
-      try { if (bands.lower2) vs.lower2.setData(shift(bands.lower2)) } catch {}
-      try { if (bands.upper3) vs.upper3.setData(shift(bands.upper3)) } catch {}
-      try { if (bands.lower3) vs.lower3.setData(shift(bands.lower3)) } catch {}
+      if (showSdBands) {
+        try { if (bands.upper1) vs.upper1.setData(shift(bands.upper1)) } catch {}
+        try { if (bands.lower1) vs.lower1.setData(shift(bands.lower1)) } catch {}
+        try { if (bands.upper2) vs.upper2.setData(shift(bands.upper2)) } catch {}
+        try { if (bands.lower2) vs.lower2.setData(shift(bands.lower2)) } catch {}
+        try { if (bands.upper3) vs.upper3.setData(shift(bands.upper3)) } catch {}
+        try { if (bands.lower3) vs.lower3.setData(shift(bands.lower3)) } catch {}
+      } else {
+        try { vs.upper1.setData([]) } catch {}
+        try { vs.lower1.setData([]) } catch {}
+        try { vs.upper2.setData([]) } catch {}
+        try { vs.lower2.setData([]) } catch {}
+        try { vs.upper3.setData([]) } catch {}
+        try { vs.lower3.setData([]) } catch {}
+      }
     } else {
       try { vs.vwap.setData([]) } catch {}
       try { vs.upper1.setData([]) } catch {}
@@ -9336,7 +8916,7 @@ export function TradingChart({
       try { vs.upper3.setData([]) } catch {}
       try { vs.lower3.setData([]) } catch {}
     }
-  }, [avwap5mBenchmark, instrument, timeframe, show5mAvwapOnChart])
+  }, [avwap5mBenchmark, instrument, timeframe, show5mAvwapOnChart, showSdBands])
 
 
   // ── Session color boxes (cached spans + imperative paint = smooth pan)
@@ -10849,40 +10429,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         const p1 = p1Raw.time <= p2Raw.time ? p1Raw : p2Raw
         const p2 = p1Raw.time <= p2Raw.time ? p2Raw : p1Raw
 
-        if (activeDrawingTool === 'TRENDLINE' || activeDrawingTool === 'ACTION_TRENDLINE' || activeDrawingTool === 'REACTION_TRENDLINE') {
-          const isAction = activeDrawingTool === 'ACTION_TRENDLINE'
-          const isReaction = activeDrawingTool === 'REACTION_TRENDLINE'
-
-          // SYSTEM RULE: Reaction Trendline CANNOT be drawn unless an Action Trendline is broken!
-          let boundActionTlId: string | undefined = undefined
-          if (isReaction) {
-            const candidateId = activeActionTlId || brokenActionLineIds[0] || null
-            const parentTl = candidateId
-              ? trendlines.find((t) => t.id === candidateId && (t.isActionTrendline || t.isInitialOvernight))
-              : trendlines.find(
-                  (t) => (t.isActionTrendline || t.isInitialOvernight) && confirmedBreakoutsRef.current.has(t.id)
-                )
-
-            if (!parentTl || !confirmedBreakoutsRef.current.has(parentTl.id)) {
-              setActiveDrawingTool('NONE')
-              setActiveActionTlId(null)
-              setDrawingDraft(null)
-              draftMousePosRef.current = null
-              setDrawingToast({
-                type: 'TRENDLINE',
-                id: `reaction-blocked-${Date.now()}`,
-                label: 'Reaction Line Blocked',
-                summary:
-                  'Reaction trendlines can only be drawn after an Action Trendline has experienced a confirmed breakout.',
-              })
-              return
-            }
-            boundActionTlId = parentTl.id
-          }
-
+        if (activeDrawingTool === 'TRENDLINE') {
           const pDiff = p2.price - p1.price
           const inferredDir: 'BEARISH' | 'BULLISH' = pDiff < 0 ? 'BEARISH' : 'BULLISH'
-          const tradeDir: 'LONG' | 'SHORT' = inferredDir === 'BEARISH' ? 'LONG' : 'SHORT'
 
           // Dynamically detect session origin based on anchor time p1 (Asia, London, or NYC)
           const anchorTime = Math.min(p1.time, p2.time)
@@ -10891,25 +10440,33 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             rawDeskSess === 'Asia' ? 'Asia' : rawDeskSess === 'London' ? 'London' : rawDeskSess === 'New York' ? 'NYC' : 'Asia'
           const isCarriedFromOvernight = sessionOrigin !== 'NYC'
 
-          const newTl: UserTrendline = {
-            id: isAction ? `action-tl-${Date.now()}` : isReaction ? `reaction-tl-${Date.now()}` : `tl-${Date.now()}`,
+          const rawBars: WyckoffBar[] = (candlesRef.current || []).map((c: any) => ({
+            time: typeof c.time === 'number' ? c.time : 0,
+            open: Number(c.open),
+            high: Number(c.high),
+            low: Number(c.low),
+            close: Number(c.close),
+            volume: Number(c.volume || 1),
+            cvd: typeof c.cvd === 'number' ? c.cvd : undefined,
+          }))
+
+          const tempTl: UserTrendline = {
+            id: `tl-${Date.now()}`,
             type: 'TRENDLINE',
             p1: { time: p1.time, price: p1.price },
             p2: { time: p2.time, price: p2.price },
-            color: isAction ? '#f59e0b' : '#38bdf8',
-            label: isAction
-              ? `Action Trendline (${tradeDir === 'LONG' ? 'Long on Break' : 'Short on Break'})`
-              : isReaction
-              ? `Reaction Trendline (${tradeDir === 'LONG' ? 'Long Active' : 'Short Active'})`
-              : `Trendline ${activeTrendlines.length + 1}`,
             instrument,
             direction: inferredDir,
             sessionOrigin,
-            isActionTrendline: isAction,
-            isReactionTrendline: isReaction,
-            parentActionTrendlineId: isReaction ? boundActionTlId : undefined,
-            isInitialOvernight: isAction && isCarriedFromOvernight,
             isCarriedFromOvernight,
+          }
+
+          const wyckoffClass = classifyWyckoffLine(tempTl, rawBars)
+
+          const newTl: UserTrendline = {
+            ...tempTl,
+            color: wyckoffClass.color,
+            label: wyckoffClass.label,
           }
           setTrendlines((prev) => [...prev, newTl])
 
@@ -10917,16 +10474,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           setDrawingToast({
             type: 'TRENDLINE',
             id: newTl.id,
-            label: newTl.label || (isAction ? 'Action Trendline' : isReaction ? 'Reaction Trendline' : 'Trendline'),
-            summary: isAction
-              ? `🎯 Action Line drawn [${sessionOrigin}]. Monitoring active. Click 'Ask Leo' if you wish to arm a trade situation.`
-              : isReaction
-              ? `📐 Reaction Line bound to breakout. Systematic 5m exit tracking active.`
-              : `From ${newTl.p1.price.toLocaleString()} to ${newTl.p2.price.toLocaleString()} (${newTl.p2.price >= newTl.p1.price ? '+' : ''}${(newTl.p2.price - newTl.p1.price).toFixed(1)} pts)`,
+            label: newTl.label || 'Wyckoff Structure Line',
+            summary: `📐 ${wyckoffClass.label} drawn. Monitoring for Spring / Upthrust & >= 2R setups.`,
           })
-          if (isReaction) {
-            setActiveActionTlId(null)
-          }
         } else if (activeDrawingTool === 'RANGE') {
           const newRange: UserRangeBox = {
             id: `range-${Date.now()}`,
@@ -11284,7 +10834,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         isDragging = false
 
         const finalDragged = activeDraggingTlRef.current
-        const orig = dragData.originalTl
         const tlId = dragData.tlId
         dragData = null
         activeDraggingTlRef.current = null
@@ -11300,12 +10849,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               if (t.id !== tlId) return t
               const pDiff = finalDragged.p2.price - finalDragged.p1.price
               const inferredDir: 'BEARISH' | 'BULLISH' = pDiff < 0 ? 'BEARISH' : 'BULLISH'
-              const tradeDir: 'LONG' | 'SHORT' = inferredDir === 'BEARISH' ? 'LONG' : 'SHORT'
-              const updatedLabel = t.isActionTrendline
-                ? `Action Trendline (${tradeDir === 'LONG' ? 'Long on Break' : 'Short on Break'})`
-                : t.isReactionTrendline
-                ? `Reaction Trendline (${tradeDir === 'LONG' ? 'Long Active' : 'Short Active'})`
-                : t.label
+              const isSupply = pDiff < 0
+              const updatedLabel = isSupply ? 'Wyckoff Supply Line (Creek)' : 'Wyckoff Demand Line (Ice)'
+              const updatedColor = isSupply ? '#f59e0b' : '#38bdf8'
 
               return {
                 ...t,
@@ -11313,6 +10859,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 p2: finalDragged.p2,
                 direction: inferredDir,
                 label: updatedLabel,
+                color: updatedColor,
               }
             })
           )
@@ -11321,7 +10868,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           setDrawingToast({
             type: 'TRENDLINE',
             id: tlId,
-            label: orig.label || (orig.isActionTrendline ? 'Action Trendline' : 'Trendline'),
+            label: finalDragged.p2.price < finalDragged.p1.price ? 'Wyckoff Supply Line (Creek)' : 'Wyckoff Demand Line (Ice)',
             summary: `Updated: ${finalDragged.p1.price.toFixed(2)} → ${finalDragged.p2.price.toFixed(2)} (${finalDragged.p2.price >= finalDragged.p1.price ? '+' : ''}${(finalDragged.p2.price - finalDragged.p1.price).toFixed(1)} pts)`,
           })
         }
@@ -11987,13 +11534,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       } else if (key === 'p') {
         e.preventDefault()
         togglePlaybook()
-      } else if (key === 'w') {
+      } else if (key === 'w' || key === 'x') {
         e.preventDefault()
         setActiveDrawingTool((prev) => (prev === 'TRENDLINE' ? 'NONE' : 'TRENDLINE'))
-        setDrawingDraft(null)
-      } else if (key === 'x') {
-        e.preventDefault()
-        setActiveDrawingTool((prev) => (prev === 'ACTION_TRENDLINE' ? 'NONE' : 'ACTION_TRENDLINE'))
         setDrawingDraft(null)
       } else if (key === 'd') {
         e.preventDefault()
@@ -12025,7 +11568,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         if (activeDrawingTool !== 'NONE' || drawingDraft) {
           e.preventDefault()
           setActiveDrawingTool('NONE')
-          setActiveActionTlId(null)
           setDrawingDraft(null)
           draftMousePosRef.current = null
         } else if (activeMeasures.length > 0) {
@@ -13012,27 +12554,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   </span>
                 )}
               </button>
-              <span className="text-gray-600 text-[10px]">|</span>
-              {/* 5-Month Anchored VWAP (5M AVWAP) Button */}
-              <button
-                type="button"
-                onClick={() => setShow5mAvwapModal((prev) => !prev)}
-                className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer ${
-                  show5mAvwapModal
-                    ? 'bg-emerald-500/25 text-emerald-200 border border-emerald-400/60 shadow-sm font-semibold ring-1 ring-emerald-400/30'
-                    : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40 hover:border-emerald-500/40'
-                }`}
-                title="5-Month Macro Anchored VWAP (Click to view last 5 months benchmark & simplified ±1σ/±2σ/±3σ bands without chart clutter)"
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-gray-400 font-semibold">5M AVWAP:</span>
-                <span className="font-mono font-bold text-emerald-300">
-                  {avwap5mBenchmark ? avwap5mBenchmark.vwap.toLocaleString() : '...'}
-                </span>
-                <span className="text-[9px] text-zinc-400 bg-zinc-800 px-1 py-0.2 rounded border border-zinc-700 font-mono">
-                  5 MO
-                </span>
-              </button>
               {isCritiqueSessionActiveState && (
                 <>
                   <span className="text-gray-600 text-[10px]">|</span>
@@ -13100,67 +12621,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </button>
         )}
 
-        {/* Floating Action Breakout Notification Prompt (Asks user to draw Reaction Trendline) */}
-        {activeDrawingTool === 'NONE' && confirmedBreakoutsRef.current.size > 0 && (() => {
-          const activeBreaks = Array.from(confirmedBreakoutsRef.current.entries()).filter(([tlId]) => {
-            const tlExists = trendlines.some((t) => t.id === tlId)
-            if (!tlExists) return false
-            if (dismissedBreakoutPrompts.has(tlId)) return false
-            return !trendlines.some((t) => t.isReactionTrendline && t.parentActionTrendlineId === tlId)
-          })
-          if (activeBreaks.length === 0) return null
-          const [activeId] = activeBreaks[0]!
-          return (
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/95 border border-amber-400/80 shadow-2xl backdrop-blur-md text-xs font-mono select-none">
-              <span className="flex h-2 w-2 relative">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
-              </span>
-              <span className="text-amber-200 font-bold">Action Line Broken!</span>
-              <span className="text-slate-300 text-[11px] hidden sm:inline">Draw reaction line or use local swing:</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveActionTlId(activeId)
-                  setActiveDrawingTool('REACTION_TRENDLINE')
-                  setDrawingDraft(null)
-                }}
-                className="px-2.5 py-1 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-extrabold text-[11px] transition shadow flex items-center gap-1 cursor-pointer active:scale-95"
-                title="Click and draw reaction trendline connecting local swing low to higher low"
-              >
-                <span>📐⚡</span>
-                <span>Draw Reaction Line</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  dismissBreakoutPrompt(activeId)
-                  setDrawingToast({
-                    type: 'TRENDLINE',
-                    id: activeId,
-                    label: 'Local Swing Anchor',
-                    summary: 'Using automatic local swing anchor for breakout tracking.',
-                  })
-                }}
-                className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-200 font-semibold text-[11px] border border-amber-400/40 transition shadow cursor-pointer active:scale-95"
-                title="Accept automatic local swing anchor and dismiss"
-              >
-                Use Local Swing
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  dismissBreakoutPrompt(activeId)
-                }}
-                className="ml-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded p-1 transition cursor-pointer font-bold text-xs"
-                title="Close notification"
-              >
-                ✕
-              </button>
-            </div>
-          )
-        })()}
 
         {/* Main Price Chart Section */}
         <div className="relative flex-1 w-full min-h-[300px]">
@@ -13335,93 +12795,24 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
           {/* Tool buttons — horizontal row */}
           <div className="flex flex-row items-center gap-1 py-1 pr-1.5">
-            {/* Trendline (W) */}
+            {/* Wyckoff Structure Line (W or X) */}
             <button
               type="button"
               onClick={() => {
                 setActiveDrawingTool((prev) => (prev === 'TRENDLINE' ? 'NONE' : 'TRENDLINE'))
                 setDrawingDraft(null)
               }}
-              className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
+              className={`group relative flex h-9 px-2.5 items-center gap-1.5 rounded-lg text-xs font-bold transition-all ${
                 activeDrawingTool === 'TRENDLINE'
-                  ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/30'
-                  : 'text-slate-400 hover:bg-slate-800 hover:text-sky-300'
+                  ? 'bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/40 ring-2 ring-amber-300'
+                  : 'text-amber-300 hover:bg-slate-800 hover:text-amber-100 bg-slate-900/60 border border-amber-500/30'
               }`}
-              title="Draw Trendline (Hotkey: W)"
+              title="Draw Wyckoff Structure Line (Hotkey: W or X) · Supply (Creek) & Demand (Ice)"
             >
-              <span>📐</span>
-              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-sky-200 shadow-xl border border-slate-800 group-hover:block z-50">
-                Trendline (W)
-              </span>
-            </button>
-
-            {/* Action Trendline (X) */}
-            <button
-              type="button"
-              onClick={() => {
-                setActiveDrawingTool((prev) => (prev === 'ACTION_TRENDLINE' ? 'NONE' : 'ACTION_TRENDLINE'))
-                setDrawingDraft(null)
-              }}
-              className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
-                activeDrawingTool === 'ACTION_TRENDLINE'
-                  ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/40 ring-2 ring-amber-300'
-                  : 'text-amber-400 hover:bg-slate-800 hover:text-amber-200'
-              }`}
-              title="Draw Action Trendline (Initial Overnight · Hotkey: X)"
-            >
-              <span className="relative flex items-center justify-center">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-current">
-                  <path d="M4 19L19 5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-                  <circle cx="4" cy="19" r="2.5" fill="currentColor" />
-                  <circle cx="19" cy="5" r="2.5" fill="currentColor" />
-                  <circle cx="19" cy="5" r="4.5" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2 2" />
-                </svg>
-              </span>
-              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-amber-300 shadow-xl border border-amber-800/60 group-hover:block z-50">
-                Action Trendline (X)
-              </span>
-            </button>
-
-            {/* Reaction Trendline */}
-            <button
-              type="button"
-              onClick={() => {
-                if (!hasBrokenAction) {
-                  setDrawingToast({
-                    type: 'TRENDLINE',
-                    id: `reaction-locked-${Date.now()}`,
-                    label: 'Reaction Line Locked',
-                    summary:
-                      'Reaction trendlines can only be drawn after an Action Trendline has experienced a confirmed breakout on a 5-minute candle.',
-                  })
-                  return
-                }
-                const targetId = activeActionTlId || brokenActionLineIds[0] || null
-                setActiveActionTlId(targetId)
-                setActiveDrawingTool((prev) => (prev === 'REACTION_TRENDLINE' ? 'NONE' : 'REACTION_TRENDLINE'))
-                setDrawingDraft(null)
-              }}
-              className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
-                !hasBrokenAction
-                  ? 'opacity-30 cursor-not-allowed text-slate-600 hover:text-slate-600 bg-slate-950/40'
-                  : activeDrawingTool === 'REACTION_TRENDLINE'
-                  ? 'bg-sky-500 text-slate-950 shadow-lg shadow-sky-500/40 ring-2 ring-sky-300'
-                  : 'text-sky-400 hover:bg-slate-800 hover:text-sky-200'
-              }`}
-              title={
-                hasBrokenAction
-                  ? 'Draw Reaction Trendline (Action line broken! Click 2 swing points)'
-                  : 'Reaction Line Locked: Requires a broken Action Trendline'
-              }
-            >
-              <span className="relative">
-                📐⚡
-                {!hasBrokenAction && (
-                  <span className="absolute -bottom-1 -right-1 text-[9px] leading-none">🔒</span>
-                )}
-              </span>
-              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-sky-200 shadow-xl border border-sky-800/60 group-hover:block z-50">
-                {hasBrokenAction ? 'Reaction Trendline' : 'Reaction Locked (Action line required)'}
+              <span className="text-sm">📐</span>
+              <span className="hidden md:inline font-mono">Wyckoff Line</span>
+              <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-amber-200 shadow-xl border border-amber-800/80 group-hover:block z-50">
+                Wyckoff Structure Line (W or X) · Supply & Demand
               </span>
             </button>
 
@@ -13570,9 +12961,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full bg-slate-950/90 border border-cyan-500/60 px-4 py-1.5 text-xs font-medium text-cyan-200 shadow-2xl backdrop-blur-sm animate-pulse">
             <span className="inline-block h-2 w-2 rounded-full bg-cyan-400" />
             <span>
-              {activeDrawingTool === 'TRENDLINE' && '📐 Drawing Trendline (Click 2 swing points)'}
-              {activeDrawingTool === 'ACTION_TRENDLINE' && '🎯 Drawing Action Trendline (Initial Overnight · 2 clicks)'}
-              {activeDrawingTool === 'REACTION_TRENDLINE' && '📐⚡ Drawing Reaction Trendline (Click 2 swing points)'}
+              {activeDrawingTool === 'TRENDLINE' && '📐 Drawing Wyckoff Structure Line (Click 2 swing points · Auto-classifies Supply / Demand)'}
               {activeDrawingTool === 'RANGE' && '⬛ Drawing Range Box (Click 2 corners)'}
               {activeDrawingTool === 'FRVP' && '📊 Drawing Custom FRVP (Click start & end bars)'}
               {activeDrawingTool === 'MEASURE' && '📏 Drawing Measure (Click 1st point, then 2nd point to pin · Hold Shift anytime)'}
@@ -13581,7 +12970,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               type="button"
               onClick={() => {
                 setActiveDrawingTool('NONE')
-                setActiveActionTlId(null)
                 setDrawingDraft(null)
               }}
               className="ml-2 text-slate-400 hover:text-white font-bold"
@@ -13650,8 +13038,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   <div className="text-2xl">📐 🎯 ⬛ 📊 📏</div>
                   <div className="font-semibold text-slate-400">No active drawings on {instrument}</div>
                   <div className="text-[11px] text-slate-500">
-                    Press <span className="text-sky-300 font-mono">W</span> for Trendline,{' '}
-                    <span className="text-amber-300 font-mono">X</span> for Action Line,{' '}
+                    Press <span className="text-amber-300 font-mono">W</span> or <span className="text-amber-300 font-mono">X</span> for Wyckoff Line,{' '}
                     <span className="text-purple-300 font-mono">D</span> for Range,{' '}
                     <span className="text-amber-300 font-mono">V</span> for FRVP, or{' '}
                     <span className="text-emerald-300 font-mono">M</span> (Shift+Click) for Measure.
@@ -13662,44 +13049,32 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               {/* Trendlines */}
               {activeTrendlines.length > 0 && (
                 <div className="pt-1.5 first:pt-0">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-sky-400 mb-1 px-1">
-                    Trendlines ({activeTrendlines.length})
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400 mb-1 px-1">
+                    Wyckoff Structure Lines ({activeTrendlines.length})
                   </div>
                   <div className="space-y-1">
-                    {activeTrendlines.map((tl) => (
-                      <div
-                        key={tl.id}
-                        className="group flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-800/40 hover:bg-slate-800/80 border border-slate-700/40 transition"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div
-                            className={`flex items-center gap-1 font-semibold truncate ${
-                              tl.isActionTrendline
-                                ? 'text-amber-300'
-                                : tl.isReactionTrendline
-                                ? 'text-cyan-300'
-                                : 'text-sky-300'
-                            }`}
-                          >
-                            <span>{tl.isActionTrendline ? '🎯' : tl.isReactionTrendline ? '📐⚡' : '📐'}</span>
-                            <span className="truncate">
-                              {tl.label ||
-                                (tl.isActionTrendline
-                                  ? 'Action Trendline'
-                                  : tl.isReactionTrendline
-                                  ? 'Reaction Trendline'
-                                  : 'Trendline')}
-                            </span>
-                          </div>
-                          <div className="text-[10px] text-slate-400 truncate">
-                            {tl.p1.price.toLocaleString()} → {tl.p2.price.toLocaleString()}
-                            {tl.isReactionTrendline && tl.parentActionTrendlineId && (
-                              <span className="ml-1 text-[9px] text-cyan-400 font-mono">
-                                (Action Breakout Bound)
+                    {activeTrendlines.map((tl) => {
+                      const isSupply = tl.label?.includes('Supply') || tl.p2.price < tl.p1.price
+                      return (
+                        <div
+                          key={tl.id}
+                          className="group flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-800/40 hover:bg-slate-800/80 border border-slate-700/40 transition"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div
+                              className={`flex items-center gap-1 font-semibold truncate ${
+                                isSupply ? 'text-amber-300' : 'text-sky-300'
+                              }`}
+                            >
+                              <span>📐</span>
+                              <span className="truncate">
+                                {tl.label || (isSupply ? 'Wyckoff Supply Line (Creek)' : 'Wyckoff Demand Line (Ice)')}
                               </span>
-                            )}
+                            </div>
+                            <div className="text-[10px] text-slate-400 truncate">
+                              {tl.p1.price.toLocaleString()} → {tl.p2.price.toLocaleString()} ({isSupply ? 'Supply / Creek' : 'Demand / Ice'})
+                            </div>
                           </div>
-                        </div>
                         <div className="flex items-center gap-1 shrink-0">
                           <button
                             type="button"
@@ -13719,7 +13094,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                           </button>
                         </div>
                       </div>
-                    ))}
+                    )
+                  })}
                   </div>
                 </div>
               )}
@@ -14512,6 +13888,62 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             </div>
           )
         })()}
+
+        {/* Floating Bottom Control Dock: 5M AVWAP & News Clean Toggles */}
+        <div className="absolute bottom-2.5 left-3 z-20 flex items-center gap-1.5 bg-neutral-950/85 backdrop-blur-md border border-neutral-800/90 rounded-lg p-1 shadow-xl select-none">
+          {/* 5-Month Anchored VWAP toggle (Clean line, NO SDs / "CDs") */}
+          <button
+            type="button"
+            onClick={() => setShow5mAvwapOnChart((prev) => !prev)}
+            className={`px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide transition flex items-center gap-1.5 cursor-pointer ${
+              show5mAvwapOnChart
+                ? 'bg-emerald-500/25 border border-emerald-500/50 text-emerald-200 shadow-sm'
+                : 'bg-neutral-900 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-400 hover:text-neutral-200'
+            }`}
+            title="Toggle 5-Month Anchored VWAP line on chart (SD bands disabled for clean desk)"
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${show5mAvwapOnChart ? 'bg-emerald-400 animate-pulse' : 'bg-neutral-600'}`} />
+            <span>5M AVWAP</span>
+            <span className={`font-mono text-[9px] px-1 py-0.2 rounded border ${
+              show5mAvwapOnChart ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-300' : 'bg-neutral-800 border-neutral-700 text-neutral-400'
+            }`}>
+              {show5mAvwapOnChart ? 'ON' : 'OFF'}
+            </span>
+          </button>
+
+          {/* Details / Benchmark info modal opener */}
+          <button
+            type="button"
+            onClick={() => setShow5mAvwapModal((prev) => !prev)}
+            className="px-1 py-0.5 rounded text-[9px] font-mono text-neutral-500 hover:text-neutral-300 hover:bg-neutral-800 border border-transparent hover:border-neutral-700 transition cursor-pointer"
+            title="View 5-Month AVWAP Macro Stats & Institutional Value Levels"
+          >
+            ℹ️
+          </button>
+
+          <span className="text-neutral-700 text-[10px]">|</span>
+
+          {/* News Markers Toggle */}
+          <button
+            type="button"
+            onClick={() => setShowNewsOnChart((prev) => !prev)}
+            className={`px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide transition flex items-center gap-1.5 cursor-pointer ${
+              showNewsOnChart
+                ? 'bg-amber-500/25 border border-amber-500/50 text-amber-200 shadow-sm'
+                : 'bg-neutral-900 hover:bg-neutral-800 border border-neutral-700/60 text-neutral-400 hover:text-neutral-200'
+            }`}
+            title="Toggle Tier-1 Macro News Events on chart (Filtered to at most latest significant catalyst)"
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${showNewsOnChart ? 'bg-amber-400 animate-pulse' : 'bg-neutral-600'}`} />
+            <span>News</span>
+            <span className={`font-mono text-[9px] px-1 py-0.2 rounded border ${
+              showNewsOnChart ? 'bg-amber-950/80 border-amber-500/40 text-amber-300' : 'bg-neutral-800 border-neutral-700 text-neutral-400'
+            }`}>
+              {showNewsOnChart ? 'ON' : 'OFF'}
+            </span>
+          </button>
+        </div>
+
         <button
           type="button"
           onClick={resetPriceScale}
@@ -15627,19 +15059,35 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
                   {/* Screen Visibility Control & System Update Status */}
                   <div className="flex items-center justify-between p-3 rounded-xl bg-zinc-900/90 border border-zinc-800 text-[11px]">
-                    <div className="flex items-center gap-2">
-                      <span className="text-zinc-400">Chart Screen Projection:</span>
-                      <label className="flex items-center gap-2 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={show5mAvwapOnChart}
-                          onChange={(e) => setShow5mAvwapOnChart(e.target.checked)}
-                          className="rounded border-zinc-700 bg-zinc-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-0 cursor-pointer"
-                        />
-                        <span className={show5mAvwapOnChart ? 'text-emerald-300 font-semibold' : 'text-zinc-400'}>
-                          {show5mAvwapOnChart ? 'Visible on Chart Canvas' : 'Invisible on Screen (Default Clean Desk)'}
-                        </span>
-                      </label>
+                    <div className="flex flex-wrap items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-zinc-400">AVWAP Line:</span>
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={show5mAvwapOnChart}
+                            onChange={(e) => setShow5mAvwapOnChart(e.target.checked)}
+                            className="rounded border-zinc-700 bg-zinc-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-0 cursor-pointer"
+                          />
+                          <span className={show5mAvwapOnChart ? 'text-emerald-300 font-semibold' : 'text-zinc-400'}>
+                            {show5mAvwapOnChart ? 'Visible on Canvas' : 'Invisible (Clean Desk)'}
+                          </span>
+                        </label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-zinc-400">±1/2/3σ Bands:</span>
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={showSdBands}
+                            onChange={(e) => setShowSdBands(e.target.checked)}
+                            className="rounded border-zinc-700 bg-zinc-800 text-cyan-500 focus:ring-cyan-500 focus:ring-offset-0 cursor-pointer"
+                          />
+                          <span className={showSdBands ? 'text-cyan-300 font-semibold' : 'text-zinc-500'}>
+                            {showSdBands ? 'SD Bands Shown' : 'Suppressed (Default)'}
+                          </span>
+                        </label>
+                      </div>
                     </div>
                     <div className="text-[10px] text-zinc-500 font-mono flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />

@@ -2651,6 +2651,18 @@ export function LeoAssistantPanel({
               <div className="px-3 py-1.5 border-b border-neutral-800/60 bg-neutral-950/40 flex items-center gap-1.5 overflow-x-auto shrink-0">
                 <button
                   type="button"
+                  onClick={() =>
+                    handleSendMessage(
+                      'Leo, rank the 5 markets (Nasdaq, Dow, S&P, Gold, Oil) using cross-asset volatility (VIX1D, OVX, GVZ) and the Participation x Location x Structure matrix. Tell me which market is Grade A today.'
+                    )
+                  }
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-950/60 hover:bg-cyan-900/80 border border-cyan-500/50 text-[9.5px] font-mono text-cyan-200 shrink-0 transition shadow-sm"
+                  title="Rank 5 markets on Participation x Location x Structure"
+                >
+                  <span>🎯</span> Rank 5 Markets (VIX/OVX/GVZ)
+                </button>
+                <button
+                  type="button"
                   onClick={() => {
                     setActiveTab('AI_STACK')
                     if (!teamReport && !isLoadingTeam) fetchAiTeamConsensus()

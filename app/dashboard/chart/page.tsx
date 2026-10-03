@@ -11,6 +11,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { TradingChart } from './components/TradingChart'
 import { SessionBanner, type SessionGateState } from './components/SessionBanner'
+import { CrossMarketRadarStrip } from './components/CrossMarketRadarStrip'
 import {
   type FilledOrder,
   type PendingLimitOrder,
@@ -2103,6 +2104,10 @@ export default function ChartPage() {
           onRefreshReady={(fn) => {
             bannerRefreshRef.current = fn
           }}
+        />
+        <CrossMarketRadarStrip
+          currentInstrument={instrument}
+          onSelectInstrument={(next) => setInstrument(next)}
         />
       </div>
 

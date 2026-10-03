@@ -721,9 +721,8 @@ export function isVeryImportantMacroEvent(event: string, country?: string): bool
  * 2. Confirmed abnormal volatility effect on the chart (verified moveRange & ATR expansion).
  */
 export function shouldAnchorVwapToNews(move: EmotionalNewsMove): boolean {
-  const isMajorNews = isVeryImportantMacroEvent(move.eventName, move.country)
-  const isMajorSpike = move.eventName.includes('Breaking News') || move.description.includes('x ATR')
-  return isMajorNews || isMajorSpike
+  // Only genuine Tier-1 macroeconomic events (FOMC, CPI, NFP, GDP, etc.) qualify for an anchored VWAP
+  return isVeryImportantMacroEvent(move.eventName, move.country)
 }
 
 /**

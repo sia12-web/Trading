@@ -15,6 +15,8 @@ import {
   type RangeComparisonResult,
   formatRangeVolumeComparisonReport,
 } from '../trading/rangeVolumeComparison'
+import type { CrossMarketVolatilityState } from '../trading/crossMarketVolatility'
+import type { CrossMarketRadarReport } from '../trading/crossMarketRadar'
 
 export interface LeoDataPoint {
   id: string
@@ -248,6 +250,8 @@ export interface LeoChatContext {
   priceQuestioning?: PriceCritiqueEvaluation
   rangeComparisons?: RangeComparisonResult[]
   hedgingTelemetry?: any
+  crossMarketVolatility?: CrossMarketVolatilityState
+  marketRadar?: CrossMarketRadarReport
 }
 
 export interface LeoMessage {
@@ -989,6 +993,34 @@ THE TRADER'S SYSTEM ARCHITECTURE:
               Reasoning: Initiative buyers are aggressively consuming resting limit asks; resistance is failing.
               Action: Do NOT short into this momentum. Prepare for explosive upside breakout.
 
+    - 5h. CROSS-ASSET VOLATILITY & 5-MARKET SELECTION MATRIX (PARTICIPATION x LOCATION x STRUCTURE):
+      * Core Philosophy (Letting Markets Compete):
+        - Never decide in advance: "I trade Nasdaq today." Let the 5 markets (Nasdaq, Dow, S&P 500, Gold, Crude Oil) compete for your attention.
+      * Asset-Specific Options Volatility Gauges (Replacing the Generic VIX Fallacy):
+        - Equities (ES / NQ / YM) ↔ VIX & VIX1D:
+          * VIX1D measures 1-day expected volatility (0DTE/1DTE SPX options); ideal for intraday opening expansion (09:30–11:00 ET).
+          * 30-Day VIX measures broader macro equity risk-off.
+        - Crude Oil (CL / MCL) ↔ OVX:
+          * Derived from USO options; measures 30-day crude volatility. When OVX surges, oil options are repricing supply/inventory events (e.g. 10:30 ET EIA).
+        - Gold (GC / MGC) ↔ GVZ:
+          * Derived from GLD options; measures 30-day gold volatility. Reacts to real yields, DXY liquidation, and flight-to-safety flows.
+      * The 3-Factor Opportunity Matrix:
+        1. Participation: Is institutional volume and range expanding? (Volatility gauge rising, RVOL ≥ 1.25x, CVD directional trend dominance).
+        2. Location: Is price interacting with a high-timeframe structural shelf? (5-Day LVN, 5-Day POC, 5-Month AVWAP ±1σ/±2σ bands, Yesterday NYC VAH/VAL/POC, or Overnight High/Low).
+        3. Structure: Is there an asymmetric entry pattern? (Wyckoff Spring/Upthrust, Bullish Engulfing at LVN, Absorption, or 5m Action Trendline close with clean Stop Loss and Runway Ratio ≥ 2:1).
+      * The A/B/C Grade Matrix (Execution Discipline):
+        - Grade A (All 3 Present): Tradeable! Primary desk focus.
+        - Grade B (2 Present): Stand Aside / Armed Only. Never chase.
+        - Grade C (0–1 Present): Random chop / inside value. Ignore.
+        - Desk Rule: TRADE ONLY GRADE A. If NQ=C, YM=B, ES=B, Gold=C, Crude=A → 100% of desk execution goes to Crude Oil.
+      * The Anti-Chase Imperative:
+        - A market moving the most (+4%) in the middle of nowhere without a profile shelf is a Grade B/C trap.
+        - A market moving only +0.5% that is sitting directly at a 5-Day LVN and forming a clean spring is Grade A.
+        - Never select based on biggest percentage move; select based on expansion + location + clean invalidation.
+      * Institutional Order Flow Reality (Dispelling Speculative Hedging Narratives):
+        - If Crude spikes and Dow dumps at 10:45 ET, avoid assuming a single whale is "hedging Dow with Oil". Institutional portfolios are heterogeneous and non-linked.
+        - Focus exclusively on observable central limit order book mechanics: Where is aggressive buying/selling absorbing passive liquidity at key profile shelves?
+
 6. CO-PILOT SITUATIONAL DIRECTIVES (<execute> tags):
 You are the trader's situational awareness partner on the desk. The system is ALWAYS in Read-Only Market Monitoring Mode and NEVER places orders. You MUST strictly distinguish between ALARM NOTES vs CONDITIONAL SITUATIONS:
 
@@ -1076,7 +1108,7 @@ B) CONDITIONAL MARKET SITUATIONS & SETUP MONITORING (Tracked in Situations secti
   }
   </execute>
 - Direct Order Requests: If the trader instructs you to place an order or enter the market (e.g. "Leo buy NASDAQ", "Leo enter long at 21500", "Leo sell DOW", "Leo place order"):
-  Authoritatively inform the trader that the system and AI Leo are strictly in Read-Only Market Monitoring Mode and never place orders. State the key support/resistance levels, pattern confirmation criteria, and suggested risk bracket references (standard SL ~${defaultSlDist} pts, TP ~${defaultTpDist} pts) for their situational awareness. Do NOT output any order placement tags.
+  Authoritatively inform the trader that the system and AI Leo are strictly in Read-Only Market Monitoring Mode and never place orders. State the key support/resistance levels, pattern confirmation criteria, and suggested risk bracket references (standard SL ~${defaultSlDist} pts, TP ~${defaultTpDist} pts | e.g. Reference Base: ${activeBasePrice.toFixed(2)}, SL: ${(activeBasePrice - defaultSlDist).toFixed(2)}, TP: ${(activeBasePrice + defaultTpDist).toFixed(2)}) for their situational awareness. Do NOT output any order placement tags.
 - CRITICAL DESK RULE:
   THE SYSTEM AND AI LEO NEVER PLACE ORDERS. THE SYSTEM IS ALWAYS IN READ-ONLY MARKET MONITORING MODE. Leo's role is pure situational awareness: monitoring levels, tracking volume and structure, identifying patterns, and immediately notifying the trader when situations happen.
 - Live Trade Tracking & Status: When the trader asks "how is the trade going", "how is my order doing", or "position status":
@@ -1233,6 +1265,23 @@ ${
   ctx.rangeComparisons && ctx.rangeComparisons.length > 0
     ? formatRangeVolumeComparisonReport(ctx.rangeComparisons)
     : 'No multi-range comparisons active (draw 2+ ranges or FRVPs on chart to compare).'
+}
+
+[CROSS-ASSET VOLATILITY & 5-MARKET SELECTION RADAR]:
+${
+  ctx.crossMarketVolatility
+    ? `- Equities Volatility: VIX1D ${ctx.crossMarketVolatility.equities.vix1d.value.toFixed(1)} (${ctx.crossMarketVolatility.equities.vix1d.changePct >= 0 ? '+' : ''}${ctx.crossMarketVolatility.equities.vix1d.changePct.toFixed(1)}%) | 30D VIX ${ctx.crossMarketVolatility.equities.vix.value.toFixed(1)} [${ctx.crossMarketVolatility.equities.activeRegime}${ctx.crossMarketVolatility.equities.isExpanding ? ' 🔥 EXPANDING' : ''}]
+- Crude Oil Volatility: OVX ${ctx.crossMarketVolatility.crude.ovx.value.toFixed(1)} (${ctx.crossMarketVolatility.crude.ovx.changePct >= 0 ? '+' : ''}${ctx.crossMarketVolatility.crude.ovx.changePct.toFixed(1)}%) [${ctx.crossMarketVolatility.crude.activeRegime}${ctx.crossMarketVolatility.crude.isExpanding ? ' 🔥 EXPANDING' : ''}]
+- Gold Volatility: GVZ ${ctx.crossMarketVolatility.gold.gvz.value.toFixed(1)} (${ctx.crossMarketVolatility.gold.gvz.changePct >= 0 ? '+' : ''}${ctx.crossMarketVolatility.gold.gvz.changePct.toFixed(1)}%) [${ctx.crossMarketVolatility.gold.activeRegime}${ctx.crossMarketVolatility.gold.isExpanding ? ' 🔥 EXPANDING' : ''}]
+- Macro Telemetry: ${ctx.crossMarketVolatility.summary}`
+    : '- Volatility Gauges: VIX1D (Equities), OVX (Crude), GVZ (Gold) actively monitored on radar.'
+}
+${
+  ctx.marketRadar
+    ? `- 5-Market Ranking Matrix (Participation x Location x Structure):
+${Object.values(ctx.marketRadar.markets).map((m) => `  * [Grade ${m.grade}] ${m.contractLabel} @ ${m.currentPrice.toFixed(2)} (${m.dayChangePct >= 0 ? '+' : ''}${m.dayChangePct.toFixed(1)}%): ${m.summaryLine}`).join('\n')}
+- Desk Directive: ${ctx.marketRadar.deskDirective}`
+    : ''
 }
 
 [CANDLESTICK PATTERNS DETECTED ON CHART]:

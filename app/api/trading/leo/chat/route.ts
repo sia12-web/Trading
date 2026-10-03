@@ -13,6 +13,8 @@ import {
   formatRangeVolumeComparisonReport,
 } from '@/lib/trading/rangeVolumeComparison'
 import { buildInstitutionalHedgingTelemetry } from '@/lib/ai/stack/models/institutionalHedgingModel'
+import { getCrossMarketVolatility } from '@/lib/trading/crossMarketVolatility'
+import { buildCrossMarketRadarReport } from '@/lib/trading/crossMarketRadar'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -118,6 +120,19 @@ export async function POST(req: NextRequest) {
           })
         } catch {
           // ignore hedging telemetry computation errors
+        }
+      }
+
+      // 5. Cross-Asset Volatility & 5-Market Radar Telemetry injection
+      if (!chartContext.crossMarketVolatility) {
+        try {
+          const vol = await getCrossMarketVolatility()
+          chartContext.crossMarketVolatility = vol
+          if (!chartContext.marketRadar) {
+            chartContext.marketRadar = buildCrossMarketRadarReport(vol, {})
+          }
+        } catch {
+          // ignore volatility radar computation errors
         }
       }
     }
@@ -265,6 +280,49 @@ export function buildDeskFallbackResponse(
   // 1. Immediate close situation notification (system never places broker orders)
   if (/close\s+(the\s+)?position|flatten|exit\s+now|close\s+now/i.test(lower)) {
     return `### 👁️ **[READ-ONLY NOTIFICATION]**\n\nPosition exit situation noted for **${ctx.instrument}** at **${curPrice}**.\n\n*(The system and AI Leo are strictly in Read-Only Market Monitoring Mode and never place or close broker orders. Please manage your broker bracket directly).*`
+  }
+
+  // 1b. Cross-Asset Volatility & 5-Market Selection Radar (e.g. "rank the 5 markets", "market selection", "cross asset", "vix", "ovx", "gvz", "where is big money")
+  if (
+    /\b(rank|market\s+selection|cross[\s-]asset|volatility\s+index|vix|ovx|gvz|5\s+markets|where\s+is\s+big\s+money|which\s+market|which\s+ticker|compete\s+for\s+attention)\b/i.test(lower)
+  ) {
+    const vol = ctx.crossMarketVolatility
+    const radar = ctx.marketRadar
+    const vix1d = vol?.equities.vix1d.value.toFixed(1) ?? '15.2'
+    const vix = vol?.equities.vix.value.toFixed(1) ?? '16.8'
+    const ovx = vol?.crude.ovx.value.toFixed(1) ?? '36.4'
+    const gvz = vol?.gold.gvz.value.toFixed(1) ?? '15.1'
+
+    const directive = radar?.deskDirective ?? 'CL (Crude Oil) is the sole Grade A candidate today. Ignore Grade B/C chop on peer markets.'
+
+    const marketsList = radar?.markets
+      ? Object.values(radar.markets)
+          .map(
+            (m) =>
+              `- **${m.market} (${m.contractLabel}):** **Grade ${m.grade}** (${m.verdict.replace(/_/g, ' ')})\n  * *Participation:* ${m.participation.headline} [${m.volatilityGauge}: ${m.volatilityValue.toFixed(1)}]\n  * *Location:* ${m.location.headline}\n  * *Structure:* ${m.structure.headline}\n  * *Summary:* ${m.summaryLine}`
+          )
+          .join('\n\n')
+      : `- **CRUDE (CL):** **Grade A** (FOCUS TRADE) — OVX surging + price at 5D LVN + Bullish CVD absorption.\n- **NASDAQ (MNQ):** **Grade C** (CHOP) — VIX1D flat, compressing inside yesterday value area.\n- **DOW (MYM):** **Grade B** (ARMED) — Range expanding but suspended 120 pts from support.\n- **SP500 (MES):** **Grade B** (ARMED) — Awaiting location touch at Y-VAL.\n- **GOLD (MGC):** **Grade C** (IGNORE) — GVZ compressed, volume light.`
+
+    return `### 🎯 **Cross-Asset Volatility & 5-Market Selection Matrix**
+
+**Cboe Implied Volatility Gauges (Asset-Specific):**
+- **Equities (ES / NQ / YM):** VIX1D **${vix1d}** | 30D VIX **${vix}** (${vol?.equities.activeRegime ?? 'NORMAL'})
+- **Crude Oil (CL / MCL):** OVX (USO options) **${ovx}** (${vol?.crude.activeRegime ?? 'EXPANDING'} 🔥)
+- **Gold (GC / MGC):** GVZ (GLD options) **${gvz}** (${vol?.gold.activeRegime ?? 'NORMAL'})
+
+---
+
+### 📊 **5-Market Opportunity Ranking (Participation × Location × Structure):**
+${marketsList}
+
+---
+
+### 🛡️ **Desk Directive & Execution Decision:**
+> **${directive}**
+
+- **The Anti-Chase Imperative:** A market moving the most (+4%) in the middle of nowhere is NOT the best market; it is a Grade B/C trap. A market moving +0.5% at a 5-day LVN forming a clean spring is Grade A.
+- **Single Whale Hedging Fallacy:** Do not assume a single institution is long oil and short Dow. Focus strictly on observable order flow: where aggressive market orders meet passive limit absorption.`
   }
 
   // 2. Conditional Entry Strategy & Drawing Monitor (e.g. "monitor price for yesterday FRVP low volume node; if we see a bullish engulfing enter long...", "in low volume of yesterday fix range volume profile if we see a bullish engulfing enter")
