@@ -18,7 +18,7 @@
  * 4. Rounded Numbers: Psychological whole numbers.
  */
 
-import { sessionInstanceKeyAt } from '@/lib/chart/sessionVwap'
+import { sessionInstanceKeyAt, computeVwapFromCustomAnchor } from '@/lib/chart/sessionVwap'
 
 export interface SessionExtreme {
   id: string
@@ -588,6 +588,7 @@ export interface EmotionalNewsMove {
   retestTime?: number
   barCount?: number
   headlineSentence?: string
+  avwapPoints?: Array<{ time: number; vwap: number; upper1: number; lower1: number }>
 }
 
 export interface CalendarEventParam {
@@ -690,6 +691,39 @@ export function isEventDomesticToInstrument(country: string | undefined, event: 
   }
 
   return true
+}
+
+/**
+ * Identify Tier-1 very important macroeconomic events that establish sustained trend regimes.
+ * Filters out minor speeches, tertiary releases, and calendar noise.
+ */
+export function isVeryImportantMacroEvent(event: string, country?: string): boolean {
+  const ev = event.toLowerCase()
+  const c = (country || '').toUpperCase().trim()
+
+  // Tier-1 catalysts: CPI, PPI, NFP / Jobs, FOMC / Fed, Powell, Rate Decisions, PCE, EIA Crude, Retail Sales, GDP, ISM
+  const isKeyDriver =
+    /\b(cpi|ppi|nfp|non-farm|payroll|fomc|fed\b|powell|rate decision|interest rate|pce\b|eia\b|petroleum|crude.*inventor|gdp|retail sales|ism manufacturing)\b/i.test(ev)
+
+  if (isKeyDriver) return true
+
+  if (c === 'US' || c === 'USD') {
+    if (/\b(inflation|unemployment rate|interest rate decision|monetary policy)\b/i.test(ev)) return true
+  }
+
+  return false
+}
+
+/**
+ * Determine whether an abnormal news move qualifies for an Event-Anchored VWAP line.
+ * Requires BOTH:
+ * 1. Tier-1 very important macro news or massive breaking news spike.
+ * 2. Confirmed abnormal volatility effect on the chart (verified moveRange & ATR expansion).
+ */
+export function shouldAnchorVwapToNews(move: EmotionalNewsMove): boolean {
+  const isMajorNews = isVeryImportantMacroEvent(move.eventName, move.country)
+  const isMajorSpike = move.eventName.includes('Breaking News') || move.description.includes('x ATR')
+  return isMajorNews || isMajorSpike
 }
 
 /**
@@ -879,6 +913,19 @@ export function detectEmotionalNewsMoves(
     const volExpansionStr = reactionExpansion >= 1.6 ? ` · Abnormal ${reactionExpansion.toFixed(1)}x Vol` : ' · Abnormal Volatility'
     const headlineSentence = `⚡ ${cleanEventName}: ${dirWord} ${ptsText} (${barText})${volExpansionStr}`
 
+    let avwapPoints: Array<{ time: number; vwap: number; upper1: number; lower1: number }> | undefined
+    if (isVeryImportantMacroEvent(e.event, e.country)) {
+      const vwapRes = computeVwapFromCustomAnchor(scoped, scoped[eventIdx]!.time)
+      if (vwapRes && vwapRes.vwap.length >= 2) {
+        avwapPoints = vwapRes.vwap.map((pt, idx) => ({
+          time: Number(pt.time),
+          vwap: pt.value,
+          upper1: vwapRes.upper1[idx]?.value ?? pt.value,
+          lower1: vwapRes.lower1[idx]?.value ?? pt.value,
+        }))
+      }
+    }
+
     moves.push({
       id: `news-move-${eventUnix}-${e.event.replace(/\s+/g, '-').toLowerCase()}`,
       eventName: e.event,
@@ -899,6 +946,7 @@ export function detectEmotionalNewsMoves(
       retestTime,
       barCount,
       headlineSentence,
+      avwapPoints,
     })
   }
 
@@ -977,6 +1025,19 @@ export function detectEmotionalNewsMoves(
         const ptsText = `${spikeRange.toFixed(spikeRange < 10 ? 2 : 1)}pts`
         const headlineSentence = `⚡ Volatility Spike: ${dirWord} ${ptsText} (${barText} · ${(curRange / avgRange).toFixed(1)}x ATR)`
 
+        let avwapPoints: Array<{ time: number; vwap: number; upper1: number; lower1: number }> | undefined
+        if (curRange >= 2.5 * avgRange) {
+          const vwapRes = computeVwapFromCustomAnchor(scoped, curBar.time)
+          if (vwapRes && vwapRes.vwap.length >= 2) {
+            avwapPoints = vwapRes.vwap.map((pt, idx) => ({
+              time: Number(pt.time),
+              vwap: pt.value,
+              upper1: vwapRes.upper1[idx]?.value ?? pt.value,
+              lower1: vwapRes.lower1[idx]?.value ?? pt.value,
+            }))
+          }
+        }
+
         moves.push({
           id: `news-spike-${curBar.time}`,
           eventName: 'Breaking News Volatility Spike',
@@ -996,6 +1057,7 @@ export function detectEmotionalNewsMoves(
           retestTime,
           barCount,
           headlineSentence,
+          avwapPoints,
         })
 
         for (let k = i; k <= spikeEndIdx; k++) {

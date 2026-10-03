@@ -7,6 +7,8 @@ import assert from 'node:assert/strict'
 import {
   detectEmotionalNewsMoves,
   isEventDomesticToInstrument,
+  isVeryImportantMacroEvent,
+  shouldAnchorVwapToNews,
   type ExcessBar,
   type CalendarEventParam,
 } from '../lib/chart/excesses'
@@ -96,6 +98,12 @@ import {
   assert.ok(m.headlineSentence?.includes('Core CPI'), 'Headline sentence must mention CPI')
   assert.ok(m.headlineSentence?.includes('Surge'), 'Headline sentence must mention Surge')
   assert.ok(m.headlineSentence?.includes('3 bars'), 'Headline sentence must mention 3 bars')
+  assert.ok(shouldAnchorVwapToNews(m), 'CPI move must qualify for News Anchored VWAP')
+  assert.ok(m.avwapPoints && m.avwapPoints.length >= 5, 'Must calculate avwapPoints from news candle through subsequent bars')
+  assert.equal(m.avwapPoints[0]!.time, baseTime + 10 * 300, 'AVWAP must start at exact news reaction start candle')
+  assert.ok(m.avwapPoints[0]!.upper1 >= m.avwapPoints[0]!.vwap, 'Upper band must be >= VWAP on anchor candle')
+  assert.ok(m.avwapPoints[1]!.upper1 > m.avwapPoints[1]!.vwap, 'Upper band must expand above VWAP on subsequent candles')
+  assert.ok(m.avwapPoints[0]!.lower1 <= m.avwapPoints[0]!.vwap, 'Lower band must be <= VWAP on anchor candle')
 }
 
 // 3. 30-Minute Chart News Move (2 bars) on Gold
@@ -288,6 +296,93 @@ import {
   const m = moves[0]!
   assert.ok(m.moveRange >= 80, 'Spike range >= 80 pts')
   assert.ok(m.headlineSentence?.includes('Volatility Spike'), 'Headline sentence must mention Volatility Spike')
+}
+
+// 6. Tier-1 Macro Catalyst Qualification (Filters noise vs institutional trend drivers)
+{
+  // Very important macro events
+  assert.equal(isVeryImportantMacroEvent('CPI m/m', 'US'), true)
+  assert.equal(isVeryImportantMacroEvent('Core PCE Price Index m/m', 'US'), true)
+  assert.equal(isVeryImportantMacroEvent('Non-Farm Employment Change', 'US'), true)
+  assert.equal(isVeryImportantMacroEvent('FOMC Statement & Rate Decision', 'US'), true)
+  assert.equal(isVeryImportantMacroEvent('Fed Chair Powell Speaks', 'US'), true)
+  assert.equal(isVeryImportantMacroEvent('EIA Crude Oil Stocks Change', 'US'), true)
+  assert.equal(isVeryImportantMacroEvent('Advance GDP q/q', 'US'), true)
+  assert.equal(isVeryImportantMacroEvent('Retail Sales m/m', 'US'), true)
+  assert.equal(isVeryImportantMacroEvent('ISM Manufacturing PMI', 'US'), true)
+
+  // Minor / Low-impact calendar noise that should NOT anchor VWAP
+  assert.equal(isVeryImportantMacroEvent('Consumer Credit m/m', 'US'), false)
+  assert.equal(isVeryImportantMacroEvent('Wholesale Inventories m/m', 'US'), false)
+  assert.equal(isVeryImportantMacroEvent('IBD/TIPP Economic Optimism', 'US'), false)
+  assert.equal(isVeryImportantMacroEvent('Total Vehicle Sales', 'US'), false)
+}
+
+// 7. News-Anchored VWAP Acceptance vs Rejection Verification
+{
+  const baseTime = 1727784000
+  const bars: ExcessBar[] = []
+  // Calm baseline
+  for (let i = 0; i < 6; i++) {
+    bars.push({
+      time: baseTime + i * 300,
+      open: 2650,
+      high: 2652,
+      low: 2649,
+      close: 2651,
+      volume: 400,
+    })
+  }
+
+  // Major FOMC Rate Decision at bar 6: Gold surges from 2650 to 2675 (+25 pts)
+  bars.push({
+    time: baseTime + 6 * 300,
+    open: 2651,
+    high: 2668,
+    low: 2650,
+    close: 2666,
+    volume: 5000,
+  })
+  bars.push({
+    time: baseTime + 7 * 300,
+    open: 2666,
+    high: 2675,
+    low: 2664,
+    close: 2673,
+    volume: 4200,
+  })
+
+  // Following bars consolidate above the catalyst price (Bullish acceptance)
+  for (let i = 8; i < 15; i++) {
+    bars.push({
+      time: baseTime + i * 300,
+      open: 2672,
+      high: 2676,
+      low: 2670,
+      close: 2674,
+      volume: 1200,
+    })
+  }
+
+  const events: CalendarEventParam[] = [
+    {
+      time: baseTime + 6 * 300,
+      event: 'Federal Funds Rate Decision',
+      impact: 'High',
+      country: 'US',
+    },
+  ]
+
+  const moves = detectEmotionalNewsMoves(bars, events, 'GOLD')
+  assert.equal(moves.length, 1, 'FOMC move detected on Gold')
+  const fomcMove = moves[0]!
+  assert.ok(shouldAnchorVwapToNews(fomcMove), 'FOMC move must qualify for AVWAP')
+  assert.ok(fomcMove.avwapPoints && fomcMove.avwapPoints.length >= 8, 'AVWAP points generated')
+
+  const lastAvwap = fomcMove.avwapPoints![fomcMove.avwapPoints!.length - 1]!
+  const lastBar = bars[bars.length - 1]!
+  // Price (2674) should be accepted above AVWAP
+  assert.ok(lastBar.close > lastAvwap.vwap, 'Price accepted above FOMC AVWAP (Bullish Acceptance)')
 }
 
 console.log('news_reaction_bars: all tests passed!')

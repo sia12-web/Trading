@@ -62,6 +62,7 @@ import {
   detectSpikes,
   detectDistributionReferences,
   detectEmotionalNewsMoves,
+  shouldAnchorVwapToNews,
   type EmotionalNewsMove,
   type SessionExtreme,
 } from '@/lib/chart/excesses'
@@ -4688,6 +4689,139 @@ export function TradingChart({
               ctx.lineTo(maxX + 80, Math.round(yBase) + 0.5)
               ctx.stroke()
               ctx.setLineDash([])
+            }
+          }
+        }
+
+        // ── D. Tier-1 News-Anchored VWAP (AVWAP) with ±1σ Bands & Acceptance/Rejection Status
+        if (
+          move.avwapPoints &&
+          move.avwapPoints.length >= 2 &&
+          shouldAnchorVwapToNews(move) &&
+          nowSec - move.reactionEndTime <= 48 * 3600
+        ) {
+          const vwapCoords: Array<{ x: number; y: number; yUp: number; yLow: number; time: number; vwap: number }> = []
+          for (const pt of move.avwapPoints) {
+            const px = xAt(pt.time)
+            const py = series.priceToCoordinate(pt.vwap)
+            const pyUp = series.priceToCoordinate(pt.upper1)
+            const pyLow = series.priceToCoordinate(pt.lower1)
+            if (px != null && py != null && Number.isFinite(px) && Number.isFinite(py)) {
+              vwapCoords.push({
+                x: px,
+                y: py,
+                yUp: pyUp != null && Number.isFinite(pyUp) ? pyUp : py,
+                yLow: pyLow != null && Number.isFinite(pyLow) ? pyLow : py,
+                time: pt.time,
+                vwap: pt.vwap,
+              })
+            }
+          }
+
+          if (vwapCoords.length >= 2) {
+            // Anchor Symbol ⚓ at the News Catalyst Candle
+            ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+            ctx.fillStyle = '#f59e0b'
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'bottom'
+            ctx.fillText('⚓', vwapCoords[0]!.x, vwapCoords[0]!.y - 6)
+
+            // ±1σ Standard Deviation Fill Band
+            ctx.beginPath()
+            ctx.moveTo(vwapCoords[0]!.x, vwapCoords[0]!.yUp)
+            for (let i = 1; i < vwapCoords.length; i++) {
+              ctx.lineTo(vwapCoords[i]!.x, vwapCoords[i]!.yUp)
+            }
+            for (let i = vwapCoords.length - 1; i >= 0; i--) {
+              ctx.lineTo(vwapCoords[i]!.x, vwapCoords[i]!.yLow)
+            }
+            ctx.closePath()
+            ctx.fillStyle = 'rgba(245, 158, 11, 0.05)'
+            ctx.fill()
+
+            // ±1σ Standard Deviation Dashed Envelope
+            ctx.strokeStyle = 'rgba(245, 158, 11, 0.40)'
+            ctx.lineWidth = 1
+            ctx.setLineDash([3, 3])
+            ctx.beginPath()
+            ctx.moveTo(vwapCoords[0]!.x, vwapCoords[0]!.yUp)
+            for (let i = 1; i < vwapCoords.length; i++) {
+              ctx.lineTo(vwapCoords[i]!.x, vwapCoords[i]!.yUp)
+            }
+            ctx.stroke()
+
+            ctx.beginPath()
+            ctx.moveTo(vwapCoords[0]!.x, vwapCoords[0]!.yLow)
+            for (let i = 1; i < vwapCoords.length; i++) {
+              ctx.lineTo(vwapCoords[i]!.x, vwapCoords[i]!.yLow)
+            }
+            ctx.stroke()
+            ctx.setLineDash([])
+
+            // Central News AVWAP Line (Warm Amber)
+            ctx.strokeStyle = '#f59e0b'
+            ctx.lineWidth = 1.8
+            ctx.beginPath()
+            ctx.moveTo(vwapCoords[0]!.x, vwapCoords[0]!.y)
+            for (let i = 1; i < vwapCoords.length; i++) {
+              ctx.lineTo(vwapCoords[i]!.x, vwapCoords[i]!.y)
+            }
+            ctx.stroke()
+
+            // Real-Time Acceptance / Rejection Status Badge at the developing tip
+            if (!hideTrendlineBadges) {
+              const lastPt = vwapCoords[vwapCoords.length - 1]!
+              const latestCandle = list[list.length - 1]
+              const currentPrice = latestCandle ? latestCandle.close : lastPt.vwap
+              const diff = currentPrice - lastPt.vwap
+              const isBullAcceptance = diff >= 0
+              const statusColor = isBullAcceptance ? '#10b981' : '#f43f5e'
+              const statusText = isBullAcceptance
+                ? `▲ Bull Acceptance (+${diff.toFixed(1)}pts)`
+                : `▼ Bear Rejection (-${Math.abs(diff).toFixed(1)}pts)`
+
+              const cleanEvent = move.eventName
+                .replace(/\s*\([^)]*\)/g, '')
+                .replace(/\s*m\/m|\s*y\/y|\s*q\/q/gi, '')
+                .replace('Breaking News Volatility Spike', 'Spike')
+                .trim()
+
+              const statusBadgeText = `⚓ ${cleanEvent} AVWAP: ${lastPt.vwap.toFixed(1)} · ${statusText}`
+
+              ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace'
+              const m = ctx.measureText(statusBadgeText)
+              const badgeW = m.width + 16
+              const badgeH = 18
+
+              let badgeX = lastPt.x + 8
+              if (badgeX + badgeW > paneW - 8) {
+                badgeX = Math.max(8, lastPt.x - badgeW - 8)
+              }
+              const badgeY = Math.max(12, Math.min(paneH - 24, lastPt.y - badgeH * 0.5))
+
+              ctx.fillStyle = 'rgba(15, 23, 42, 0.94)'
+              ctx.beginPath()
+              if (typeof (ctx as any).roundRect === 'function') {
+                (ctx as any).roundRect(badgeX, badgeY, badgeW, badgeH, 6)
+              } else {
+                ctx.rect(badgeX, badgeY, badgeW, badgeH)
+              }
+              ctx.fill()
+
+              ctx.strokeStyle = statusColor
+              ctx.lineWidth = 1.2
+              ctx.stroke()
+
+              ctx.fillStyle = '#f8fafc'
+              ctx.textAlign = 'left'
+              ctx.textBaseline = 'middle'
+              ctx.fillText(statusBadgeText, badgeX + 8, badgeY + badgeH * 0.5)
+
+              // Glowing indicator dot at terminal AVWAP coordinate
+              ctx.fillStyle = statusColor
+              ctx.beginPath()
+              ctx.arc(lastPt.x, lastPt.y, 3, 0, Math.PI * 2)
+              ctx.fill()
             }
           }
         }

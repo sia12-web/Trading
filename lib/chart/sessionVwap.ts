@@ -1304,3 +1304,56 @@ export function computeAnchoredVwap(
     ? { vwap, upper1, lower1, upper2, lower2, upper3, lower3 }
     : null
 }
+
+/**
+ * Compute Anchored VWAP starting from an explicit anchor timestamp (e.g. major news event catalyst).
+ * Calculates VWAP line plus ±1σ and ±2σ standard deviation expansion bands.
+ */
+export function computeVwapFromCustomAnchor(
+  candles: SessionBar[],
+  anchorUnix: number,
+  maxBars?: number
+): {
+  vwap: { time: UTCTimestamp; value: number }[]
+  upper1: { time: UTCTimestamp; value: number }[]
+  lower1: { time: UTCTimestamp; value: number }[]
+  upper2: { time: UTCTimestamp; value: number }[]
+  lower2: { time: UTCTimestamp; value: number }[]
+} | null {
+  if (candles.length === 0) return null
+
+  const startIdx = candles.findIndex((c) => c.time >= anchorUnix)
+  if (startIdx < 0) return null
+
+  const endIdx = maxBars != null ? Math.min(candles.length, startIdx + maxBars) : candles.length
+
+  let sumPV = 0
+  let sumV = 0
+  let sumP2V = 0
+  const vwap: { time: UTCTimestamp; value: number }[] = []
+  const upper1: { time: UTCTimestamp; value: number }[] = []
+  const lower1: { time: UTCTimestamp; value: number }[] = []
+  const upper2: { time: UTCTimestamp; value: number }[] = []
+  const lower2: { time: UTCTimestamp; value: number }[] = []
+
+  for (let i = startIdx; i < endIdx; i++) {
+    const c = candles[i]!
+    const price = (c.high + c.low + c.close) / 3
+    const vol = c.volume > 0 ? c.volume : 1
+    sumPV += price * vol
+    sumP2V += price * price * vol
+    sumV += vol
+    if (sumV <= 0) continue
+    const v = sumPV / sumV
+    const variance = Math.max(0, sumP2V / sumV - v * v)
+    const std = Math.sqrt(variance)
+    const t = c.time as UTCTimestamp
+    vwap.push({ time: t, value: Number(v.toFixed(2)) })
+    upper1.push({ time: t, value: Number((v + std).toFixed(2)) })
+    lower1.push({ time: t, value: Number((v - std).toFixed(2)) })
+    upper2.push({ time: t, value: Number((v + 2 * std).toFixed(2)) })
+    lower2.push({ time: t, value: Number((v - 2 * std).toFixed(2)) })
+  }
+
+  return vwap.length ? { vwap, upper1, lower1, upper2, lower2 } : null
+}
