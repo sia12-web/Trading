@@ -142,7 +142,7 @@ describe('Leo AI Desk Assistant Unit Tests', () => {
     assert.ok(prompt.includes('[IT] 5D POC: 43900'))
   })
 
-  it('uses accurate instrument-aware base prices and brackets when currentPrice is null', () => {
+  it('does not invent a price when the live quote is missing', () => {
     const goldPrompt = buildLeoSystemPrompt({
       instrument: 'GOLD',
       currentPrice: null,
@@ -154,7 +154,11 @@ describe('Leo AI Desk Assistant Unit Tests', () => {
       shortTermMoney: null,
       activeExcesses: [],
     })
-    assert.ok(goldPrompt.includes('4350.00'))
+    assert.ok(goldPrompt.includes('Awaiting quote'))
+    assert.ok(goldPrompt.includes('"UNAVAILABLE"'))
+    assert.ok(!goldPrompt.includes('4350'))
+    assert.ok(goldPrompt.includes('TRADER_DEFINED_NY_PROFILE_SESSION'))
+    assert.ok(!goldPrompt.includes('SESSION_POLICY_TOKYO'))
     assert.ok(goldPrompt.includes('DESK BRIEF — GOLD / GC'))
     assert.ok(!goldPrompt.includes('NaN'))
 
@@ -169,8 +173,39 @@ describe('Leo AI Desk Assistant Unit Tests', () => {
       shortTermMoney: null,
       activeExcesses: [],
     })
-    assert.ok(crudePrompt.includes('104.00'))
+    assert.ok(crudePrompt.includes('Awaiting quote'))
+    assert.ok(crudePrompt.includes('"UNAVAILABLE"'))
+    assert.ok(!crudePrompt.includes('104.00'))
+    assert.ok(crudePrompt.includes('TRADER_DEFINED_NY_PROFILE_SESSION'))
     assert.ok(crudePrompt.includes('DESK BRIEF — CRUDE / CL'))
     assert.ok(!crudePrompt.includes('NaN'))
+  })
+
+  it('uses one execution doctrine and one session policy', () => {
+    const nikkei = buildLeoSystemPrompt({
+      instrument: 'NIKKEI',
+      currentPrice: null,
+      currentTimeEt: '20:00 ET',
+      dayType: null,
+      openingType: null,
+      longTermMoney: null,
+      intermediateMoney: null,
+      shortTermMoney: null,
+      activeExcesses: [],
+    })
+    assert.ok(nikkei.includes('SESSION_POLICY_TOKYO'))
+    assert.ok(nikkei.includes('09:00 JST'))
+    assert.ok(!nikkei.includes('SESSION_POLICY_NYC'))
+    assert.ok(nikkei.includes('22-Rule Wyckoff'))
+    assert.ok(nikkei.includes('09:00 JST: TSE cash open'))
+    assert.ok(nikkei.includes('VALID SETUP'))
+    assert.ok(nikkei.includes('TRADEABLE HYPOTHESIS'))
+    assert.ok(nikkei.includes('Trendline break alone = NO TRADE.'))
+    assert.ok(nikkei.includes('Participant identity is unknown.'))
+    assert.ok(nikkei.includes('ZERO HALLUCINATION'))
+    assert.ok(!nikkei.includes('$2,000'))
+    assert.ok(!nikkei.includes('18.5'))
+    assert.ok(!nikkei.includes('primary systematic strategy'))
+    assert.ok(!nikkei.includes('7-Factor'))
   })
 })

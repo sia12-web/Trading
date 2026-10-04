@@ -424,7 +424,7 @@ describe('Range Volume Comparison & Support/Resistance Readiness Tests', () => {
     }
 
     const prompt = buildLeoSystemPrompt(ctx)
-    assert.ok(prompt.includes('5g. RANGE & LEVEL VOLUME COMPARISONS & SUPPORT/RESISTANCE READINESS'))
+    assert.ok(prompt.includes('Volume is contextual evidence, not a standalone classification.'))
     assert.ok(prompt.includes('GOOD SUPPORT'))
     assert.ok(prompt.includes('GOOD RESISTANCE'))
     assert.ok(prompt.includes('[RANGE & LEVEL VOLUME COMPARISON MATRIX]'))

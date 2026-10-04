@@ -250,11 +250,11 @@ describe('Auction Price Critique & "Questioning" Engine', () => {
 
     const prompt = buildLeoSystemPrompt(ctx)
 
-    // Verify Section 5f is present
-    assert.ok(prompt.includes('5f. AUCTION PRICE CRITIQUE & "QUESTIONING" DESK PROTOCOL'))
-    assert.ok(prompt.includes('The Market is a Place to Do Business (Auction Market Theory)'))
-    assert.ok(prompt.includes('Why the hell should we buy at 9:30 AM NYC Open when London and Asian participants accumulated 30 points lower'))
-    assert.ok(prompt.includes('The 6-Point Questioning Pre-Trade Self-Audit'))
+    assert.ok(prompt.includes('Do not narrate wholesale, retail, weak hands'))
+    assert.ok(prompt.includes('above overnight accepted value'))
+    assert.ok(prompt.includes('Overnight directional inventory proxy:'))
+    assert.ok(!prompt.includes('80% Net Long'))
+    assert.ok(!prompt.includes('% Long'))
 
     // Verify live telemetry block is populated
     assert.ok(prompt.includes('[AUCTION PRICE CRITIQUE & "QUESTIONING" TELEMETRY]'))
