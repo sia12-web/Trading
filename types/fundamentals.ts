@@ -1310,4 +1310,264 @@ export interface DowFundamentalDashboardState {
   liveHeadlines: LiveDowHeadline[]
 }
 
+// ============================================================================
+// 9. NIKKEI 225 FUNDAMENTAL ANALYST DOMAIN TYPES (NIKKEI_AGENT - CME NKD)
+// ============================================================================
+
+export type NikkeiEventCategory =
+  | 'BOJ_MONETARY_POLICY'
+  | 'FX_USD_JPY'
+  | 'TECH_SEMICONDUCTORS'
+  | 'DOMESTIC_MACRO'
+  | 'EARNINGS_EXPORTERS'
+  | 'GEOPOLITICS_TRADE'
+  | 'GLOBAL_EQUITY_SPILLOVER'
+  | 'MARKET_STRUCTURE'
+
+export type NikkeiDirectionalStance = 'BULLISH' | 'BEARISH' | 'MIXED' | 'NEUTRAL' | 'UNCERTAIN'
+
+export type BojPolicyStance =
+  | 'HAWKISH_HIKE'
+  | 'DOVISH_HOLD'
+  | 'YCC_EXPANSION'
+  | 'INTERVENTION_RISK'
+  | 'NORMALIZING'
+
+export type FxRegimeStance =
+  | 'YEN_WEAKNESS_EXPORTER_BOOST'
+  | 'YEN_STRENGTH_HEADWIND'
+  | 'INTERVENTION_ALERT'
+  | 'FX_STABLE'
+
+export interface NikkeiConstituent {
+  symbol: string
+  name: string
+  priceJpy: number
+  weightPct: number
+  sector: string
+  betaToUsdJpy: number
+  pointContributionPer100Yen?: number
+}
+
+export interface NikkeiContributionState {
+  sumSharePricesJpy: number
+  top1ContributionPct: number
+  top3ContributionPct: number
+  top5ContributionPct: number
+  semiconductorSharePct: number
+  weightingConcentration: 'HIGH' | 'MODERATE' | 'BALANCED'
+  fastRetailingWeightPct: number
+  tokyoElectronWeightPct: number
+  advantestWeightPct: number
+  softbankWeightPct: number
+}
+
+export interface NikkeiBojState {
+  uncollateralizedCallRatePct: number // policy rate e.g. 0.25%
+  jgb10yYieldPct: number // 10Y JGB yield e.g. 0.95%
+  yccStatus: 'FLEXIBLE_CEILING' | 'STRICT_PEG' | 'ABANDONED_NORMALIZED'
+  etfPurchasePace: 'PHASING_OUT' | 'CEASED' | 'ACTIVE'
+  policyStance: BojPolicyStance
+  nextMeetingDate: string
+  summary: string
+}
+
+export interface NikkeiFxState {
+  usdjpyRate: number // e.g. 152.40
+  usdjpyChangePct: number
+  fxRegime: FxRegimeStance
+  mofInterventionZone: boolean
+  implicationForNikkei: string
+}
+
+export interface NikkeiAbnormalBehavior {
+  detected: boolean
+  type:
+    | 'YEN_DIVERGENCE'
+    | 'SEMICONDUCTOR_DECOUPLING'
+    | 'BOJ_ABSORPTION'
+    | 'OVERNIGHT_GAP_FADE'
+    | 'PRICE_WEIGHT_DISTORTION'
+    | 'NONE'
+  explanation: string
+}
+
+export interface StructuredNikkeiEventOutput {
+  event: string
+  category: NikkeiEventCategory
+  importance: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'
+  confidence: number // 0-100
+  market_stance: {
+    intraday: NikkeiDirectionalStance
+    short_term: NikkeiDirectionalStance
+    medium_term: NikkeiDirectionalStance
+  }
+  transmission_channels: {
+    boj_policy_impact: 'HAWKISH_TIGHTENING' | 'DOVISH_EASING' | 'NEUTRAL'
+    fx_pass_through: 'BULLISH_EXPORTERS' | 'BEARISH_EXPORTERS' | 'NEUTRAL'
+    tech_semiconductor_effect: 'RALLY' | 'DRAG' | 'NEUTRAL'
+    domestic_growth_effect: 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL'
+  }
+  market_reaction: {
+    nkd_initial_reaction: 'UP' | 'DOWN' | 'FLAT'
+    nkd_5m_continuation: 'CONTINUING' | 'REVERSING' | 'STALLED'
+    usdjpy_reaction: 'UP' | 'DOWN' | 'FLAT'
+    jgb10y_reaction: 'UP' | 'DOWN' | 'FLAT'
+  }
+  abnormal_behavior: NikkeiAbnormalBehavior
+  estimated_nkd_point_impact?: number
+  summary: string
+  actionable_takeaway: string
+}
+
+export interface TodaysNikkeiFundamentalState {
+  market: 'CME_NKD'
+  intraday_bias: NikkeiDirectionalStance
+  short_term_bias: NikkeiDirectionalStance
+  medium_term_bias: NikkeiDirectionalStance
+  boj_policy_stance: BojPolicyStance
+  fx_regime: FxRegimeStance
+  semiconductor_tailwind: 'STRONG' | 'MODERATE' | 'NEUTRAL' | 'HEADWIND'
+  domestic_macro_growth: string
+  inflation_wages_shunto: string
+  foreign_investor_flow: 'HEAVY_INFLOW' | 'MODERATE_BUYING' | 'NEUTRAL' | 'OUTFLOW'
+  us_overnight_lead: 'STRONG_BULLISH' | 'MILD_BULLISH' | 'FLAT' | 'MILD_BEARISH' | 'STRONG_BEARISH'
+  tokyo_cash_session_bias: string
+  key_risks: string[]
+  top_catalysts: string[]
+  summary_narrative: string
+  updated_at: string
+}
+
+export type NikkeiDriverId =
+  | 'boj_monetary_policy'
+  | 'usdjpy_fx_flow'
+  | 'tokyo_electron_semis'
+  | 'fast_retailing_retail'
+  | 'global_risk_us_spillover'
+  | 'japan_wage_inflation_shunto'
+  | 'foreign_investor_inflows'
+
+export interface NikkeiDriverMetric {
+  name: string
+  currentValue: string | number
+  priorValue: string | number
+  unit: string
+  trend: 'UP' | 'DOWN' | 'FLAT'
+  stance: NikkeiDirectionalStance
+  description: string
+}
+
+export interface NikkeiDriverState {
+  id: NikkeiDriverId
+  name: string
+  subtitle: string
+  category: 'MONETARY' | 'CURRENCY' | 'TECH' | 'PRICE_WEIGHTED' | 'GLOBAL' | 'MACRO' | 'FLOWS'
+  intradayStars: number // 1 to 5
+  longTermStars: number // 1 to 5
+  stance: NikkeiDirectionalStance
+  transmissionRole: string
+  summary: string
+  metrics: NikkeiDriverMetric[]
+  lastUpdated: string
+}
+
+export interface NikkeiTelemetry {
+  nkdPrice: number // e.g. 38900.00
+  nkdChange: number
+  nkdChangePct: number
+  contractMultiplier: 5 // $5 per index point for NKD
+  contractNotionalValue: number // nkdPrice * 5
+  usdjpyRate: number // e.g. 152.45
+  usdjpyChangePct: number
+  jgb10yNominalYield: number // e.g. 0.95%
+  jgb10yChangeBps: number
+  soxIndex: number // Philadelphia Semiconductor Index
+  soxChangePct: number
+  nqPrice: number
+  nqChangePct: number
+  topixPrice: number
+  topixChangePct: number
+  advancersCount: number // out of 225
+  declinersCount: number
+  unchangedCount: number
+  nikkeiDivisor: number
+  topConstituentsByWeight: NikkeiConstituent[]
+  tokyoCashSessionActive: boolean
+  tokyoSessionPhase: 'PREP' | 'MORNING_CASH' | 'LUNCH_BREAK' | 'AFTERNOON_CASH' | 'CLOSED'
+  timestamp: number
+  source: string
+  updatedAt: string
+}
+
+export interface LiveNikkeiHeadline {
+  id: string
+  eventId?: string
+  headline: string
+  source: string
+  datetime: number
+  url: string | null
+  summary: string | null
+  isDuplicateCluster?: boolean
+  duplicateCount?: number
+  indexRelevance: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'
+  affectedSymbols?: string[]
+}
+
+export interface NikkeiFeedStatus {
+  id: string
+  name: string
+  subtitle: string
+  category:
+    | 'BOJ_POLICY'
+    | 'FX_MARKETS'
+    | 'SEMICONDUCTOR_CHAIN'
+    | 'CME_GLOBEX'
+    | 'TSE_JPX_CASH'
+    | 'PRICE_WEIGHTS_DIVISOR'
+    | 'MACRO_JAPAN'
+    | 'FOREIGN_FLOWS'
+    | 'NEWS_WIRE'
+  status: 'ONLINE' | 'ACTIVE' | 'POLLING' | 'DEGRADED' | 'CONFIG_REQUIRED'
+  latency: string
+  lastSync: string
+  primarySource: string
+}
+
+export interface NikkeiEventEvaluation {
+  id: string
+  timestamp: string
+  event: string
+  rawText: string
+  structuredOutput: StructuredNikkeiEventOutput
+  safeguards: {
+    noInventedData: boolean
+    priceWeightingNotCapWeighting: boolean
+    yenSensitivityEvaluated: boolean
+    bojHikeNotAutoBearish: boolean
+    semiconductorTransmissionChecked: boolean
+    tokyoCashVsOvernightDistinguished: boolean
+    eventDeduplicated: boolean
+  }
+}
+
+export interface NikkeiFundamentalDashboardState {
+  market: 'CME_NKD'
+  analystPersona: 'Nikkei 225 Macro, BoJ Monetary Policy, FX Pass-Through & Global Tech Analyst'
+  updatedAt: string
+  overallBias: NikkeiDirectionalStance
+  overallConfidence: number
+  biasSummary: string
+  nikkeiTelemetry: NikkeiTelemetry
+  today: TodaysNikkeiFundamentalState
+  contribution: NikkeiContributionState
+  boj: NikkeiBojState
+  fx: NikkeiFxState
+  drivers: Record<NikkeiDriverId, NikkeiDriverState>
+  feeds: NikkeiFeedStatus[]
+  recentEvents: NikkeiEventEvaluation[]
+  liveHeadlines: LiveNikkeiHeadline[]
+}
+
+
 
