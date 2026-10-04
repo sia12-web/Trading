@@ -59,6 +59,12 @@ export type QuestradeBookRow = {
   targetStatus: QuestradeLevelStatus | null
   mark: number | null
   livePnl: number | null
+  /** Realized exit price for closed round-trips (never a projected TP). */
+  exit?: number | null
+  /** Realized P&L for closed round-trips. */
+  pnl?: number | null
+  /** Exit fill timestamp for closed round-trips. */
+  exitAt?: string | null
   status: 'working' | 'filled' | 'closed' | 'cancelled'
   orderType: string
   kind: 'entry_limit' | 'open_position' | 'history' | 'protective'
@@ -634,7 +640,7 @@ export function pairQuestradeBook(args: {
     }
   }
 
-  // 2. Build working entry limits and order history
+  // 2. Build working entry limits (do not invent "history" from open entry fills)
   for (const o of orders) {
     const state = String(o.state || '').toUpperCase()
     const type = questradeOrderType(o)
@@ -649,14 +655,11 @@ export function pairQuestradeBook(args: {
       if (isProtectiveLimit) continue
       const row = toRow(o, 'entry_limit', 'working', pos)
       if (row) workingLimits.push(row)
-      continue
-    }
-    if (FILLED.has(state)) {
-      const row = toRow(o, 'history', 'filled', posBySym.get(key))
-      if (!row) continue
-      history.push(row)
     }
   }
+
+  // 3. Closed history = FIFO-paired entry/exit fills with realized P&L only
+  history.push(...buildClosedTradeHistory(orders, levels))
 
   const visibleLevels = levels
     .filter((l) => {
@@ -671,11 +674,193 @@ export function pairQuestradeBook(args: {
       return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''))
     })
 
-  history.sort((a, b) => String(b.filledAt || '').localeCompare(String(a.filledAt || '')))
+  history.sort((a, b) =>
+    String(b.exitAt || b.filledAt || '').localeCompare(String(a.exitAt || a.filledAt || ''))
+  )
   return {
     workingLimits,
     openPositions,
     history,
     levels: visibleLevels,
   }
+}
+
+type OpenLot = {
+  id: string
+  side: TeamTapeSide
+  qty: number
+  price: number
+  time: string | null
+  stop: number | null
+  target: number | null
+  orderType: string
+  parsed: NonNullable<ReturnType<typeof parseQuestradeSymbol>>
+}
+
+/**
+ * Pair filled entry/exit orders (including filled SL/TP) into closed round-trips
+ * with realized P&L. Residual unmatched lots stay open and are excluded.
+ */
+export function buildClosedTradeHistory(
+  orders: QuestradeRawOrder[],
+  levels: QuestradeProtectiveLevel[] = []
+): QuestradeBookRow[] {
+  type Fill = {
+    id: string
+    symbolKey: string
+    side: TeamTapeSide
+    qty: number
+    price: number
+    time: string | null
+    orderType: string
+    parsed: NonNullable<ReturnType<typeof parseQuestradeSymbol>>
+    isProtective: boolean
+  }
+
+  const fills: Fill[] = []
+  for (const o of orders) {
+    const state = String(o.state || '').toUpperCase()
+    if (!FILLED.has(state)) continue
+    const parsed = parseQuestradeSymbol(o.symbol)
+    const side = parseQuestradeSide(o.side)
+    const price = orderPrice(o)
+    const qty = Number(o.totalQuantity || o.openQuantity || 0)
+    if (!parsed || !side || !price || !(qty > 0)) continue
+    fills.push({
+      id: String(o.id ?? `${parsed.key}-${orderStamp(o) || 'fill'}`),
+      symbolKey: parsed.key,
+      side,
+      qty,
+      price,
+      time: orderStamp(o),
+      orderType: questradeOrderType(o) || 'LIMIT',
+      parsed,
+      isProtective: isSlOrder(o) || isBracketTakeProfit(o),
+    })
+  }
+
+  fills.sort((a, b) => {
+    const ta = a.time || ''
+    const tb = b.time || ''
+    if (ta !== tb) return ta.localeCompare(tb)
+    return a.id.localeCompare(b.id)
+  })
+
+  const lotsBySym = new Map<string, OpenLot[]>()
+  const closed: QuestradeBookRow[] = []
+  let closeSeq = 0
+
+  const levelFor = (symbol: string, entrySide: TeamTapeSide, want: 'sl' | 'tp', entryId: string) =>
+    pickLevel(levels, {
+      symbol,
+      entrySide,
+      entryId,
+      want,
+      isOpenPosition: false,
+    })
+
+  for (const fill of fills) {
+    const lots = lotsBySym.get(fill.symbolKey) || []
+    lotsBySym.set(fill.symbolKey, lots)
+    const inventorySide = lots[0]?.side ?? null
+
+    // Same side (or flat) → open / add inventory
+    if (!inventorySide || inventorySide === fill.side) {
+      if (fill.isProtective && !inventorySide) {
+        // Orphan protective fill with no open lot — ignore for closed history
+        continue
+      }
+      const stopLvl = levelFor(fill.symbolKey, fill.side, 'sl', fill.id)
+      const tpLvl = levelFor(fill.symbolKey, fill.side, 'tp', fill.id)
+      lots.push({
+        id: fill.id,
+        side: fill.side,
+        qty: fill.qty,
+        price: fill.price,
+        time: fill.time,
+        stop: stopLvl?.price ?? null,
+        target:
+          tpLvl?.price ??
+          (stopLvl
+            ? teamTapeTarget1_5R({ side: fill.side, entry: fill.price, stop: stopLvl.price })
+            : null),
+        orderType: fill.orderType,
+        parsed: fill.parsed,
+      })
+      continue
+    }
+
+    // Opposite side → close inventory FIFO
+    let remaining = fill.qty
+    while (remaining > 0 && lots.length > 0) {
+      const lot = lots[0]!
+      const matched = Math.min(remaining, lot.qty)
+      const pnlRaw =
+        lot.side === 'BUY'
+          ? (fill.price - lot.price) * matched * lot.parsed.multiplier
+          : (lot.price - fill.price) * matched * lot.parsed.multiplier
+      const pnl = Math.round(pnlRaw * 100) / 100
+      const realMeta = getSymbolRealName(lot.parsed.key)
+      const companyName = realMeta.name
+      const realName = lot.parsed.asset === 'option' ? lot.parsed.label : realMeta.name
+      closeSeq += 1
+      closed.push({
+        sourceId: `closed-${lot.id}-${fill.id}-${closeSeq}`,
+        symbol: lot.parsed.key,
+        label: lot.parsed.label,
+        companyName,
+        realName,
+        underlying: lot.parsed.underlying,
+        asset: lot.parsed.asset,
+        side: lot.side,
+        quantity: matched,
+        entry: lot.price,
+        stop: lot.stop,
+        target: lot.target,
+        stopStatus: null,
+        targetStatus: null,
+        mark: fill.price,
+        livePnl: null,
+        exit: fill.price,
+        pnl,
+        exitAt: fill.time,
+        status: 'closed',
+        orderType: fill.isProtective ? fill.orderType : lot.orderType,
+        kind: 'history',
+        notional: Math.round(fill.price * matched * lot.parsed.multiplier * 100) / 100,
+        stockRiskDollars:
+          lot.stop != null
+            ? Math.round(Math.abs(lot.price - lot.stop) * matched * lot.parsed.multiplier * 100) / 100
+            : null,
+        multiplier: lot.parsed.multiplier,
+        filledAt: lot.time,
+      })
+      lot.qty -= matched
+      remaining -= matched
+      if (lot.qty <= 1e-9) lots.shift()
+    }
+
+    // Leftover opposite qty flips / opens short (or long) inventory
+    if (remaining > 1e-9) {
+      const stopLvl = levelFor(fill.symbolKey, fill.side, 'sl', fill.id)
+      const tpLvl = levelFor(fill.symbolKey, fill.side, 'tp', fill.id)
+      lots.push({
+        id: fill.id,
+        side: fill.side,
+        qty: remaining,
+        price: fill.price,
+        time: fill.time,
+        stop: stopLvl?.price ?? null,
+        target:
+          tpLvl?.price ??
+          (stopLvl
+            ? teamTapeTarget1_5R({ side: fill.side, entry: fill.price, stop: stopLvl.price })
+            : null),
+        orderType: fill.orderType,
+        parsed: fill.parsed,
+      })
+    }
+  }
+
+  return closed
 }

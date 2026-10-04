@@ -259,7 +259,7 @@ function WorkingLimitCard({ row }: { row: QuestradeBookRow }) {
   )
 }
 
-/** 📜 Past Order / Fill History Card */
+/** 📜 Closed trade / realized outcome card (never invents WIN from take-profit). */
 function PastOrderCard({ signal }: { signal: TeamTapeSignal }) {
   const isBuy = signal.side === 'BUY'
   const meta = getSymbolRealName(signal.symbol)
@@ -267,18 +267,26 @@ function PastOrderCard({ signal }: { signal: TeamTapeSignal }) {
   const exTag = getExchangeTag(signal.symbol)
   const mult = signal.multiplier ?? getSymbolMultiplier(signal.symbol)
 
-  // Calculate actual P&L if known
-  let pnlEstimated: number | null = null
-  if (typeof signal.pnl === 'number') {
-    pnlEstimated = signal.pnl
-  } else if (typeof signal.livePnl === 'number') {
-    pnlEstimated = signal.livePnl
-  } else if (signal.exit != null && signal.entry != null) {
-    pnlEstimated = (isBuy ? signal.exit - signal.entry : signal.entry - signal.exit) * signal.quantity * mult
+  // Realized P&L only — do not fall back to projected target
+  let realizedPnl: number | null = null
+  if (typeof signal.pnl === 'number' && Number.isFinite(signal.pnl)) {
+    realizedPnl = signal.pnl
+  } else if (signal.exit != null && signal.entry != null && signal.status === 'closed') {
+    realizedPnl =
+      (isBuy ? signal.exit - signal.entry : signal.entry - signal.exit) * signal.quantity * mult
   }
 
   const isCancelled = signal.status === 'cancelled'
-  const isWin = pnlEstimated != null ? pnlEstimated >= 0 : signal.status === 'filled'
+  const isClosed = signal.status === 'closed' || realizedPnl != null
+  const outcomeLabel = isCancelled
+    ? 'CANCELLED'
+    : !isClosed
+    ? 'FILL'
+    : realizedPnl == null
+    ? 'CLOSED'
+    : realizedPnl >= 0
+    ? 'WIN'
+    : 'LOSS'
 
   const effectiveTarget =
     signal.target ??
@@ -300,23 +308,27 @@ function PastOrderCard({ signal }: { signal: TeamTapeSignal }) {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[11px] text-gray-400">{montrealStamp(signal.filledAt)}</span>
-          {isCancelled ? (
-            <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700">
-              CANCELLED
+          <span className="text-[11px] text-gray-400">
+            {montrealStamp(signal.exitAt || signal.filledAt)}
+          </span>
+          <div className="flex items-center gap-1.5">
+            <span
+              className={`text-[11px] font-bold px-2 py-0.5 rounded ${
+                outcomeLabel === 'WIN'
+                  ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700/60'
+                  : outcomeLabel === 'LOSS'
+                  ? 'bg-red-950/80 text-red-300 border border-red-700/60'
+                  : 'bg-gray-800 text-gray-400 border border-gray-700'
+              }`}
+            >
+              {outcomeLabel}
             </span>
-          ) : (
-            <div className="flex items-center gap-1.5">
-              <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${isWin ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700/60' : 'bg-red-950/80 text-red-300 border border-red-700/60'}`}>
-                {isWin ? 'WIN' : 'LOSS'}
+            {realizedPnl != null && (
+              <span className={`text-xs font-mono font-bold ${realizedPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {realizedPnl >= 0 ? '+' : '-'}${Math.abs(realizedPnl).toFixed(2)}
               </span>
-              {pnlEstimated != null && (
-                <span className={`text-xs font-mono font-bold ${pnlEstimated >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {pnlEstimated >= 0 ? '+' : '-'}${Math.abs(pnlEstimated).toFixed(2)}
-                </span>
-              )}
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
 
@@ -326,8 +338,8 @@ function PastOrderCard({ signal }: { signal: TeamTapeSignal }) {
           <span className="text-white font-bold">{formatCmeExchangePrice(signal.symbol, signal.entry)}</span>
         </div>
         <div>
-          <span className="text-[10px] uppercase text-gray-500 block">Exit / Mark</span>
-          <span className="text-gray-200">{formatCmeExchangePrice(signal.symbol, signal.exit ?? signal.mark ?? effectiveTarget)}</span>
+          <span className="text-[10px] uppercase text-gray-500 block">Exit</span>
+          <span className="text-gray-200">{formatCmeExchangePrice(signal.symbol, signal.exit)}</span>
         </div>
         <div>
           <span className="text-[10px] uppercase text-gray-500 block">Stop Loss (SL)</span>
@@ -342,44 +354,42 @@ function PastOrderCard({ signal }: { signal: TeamTapeSignal }) {
   )
 }
 
-/** 📊 Performance Analytics Panel */
+/** 📊 Performance Analytics Panel — closed trades with realized P&L only */
 function PerformanceAnalyticsPanel({ signals }: { signals?: TeamTapeSignal[] }) {
   const tradeRecords = useMemo(() => {
     if (signals && signals.length > 0) {
       return signals
+        .filter((s) => s.status === 'closed' || (typeof s.pnl === 'number' && s.exit != null))
         .filter((s) => s.status !== 'cancelled')
         .map((s) => {
-          const sym = String(s.symbol || 'NVDA')
+          const sym = String(s.symbol || '')
           const mult = typeof s.multiplier === 'number' && s.multiplier > 0 ? s.multiplier : getSymbolMultiplier(sym)
           const qty = Number(s.quantity || 1)
-          let calcPnl = 0
-          if (typeof s.pnl === 'number') {
+          let calcPnl: number | null = null
+          if (typeof s.pnl === 'number' && Number.isFinite(s.pnl)) {
             calcPnl = s.pnl
-          } else if (typeof s.livePnl === 'number') {
-            calcPnl = s.livePnl
           } else if (s.exit != null && s.entry != null) {
             calcPnl = (s.side === 'BUY' ? s.exit - s.entry : s.entry - s.exit) * qty * mult
-          } else if (s.target != null && s.entry != null) {
-            calcPnl = (s.side === 'BUY' ? s.target - s.entry : s.entry - s.target) * qty * mult
           }
           return {
             id: String(s.sourceId || Math.random()),
             symbol: sym,
             direction: (s.side === 'SELL' ? 'SELL' : 'BUY') as 'BUY' | 'SELL',
             entry: Number(s.entry || 0),
-            exit: s.exit ?? s.target ?? null,
+            exit: s.exit ?? null,
             stop: s.stop || null,
             target: s.target || null,
             pnl: calcPnl,
             quantity: qty,
-            status: (s.status === 'closed' ? 'closed' : 'closed') as 'closed',
+            status: 'closed' as const,
             entryTime: s.filledAt || new Date().toISOString(),
-            exitTime: s.filledAt || null,
+            exitTime: s.exitAt || s.filledAt || null,
             exchange: getExchangeTag(sym),
           }
         })
+        .filter((t) => typeof t.pnl === 'number')
     }
-    return DEFAULT_TEAM_TRADES
+    return []
   }, [signals])
 
   const metrics = useMemo(() => calculatePerformanceMetrics(tradeRecords), [tradeRecords])
@@ -391,13 +401,19 @@ function PerformanceAnalyticsPanel({ signals }: { signals?: TeamTapeSignal[] }) 
         <div className="flex items-center gap-2">
           <span className="font-bold text-white">NYC Desk Account:</span>
           <span className="font-mono text-sky-300 bg-sky-900/40 px-2 py-0.5 rounded border border-sky-600/30">
-            1.5KCHCR-LABS004-V2-675081-67067724
+            Questrade Team Tape (realized closes)
           </span>
         </div>
         <div className="text-gray-400 font-mono">
-          Date Range: <span className="text-gray-200">09/30/2026 – 10/01/2026</span>
+          {tradeRecords.length} closed trade{tradeRecords.length === 1 ? '' : 's'} with realized P&amp;L
         </div>
       </div>
+
+      {tradeRecords.length === 0 && (
+        <p className="text-xs text-gray-500 italic py-2">
+          No closed round-trips yet. Open positions and working limits are excluded from win-rate / P&amp;L until they exit.
+        </p>
+      )}
 
       {/* Primary Key Performance Indicators Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
@@ -549,27 +565,37 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
     return () => window.clearInterval(id)
   }, [load])
 
+  const brokerConnected = Boolean(book?.ok)
+
   const ongoingPositions = useMemo(() => {
-    if (book?.openPositions && book.openPositions.length > 0) {
-      return book.openPositions
+    if (book?.ok) {
+      return book.openPositions || []
     }
     if (data?.open && data.open.length > 0) {
-      return data.open.map((s) => signalToBookRow(s, 'open_position'))
+      return data.open
+        .filter((s) => s.status === 'filled')
+        .map((s) => signalToBookRow(s, 'open_position'))
     }
     return DEFAULT_TEAM_POSITIONS
-  }, [book?.openPositions, data?.open])
+  }, [book, data?.open])
 
   const workingLimits = useMemo(() => {
-    if (book?.workingLimits && book.workingLimits.length > 0) {
-      return book.workingLimits
+    if (book?.ok) {
+      return book.workingLimits || []
+    }
+    if (data?.open && data.open.some((s) => s.status === 'working')) {
+      return data.open
+        .filter((s) => s.status === 'working')
+        .map((s) => signalToBookRow(s, 'entry_limit'))
     }
     return DEFAULT_TEAM_WORKING_LIMITS
-  }, [book?.workingLimits])
+  }, [book, data?.open])
 
   const historySignals: TeamTapeSignal[] = useMemo(() => {
-    if (data?.history && data.history.length > 0) {
-      return data.history
+    if (data?.history) {
+      return data.history.filter((s) => s.status !== 'cancelled')
     }
+    if (brokerConnected) return []
     return DEFAULT_TEAM_TRADES.map((t) => ({
       sourceId: t.id,
       symbol: t.symbol,
@@ -579,13 +605,14 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
       entry: t.entry,
       stop: t.stop ?? null,
       target: t.target ?? null,
-      status: (t.status === 'open' ? 'filled' : 'closed') as TeamTapeStatus,
-      filledAt: t.exitTime || t.entryTime,
+      status: 'closed' as TeamTapeStatus,
+      filledAt: t.entryTime,
+      exitAt: t.exitTime || null,
       multiplier: getSymbolMultiplier(t.symbol),
       pnl: t.pnl,
       exit: t.exit ?? null,
     }))
-  }, [data?.history])
+  }, [data?.history, brokerConnected])
 
   const totalOngoing = ongoingPositions.length
   const totalLimits = workingLimits.length
