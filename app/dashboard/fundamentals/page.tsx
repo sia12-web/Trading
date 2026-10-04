@@ -25,16 +25,18 @@ import { OilCatalystCalendar } from './components/OilCatalystCalendar'
 import { OilAnalystChat } from './components/OilAnalystChat'
 import { GoldDashboard } from './gold/GoldDashboard'
 import { NasdaqDashboard } from './nasdaq/NasdaqDashboard'
+import { DowDashboard } from './dow/DowDashboard'
 
 type OilTabKey = 'today' | 'wire' | 'evaluator' | 'matrix' | 'feeds' | 'history' | 'calendar' | 'terminal'
-type MarketKey = 'CL' | 'GC' | 'NQ'
+type MarketKey = 'CL' | 'GC' | 'NQ' | 'YM'
 
 function FundamentalsContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
 
   const marketParam = searchParams.get('market')?.toUpperCase()
-  const initialMarket: MarketKey = marketParam === 'GC' ? 'GC' : marketParam === 'NQ' ? 'NQ' : 'CL'
+  const initialMarket: MarketKey =
+    marketParam === 'GC' ? 'GC' : marketParam === 'NQ' ? 'NQ' : marketParam === 'YM' ? 'YM' : 'CL'
   const [market, setMarket] = useState<MarketKey>(initialMarket)
 
   // Oil State
@@ -187,13 +189,30 @@ function FundamentalsContent() {
             <span>💻</span>
             <span>Nasdaq-100 (NQ)</span>
             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-400/30 text-cyan-950 font-bold">
-              NEW AGENT
+              Tech / Growth
+            </span>
+          </button>
+
+          <button
+            onClick={() => handleMarketChange('YM')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition ${
+              market === 'YM'
+                ? 'bg-blue-600 text-white shadow-md font-extrabold'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/80'
+            }`}
+          >
+            <span>🏭</span>
+            <span>Dow Jones (YM)</span>
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-400/30 text-blue-200 font-bold">
+              Cyclical / $5
             </span>
           </button>
         </div>
 
         <div className="px-3 text-[11px] text-slate-400 hidden sm:block">
-          {market === 'NQ'
+          {market === 'YM'
+            ? 'Dow Analyst: Price-Weighting (0.1517) · ISM Industrial Cycle · Rotation (XLI/XLF) · Credit Spreads'
+            : market === 'NQ'
             ? 'Nasdaq Analyst: Macro · Rates Engine · Mega-Cap Guidance · AI/Semis · Breadth'
             : market === 'GC'
             ? 'Gold Analyst: Real Rates · USD · Fed · Central Banks · WGC ETFs · Wyckoff Rejection'
@@ -202,7 +221,9 @@ function FundamentalsContent() {
       </div>
 
       {/* Render Selected Market Engine */}
-      {market === 'NQ' ? (
+      {market === 'YM' ? (
+        <DowDashboard />
+      ) : market === 'NQ' ? (
         <NasdaqDashboard />
       ) : market === 'GC' ? (
         <GoldDashboard />

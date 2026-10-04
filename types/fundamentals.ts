@@ -314,7 +314,7 @@ export interface UnifiedAgentDriver {
 }
 
 export interface UnifiedAgentProtocolOutput {
-  market: 'CL' | 'GC' | 'NQ'
+  market: 'CL' | 'GC' | 'NQ' | 'YM'
   regime: string
   catalyst: string
   expected_direction: 'BULLISH' | 'BEARISH' | 'MIXED' | 'NEUTRAL' | 'UNCERTAIN'
@@ -927,6 +927,387 @@ export interface NasdaqFundamentalDashboardState {
   feeds: NasdaqFeedStatus[]
   recentEvents: NasdaqEventEvaluation[]
   liveHeadlines: LiveNasdaqHeadline[]
+}
+
+// ==========================================
+// 8. DOW JONES INDUSTRIAL AVERAGE (DOW_AGENT - CME YM)
+// ==========================================
+
+export type DowEventCategory =
+  | 'MONETARY_POLICY'
+  | 'RATES'
+  | 'INFLATION'
+  | 'LABOR'
+  | 'GROWTH'
+  | 'MANUFACTURING'
+  | 'INDUSTRIAL_ACTIVITY'
+  | 'CONSUMER'
+  | 'EARNINGS'
+  | 'GUIDANCE'
+  | 'FINANCIALS'
+  | 'CREDIT'
+  | 'ENERGY'
+  | 'COMMODITY_COSTS'
+  | 'USD'
+  | 'TRADE_POLICY'
+  | 'HEALTHCARE_POLICY'
+  | 'REGULATION'
+  | 'GEOPOLITICS'
+  | 'VOLATILITY'
+  | 'POSITIONING'
+  | 'BREADTH'
+  | 'SECTOR_ROTATION'
+
+export type DowDirectionalStance =
+  | 'BULLISH'
+  | 'BEARISH'
+  | 'MIXED'
+  | 'NEUTRAL'
+  | 'UNCERTAIN'
+
+export type YieldMoveDriver =
+  | 'GROWTH_DRIVEN'
+  | 'INFLATION_DRIVEN'
+  | 'FED_DRIVEN'
+  | 'RISK_OFF'
+  | 'UNKNOWN'
+
+export type GrowthInflationQuadrant =
+  | 'GROWTH_UP_INFLATION_DOWN' // Sweet spot, bullish YM
+  | 'GROWTH_UP_INFLATION_UP' // Solid activity, mixed rates risk
+  | 'GROWTH_DOWN_INFLATION_DOWN' // Easing hope vs recession worry
+  | 'GROWTH_DOWN_INFLATION_UP' // Stagflation, bearish cyclicals
+
+export interface DowAbnormalBehavior {
+  detected: boolean
+  type:
+    | 'BULLISH_RELATIVE_STRENGTH'
+    | 'BEARISH_RELATIVE_WEAKNESS'
+    | 'RATES_DIVERGENCE'
+    | 'BREADTH_DIVERGENCE'
+    | 'CREDIT_DIVERGENCE'
+    | 'ROTATION_DIVERGENCE'
+    | 'PRICE_WEIGHT_DISTORTION'
+    | 'NONE'
+  description: string
+}
+
+export interface DjiaConstituent {
+  symbol: string
+  name: string
+  sector: string
+  price: number
+  priceWeightPct: number // price / sum(prices) * 100
+  dayChange: number
+  dayChangePct: number
+  pointContribution: number // dayChange / divisor
+  lastEpsSurprise?: string
+  forwardGuidance?: 'RAISED' | 'LOWERED' | 'MAINTAINED'
+}
+
+export interface DjiaContributionState {
+  divisor: number // ~0.151727525
+  sumSharePrices: number
+  totalDayPointsMove: number
+  top1ContributionPct: number
+  top3ContributionPct: number
+  top5ContributionPct: number
+  contributionConcentration: 'LOW' | 'MODERATE' | 'HIGH' | 'EXTREME'
+  equalWeight30ReturnPct: number
+  priceWeightedDjiaReturnPct: number
+  weightingDivergenceSignal: 'HIGH_PRICED_DOMINATED' | 'BROAD_CONSTITUENT_RALLY' | 'BALANCED'
+}
+
+export interface DowRotationState {
+  ymChangePct: number
+  esChangePct: number
+  nqChangePct: number
+  rtyChangePct: number
+  rotationRegime:
+    | 'CYCLICAL_VALUE_OUTPERFORMANCE'
+    | 'TECH_GROWTH_OUTPERFORMANCE'
+    | 'BROAD_RISK_ON'
+    | 'BROAD_RISK_OFF'
+    | 'DEFENSIVE_HEALTHCARE_CONSUMER'
+  leadershipSector: string
+  laggingSector: string
+  ymVsNqSpreadPct: number
+}
+
+export interface DowCreditState {
+  hygPrice: number
+  hygChangePct: number
+  lqdPrice: number
+  lqdChangePct: number
+  highYieldSpreadBps: number
+  investmentGradeSpreadBps: number
+  bankSectorChangePct: number
+  creditStressRegime: 'HEALTHY_EXPANSION' | 'MILD_COMPRESSION' | 'STRESS_WIDENING' | 'ACUTE_DISLOCATION'
+  creditDivergenceAlert: boolean
+}
+
+export interface IndustrialCycleState {
+  ismManufacturingHeadline: number
+  ismNewOrders: number
+  ismPricesPaid: number
+  ismProduction: number
+  durableGoodsMomPct: number
+  coreCapitalGoodsOrdersMomPct: number
+  cyclePhase: 'EXPANSION' | 'ACCELERATING_DEMAND' | 'CONTRACTION' | 'STAGFLATIONARY_PRESSURE'
+}
+
+export interface StructuredDowEventOutput {
+  timestamp: string
+  market: 'YM'
+  event: string
+  importance: 'HIGH' | 'MEDIUM' | 'LOW'
+
+  event_analysis: {
+    category: DowEventCategory
+    expected_direction: DowDirectionalStance
+    magnitude: 'HIGH' | 'MEDIUM' | 'LOW'
+    surprise: string
+    raw_surprise?: number
+    standardized_surprise?: number
+    estimated_dow_point_impact?: number
+    affected_constituents?: string[]
+    affected_sectors?: string[]
+  }
+
+  transmission: {
+    growth_expectations: 'UP' | 'DOWN' | 'FLAT'
+    industrial_outlook: 'IMPROVING' | 'DETERIORATING' | 'STEADY'
+    us10y: 'UP' | 'DOWN' | 'FLAT'
+    yield_move_driver?: YieldMoveDriver
+    sector_rotation: 'CYCLICAL' | 'DEFENSIVE' | 'TECH_GROWTH' | 'NEUTRAL'
+    credit_conditions?: 'LOOSE' | 'TIGHTENING' | 'STRESSED' | 'STABLE'
+  }
+
+  fundamental_state: {
+    intraday: DowDirectionalStance
+    short_term: DowDirectionalStance
+    medium_term: DowDirectionalStance
+  }
+
+  fundamental_effect?: {
+    intraday: DowDirectionalStance
+    short_term: DowDirectionalStance
+    medium_term: DowDirectionalStance
+  }
+
+  drivers?: Array<{
+    factor: string
+    actual: number | string
+    consensus: number | string | null
+    unit: string
+    effect: DowDirectionalStance
+    standardized_surprise?: number
+    point_impact?: number
+  }>
+
+  market_response: {
+    ym_initial: 'UP' | 'DOWN' | 'FLAT'
+    ym_5m: 'UP' | 'DOWN' | 'FLAT'
+    ym_15m: 'CONTINUING' | 'REVERSING' | 'RECLAIMING' | 'ACCEPTING' | 'STALLED' | 'UP' | 'DOWN'
+    industrials: 'UP' | 'DOWN' | 'FLAT'
+    financials: 'UP' | 'DOWN' | 'FLAT'
+    nq_relative: 'OUTPERFORMING' | 'UNDERPERFORMING' | 'INLINE'
+    confirmation: 'STRONG' | 'MODERATE' | 'WEAK' | 'CONTRADICTED' | 'CONFIRMED' | 'PARTIALLY_CONFIRMED' | 'REJECTED' | 'INCONCLUSIVE'
+  }
+
+  market_confirmation?: {
+    cl_5m_return: number // or ym_5m_return %
+    ym_points_change?: number
+    us2y_bps_change?: number
+    us10y_bps_change?: number
+    confirmation: 'STRONG' | 'MODERATE' | 'WEAK' | 'CONTRADICTED'
+  }
+
+  breadth: {
+    advancers: number
+    decliners: number
+    contribution_concentration: 'LOW' | 'MODERATE' | 'HIGH' | 'EXTREME'
+    top3_contribution_pct?: number
+  }
+
+  abnormal_behavior: DowAbnormalBehavior
+
+  confidence: number // 0.0 to 1.0 (e.g. 0.88)
+  summary: string // crisp 1-2 sentence institutional summary, no essays
+  unified_protocol?: UnifiedAgentProtocolOutput
+}
+
+export interface TodaysDowFundamentalState {
+  economic_growth: string
+  manufacturing: string
+  consumer: string
+  labor: string
+  inflation: string
+  fed: string
+  us2y: string
+  us10y: string
+  yield_curve: string
+  financial_conditions: string
+  credit: string
+  industrial_sector: string
+  financial_sector: string
+  energy: string
+  healthcare: string
+  consumer_sectors: string
+  djia_earnings: string
+  forward_guidance: string
+  usd: string
+  trade_policy: string
+  breadth: string
+  contribution_concentration: string
+  sector_rotation: string
+  cftc_positioning: string
+
+  intraday_bias: DowDirectionalStance
+  short_term_bias: DowDirectionalStance
+  medium_term_bias: DowDirectionalStance
+
+  primary_current_driver: string
+  upcoming_catalysts: string
+  what_changed_since_yesterday: string
+  what_would_invalidate_the_current_interpretation: string
+}
+
+export type DowDriverId =
+  | 'us_growth_economic_cycle'
+  | 'fed_rates'
+  | 'industrial_manufacturing'
+  | 'dow_earnings_guidance'
+  | 'financial_conditions'
+  | 'consumer_conditions'
+  | 'usd'
+  | 'oil_commodity_costs'
+  | 'trade_tariff_policy'
+  | 'sector_rotation'
+  | 'credit_conditions'
+
+export interface DowDriverMetric {
+  label: string
+  value: string
+  change?: string
+  trend: 'UP' | 'DOWN' | 'FLAT'
+  stance: DowDirectionalStance
+}
+
+export interface DowDriverState {
+  id: DowDriverId
+  name: string
+  intradayStars: number // 1 to 5
+  longTermStars: number // 1 to 5
+  stance: DowDirectionalStance
+  transmissionRole: string
+  summary: string
+  metrics: DowDriverMetric[]
+  lastUpdated: string
+}
+
+export interface DowTelemetry {
+  ymPrice: number // e.g. 46500.00
+  ymChange: number
+  ymChangePct: number
+  contractMultiplier: 5 // $5 per index point
+  contractNotionalValue: number // ymPrice * 5
+  esPrice: number
+  esChangePct: number
+  nqPrice: number
+  nqChangePct: number
+  rtyPrice: number
+  rtyChangePct: number
+  us2yNominalYield: number
+  us10yNominalYield: number
+  yieldCurve2s10sSpreadBps: number
+  yieldMoveDriver: YieldMoveDriver
+  growthInflationQuadrant: GrowthInflationQuadrant
+  dxyIndex: number
+  dxyChangePct: number
+  oilWtiPrice: number
+  oilWtiChangePct: number
+  vixIndex: number
+  advancersCount: number // out of 30
+  declinersCount: number
+  unchangedCount: number
+  dowDivisor: number
+  topConstituentsByWeight: DjiaConstituent[]
+  cvdAggressionStance?: 'AGGRESSIVE_BUYING' | 'AGGRESSIVE_SELLING' | 'ABSORPTION' | 'NEUTRAL'
+  timestamp: number
+  source: string
+  updatedAt: string
+}
+
+export interface LiveDowHeadline {
+  id: string
+  eventId?: string
+  headline: string
+  source: string
+  datetime: number
+  url: string | null
+  summary: string | null
+  isDuplicateCluster?: boolean
+  duplicateCount?: number
+  indexRelevance: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'
+  affectedSymbols?: string[]
+}
+
+export interface DowFeedStatus {
+  id: string
+  name: string
+  subtitle: string
+  category:
+    | 'MACRO_CALENDAR'
+    | 'CENTRAL_BANK'
+    | 'RATES_ENGINE'
+    | 'CME_GLOBEX'
+    | 'SEC_EDGAR_EARNINGS'
+    | 'PRICE_WEIGHTS_DIVISOR'
+    | 'CREDIT_MARKETS'
+    | 'SECTOR_ROTATION'
+    | 'CFTC'
+    | 'NEWS_WIRE'
+  status: 'ONLINE' | 'ACTIVE' | 'POLLING' | 'DEGRADED' | 'CONFIG_REQUIRED'
+  latency: string
+  lastSync: string
+  primarySource: string
+}
+
+export interface DowEventEvaluation {
+  id: string
+  timestamp: string
+  event: string
+  rawText: string
+  structuredOutput: StructuredDowEventOutput
+  safeguards: {
+    noInventedData: boolean
+    priceWeightingNotCapWeighting: boolean
+    strongDataNotAutoBullish: boolean
+    ratesUpNotAutoBearish: boolean
+    dollarMoveEvaluatedNotOnlyPercent: boolean
+    cftcNotRealtimeFlow: boolean
+    eventDeduplicated: boolean
+  }
+}
+
+export interface DowFundamentalDashboardState {
+  market: 'CME_YM'
+  analystPersona: 'Dow Jones Macro, Cyclical Economy, Earnings and Rotation Analyst'
+  updatedAt: string
+  overallBias: DowDirectionalStance
+  overallConfidence: number
+  biasSummary: string
+  dowTelemetry: DowTelemetry
+  today: TodaysDowFundamentalState
+  contribution: DjiaContributionState
+  rotation: DowRotationState
+  credit: DowCreditState
+  industrial: IndustrialCycleState
+  drivers: Record<DowDriverId, DowDriverState>
+  feeds: DowFeedStatus[]
+  recentEvents: DowEventEvaluation[]
+  liveHeadlines: LiveDowHeadline[]
 }
 
 

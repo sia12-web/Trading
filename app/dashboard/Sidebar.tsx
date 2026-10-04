@@ -68,7 +68,7 @@ const LIVE_ITEMS: NavItem[] = [
   {
     href: '/dashboard/fundamentals',
     label: 'Fundamentals',
-    hint: 'Oil · Gold · NQ',
+    hint: 'Oil · Gold · NQ · Dow',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-4 h-4">
         <ellipse cx="12" cy="5" rx="7" ry="2.5" />
