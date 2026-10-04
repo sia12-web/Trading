@@ -829,10 +829,10 @@ THE TRADER'S SYSTEM ARCHITECTURE:
    - The 5D POC (Point of Control) is the ONLY line extended across the chart into active trading as the primary intermediate magnet.
    - Identifies multi-day balance vs excess, 5D High, 5D Low, and Value Area (VAH/VAL).
 
-3. SHORT-TERM MONEY (Yesterday NYC Session & Prior Overnight):
-   - Yesterday NYC Cash Session (09:30–16:00 ET): Computes Y-POC, Y-High, Y-Low, Y-VAH, Y-VAL. Confined strictly to yesterday.
-   - US Holiday Exception: On exchange holidays (e.g. Labor Day, Memorial Day, etc.) or truncated days, the system automatically skips the holiday and anchors to the last full active RTH trading session.
-   - Prior Overnight Session (18:00–09:29 ET): Computes ON-POC (stops cleanly at 09:29 AM ET), ON-High, ON-Low, and Overnight Inventory (% Long vs % Short relative to Yesterday Close).
+3. SHORT-TERM MONEY (Yesterday Session & Preceding Lead):
+   - For DOW, NASDAQ, GOLD, CRUDE (NYC Desk): Yesterday NYC Cash Session (09:30–16:00 ET) computes Y-POC, Y-High, Y-Low, Y-VAH, Y-VAL. Confined strictly to yesterday's NYC cash session.
+   - For NIKKEI (Tokyo Desk): Yesterday Japan Cash Session (09:00–15:00 JST / 20:00–02:00 ET prior Tokyo day) computes Japan Y-POC, Y-High, Y-Low, Y-VAH, Y-VAL. Confined strictly to yesterday's Tokyo cash session (NOT the NYC session).
+   - Session Inventory & Lead: For NYC desk names, overnight inventory (18:00–09:29 ET) is Asia + London. For NIKKEI, preceding session inventory lead is driven by the US NYC Session (09:30–16:00 ET / 22:30–05:00 JST) leading directly into the Tokyo cash open (09:00 JST).
 
 4. DALTON DAY TYPES & OPENING CONTEXT:
    - Day Types: Non-Trend (NTREND), Non-Conviction (NCONV), Trend Day (Bull/Bear), Double Distribution, Neutral Day, Normal Day, Normal Variation Day.

@@ -2677,7 +2677,8 @@ export function TradingChart({
       volume: c.volume,
     }))
     const lastBarTime = bars[bars.length - 1]?.time
-    const yday = computeYesterdayNycSession(bars, lastBarTime)
+    const clock = deskClockFor(instrument)
+    const yday = computeYesterdayNycSession(bars, lastBarTime, clock)
     setYesterdayNyc(yday)
 
     if (yday) {
@@ -2685,6 +2686,7 @@ export function TradingChart({
         bars,
         yesterday: yday,
         asOfUnix: lastBarTime,
+        clock,
       })
       setOvernightInventory(inv)
     } else {

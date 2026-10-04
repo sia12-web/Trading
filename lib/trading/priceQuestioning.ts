@@ -323,18 +323,19 @@ export function evaluatePriceQuestioning(
   const timeStr = params.currentTimeEt || '09:30 ET'
 
   let inventorySummary = ''
+  const isNikkeiInst = instrument === 'NIKKEI'
   if (onPoc != null && distOnPoc != null) {
     if (distOnPoc > stdScale * 0.75) {
-      const lowerAccumulator = londonPoc ? `London (${londonPoc})` : asiaPoc ? `Asia (${asiaPoc})` : `Overnight (${onPoc})`
-      inventorySummary = `⚠️ Retail Premium Overhang: At ${timeStr}, ${lowerAccumulator} accumulated much lower. Current price is +${distOnPoc} pts above ON-POC. Overnight inventory is ${pctLong}% Net Long. Buying here pays top retail to overnight longs looking to unload onto late emotional buyers.`
+      const lowerAccumulator = isNikkeiInst ? `preceding US NYC session (${onPoc})` : londonPoc ? `London (${londonPoc})` : asiaPoc ? `Asia (${asiaPoc})` : `Overnight (${onPoc})`
+      inventorySummary = `⚠️ Retail Premium Overhang: At ${timeStr}, ${lowerAccumulator} accumulated lower. Current price is +${distOnPoc} pts above POC. ${isNikkeiInst ? 'Preceding US session' : 'Overnight'} inventory is ${pctLong}% Net Long. Buying here pays top retail to preceding session longs looking to unload onto late emotional buyers.`
     } else if (distOnPoc < -stdScale * 0.75) {
-      const higherSeller = londonPoc ? `London (${londonPoc})` : asiaPoc ? `Asia (${asiaPoc})` : `Overnight (${onPoc})`
-      inventorySummary = `⚠️ Deep Discount / Trap Short: At ${timeStr}, ${higherSeller} sold much higher. Current price is ${distOnPoc} pts below ON-POC. Overnight inventory is ${pctShort}% Net Short. Shorting into this floor invites a violent short-covering squeeze against weak-hand sellers.`
+      const higherSeller = isNikkeiInst ? `preceding US NYC session (${onPoc})` : londonPoc ? `London (${londonPoc})` : asiaPoc ? `Asia (${asiaPoc})` : `Overnight (${onPoc})`
+      inventorySummary = `⚠️ Deep Discount / Trap Short: At ${timeStr}, ${higherSeller} sold higher. Current price is ${distOnPoc} pts below POC. ${isNikkeiInst ? 'Preceding US session' : 'Overnight'} inventory is ${pctShort}% Net Short. Shorting into this floor invites a violent short-covering squeeze against weak-hand sellers.`
     } else {
-      inventorySummary = `Balanced Globex Rotation: Current price (${currentPrice.toFixed(1)}) is trading within rotational tolerance of Overnight POC (${onPoc}). Overnight inventory is ${overnightBias} (${pctLong}% L / ${pctShort}% S).`
+      inventorySummary = `Balanced Session Rotation: Current price (${currentPrice.toFixed(1)}) is trading within rotational tolerance of ${isNikkeiInst ? 'Preceding US Session POC' : 'Overnight POC'} (${onPoc}). ${isNikkeiInst ? 'Preceding US session' : 'Overnight'} inventory is ${overnightBias} (${pctLong}% L / ${pctShort}% S).`
     }
   } else {
-    inventorySummary = `Evaluating session inventory against prior closes. Standing by for Globex POC benchmarks.`
+    inventorySummary = `Evaluating session inventory against prior closes. Standing by for session POC benchmarks.`
   }
 
   // 3. Weak-Hand Trap & Emotional Risk Detection

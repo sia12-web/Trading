@@ -125,7 +125,7 @@ export interface YesterdayNycSession {
 }
 
 export interface SessionVolumeProfile {
-  name: 'Asia' | 'London' | 'Overnight'
+  name: string
   startUnix: number
   endUnix: number
   high: number
@@ -618,11 +618,12 @@ export function computeYesterdayNycSession(
   let priorYmd = ''
   let rthBars: ContextBar[] = []
 
-  const todayCloseUnix = zonedCivilToUnix(todayYmd, 16, clock.timeZone)
-  // Once NYC cash session ends (16:00 ET), today's closed session becomes the completed prior session
+  const closeHour = clock.timeZone === 'Asia/Tokyo' ? 15 : 16
+  const todayCloseUnix = zonedCivilToUnix(todayYmd, closeHour, clock.timeZone)
+  // Once cash session ends (16:00 ET / 15:00 JST), today's closed session becomes the completed prior session
   const startDaysBack = tipTime >= todayCloseUnix ? 0 : 1
 
-  // Loop back up to 10 days to find the last full active (non-holiday) NYC cash session
+  // Loop back up to 10 days to find the last full active (non-holiday) cash session
   for (let daysBack = startDaysBack; daysBack <= 10; daysBack++) {
     const candidateYmd = daysBack === 0 ? todayYmd : nthTradingDayBefore(todayYmd, daysBack, clock.timeZone)
 
@@ -632,7 +633,7 @@ export function computeYesterdayNycSession(
     }
 
     const openUnix = cashOpenUnixForYmd(candidateYmd, clock)
-    const closeUnix = zonedCivilToUnix(candidateYmd, 16, clock.timeZone)
+    const closeUnix = zonedCivilToUnix(candidateYmd, closeHour, clock.timeZone)
 
     const candidateBars = bars.filter(
       (b) => b.time >= openUnix && b.time < closeUnix && Number.isFinite(b.high) && Number.isFinite(b.low)
@@ -663,7 +664,7 @@ export function computeYesterdayNycSession(
   if (!priorYmd || rthBars.length < 5) {
     priorYmd = nthTradingDayBefore(todayYmd, 1, clock.timeZone)
     const fallbackOpen = cashOpenUnixForYmd(priorYmd, clock)
-    const fallbackClose = zonedCivilToUnix(priorYmd, 16, clock.timeZone)
+    const fallbackClose = zonedCivilToUnix(priorYmd, closeHour, clock.timeZone)
     rthBars = bars.filter(
       (b) => b.time >= fallbackOpen && b.time < fallbackClose && Number.isFinite(b.high) && Number.isFinite(b.low)
     )
@@ -672,7 +673,7 @@ export function computeYesterdayNycSession(
   if (rthBars.length < 5) return null
 
   const openUnix = cashOpenUnixForYmd(priorYmd, clock)
-  const closeUnix = zonedCivilToUnix(priorYmd, 16, clock.timeZone)
+  const closeUnix = zonedCivilToUnix(priorYmd, closeHour, clock.timeZone)
 
   let yh = -Infinity
   let yl = Infinity
@@ -816,7 +817,7 @@ export function computeSessionVolumeProfile(
   bars: ContextBar[],
   startUnix: number,
   endUnix: number,
-  name: 'Asia' | 'London' | 'Overnight'
+  name: string
 ): SessionVolumeProfile | null {
   const sessionBars = bars.filter(
     (b) => b.time >= startUnix && b.time < endUnix && Number.isFinite(b.high) && Number.isFinite(b.low)
@@ -975,29 +976,43 @@ export function computeOvernightInventoryAndSessions(args: {
   }).format(new Date(tipTime * 1000))
 
   const todayOpenUnix = cashOpenUnixForYmd(todayYmd, clock)
+  const isTokyo = clock.timeZone === 'Asia/Tokyo'
 
-  // Overnight Asia session begins at 18:00 on the calendar evening preceding today (e.g. Sunday 18:00 for Monday).
   const [y, m, d] = todayYmd.split('-').map(Number)
   const prevCalDate = new Date(Date.UTC(y!, m! - 1, d! - 1, 12, 0, 0))
   const prevCalYmd = prevCalDate.toISOString().slice(0, 10)
-  const asiaStartUnix = zonedCivilToUnix(prevCalYmd, 18, clock.timeZone)
-  const asiaEndUnix = zonedCivilToUnix(todayYmd, 3, clock.timeZone)
 
-  const londonStartUnix = asiaEndUnix
-  const londonEndUnix = todayOpenUnix
+  let asiaStartUnix: number
+  let asiaEndUnix: number
+  let londonStartUnix: number
+  let londonEndUnix: number
+  let overnightStartUnix: number
+  let overnightEndUnix: number
 
-  // Yesterday's inventory is removed; profile starts drawing once London opens (03:00 ET)
-  if (tipTime < londonStartUnix) {
-    return null
+  if (isTokyo) {
+    // For Nikkei / Tokyo: Preceding US session (09:30-16:00 ET / 22:30-05:00 JST) establishes inventory lead
+    asiaStartUnix = zonedCivilToUnix(prevCalYmd, 22.5, clock.timeZone)
+    asiaEndUnix = zonedCivilToUnix(todayYmd, 5, clock.timeZone)
+    londonStartUnix = asiaEndUnix
+    londonEndUnix = todayOpenUnix
+    overnightStartUnix = asiaStartUnix
+    overnightEndUnix = Math.min(todayOpenUnix, tipTime)
+  } else {
+    // Standard NYC desk: Asia open (18:00 ET prior day)
+    asiaStartUnix = zonedCivilToUnix(prevCalYmd, 18, clock.timeZone)
+    asiaEndUnix = zonedCivilToUnix(todayYmd, 3, clock.timeZone)
+    londonStartUnix = asiaEndUnix
+    londonEndUnix = todayOpenUnix
+    if (tipTime < londonStartUnix) {
+      return null
+    }
+    overnightStartUnix = asiaStartUnix
+    overnightEndUnix = Math.min(todayOpenUnix, tipTime)
   }
 
-  const overnightStartUnix = asiaStartUnix
-  // Dynamic profile: from Asia Open (18:00 ET) up to current time (e.g. 08:30 ET), updating until 09:30 ET cash open
-  const overnightEndUnix = Math.min(todayOpenUnix, tipTime)
-
-  const asia = computeSessionVolumeProfile(bars, asiaStartUnix, asiaEndUnix, 'Asia')
-  const london = computeSessionVolumeProfile(bars, londonStartUnix, Math.min(londonEndUnix, tipTime), 'London')
-  const overnight = computeSessionVolumeProfile(bars, overnightStartUnix, overnightEndUnix, 'Overnight')
+  const asia = computeSessionVolumeProfile(bars, asiaStartUnix, asiaEndUnix, isTokyo ? 'US Session' : 'Asia')
+  const london = computeSessionVolumeProfile(bars, londonStartUnix, Math.min(londonEndUnix, tipTime), isTokyo ? 'Pre-Tokyo' : 'London')
+  const overnight = computeSessionVolumeProfile(bars, overnightStartUnix, overnightEndUnix, isTokyo ? 'Preceding US Lead' : 'Overnight')
 
   // Calculate volume distribution relative to Yesterday Close
   const overnightBars = bars.filter((b) => b.time >= overnightStartUnix && b.time < overnightEndUnix)
@@ -1073,16 +1088,18 @@ export function computeOvernightInventoryAndSessions(args: {
   }
 
   const summaryBadge = `Inv: ${biasLabel} · ${rangeLabel}`
+  const openLabel = isTokyo ? 'Tokyo open' : 'NYC open'
+  const leadLabel = isTokyo ? 'Preceding US session' : 'Overnight'
 
   let description = ''
   if (bias === '100%_NET_LONG') {
-    description = `Overnight inventory is 100% net long entering NYC open. If the cash market fails to immediately extend above Y-High, watch for rapid inventory correction (long liquidation) returning toward yesterday close (${yesterday.close}) and Y-POC (${yesterday.poc}).`
+    description = `${leadLabel} inventory is 100% net long entering ${openLabel}. If the cash market fails to immediately extend above Y-High (prior Japan cash high), watch for rapid inventory correction returning toward prior Japan close (${yesterday.close}) and Japan Y-POC (${yesterday.poc}).`
   } else if (bias === '100%_NET_SHORT') {
-    description = `Overnight inventory is 100% net short entering NYC open. If the cash market fails to sustain below Y-Low, watch for sharp short-covering squeeze toward yesterday close (${yesterday.close}) and Y-POC (${yesterday.poc}).`
+    description = `${leadLabel} inventory is 100% net short entering ${openLabel}. If the cash market fails to sustain below Y-Low (prior Japan cash low), watch for sharp short-covering squeeze toward prior Japan close (${yesterday.close}) and Japan Y-POC (${yesterday.poc}).`
   } else if (rangeRelation === 'IN_VALUE' || rangeRelation === 'IN_RANGE') {
-    description = `Overnight volume (${biasLabel}) tested overnight extremes [${onLow} – ${onHigh}], but price recovered entering NYC open (${activeOpenPrice.toFixed(2)}) inside yesterday's ${rangeRelation === 'IN_VALUE' ? 'Value Area & Range' : 'Range'}. Symmetrical two-way auction expected near Y-POC (${yesterday.poc}).`
+    description = `${leadLabel} volume (${biasLabel}) tested extremes [${onLow} – ${onHigh}], but price recovered entering ${openLabel} (${activeOpenPrice.toFixed(2)}) inside yesterday's ${rangeRelation === 'IN_VALUE' ? 'Value Area & Range' : 'Range'}. Symmetrical two-way auction expected near Japan Y-POC (${yesterday.poc}).`
   } else {
-    description = `Overnight inventory (${biasLabel}) tested outside yesterday's boundaries. Monitor opening acceptance vs rejection at prior extremes.`
+    description = `${leadLabel} inventory (${biasLabel}) tested outside yesterday's boundaries. Monitor opening acceptance vs rejection at prior Japan extremes.`
   }
 
   return {
