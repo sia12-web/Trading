@@ -27,12 +27,17 @@ import type {
   NikkeiAbnormalBehavior,
 } from '@/types/fundamentals'
 import {
-  NIKKEI_ANALYST_SYSTEM_PROMPT,
+  NIKKEI_ANALYST_EVENT_PROMPT,
   NIKKEI_DIVISOR,
   DEFAULT_NIKKEI_CONSTITUENTS,
 } from './nikkeiAnalystConfig'
 import { recordEvaluatedNikkeiEvent } from './nikkeiStateStore'
 import { logger } from '@/lib/utils/logger'
+import {
+  adaptLegacyFundamentalJson,
+  buildFundamentalEventUserPrompt,
+  datumLine,
+} from '@/lib/fundamentals/outputContract'
 
 // In-memory event deduplication cache for Nikkei wire (60 min window)
 const recentNikkeiEventsCache = new Map<string, { eventId: string; timestamp: number }>()
@@ -410,60 +415,28 @@ async function runLlmNikkeiEvaluation(params: {
 }): Promise<StructuredNikkeiEventOutput | null> {
   const { rawText, sourceHint, telemetry, anthropicKey, openaiKey } = params
 
-  const prompt = `You are evaluating an incoming market event affecting CME Nikkei 225 futures (NKD, $5 multiplier) and the Tokyo Stock Exchange cash market.
-
-CURRENT NIKKEI TELEMETRY:
-- NKD Futures Price: ${telemetry.nkdPrice.toLocaleString()} (${telemetry.nkdChange >= 0 ? '+' : ''}${telemetry.nkdChange.toFixed(0)} pts, ${telemetry.nkdChangePct >= 0 ? '+' : ''}${telemetry.nkdChangePct.toFixed(2)}%)
-- USD/JPY Rate: ${telemetry.usdjpyRate.toFixed(2)} (${telemetry.usdjpyChangePct >= 0 ? '+' : ''}${telemetry.usdjpyChangePct.toFixed(2)}%)
-- 10Y JGB Yield: ${telemetry.jgb10yNominalYield.toFixed(3)}% (${telemetry.jgb10yChangeBps >= 0 ? '+' : ''}${telemetry.jgb10yChangeBps} bps)
-- SOX Index (US Semis): ${telemetry.soxIndex} | Nasdaq-100: ${telemetry.nqPrice}
-- Advancers / Decliners: ${telemetry.advancersCount} Adv / ${telemetry.declinersCount} Dec (out of 225)
-- Tokyo Cash Session Status: ${telemetry.tokyoCashSessionActive ? 'OPEN' : 'CLOSED'} (${telemetry.tokyoSessionPhase})
-
-EVENT TO EVALUATE:
-Source: ${sourceHint || 'Tokyo Financial Wire'}
-Raw Text:
-"""
-${rawText}
-"""
-
-CRITICAL NIKKEI 225 INSTRUCTIONS:
-- The Nikkei is PRICE-WEIGHTED (Divisor ~30.15). Fast Retailing (~10%), Tokyo Electron (~7%), and Advantest (~5%) command immense leverage.
-- Bank of Japan rate hikes strengthen the Yen (hurting auto exporters) but propel mega banks (MUFG/SMFG) on net interest margin expansion.
-- USD/JPY approaching 155-160 triggers sudden Ministry of Finance intervention risk and violent unwinds.
-- Return ONLY valid JSON matching this schema:
-{
-  "event": "STRING_IDENTIFIER",
-  "category": "BOJ_MONETARY_POLICY" | "FX_USD_JPY" | "TECH_SEMICONDUCTORS" | "DOMESTIC_MACRO" | "EARNINGS_EXPORTERS" | "GEOPOLITICS_TRADE" | "GLOBAL_EQUITY_SPILLOVER" | "MARKET_STRUCTURE",
-  "importance": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
-  "confidence": number (0-100),
-  "market_stance": {
-    "intraday": "BULLISH" | "BEARISH" | "MIXED" | "NEUTRAL" | "UNCERTAIN",
-    "short_term": "BULLISH" | "BEARISH" | "MIXED" | "NEUTRAL" | "UNCERTAIN",
-    "medium_term": "BULLISH" | "BEARISH" | "MIXED" | "NEUTRAL" | "UNCERTAIN"
-  },
-  "transmission_channels": {
-    "boj_policy_impact": "HAWKISH_TIGHTENING" | "DOVISH_EASING" | "NEUTRAL",
-    "fx_pass_through": "BULLISH_EXPORTERS" | "BEARISH_EXPORTERS" | "NEUTRAL",
-    "tech_semiconductor_effect": "RALLY" | "DRAG" | "NEUTRAL",
-    "domestic_growth_effect": "POSITIVE" | "NEGATIVE" | "NEUTRAL"
-  },
-  "market_reaction": {
-    "nkd_initial_reaction": "UP" | "DOWN" | "FLAT",
-    "nkd_5m_continuation": "CONTINUING" | "REVERSING" | "STALLED",
-    "usdjpy_reaction": "UP" | "DOWN" | "FLAT",
-    "jgb10y_reaction": "UP" | "DOWN" | "FLAT"
-  },
-  "abnormal_behavior": {
-    "detected": boolean,
-    "type": "YEN_DIVERGENCE" | "SEMICONDUCTOR_DECOUPLING" | "BOJ_ABSORPTION" | "OVERNIGHT_GAP_FADE" | "PRICE_WEIGHT_DISTORTION" | "NONE",
-    "explanation": "STRING"
-  },
-  "estimated_nkd_point_impact": number,
-  "summary": "STRING",
-  "actionable_takeaway": "STRING"
-}
-`
+  const prompt = buildFundamentalEventUserPrompt({
+    roleLine: 'You are evaluating a supplied event for CME Nikkei 225 futures (NKD) and the Tokyo cash market.',
+    telemetryLines: [
+      datumLine('NKD', telemetry.nkdPrice.toLocaleString(), 'TICK', 'LIVE'),
+      datumLine('USD/JPY', telemetry.usdjpyRate.toFixed(2), 'TICK', 'LIVE'),
+      datumLine('10Y JGB', `${telemetry.jgb10yNominalYield.toFixed(3)}%`, 'INTRADAY', 'RECENT'),
+      datumLine('SOX', String(telemetry.soxIndex), 'INTRADAY', 'RECENT'),
+      datumLine('Advancers', String(telemetry.advancersCount), 'INTRADAY', 'RECENT'),
+      datumLine('Decliners', String(telemetry.declinersCount), 'INTRADAY', 'RECENT'),
+      `Tokyo cash session: ${telemetry.tokyoCashSessionActive ? 'OPEN' : 'CLOSED'} (${telemetry.tokyoSessionPhase})`,
+      'CURRENT NIKKEI CONTRIBUTORS: UNAVAILABLE. Do not cite memorized weights.',
+      'MOF_INTERVENTION_RISK: UNKNOWN. Do not infer it from a spot level.',
+      'PRECOMPUTED_NKD_POINT_IMPACT: UNAVAILABLE.',
+    ],
+    rawText,
+    source: sourceHint,
+    specialistNotes: `market is NK225.
+confidence is HIGH, MEDIUM, LOW, or UNKNOWN.
+specialist.desk_context is what to watch. It is not a trade instruction. Do not emit actionable_takeaway.
+specialist.nkd_point_impact is null.
+specialist.mof_intervention_risk is null unless this packet sets MOF_INTERVENTION_RISK.`,
+  })
 
   try {
     let rawJsonText: string | null = null
@@ -479,7 +452,7 @@ CRITICAL NIKKEI 225 INSTRUCTIONS:
         body: JSON.stringify({
           model: 'claude-3-5-sonnet-20241022',
           max_tokens: 1500,
-          system: NIKKEI_ANALYST_SYSTEM_PROMPT,
+          system: NIKKEI_ANALYST_EVENT_PROMPT,
           messages: [{ role: 'user', content: prompt }],
         }),
       })
@@ -499,7 +472,7 @@ CRITICAL NIKKEI 225 INSTRUCTIONS:
           model: 'gpt-4o',
           response_format: { type: 'json_object' },
           messages: [
-            { role: 'system', content: NIKKEI_ANALYST_SYSTEM_PROMPT },
+            { role: 'system', content: NIKKEI_ANALYST_EVENT_PROMPT },
             { role: 'user', content: prompt },
           ],
         }),
@@ -513,7 +486,7 @@ CRITICAL NIKKEI 225 INSTRUCTIONS:
 
     if (rawJsonText) {
       const cleanJson = rawJsonText.replace(/```json\n?|\n?```/g, '').trim()
-      return JSON.parse(cleanJson) as StructuredNikkeiEventOutput
+      return adaptLegacyFundamentalJson(JSON.parse(cleanJson)) as unknown as StructuredNikkeiEventOutput
     }
   } catch (err) {
     logger.warn('[NikkeiAnalystEngine] LLM evaluation threw error, using fallback', err)

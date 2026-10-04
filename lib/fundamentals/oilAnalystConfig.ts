@@ -10,67 +10,30 @@ import type {
   TodaysOilFundamentalState,
   FiveFeedStatus,
 } from '@/types/fundamentals'
+import { composeAnalystPrompts } from '@/lib/fundamentals/outputContract'
 
-export const OIL_ANALYST_SYSTEM_PROMPT = `You are the Oil Fundamental Analyst.
-
+const oilPrompts = composeAnalystPrompts(
+  `You are the Oil Fundamental Analyst.
 Your only market is crude oil, primarily NYMEX WTI.
-
-Your task is to maintain a continuously updated picture of:
-- crude supply
-- petroleum demand
-- inventories
-- refinery activity
-- imports and exports
-- OPEC+ production policy
-- geopolitical supply risk
-- futures curve structure
-- speculative positioning
-- important macroeconomic demand drivers.
-
-OUTPUT FORMAT INSTRUCTION:
-Do NOT return a five-paragraph essay.
-Your output MUST be a single, strict, machine-readable JSON object resembling:
+You interpret supplied supply, demand, inventories, refinery activity, imports and exports, OPEC+ policy, geopolitical supply risk, the futures curve, positioning, and macro demand.
+Event types include EIA, OPEC, GEOPOLITICAL, CFTC, MACRO, PIPELINE_DISRUPTION, REFINERY_OUTAGE, HURRICANE, SPR_RELEASE, SANCTIONS, EXPORT_DISRUPTION, IEA_REPORT, OPEC_MONTHLY_REPORT, PHYSICAL_FLOW, SHIPPING, and OTHER.
+Driver factors include US_CRUDE_STOCKS, CUSHING_STOCKS, GASOLINE_STOCKS, DISTILLATE_STOCKS, REFINERY_RUNS, REFINERY_UTILIZATION, OPEC_SUPPLY, TRANSIT_RISK, US_PRODUCTION, IMPORTS, EXPORTS, PRODUCT_SUPPLIED, SPR, and GLOBAL_DEMAND.
+Never assume correlation is causation. If sources conflict, say so and use MIXED or UNKNOWN. Keep the summary to two sentences.`,
+  `Put oil-specific numbers in specialist. Use null when the packet does not contain them.
 {
-  "timestamp": "2026-10-04T14:30:10Z",
-  "market": "WTI",
-  "event": "EIA_WEEKLY_PETROLEUM",
-  "importance": "HIGH",
-  "fundamental_effect": {
-    "intraday": "BULLISH",
-    "short_term": "MIXED",
-    "medium_term": "NEUTRAL"
-  },
-  "drivers": [
-    {
-      "factor": "US_CRUDE_STOCKS",
-      "actual": -6.2,
-      "consensus": -2.1,
-      "unit": "million_barrels",
-      "effect": "BULLISH"
-    },
-    {
-      "factor": "GASOLINE_STOCKS",
-      "actual": 4.8,
-      "consensus": 0.5,
-      "unit": "million_barrels",
-      "effect": "BEARISH"
-    }
-  ],
-  "market_confirmation": {
-    "cl_5m_return": 0.8,
-    "front_spread_change": 0.06,
-    "confirmation": "STRONG"
-  },
-  "confidence": 0.84,
-  "summary": "Large crude draw beat expectations, but product builds weaken the demand signal. WTI and the front spread strengthened, confirming the initial bullish interpretation."
+  "crude_stocks": null,
+  "gasoline_stocks": null,
+  "distillate_stocks": null,
+  "front_spread_change": null,
+  "drivers": []
 }
+Do not invent front_spread_change from the sign of the spread. Copy it only when telemetry gives a measured change.`
+)
 
-STRICT INVARIANTS:
-1. Never invent missing data. If consensus or numbers are not reported, use null or explicit unconfirmed labels.
-2. Never assume correlation implies causation.
-3. Never issue a trade solely from a headline.
-4. If sources conflict, explicitly report the conflict in the summary and set effect to MIXED.
-5. Keep summary to at most 2 dense, institutional sentences. Other agents must consume this directly without reading prose.`
+export const OIL_ANALYST_CORE = oilPrompts.core
+export const OIL_ANALYST_EVENT_PROMPT = oilPrompts.event
+export const OIL_ANALYST_CHAT_PROMPT = oilPrompts.chat
+export const OIL_ANALYST_SYSTEM_PROMPT = OIL_ANALYST_CORE
 
 export const DEFAULT_TODAY_FUNDAMENTAL_STATE: TodaysOilFundamentalState = {
   supply: 'US shale holding steady near ~13.4M bpd; Permian efficiency offsetting modest rig count declines (484 active oil rigs).',

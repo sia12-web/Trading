@@ -30,6 +30,7 @@ import { getFinnhubClient } from '@/lib/services/finnhubClient'
 import { fetchYahooFinanceHeadlines } from '@/lib/trading/liveEconomicResults'
 import { deduplicateHeadline } from './nasdaqAnalystEngine'
 import { logger } from '@/lib/utils/logger'
+import { candidateIsMaterial } from '@/lib/fundamentals/outputContract'
 
 // In-memory state singleton for Nasdaq
 let currentNasdaqState: NasdaqFundamentalDashboardState = {
@@ -371,7 +372,7 @@ export function recordEvaluatedNasdaqEvent(evaluation: NasdaqEventEvaluation): v
   }
 
   const out = evaluation.structuredOutput
-  if (out.importance !== 'LOW') {
+  if (candidateIsMaterial(out.importance, out.confidence)) {
     const effect = out.fundamental_effect || out.fundamental_state
     const intraday = effect?.intraday || 'NEUTRAL'
     const shortTerm = effect?.short_term || 'NEUTRAL'

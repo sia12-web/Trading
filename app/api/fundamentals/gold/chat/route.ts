@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { streamClaudeResponse, streamOpenAIResponse } from '@/lib/ai/leoAssistant'
 import { getGoldFundamentalState } from '@/lib/fundamentals/goldStateStore'
-import { GOLD_ANALYST_SYSTEM_PROMPT } from '@/lib/fundamentals/goldAnalystConfig'
+import { GOLD_ANALYST_CHAT_PROMPT } from '@/lib/fundamentals/goldAnalystConfig'
+import { datumLine } from '@/lib/fundamentals/outputContract'
 import { logger } from '@/lib/utils/logger'
 
 export const dynamic = 'force-dynamic'
@@ -40,9 +41,9 @@ export async function POST(request: Request) {
       .join('\n')
 
     const contextPrompt = `
-${GOLD_ANALYST_SYSTEM_PROMPT}
+${GOLD_ANALYST_CHAT_PROMPT}
 
-CURRENT ACTIVE GOLD FUNDAMENTAL STATE (Continuously Maintained):
+SUPPLIED GOLD STATE (not a live monitor; interpret only this packet):
 - Market: COMEX Gold Futures (GC)
 - Current Date & Server Time: ${new Date().toUTCString()}
 - Prompt GC Live Price: $${t.goldPrice.toFixed(2)}/oz (${t.goldChange >= 0 ? '+' : ''}$${t.goldChange.toFixed(2)}, ${t.goldChangePct >= 0 ? '+' : ''}${t.goldChangePct.toFixed(2)}%)
@@ -52,20 +53,18 @@ CURRENT ACTIVE GOLD FUNDAMENTAL STATE (Continuously Maintained):
 - 10Y Breakeven Inflation (T10YIE): ${t.us10yBreakeven.toFixed(2)}%
 - US Dollar Index (DXY): ${t.dxyIndex.toFixed(2)} (${t.dxyChangePct >= 0 ? '+' : ''}${t.dxyChangePct.toFixed(2)}%) | EUR/USD: ${t.eurUsd.toFixed(4)}
 - Gold CVOL (30-day Implied Volatility): ${t.goldCvol.toFixed(1)}%
-- Global Gold ETF Holdings: ${state.etfFlows.globalTonnes} tonnes (Monthly: ${state.etfFlows.monthlyChangeTonnes >= 0 ? '+' : ''}${state.etfFlows.monthlyChangeTonnes}t)
-- CFTC Managed Money Net: ${state.cftcPositioning.netManagedMoney.toLocaleString()} contracts (Crowding Index: ${state.cftcPositioning.crowdingIndex}/100, Long/Short Ratio: ${state.cftcPositioning.longShortRatio.toFixed(1)}:1)
-- COMEX Depository Stocks: Registered ${state.comexInventory.registeredOz.toLocaleString()} oz | Eligible ${state.comexInventory.eligibleOz.toLocaleString()} oz
-- Central Bank Purchases: ~${state.centralBankDemand.annualNetPurchasesTonnes} t/yr run rate (PBOC reported: ${state.centralBankDemand.pbocReportedOunces.toLocaleString()} oz)
+${datumLine('Global gold ETF holdings', `${state.etfFlows.globalTonnes} tonnes (monthly ${state.etfFlows.monthlyChangeTonnes >= 0 ? '+' : ''}${state.etfFlows.monthlyChangeTonnes}t)`, 'MONTHLY', 'STALE_FOR_INTRADAY')}
+${datumLine('CFTC managed-money net', `${state.cftcPositioning.netManagedMoney.toLocaleString()} contracts`, 'WEEKLY', 'STALE_FOR_INTRADAY')}
+${datumLine('COMEX registered / eligible', `${state.comexInventory.registeredOz.toLocaleString()} oz / ${state.comexInventory.eligibleOz.toLocaleString()} oz`, 'DAILY', 'SLOW_MOVING')}
+${datumLine('Central-bank purchase run rate', `${state.centralBankDemand.annualNetPurchasesTonnes} t/yr`, 'SLOW', 'SLOW_MOVING')}
 - Overall Stance: Intraday=${state.today.intraday_bias} | Short-Term=${state.today.short_term_bias} | Medium-Term=${state.today.medium_term_bias}
 - Invalidation Criteria: ${state.today.what_would_invalidate_this_view}
 
 ACTIVE 7 DRIVERS STATUS:
 ${driversSummary}
 
-CRUCIAL TRADING PRINCIPLE:
-Gold Agent provides context. The Volume Profile + Wyckoff + CVD execution system decides the trade.
-Look for confirmation OR rejection (e.g. bearish macro shock rejected with negative CVD absorption and spring reclaim = powerful long context).
-Never invent missing data. Never claim COMEX inventory shifts prove a physical shortage. Never issue trade signals solely from headlines.
+Use this as fundamental context only. Do not infer CVD, absorption, or a reclaim. Chart structure is outside this packet.
+Never invent missing data. Never claim COMEX inventory shifts prove a physical shortage. Do not issue a trade.
 `
 
     const anthropicKey = process.env.ANTHROPIC_API_KEY

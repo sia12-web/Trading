@@ -29,12 +29,17 @@ import type {
   DowAbnormalBehavior,
 } from '@/types/fundamentals'
 import {
-  DOW_ANALYST_SYSTEM_PROMPT,
+  DOW_ANALYST_EVENT_PROMPT,
   DJIA_DIVISOR,
   DEFAULT_DJIA_30_CONSTITUENTS,
 } from './dowAnalystConfig'
 import { recordEvaluatedDowEvent } from './dowStateStore'
 import { logger } from '@/lib/utils/logger'
+import {
+  adaptLegacyFundamentalJson,
+  buildFundamentalEventUserPrompt,
+  datumLine,
+} from '@/lib/fundamentals/outputContract'
 
 // In-memory event deduplication cache for Dow wire (60 min window)
 const recentDowEventsCache = new Map<string, { eventId: string; timestamp: number }>()
@@ -575,78 +580,28 @@ async function runLlmDowEvaluation(params: {
 }): Promise<StructuredDowEventOutput | null> {
   const { rawText, sourceHint, timestampHint, telemetry, anthropicKey, openaiKey } = params
 
-  const prompt = `You are evaluating an incoming market event affecting CME E-mini Dow futures (YM, $5 multiplier).
-
-CURRENT DOW TELEMETRY:
-- YM Futures: ${telemetry.ymPrice.toLocaleString()} (${telemetry.ymChange >= 0 ? '+' : ''}${telemetry.ymChange.toFixed(0)} pts, ${telemetry.ymChangePct >= 0 ? '+' : ''}${telemetry.ymChangePct.toFixed(2)}%)
-- S&P 500 (ES): ${telemetry.esPrice.toFixed(2)} | Nasdaq (NQ): ${telemetry.nqPrice.toFixed(2)} | Russell (RTY): ${telemetry.rtyPrice.toFixed(1)}
-- US 2Y: ${telemetry.us2yNominalYield.toFixed(2)}% | US 10Y: ${telemetry.us10yNominalYield.toFixed(2)}% (2s10s spread: +${telemetry.yieldCurve2s10sSpreadBps} bps)
-- Yield Move Driver: ${telemetry.yieldMoveDriver}
-- Growth/Inflation Quadrant: ${telemetry.growthInflationQuadrant}
-- Advancers/Decliners: ${telemetry.advancersCount} Adv / ${telemetry.declinersCount} Dec (out of 30)
-- Dow Divisor: ${telemetry.dowDivisor}
-
-EVENT TO EVALUATE:
-Source Hint: ${sourceHint || 'Institutional Wire / Exchange'}
-Timestamp Hint: ${timestampHint || new Date().toISOString()}
-Raw Event Text:
-"""
-${rawText}
-"""
-
-CRITICAL DOW INSTRUCTIONS:
-- The Dow is PRICE WEIGHTED, NOT market-cap weighted. A $1 move in any constituent produces Delta Price / Divisor (0.1517) = ~6.59 Dow points.
-- Categorize yield changes as GROWTH_DRIVEN, INFLATION_DRIVEN, FED_DRIVEN, or RISK_OFF. Growth-driven yields are bullish for cyclicals and banks!
-- Detect abnormal market behavior (e.g. BULLISH_RELATIVE_STRENGTH when bad data hits volume profile support and absorbs selling on negative CVD).
-- Do not write five-paragraph essays. Provide crisp, structured JSON.
-
-Return ONLY a valid JSON object matching this EXACT schema:
-{
-  "timestamp": "${new Date().toISOString()}",
-  "market": "YM",
-  "event": "EVENT_NAME_IN_CAPS",
-  "importance": "HIGH" | "MEDIUM" | "LOW",
-  "event_analysis": {
-    "category": "GROWTH" | "MANUFACTURING" | "EARNINGS" | "CREDIT" | "MONETARY_POLICY" | "SECTOR_ROTATION" | "CONSUMER",
-    "expected_direction": "BULLISH" | "BEARISH" | "MIXED" | "NEUTRAL",
-    "magnitude": "HIGH" | "MEDIUM" | "LOW",
-    "surprise": string,
-    "estimated_dow_point_impact": number
-  },
-  "transmission": {
-    "growth_expectations": "UP" | "DOWN" | "FLAT",
-    "industrial_outlook": "IMPROVING" | "DETERIORATING" | "STEADY",
-    "us10y": "UP" | "DOWN" | "FLAT",
-    "yield_move_driver": "GROWTH_DRIVEN" | "INFLATION_DRIVEN" | "FED_DRIVEN" | "RISK_OFF" | "UNKNOWN",
-    "sector_rotation": "CYCLICAL" | "DEFENSIVE" | "TECH_GROWTH" | "NEUTRAL"
-  },
-  "fundamental_state": {
-    "intraday": "BULLISH" | "BEARISH" | "MIXED" | "NEUTRAL",
-    "short_term": "BULLISH" | "BEARISH" | "MIXED" | "NEUTRAL",
-    "medium_term": "BULLISH" | "BEARISH" | "MIXED" | "NEUTRAL"
-  },
-  "market_response": {
-    "ym_initial": "UP" | "DOWN" | "FLAT",
-    "ym_5m": "UP" | "DOWN" | "FLAT",
-    "ym_15m": "CONTINUING" | "REVERSING" | "RECLAIMING" | "UP" | "DOWN",
-    "industrials": "UP" | "DOWN" | "FLAT",
-    "financials": "UP" | "DOWN" | "FLAT",
-    "nq_relative": "OUTPERFORMING" | "UNDERPERFORMING" | "INLINE",
-    "confirmation": "STRONG" | "MODERATE" | "WEAK" | "CONTRADICTED"
-  },
-  "breadth": {
-    "advancers": number,
-    "decliners": number,
-    "contribution_concentration": "LOW" | "MODERATE" | "HIGH" | "EXTREME"
-  },
-  "abnormal_behavior": {
-    "detected": boolean,
-    "type": "BULLISH_RELATIVE_STRENGTH" | "BEARISH_RELATIVE_WEAKNESS" | "PRICE_WEIGHT_DISTORTION" | "CREDIT_DIVERGENCE" | "NONE",
-    "description": string
-  },
-  "confidence": 0.88,
-  "summary": "1-2 sentence institutional summary"
-}`
+  const prompt = buildFundamentalEventUserPrompt({
+    roleLine: 'You are evaluating a supplied event for CME E-mini Dow futures (YM).',
+    telemetryLines: [
+      datumLine('YM', telemetry.ymPrice.toLocaleString(), 'TICK', 'LIVE'),
+      datumLine('ES', telemetry.esPrice.toFixed(2), 'TICK', 'LIVE'),
+      datumLine('NQ', telemetry.nqPrice.toFixed(2), 'TICK', 'LIVE'),
+      datumLine('US 2Y', `${telemetry.us2yNominalYield.toFixed(2)}%`, 'INTRADAY', 'RECENT'),
+      datumLine('US 10Y', `${telemetry.us10yNominalYield.toFixed(2)}%`, 'INTRADAY', 'RECENT'),
+      datumLine('Yield-move label', String(telemetry.yieldMoveDriver), 'DERIVED', 'RECENT'),
+      datumLine('Advancers', String(telemetry.advancersCount), 'INTRADAY', 'RECENT'),
+      datumLine('Decliners', String(telemetry.declinersCount), 'INTRADAY', 'RECENT'),
+      'PRECOMPUTED_DOW_POINT_IMPACT: UNAVAILABLE. Leave specialist.dow_point_impact null. Do not divide by the divisor.',
+      'CVD and volume profile: not supplied.',
+    ],
+    rawText,
+    source: sourceHint,
+    timestamp: timestampHint,
+    specialistNotes: `market is YM.
+Growth-driven yield increases MAY be supportive for cyclical and financial relative performance, subject to magnitude, curve, credit, and supplied confirmation. This is not a law.
+Do not infer volume-profile support or CVD absorption.
+breadth is BROAD, NARROW, or null from the supplied advancer counts only.`,
+  })
 
   let rawJsonText = ''
 
@@ -661,7 +616,7 @@ Return ONLY a valid JSON object matching this EXACT schema:
       body: JSON.stringify({
         model: 'claude-3-5-sonnet-20241022',
         max_tokens: 1500,
-        system: DOW_ANALYST_SYSTEM_PROMPT,
+        system: DOW_ANALYST_EVENT_PROMPT,
         messages: [{ role: 'user', content: prompt }],
       }),
     })
@@ -681,7 +636,7 @@ Return ONLY a valid JSON object matching this EXACT schema:
       body: JSON.stringify({
         model: 'gpt-4o',
         messages: [
-          { role: 'system', content: DOW_ANALYST_SYSTEM_PROMPT },
+          { role: 'system', content: DOW_ANALYST_EVENT_PROMPT },
           { role: 'user', content: prompt },
         ],
         temperature: 0.1,
@@ -701,7 +656,7 @@ Return ONLY a valid JSON object matching this EXACT schema:
       .replace(/^```json\s*/, '')
       .replace(/\s*```$/, '')
       .trim()
-    const parsed = JSON.parse(cleanJson) as any
+    const parsed = adaptLegacyFundamentalJson(JSON.parse(cleanJson))
 
     if (!parsed.fundamental_effect && parsed.fundamental_state) {
       parsed.fundamental_effect = parsed.fundamental_state

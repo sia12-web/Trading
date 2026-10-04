@@ -21,7 +21,12 @@ import type {
   MarketConfirmationVerdict,
   WtiTelemetry,
 } from '@/types/fundamentals'
-import { OIL_ANALYST_SYSTEM_PROMPT } from './oilAnalystConfig'
+import { OIL_ANALYST_EVENT_PROMPT } from './oilAnalystConfig'
+import {
+  adaptLegacyFundamentalJson,
+  buildFundamentalEventUserPrompt,
+  formatSignedDollars,
+} from '@/lib/fundamentals/outputContract'
 import { refreshWtiTelemetry, recordEvaluatedEvent } from './oilStateStore'
 import { logger } from '@/lib/utils/logger'
 
@@ -179,54 +184,20 @@ async function runLlmEvaluation(args: {
   anthropicKey?: string
   openaiKey?: string
 }): Promise<OilEventEvaluation | null> {
-  const prompt = `You are the Oil Fundamental Analyst evaluating this event.
-
-LIVE MARKET TELEMETRY:
-- Prompt WTI: $${args.telemetry.promptPrice.toFixed(2)} (Change: ${args.telemetry.change >= 0 ? '+' : ''}$${args.telemetry.change.toFixed(2)})
-- Front Spread M1-M2: +$${args.telemetry.promptSpread.toFixed(2)}/bbl (${args.telemetry.spreadRegime})
-
-EVENT INPUT:
-"""${args.rawText}"""
-SOURCE: ${args.sourceHint || 'Unspecified'}
-TIMESTAMP: ${args.timestampHint || new Date().toISOString()}
-
-INSTRUCTION:
-Do NOT output essays. Other trading bots and agents will consume this JSON directly.
-Return a STRICT JSON object matching this EXACT schema:
-{
-  "timestamp": "${new Date().toISOString()}",
-  "market": "WTI",
-  "event": "EIA_WEEKLY_PETROLEUM" | "OPEC_POLICY" | "GEOPOLITICAL_RISK" | "CFTC_COT" | "MACRO_EVENT",
-  "importance": "HIGH" | "MEDIUM" | "LOW",
-  "fundamental_effect": {
-    "intraday": "BULLISH" | "BEARISH" | "MIXED" | "NEUTRAL",
-    "short_term": "BULLISH" | "BEARISH" | "MIXED" | "NEUTRAL",
-    "medium_term": "BULLISH" | "BEARISH" | "MIXED" | "NEUTRAL"
-  },
-  "drivers": [
-    {
-      "factor": "US_CRUDE_STOCKS" | "CUSHING_STOCKS" | "GASOLINE_STOCKS" | "DISTILLATE_STOCKS" | "REFINERY_RUNS" | "OPEC_SUPPLY" | "TRANSIT_RISK",
-      "actual": number | string,
-      "consensus": number | string | null,
-      "unit": "million_barrels" | "percent" | "kbpd" | "contracts",
-      "effect": "BULLISH" | "BEARISH" | "MIXED" | "NEUTRAL"
-    }
-  ],
-  "market_confirmation": {
-    "cl_5m_return": number,
-    "front_spread_change": number,
-    "confirmation": "STRONG" | "MODERATE" | "WEAK" | "CONTRADICTED" | "DIVERGENT" | "UNCONFIRMED"
-  },
-  "confidence": number (between 0.0 and 1.0, e.g. 0.84),
-  "summary": string (concise 1-2 sentence institutional summary, no fluff),
-
-  "step1_facts": string[],
-  "step3_facts_vs_estimates": { "facts": string[], "estimates": string[], "conflicts": string[] },
-  "affected_categories": string[],
-  "materiality": { "is_material": boolean, "rationale": string, "impacted_pillars": string[] }
-}
-
-Output ONLY valid JSON. No markdown code blocks, no prose.`
+  const prompt = buildFundamentalEventUserPrompt({
+    roleLine: 'You are the Oil Fundamental Analyst evaluating this supplied event.',
+    telemetryLines: [
+      `Prompt WTI: $${args.telemetry.promptPrice.toFixed(2)} (change ${formatSignedDollars(args.telemetry.change)}) | frequency=LIVE | freshness=LIVE`,
+      `Front spread M1-M2 level: ${formatSignedDollars(args.telemetry.promptSpread)}/bbl (${args.telemetry.spreadRegime}) | frequency=LIVE | freshness=LIVE`,
+      'Front spread change: UNAVAILABLE unless a later packet measures it. Do not derive a change from the spread level.',
+    ],
+    rawText: args.rawText,
+    source: args.sourceHint,
+    timestamp: args.timestampHint,
+    specialistNotes: `market is CL. event_type may be EIA, OPEC, GEOPOLITICAL, CFTC, MACRO, PIPELINE_DISRUPTION, REFINERY_OUTAGE, HURRICANE, SPR_RELEASE, SANCTIONS, EXPORT_DISRUPTION, IEA_REPORT, OPEC_MONTHLY_REPORT, PHYSICAL_FLOW, SHIPPING, or OTHER.
+Driver factors may include US_CRUDE_STOCKS, CUSHING_STOCKS, GASOLINE_STOCKS, DISTILLATE_STOCKS, REFINERY_RUNS, REFINERY_UTILIZATION, OPEC_SUPPLY, TRANSIT_RISK, US_PRODUCTION, IMPORTS, EXPORTS, PRODUCT_SUPPLIED, SPR, GLOBAL_DEMAND.
+Put crude_stocks, gasoline_stocks, and front_spread_change in specialist. Use null when not in the text.`,
+  })
 
   let jsonStr = ''
 
@@ -242,7 +213,7 @@ Output ONLY valid JSON. No markdown code blocks, no prose.`
         model: 'claude-3-5-sonnet-20241022',
         max_tokens: 1500,
         temperature: 0.0,
-        system: OIL_ANALYST_SYSTEM_PROMPT,
+        system: OIL_ANALYST_EVENT_PROMPT,
         messages: [{ role: 'user', content: prompt }],
       }),
     })
@@ -266,7 +237,7 @@ Output ONLY valid JSON. No markdown code blocks, no prose.`
         temperature: 0.0,
         response_format: { type: 'json_object' },
         messages: [
-          { role: 'system', content: OIL_ANALYST_SYSTEM_PROMPT },
+          { role: 'system', content: OIL_ANALYST_EVENT_PROMPT },
           { role: 'user', content: prompt },
         ],
       }),
@@ -283,7 +254,7 @@ Output ONLY valid JSON. No markdown code blocks, no prose.`
 
   try {
     const clean = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim()
-    const p = JSON.parse(clean)
+    const p = adaptLegacyFundamentalJson(JSON.parse(clean))
 
     const structured: StructuredOilEventOutput = {
       timestamp: p.timestamp || new Date().toISOString(),
@@ -362,7 +333,7 @@ Output ONLY valid JSON. No markdown code blocks, no prose.`
         spreadRegime: args.telemetry.spreadRegime,
         verdict: 'CONFIRMED',
         priceReactionDetail: `WTI 5m return: ${structured.market_confirmation.cl_5m_return}%`,
-        spreadReactionDetail: `Front spread change: +$${structured.market_confirmation.front_spread_change}/bbl`,
+        spreadReactionDetail: `Front spread change: ${formatSignedDollars(structured.market_confirmation.front_spread_change)}/bbl`,
       },
       step10_materiality: {
         isMaterial: Boolean(p.materiality?.is_material ?? true),
@@ -590,7 +561,7 @@ function runDeterministicEvaluation(args: {
       spreadRegime: args.telemetry.spreadRegime,
       verdict: 'CONFIRMED',
       priceReactionDetail: `WTI prompt price confirms expectation with +${structured.market_confirmation.cl_5m_return}% 5m return.`,
-      spreadReactionDetail: `Front spread shifted +$${structured.market_confirmation.front_spread_change}/bbl confirming spot physical premium.`,
+      spreadReactionDetail: `Front spread shifted ${formatSignedDollars(structured.market_confirmation.front_spread_change)}/bbl.`,
     },
     step10_materiality: {
       isMaterial: true,

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { streamClaudeResponse, streamOpenAIResponse } from '@/lib/ai/leoAssistant'
 import { getDowFundamentalState } from '@/lib/fundamentals/dowStateStore'
-import { DOW_ANALYST_SYSTEM_PROMPT } from '@/lib/fundamentals/dowAnalystConfig'
+import { DOW_ANALYST_CHAT_PROMPT } from '@/lib/fundamentals/dowAnalystConfig'
 import { logger } from '@/lib/utils/logger'
 
 export const dynamic = 'force-dynamic'
@@ -43,9 +43,9 @@ export async function POST(request: Request) {
       .join('\n')
 
     const contextPrompt = `
-${DOW_ANALYST_SYSTEM_PROMPT}
+${DOW_ANALYST_CHAT_PROMPT}
 
-CURRENT ACTIVE DOW JONES FUNDAMENTAL STATE (Continuously Maintained):
+SUPPLIED DOW STATE (not a live monitor; interpret only this packet):
 - Market: CME E-mini Dow Futures (YM, $5 Multiplier)
 - Current Date & Server Time: ${new Date().toUTCString()}
 - Prompt YM Live Price: ${t.ymPrice.toFixed(0)} (${t.ymChange >= 0 ? '+' : ''}${t.ymChange.toFixed(0)} pts, ${t.ymChangePct >= 0 ? '+' : ''}${t.ymChangePct.toFixed(2)}%)
@@ -67,11 +67,10 @@ CURRENT ACTIVE DOW JONES FUNDAMENTAL STATE (Continuously Maintained):
 ACTIVE 11 DRIVERS STATUS:
 ${driversSummary}
 
-CRUCIAL TRADING PRINCIPLE:
-The Dow Fundamental Agent provides macroeconomic, earnings, cyclical, and price-weighting CONTEXT.
-Your Volume Profile + Wyckoff + CVD order flow execution system decides the trade.
-Look for confirmation OR rejection (e.g. bearish macro shock rejected at 5-day volume profile LVN with aggressive seller absorption and spring reclaim = powerful long setup).
-Never invent missing data. Never assume stronger data are automatically bullish without evaluating yield transmission. Never treat a stock's percentage move as important without calculating its Dow-point contribution (Delta Price / Divisor). Never infer institutional identity from price action alone.
+Use this as fundamental context only. Do not infer volume-profile support or CVD absorption.
+Growth-driven yield increases may be supportive for cyclical and financial relative performance. That is not a law.
+Never invent a Dow-point impact. Use only a contribution already computed in this packet.
+Do not issue a trade.
 `
 
     const anthropicKey = process.env.ANTHROPIC_API_KEY

@@ -30,6 +30,7 @@ import { getYahooQuote } from '@/lib/yahoo/quote'
 import { getFinnhubClient } from '@/lib/services/finnhubClient'
 import { fetchYahooFinanceHeadlines } from '@/lib/trading/liveEconomicResults'
 import { logger } from '@/lib/utils/logger'
+import { candidateIsMaterial } from '@/lib/fundamentals/outputContract'
 
 // In-memory state singleton for Gold
 let currentGoldState: GoldFundamentalDashboardState = {
@@ -288,7 +289,7 @@ export function recordEvaluatedGoldEvent(evaluation: GoldEventEvaluation): void 
   }
 
   const out = evaluation.structuredOutput
-  if (out.importance !== 'LOW') {
+  if (candidateIsMaterial(out.importance, out.confidence)) {
     currentGoldState.today.intraday_bias = out.fundamental_state.intraday
     currentGoldState.today.short_term_bias = out.fundamental_state.short_term
     currentGoldState.today.medium_term_bias = out.fundamental_state.medium_term
