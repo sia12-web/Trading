@@ -5,6 +5,16 @@
 
 ---
 
+## 0. Exact prompts (companion docs)
+
+| AI stack | Prompt dump |
+|----------|-------------|
+| Chart Leo AI (+ Situations / Notes) | [`docs/AI_PROMPTS_CHART_LEO.md`](./AI_PROMPTS_CHART_LEO.md) |
+| Fundamentals (5 market agents) | [`docs/AI_PROMPTS_FUNDAMENTALS.md`](./AI_PROMPTS_FUNDAMENTALS.md) |
+| Desk News / Leo Macro News AI | [`docs/AI_PROMPTS_DESK_NEWS.md`](./AI_PROMPTS_DESK_NEWS.md) |
+
+---
+
 ## 1. Executive verdict
 
 TradePulse does **not** run one unified multi-agent brain. It runs **three AI product stacks** plus one coherent Leo subsystem for chart rules:
