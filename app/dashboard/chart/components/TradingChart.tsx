@@ -1545,7 +1545,12 @@ export function TradingChart({
   const frvpLinesRef = useRef<IPriceLine[]>([])
   const paintFrvp5dRef = useRef<(overrideBars?: OHLCV[]) => void>(() => { })
   const [avwap5mBenchmark, setAvwap5mBenchmark] = useState<AnchoredVwapBenchmark5M | null>(null)
-  const [show5mAvwapOnChart] = useState(false)
+  const [show5mAvwapOnChart, setShow5mAvwapOnChart] = useState(false)
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem('desk.avwap5m.open.v1') === '1') setShow5mAvwapOnChart(true)
+    } catch {}
+  }, [])
   const [avwap5mBandCount] = useState<2 | 3>(3) // 2 or 3 standard deviation bands
   const [showNewsOnChart] = useState(false) // News markers off by default; filtered to latest Tier-1 event
   const [showSdBands] = useState(true) // Standard Deviation bands enabled with AVWAP
@@ -12717,8 +12722,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           {/* ── Compact Evaluators & OHLCV Tooltip Row ─────────────────────────── */}
           <div className="flex flex-nowrap items-center justify-between gap-x-2 px-1 py-0.5 text-[10.5px] text-gray-400 h-[24px] min-h-[24px] max-h-[24px] shrink-0 overflow-hidden select-none">
             <div className="flex flex-nowrap items-center gap-x-2 overflow-x-auto scrollbar-none min-w-0 flex-1">
-              {/* Structural Evaluators: Day Type, Opening, and Overnight Inventory */}
+              {/* Structural Evaluators: Day Type, Opening, and Overnight Inventory (Active Session Only) */}
               {(() => {
+                const nycActive = isNycSessionActive()
+                if (!nycActive) return null
+
                 const invText = overnightInventory
                   ? `${overnightInventory.biasLabel} · ${overnightInventory.rangeLabel}`
                   : 'WAIT'
@@ -12733,191 +12741,73 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   ? `${overnightInventory.description} (Long: ${overnightInventory.pctLong}%, Short: ${overnightInventory.pctShort}%)`
                   : 'Overnight Inventory vs Prior NYC Close (Calculated across Globex: Asia, London, Pre-Market)'
 
-                const nycActive = isNycSessionActive()
-
                 return (
                   <>
-                    {nycActive ? (
-                      <>
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setLeoExternalPoints([
-                                {
-                                  id: 'ctx-day-type',
-                                  label: 'Day Type',
-                                  value: dayTypeEval.badgeText,
-                                  tier: 'CONTEXT',
-                                  category: 'DAY_TYPE',
-                                  description: dayTypeEval.description || 'Current Dalton Day Type',
-                                },
-                              ])
-                              setLeoPanelOpen(true)
-                              setLeoAutoPrompt(`Leo, summarize key auction tails, session profile distribution, and Dalton day type for ${instrument}.`)
-                            }}
-                            className="hover:opacity-80 cursor-pointer transition flex items-center gap-1 select-none"
-                            title="Click to ask Leo about Dalton Day Type"
-                          >
-                            <span className="text-gray-500">Day: </span>
-                            <span className="text-purple-300 font-semibold underline decoration-dotted decoration-purple-400/50 underline-offset-2">
-                              {dayTypeOverride ? '🤖 ' : ''}{dayTypeEval.badgeText}{dayTypeOverride ? ' (AI Overwrite)' : ''}
-                            </span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setLeoExternalPoints([
-                                {
-                                  id: 'ctx-day-type',
-                                  label: 'Day Type',
-                                  value: dayTypeEval.badgeText,
-                                  tier: 'CONTEXT',
-                                  category: 'DAY_TYPE',
-                                  description: dayTypeEval.description || 'Current Dalton Day Type',
-                                },
-                              ])
-                              setLeoPanelOpen(true)
-                              setLeoAutoPrompt(`Leo, summarize key auction tails, session profile distribution, and Dalton day type for ${instrument}.`)
-                            }}
-                            className="transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-purple-950/50 hover:bg-purple-900/70 border border-purple-800/40 hover:border-purple-500 text-[10px] text-purple-300 hover:text-white cursor-pointer ml-0.5"
-                            title="Ask Leo to evaluate Dalton Day Type and auction tails"
-                          >
-                            <span>🤖</span>
-                            <span className="font-mono">Ask Leo</span>
-                          </button>
-                        </div>
-                        {dayTypeOverride && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setDayTypeOverride(null)
-                            }}
-                            className="text-[9px] text-amber-400/80 hover:text-amber-300 hover:underline px-1 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 font-mono transition"
-                            title="Revert AI Overwrite back to mathematical Day Type"
-                          >
-                            Reset Math
-                          </button>
-                        )}
-                        <span className="text-gray-600 text-[10px]">|</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!leoPanelOpen) return
-                            setLeoExternalPoints([
-                              {
-                                id: 'ctx-open-type',
-                                label: 'Open Type',
-                                value: openingBadge,
-                                tier: 'CONTEXT',
-                                category: 'OPEN',
-                                description: 'Opening Activity Structure',
-                              },
-                            ])
-                          }}
-                          className={`${leoPanelOpen ? 'hover:opacity-80 cursor-pointer' : 'cursor-default'} transition flex items-center gap-1 select-none`}
-                          title={leoPanelOpen ? 'Click to send Open Type to Leo AI' : 'Opening Activity Structure'}
-                        >
-                          <span className="text-gray-500">Open: </span>
-                          <span className={`text-cyan-300 font-semibold ${leoPanelOpen ? 'underline decoration-dotted decoration-cyan-400/50 underline-offset-2' : ''}`}>
-                            {openingBadge}
-                          </span>
-                        </button>
-                        <span className="text-gray-600 text-[10px]">|</span>
-                      </>
-                    ) : (
-                      <>
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setLeoExternalPoints([
-                                {
-                                  id: 'ctx-day-type',
-                                  label: 'Day Type (Closed Session)',
-                                  value: `${dayTypeEval.badgeText} (FINAL / SESSION CLOSED)`,
-                                  tier: 'CONTEXT',
-                                  category: 'DAY_TYPE',
-                                  description: dayTypeEval.description || 'Final settled Dalton Day Type for closed session',
-                                },
-                              ])
-                              setLeoPanelOpen(true)
-                              setLeoAutoPrompt(`Leo, summarize key auction tails, session profile distribution, and final Dalton day type for today's closed session on ${instrument}.`)
-                            }}
-                            className="hover:opacity-80 cursor-pointer transition flex items-center gap-1 select-none"
-                            title="Click to ask Leo about settled Dalton Day Type for closed session"
-                          >
-                            <span className="text-gray-500">Day: </span>
-                            <span className="text-purple-300 font-semibold underline decoration-dotted decoration-purple-400/50 underline-offset-2">
-                              {dayTypeEval.badgeText} (Closed)
-                            </span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setLeoExternalPoints([
-                                {
-                                  id: 'ctx-day-type',
-                                  label: 'Day Type (Closed Session)',
-                                  value: `${dayTypeEval.badgeText} (FINAL / SESSION CLOSED)`,
-                                  tier: 'CONTEXT',
-                                  category: 'DAY_TYPE',
-                                  description: dayTypeEval.description || 'Final settled Dalton Day Type for closed session',
-                                },
-                              ])
-                              setLeoPanelOpen(true)
-                              setLeoAutoPrompt(`Leo, summarize key auction tails, session profile distribution, and final Dalton day type for today's closed session on ${instrument}.`)
-                            }}
-                            className="transition flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-purple-950/50 hover:bg-purple-900/70 border border-purple-800/40 hover:border-purple-500 text-[10px] text-purple-300 hover:text-white cursor-pointer ml-0.5"
-                            title="Ask Leo to evaluate final Dalton Day Type for closed session"
-                          >
-                            <span>🤖</span>
-                            <span className="font-mono">Ask Leo</span>
-                          </button>
-                        </div>
-                        <span className="text-gray-600 text-[10px]">|</span>
-                      </>
+                    <div className="flex items-center gap-1 select-none">
+                      <span className="text-gray-500">Day: </span>
+                      <span className="text-purple-300 font-semibold">
+                        {dayTypeOverride ? '🤖 ' : ''}{dayTypeEval.badgeText}{dayTypeOverride ? ' (AI Overwrite)' : ''}
+                      </span>
+                    </div>
+                    {dayTypeOverride && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setDayTypeOverride(null)
+                        }}
+                        className="text-[9px] text-amber-400/80 hover:text-amber-300 hover:underline px-1 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 font-mono transition cursor-pointer"
+                        title="Revert AI Overwrite back to mathematical Day Type"
+                      >
+                        Reset Math
+                      </button>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!leoPanelOpen || !overnightInventory) return
-                        setLeoExternalPoints([
-                          {
-                            id: 'ctx-overnight-inv',
-                            label: 'Overnight Inventory',
-                            value: `${overnightInventory.biasLabel} · ${overnightInventory.rangeLabel} (${overnightInventory.pctLong}% L / ${overnightInventory.pctShort}% S)`,
-                            tier: 'CONTEXT',
-                            category: 'INVENTORY',
-                            description: overnightInventory.description,
-                          },
-                        ])
-                      }}
-                      className={`${leoPanelOpen && overnightInventory ? 'hover:opacity-80 cursor-pointer' : 'cursor-default'} transition flex items-center gap-1 select-none`}
-                      title={leoPanelOpen ? `${invTitle} — Click to send to Leo AI` : invTitle}
+                    <span className="text-gray-600 text-[10px]">|</span>
+                    <div className="flex items-center gap-1 select-none">
+                      <span className="text-gray-500">Open: </span>
+                      <span className="text-cyan-300 font-semibold">
+                        {openingBadge}
+                      </span>
+                    </div>
+                    <span className="text-gray-600 text-[10px]">|</span>
+                    <div
+                      className="flex items-center gap-1 select-none cursor-default"
+                      title={invTitle}
                     >
                       <span className="text-gray-500">Inventory: </span>
-                      <span className={`${invColor} font-semibold ${leoPanelOpen && overnightInventory ? 'underline decoration-dotted decoration-current underline-offset-2' : ''}`}>
+                      <span className={`${invColor} font-semibold`}>
                         {invText}
                       </span>
-                    </button>
+                    </div>
                     <span className="text-gray-600 text-[10px]">|</span>
                   </>
                 )
               })()}
-              {/* Anchored VWAP HUD Indicator */}
-              <div
-                className="flex items-center gap-1 select-none px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold"
-                title={`Session Anchored VWAP${currentVwap ? ` · Level: ${currentVwap.vwap.toLocaleString()}${livePrice ? ` · Distance: ${(livePrice - currentVwap.vwap).toFixed(1)}pts` : ''}` : ''}`}
+              {/* 5-Month Anchored VWAP (5M AVWAP) Button with SD Bands */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShow5mAvwapOnChart((prev) => {
+                    const next = !prev
+                    try {
+                      window.localStorage.setItem('desk.avwap5m.open.v1', next ? '1' : '0')
+                    } catch {}
+                    return next
+                  })
+                }}
+                className={`transition flex items-center gap-1.5 select-none px-1.5 py-0.5 rounded cursor-pointer ${
+                  show5mAvwapOnChart
+                    ? 'bg-emerald-500/25 text-emerald-200 border border-emerald-400/60 shadow-sm font-semibold'
+                    : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
+                }`}
+                title="Toggle 5-Month Anchored VWAP benchmark & ±1σ/±2σ/±3σ bands on chart"
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                <span className="text-gray-400 font-semibold">VWAP:</span>
-                <span className="font-mono font-bold">
-                  {currentVwap ? currentVwap.vwap.toLocaleString() : '...'}
+                <span className="text-[11px]">🌐</span>
+                <span className="text-gray-400 font-semibold">5M AVWAP:</span>
+                <span className={`font-mono font-bold ${show5mAvwapOnChart ? 'text-emerald-300' : 'text-zinc-400'}`}>
+                  {show5mAvwapOnChart ? 'ON' : 'OFF'}
                 </span>
-              </div>
-              <span className="text-gray-600 text-[10px]">|</span>
+              </button>
               {/* Interactive CVD Sub-Chart Pane Button */}
               <button
                 type="button"
