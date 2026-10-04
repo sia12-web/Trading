@@ -54,7 +54,7 @@ const LIVE_ITEMS: NavItem[] = [
   {
     href: '/dashboard/news',
     label: 'Desk News',
-    hint: 'YM · NQ · GC · CL',
+    hint: 'YM · NQ · NKD · GC · CL',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-4 h-4">
         <path
@@ -68,7 +68,7 @@ const LIVE_ITEMS: NavItem[] = [
   {
     href: '/dashboard/fundamentals',
     label: 'Fundamentals',
-    hint: 'Oil · Gold · NQ · Dow',
+    hint: 'Oil · Gold · NQ · Dow · Nikkei',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-4 h-4">
         <ellipse cx="12" cy="5" rx="7" ry="2.5" />

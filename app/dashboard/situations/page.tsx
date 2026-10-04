@@ -40,6 +40,7 @@ export default function SituationsPage() {
     NASDAQ: [],
     GOLD: [],
     CRUDE: [],
+    NIKKEI: [],
   })
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')

@@ -43,6 +43,7 @@ const TABS: { id: DeskTab; label: string }[] = [
   { id: 'ALL', label: 'All desks' },
   { id: 'DOW', label: 'DOW' },
   { id: 'NASDAQ', label: 'NASDAQ' },
+  { id: 'NIKKEI', label: 'NIKKEI' },
   { id: 'GOLD', label: 'GOLD' },
   { id: 'CRUDE', label: 'CRUDE' },
 ]

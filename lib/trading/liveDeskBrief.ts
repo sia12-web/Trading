@@ -531,7 +531,7 @@ function buildBullets(
 
   const live = cards.filter((c) => c.tradeableNow)
   if (live.length === 0) {
-    bullets.push('Nothing left to trade across DOW / NASDAQ / GOLD / CRUDE — sit out.')
+    bullets.push('Nothing left to trade across active session instruments — sit out.')
   } else {
     bullets.push(
       `Still live: ${live.map((c) => `${c.instrument} ${c.openBook}`).join(', ')}.`
@@ -553,7 +553,12 @@ function buildSuggestion(
   const pool = scoped.length > 0 ? scoped : cards
   const best = pool.find((c) => c.tradeableNow && c.openBook)
   if (!best || !best.openBook) {
-    const desk = 'DOW / NASDAQ / GOLD / CRUDE'
+    const desk =
+      focusMarket === 'TOKYO'
+        ? 'NIKKEI'
+        : focusMarket === 'NY'
+        ? 'DOW / NASDAQ / GOLD / CRUDE'
+        : 'the board'
     return {
       kind: 'sit_out',
       text: `Sit out — no eligible open books on ${desk} right now. Dead ranges stay closed; wait for the next unlock or next session.`,
@@ -579,11 +584,15 @@ export function buildLiveDeskBrief(
 ): LiveDeskBrief {
   const factsByInst = new Map<DeskInstrument, InstrumentBriefFacts>()
   for (const f of factsList) {
-    if (f.instrument === 'NIKKEI') continue
     factsByInst.set(f.instrument, f)
   }
 
-  const instruments: DeskInstrument[] = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE']
+  const instruments: DeskInstrument[] =
+    focusMarket === 'TOKYO'
+      ? ['NIKKEI']
+      : focusMarket === 'NY'
+      ? ['DOW', 'NASDAQ', 'GOLD', 'CRUDE']
+      : ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'NIKKEI']
   const cards = instruments.map((instrument) =>
     buildInstrumentDeskCard(
       factsByInst.get(instrument) ?? { instrument },
@@ -592,8 +601,8 @@ export function buildLiveDeskBrief(
   )
   cards.sort((a, b) => b.rankScore - a.rankScore || a.instrument.localeCompare(b.instrument))
 
-  // Focus desk cards first in the ranked list (NY names only).
-  if (focusMarket === 'NY') {
+  // Focus desk cards first in the ranked list.
+  if (focusMarket === 'NY' || focusMarket === 'TOKYO') {
     cards.sort((a, b) => {
       const aFocus = a.market === focusMarket ? 1 : 0
       const bFocus = b.market === focusMarket ? 1 : 0

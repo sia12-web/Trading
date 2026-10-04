@@ -12,7 +12,7 @@ import {
 } from '../chart/deskChartTheme'
 import { isLiveClockInstrument, type LiveClockInstrument } from './liveDeskBook'
 
-export type DeskInstrumentPref = LiveClockInstrument
+export type DeskInstrumentPref = LiveClockInstrument | 'NIKKEI'
 
 const STORAGE_KEY = 'tradepulse.desk.instrument'
 
@@ -21,7 +21,7 @@ export function parseDeskInstrument(
 ): DeskInstrumentPref | null {
   if (!value) return null
   const u = value.trim().toUpperCase()
-  if (isLiveClockInstrument(u)) return u
+  if (isLiveClockInstrument(u) || u === 'NIKKEI') return u as DeskInstrumentPref
   return null
 }
 

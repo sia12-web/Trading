@@ -649,7 +649,7 @@ function makeDeskChartFormatters(_instrument: Instrument, timeframe: DeskTimefra
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Instrument = 'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE'
+type Instrument = 'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE' | 'NIKKEI'
 
 export type DeskTimeframe = '1m' | '5m' | '30m' | '1D'
 export const DESK_TIMEFRAMES: DeskTimeframe[] = ['1m', '5m', '30m', '1D']
@@ -712,12 +712,16 @@ const INSTRUMENT_META: Record<Instrument, { label: string; symbol: string; color
   NASDAQ: { label: 'Micro Nasdaq · MNQ', symbol: 'MNQ', color: '#0f766e', basePrice: 29500 },
   GOLD: { label: 'Micro Gold · MGC', symbol: 'MGC', color: '#ca8a04', basePrice: 4350 },
   CRUDE: { label: 'Crude · CL', symbol: 'CL', color: '#78716c', basePrice: 104 },
+  NIKKEI: { label: 'Nikkei 225 · NKD', symbol: 'NKD', color: '#dc2626', basePrice: 38900 },
 }
 
 /** Exchange-native axis precision keeps labels clean like TradingView. */
 function deskCandlePriceFormat(instrument: Instrument) {
   if (instrument === 'DOW') {
     return { type: 'price' as const, precision: 0, minMove: 1 }
+  }
+  if (instrument === 'NIKKEI') {
+    return { type: 'price' as const, precision: 0, minMove: 5 }
   }
   if (instrument === 'GOLD') {
     return { type: 'price' as const, precision: 1, minMove: 0.1 }
@@ -1831,7 +1835,7 @@ export function TradingChart({
     const reload = () => {
       try {
         const inst = instrument as MarketInstrument
-        if (['DOW', 'NASDAQ', 'GOLD', 'CRUDE'].includes(inst)) {
+        if (['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'NIKKEI'].includes(inst)) {
           const rules = loadRulesForMarket(inst)
           setArmedSituations(rules.filter((r) => isEntrySituationRule(r.type) && r.status === 'ARMED'))
         } else {
@@ -7164,7 +7168,7 @@ export function TradingChart({
     if (allowedInstruments && allowedInstruments.length > 0) {
       return allowedInstruments as Instrument[]
     }
-    return ['DOW', 'NASDAQ', 'GOLD', 'CRUDE']
+    return ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'NIKKEI']
   })
 
   useEffect(() => {
@@ -7176,11 +7180,14 @@ export function TradingChart({
     const now = new Date()
     setClockReady(true)
     setDeskSessionLive(isLiveTradingPageOpen(now))
-    const live = liveVisibleInstruments(now, {
-      lockedInstrument,
-      clockedIn: deskAttended,
-      attendedToday: deskAttended,
-    }).filter((i) => i !== 'NIKKEI') as Instrument[]
+    const live = [
+      ...liveVisibleInstruments(now, {
+        lockedInstrument,
+        clockedIn: deskAttended,
+        attendedToday: deskAttended,
+      }),
+      'NIKKEI',
+    ] as Instrument[]
     if (allowedInstruments && allowedInstruments.length > 0) {
       const fromGate = allowedInstruments.filter((i) => live.includes(i as Instrument)) as Instrument[]
       setVisibleInstruments(fromGate.length > 0 ? fromGate : live)
@@ -7202,12 +7209,13 @@ export function TradingChart({
   const setInstrument = useCallback((inst: Instrument) => {
     if (!visibleInstruments.includes(inst)) return
     setInstrumentState(inst)
-    // Free-switch: remember any NY board tab (indexes + gold/crude).
+    // Free-switch: remember any board tab (indexes + gold/crude/nikkei).
     if (
       inst === 'DOW' ||
       inst === 'NASDAQ' ||
       inst === 'GOLD' ||
-      inst === 'CRUDE'
+      inst === 'CRUDE' ||
+      inst === 'NIKKEI'
     ) {
       setDeskInstrumentPreference(inst)
     }
@@ -14449,7 +14457,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           const isFlat = Math.abs(pnlPts) < 0.25
 
           const pointVal =
-            instrument === 'NASDAQ' ? 2 : instrument === 'DOW' ? 0.5 : instrument === 'GOLD' ? 10 : instrument === 'CRUDE' ? 100 : 5
+            instrument === 'NASDAQ' ? 2 : instrument === 'DOW' ? 0.5 : instrument === 'GOLD' ? 10 : instrument === 'CRUDE' ? 100 : instrument === 'NIKKEI' ? 5 : 5
           const sz = positionOverlay.positionSize ?? 1
           const pnlUsd = pnlPts * sz * pointVal
 
@@ -14984,7 +14992,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           const tpPx = ov.profitTarget
           const pnlPts = isLong ? curPx - entryPx : entryPx - curPx
           const pointVal =
-            instrument === 'NASDAQ' ? 2 : instrument === 'DOW' ? 0.5 : instrument === 'GOLD' ? 10 : instrument === 'CRUDE' ? 100 : 5
+            instrument === 'NASDAQ' ? 2 : instrument === 'DOW' ? 0.5 : instrument === 'GOLD' ? 10 : instrument === 'CRUDE' ? 100 : instrument === 'NIKKEI' ? 5 : 5
           const sz = ov.positionSize ?? 1
           const pnlUsd = pnlPts * sz * pointVal
 

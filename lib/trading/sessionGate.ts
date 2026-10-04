@@ -1956,14 +1956,58 @@ export function isNycSessionExpired(createdAt: number, now: Date | number = Date
 }
 
 /**
+ * Checks whether the Tokyo cash session (09:00:00 - 15:00:00 JST) has ended since rule creation.
+ * Tokyo cash close occurs at 15:00:00 JST (02:00:00 ET / 06:00:00 UTC).
+ */
+export function isTokyoSessionExpired(createdAt: number, now: Date | number = Date.now()): boolean {
+  if (!createdAt || !Number.isFinite(createdAt)) return true
+  const createdDate = new Date(createdAt)
+  const nowDate = typeof now === 'number' ? new Date(now) : now
+  const tz = 'Asia/Tokyo'
+
+  const createdYmd = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(createdDate)
+  const nowYmd = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(nowDate)
+
+  const createdTime = timeInTz(createdDate, tz)
+  const nowTime = timeInTz(nowDate, tz)
+
+  // On the same Tokyo calendar day:
+  if (nowYmd === createdYmd) {
+    if (createdTime < '15:00:00') {
+      return nowTime >= '15:00:00'
+    }
+    // Created post-close in evening session -> targets next day's cash session
+    return false
+  }
+
+  // Future Tokyo calendar day:
+  if (nowYmd > createdYmd) {
+    if (createdTime < '15:00:00') {
+      return true
+    }
+    if (nowTime >= '15:00:00') {
+      return true
+    }
+    const diffHours = (nowDate.getTime() - createdDate.getTime()) / (3600 * 1000)
+    if (diffHours >= 36) {
+      return true
+    }
+    return false
+  }
+
+  return false
+}
+
+/**
  * Checks whether an armed Leo rule or alarm has expired.
  *
  * If the rule is explicitly flagged as Long-Term Memory (`isLongTerm === true`),
  * it persists indefinitely across sessions and never expires at session close.
  *
- * Otherwise (session-scoped by default), once the NYC session closes at 16:00:00 ET
- * (or during Globex/Asia/London/subsequent days), the rule expires and will NOT
- * trigger any audio chime, desk notification, Leo chat message, or automated order.
+ * Otherwise (session-scoped by default), once the session closes
+ * (NYC 16:00:00 ET for DOW/NASDAQ/GOLD/CRUDE, Tokyo 15:00:00 JST for NIKKEI),
+ * the rule expires and will NOT trigger any audio chime, desk notification,
+ * Leo chat message, or automated order.
  */
 export function isArmedRuleExpired(
   rule: {
@@ -1971,12 +2015,17 @@ export function isArmedRuleExpired(
     isLongTerm?: boolean
     session?: string
     status?: string
+    market?: string
   },
   now: Date | number = Date.now()
 ): boolean {
   const sess = (rule.session || '').toUpperCase()
   if (rule.isLongTerm || sess === '24H' || sess === 'ALL' || sess === 'ASIA' || sess === 'LTM') return false
   if (rule.status && rule.status !== 'ARMED') return true
+  const mkt = (rule.market || '').toUpperCase()
+  if (mkt === 'NIKKEI' || mkt === 'TOKYO') {
+    return isTokyoSessionExpired(rule.createdAt, now)
+  }
   return isNycSessionExpired(rule.createdAt, now)
 }
 

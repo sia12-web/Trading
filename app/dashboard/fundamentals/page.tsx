@@ -26,9 +26,10 @@ import { OilAnalystChat } from './components/OilAnalystChat'
 import { GoldDashboard } from './gold/GoldDashboard'
 import { NasdaqDashboard } from './nasdaq/NasdaqDashboard'
 import { DowDashboard } from './dow/DowDashboard'
+import { NikkeiDashboard } from './nikkei/NikkeiDashboard'
 
 type OilTabKey = 'today' | 'wire' | 'evaluator' | 'matrix' | 'feeds' | 'history' | 'calendar' | 'terminal'
-type MarketKey = 'CL' | 'GC' | 'NQ' | 'YM'
+type MarketKey = 'CL' | 'GC' | 'NQ' | 'YM' | 'NKD'
 
 function FundamentalsContent() {
   const searchParams = useSearchParams()
@@ -36,7 +37,15 @@ function FundamentalsContent() {
 
   const marketParam = searchParams.get('market')?.toUpperCase()
   const initialMarket: MarketKey =
-    marketParam === 'GC' ? 'GC' : marketParam === 'NQ' ? 'NQ' : marketParam === 'YM' ? 'YM' : 'CL'
+    marketParam === 'GC'
+      ? 'GC'
+      : marketParam === 'NQ'
+      ? 'NQ'
+      : marketParam === 'YM'
+      ? 'YM'
+      : marketParam === 'NKD'
+      ? 'NKD'
+      : 'CL'
   const [market, setMarket] = useState<MarketKey>(initialMarket)
 
   // Oil State
@@ -207,10 +216,27 @@ function FundamentalsContent() {
               Cyclical / $5
             </span>
           </button>
+
+          <button
+            onClick={() => handleMarketChange('NKD')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition ${
+              market === 'NKD'
+                ? 'bg-red-500 text-white shadow-md font-extrabold'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/80'
+            }`}
+          >
+            <span>🏯</span>
+            <span>Nikkei 225 (NKD)</span>
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-red-400/30 text-red-100 font-bold">
+              Japan / $5
+            </span>
+          </button>
         </div>
 
         <div className="px-3 text-[11px] text-slate-400 hidden sm:block">
-          {market === 'YM'
+          {market === 'NKD'
+            ? 'Nikkei Analyst: BoJ Policy · USD/JPY FX Pass-Through (155-160 alert) · Price-Weighting (Fast Retailing / Semis) · Tokyo Session'
+            : market === 'YM'
             ? 'Dow Analyst: Price-Weighting (0.1517) · ISM Industrial Cycle · Rotation (XLI/XLF) · Credit Spreads'
             : market === 'NQ'
             ? 'Nasdaq Analyst: Macro · Rates Engine · Mega-Cap Guidance · AI/Semis · Breadth'
@@ -221,7 +247,9 @@ function FundamentalsContent() {
       </div>
 
       {/* Render Selected Market Engine */}
-      {market === 'YM' ? (
+      {market === 'NKD' ? (
+        <NikkeiDashboard />
+      ) : market === 'YM' ? (
         <DowDashboard />
       ) : market === 'NQ' ? (
         <NasdaqDashboard />

@@ -745,13 +745,37 @@ export function extractChartDataPoints(ctx: LeoChatContext): LeoDataPoint[] {
  */
 export function buildLeoSystemPrompt(ctx: LeoChatContext): string {
   const defaultBasePrice =
-    ctx.instrument === 'DOW' ? 52500 : ctx.instrument === 'GOLD' ? 4350 : ctx.instrument === 'CRUDE' ? 104 : 29500
+    ctx.instrument === 'DOW'
+      ? 52500
+      : ctx.instrument === 'GOLD'
+      ? 4350
+      : ctx.instrument === 'CRUDE'
+      ? 104
+      : ctx.instrument === 'NIKKEI'
+      ? 38900
+      : 29500
   const activeBasePrice =
     ctx.currentPrice != null && Number.isFinite(ctx.currentPrice) ? ctx.currentPrice : defaultBasePrice
   const defaultSlDist =
-    ctx.instrument === 'DOW' ? 60 : ctx.instrument === 'GOLD' ? 5 : ctx.instrument === 'CRUDE' ? 0.5 : 25
+    ctx.instrument === 'DOW'
+      ? 60
+      : ctx.instrument === 'GOLD'
+      ? 5
+      : ctx.instrument === 'CRUDE'
+      ? 0.5
+      : ctx.instrument === 'NIKKEI'
+      ? 100
+      : 25
   const defaultTpDist =
-    ctx.instrument === 'DOW' ? 120 : ctx.instrument === 'GOLD' ? 10 : ctx.instrument === 'CRUDE' ? 1.0 : 50
+    ctx.instrument === 'DOW'
+      ? 120
+      : ctx.instrument === 'GOLD'
+      ? 10
+      : ctx.instrument === 'CRUDE'
+      ? 1.0
+      : ctx.instrument === 'NIKKEI'
+      ? 200
+      : 50
   const defaultTargetPrice = (ctx.shortTermMoney?.yval ?? activeBasePrice).toFixed(2)
   const currentPriceStr = ctx.currentPrice != null ? ctx.currentPrice.toFixed(2) : 'Awaiting quote'
 
@@ -1133,7 +1157,11 @@ B) CONDITIONAL MARKET SITUATIONS & SETUP MONITORING (Tracked in Situations secti
 7. CMC MARKETS CFD TRADING DESK ($2,000 CAPITAL):
 - Account Broker: CMC Markets CFD.
 - Account Capital: $2,000.00.
-- Trading Focus: CFD Index & Commodity contracts (NASDAQ, DOW, GOLD, CRUDE).
+- Trading Focus: Futures & CFD contracts (NASDAQ, DOW, GOLD, CRUDE, NIKKEI).
+- When analyzing NIKKEI 225 (NKD futures):
+  * Session Anchor: Short-term money anchors strictly to the Tokyo cash session (09:00–15:00 JST / 20:00–02:00 ET).
+  * Overnight Lead: Prior overnight lead is the US NYC session (09:30–16:00 ET / 22:30–05:00 JST), which shapes the opening gap and US Range.
+  * Macro Transmission: Sensitive to BoJ policy (Tankan, yield curve control), USD/JPY currency level (155–160 intervention zone), and heavyweight constituents (Fast Retailing #9983, Tokyo Electron #8035, Advantest #6857).
 - Mode: Read-Only Market Structure Analysis, Situation Tracking & Order Journaling.
 - The trader logs live order updates directly on this desk. Always reference their CMC CFD account capital of $2,000.00 when discussing risk and performance.
 - LEO LONG-TERM MEMORY ARCHITECTURE (HTF DAILY MEMORIES):

@@ -17,12 +17,17 @@ const PRESET_PROMPTS = [
   {
     id: 'briefing',
     label: '⚡ Full Executive Briefing',
-    prompt: 'Give me a complete Executive News & Market Reaction Briefing for our 4 futures markets.',
+    prompt: 'Give me a complete Executive News & Market Reaction Briefing across our 5 futures markets (DOW, NASDAQ, NIKKEI 225, GOLD, CRUDE).',
   },
   {
     id: 'reactions',
-    label: '📊 Market Reactions (DOW, NQ, Gold, Crude)',
-    prompt: 'Break down how the market reacted across DOW, NASDAQ, GOLD, and CRUDE to published news.',
+    label: '📊 Market Reactions (DOW, NQ, Nikkei, Gold, Crude)',
+    prompt: 'Break down how the market reacted across DOW, NASDAQ, NIKKEI 225, GOLD, and CRUDE to published news.',
+  },
+  {
+    id: 'nikkei',
+    label: '🗾 Nikkei & Asia Session Briefing',
+    prompt: 'Give me a detailed Asia/Tokyo session briefing for Nikkei 225 (NKD), including BoJ policy stance, USD/JPY rate dynamics, and Tokyo open reaction.',
   },
   {
     id: 'upcoming',
@@ -32,7 +37,7 @@ const PRESET_PROMPTS = [
   {
     id: 'drivers',
     label: '💡 Core Fundamental Drivers',
-    prompt: 'What are the main macro drivers currently moving DOW, NASDAQ, GOLD, and CRUDE Oil?',
+    prompt: 'What are the main macro drivers currently moving DOW, NASDAQ, NIKKEI, GOLD, and CRUDE Oil?',
   },
 ]
 

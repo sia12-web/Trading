@@ -15,6 +15,7 @@
 
 import type {
   NikkeiConstituent,
+  NikkeiDriverId,
   NikkeiDriverState,
   NikkeiFeedStatus,
   TodaysNikkeiFundamentalState,
@@ -181,7 +182,7 @@ export const NIKKEI_FEEDS_INITIAL: NikkeiFeedStatus[] = [
   },
 ]
 
-export const NIKKEI_DRIVERS_INITIAL: Record<string, NikkeiDriverState> = {
+export const NIKKEI_DRIVERS_INITIAL: Record<NikkeiDriverId, NikkeiDriverState> = {
   boj_monetary_policy: {
     id: 'boj_monetary_policy',
     name: 'Bank of Japan Policy & 10Y JGB Yields',

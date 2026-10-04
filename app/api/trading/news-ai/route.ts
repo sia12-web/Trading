@@ -40,8 +40,17 @@ const FALLBACK_HIGH_IMPACT_CALENDAR: DeskCalendarEvent[] = [
     country: 'US',
     event: 'FOMC Interest Rate Decision & Rate Policy Statement',
     impact: 'high',
-    instruments: ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'],
+    instruments: ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'NIKKEI'],
     deskNote: 'High-impact interest rate decision — major volatility trigger across all indices, FX & commodities.',
+  },
+  {
+    id: 'cal-boj-rate',
+    time: 'Upcoming (Tokyo Cash Session)',
+    country: 'JP',
+    event: 'Bank of Japan (BoJ) Monetary Policy Statement & Rate Decision',
+    impact: 'high',
+    instruments: ['NIKKEI'],
+    deskNote: 'Bank of Japan policy rate benchmark & USD/JPY transmission directly moving Nikkei 225.',
   },
   {
     id: 'cal-fomc-press',
@@ -58,7 +67,7 @@ const FALLBACK_HIGH_IMPACT_CALENDAR: DeskCalendarEvent[] = [
     country: 'US',
     event: 'Consumer Price Index (CPI) Inflation Rate YoY / MoM',
     impact: 'high',
-    instruments: ['DOW', 'NASDAQ', 'GOLD'],
+    instruments: ['DOW', 'NASDAQ', 'GOLD', 'NIKKEI'],
     deskNote: 'Primary inflation benchmark governing Fed rate decision expectations.',
   },
   {
@@ -76,7 +85,7 @@ const FALLBACK_HIGH_IMPACT_CALENDAR: DeskCalendarEvent[] = [
     country: 'US',
     event: 'Non-Farm Payrolls (NFP) & Unemployment Rate',
     impact: 'high',
-    instruments: ['DOW', 'NASDAQ', 'GOLD'],
+    instruments: ['DOW', 'NASDAQ', 'GOLD', 'NIKKEI'],
     deskNote: 'Labor market benchmark for Federal Reserve monetary policy pacing.',
   },
 ]
@@ -106,12 +115,13 @@ export async function POST(request: Request) {
     let nqQuote: YahooQuote | null = null
     let goldQuote: YahooQuote | null = null
     let crudeQuote: YahooQuote | null = null
+    let nikkeiQuote: YahooQuote | null = null
     const now = new Date()
 
     try {
       const finnhub = getFinnhubClient()
 
-      const [rawHeadlines, calendarRows, dq, nq, gq, cq] = await Promise.all([
+      const [rawHeadlines, calendarRows, dq, nq, gq, cq, nkq] = await Promise.all([
         finnhub.getMarketNews('general').catch(() => []),
         // Query 7 days ahead (7 * 86400000) so upcoming rate decisions and tier-1 events are captured
         finnhub.getEconomicCalendar(ymd(now), ymd(new Date(now.getTime() + 7 * 86400000))).catch(() => []),
@@ -119,12 +129,14 @@ export async function POST(request: Request) {
         getYahooQuote('NASDAQ').catch(() => null),
         getYahooQuote('GOLD').catch(() => null),
         getYahooQuote('CRUDE').catch(() => null),
+        getYahooQuote('NIKKEI').catch(() => null),
       ])
 
       dowQuote = dq
       nqQuote = nq
       goldQuote = gq
       crudeQuote = cq
+      nikkeiQuote = nkq
 
       const cards: DeskNewsCard[] = buildDeskNewsCards(
         (rawHeadlines || []).map((h) => ({
@@ -166,6 +178,7 @@ export async function POST(request: Request) {
       const quotesStr = [
         formatQuoteForPrompt('DOW', 'MYM', dowQuote),
         formatQuoteForPrompt('NASDAQ', 'MNQ', nqQuote),
+        formatQuoteForPrompt('NIKKEI 225', 'NKD', nikkeiQuote),
         formatQuoteForPrompt('GOLD', 'MGC', goldQuote, true),
         formatQuoteForPrompt('CRUDE OIL', 'CL', crudeQuote, true),
       ].join('\n')
@@ -189,32 +202,35 @@ ${calendarStr}
 
     const dowPxStr = dowQuote?.price ? dowQuote.price.toLocaleString() : 'current market level'
     const nqPxStr = nqQuote?.price ? nqQuote.price.toLocaleString() : 'current market level'
+    const nikkeiPxStr = nikkeiQuote?.price ? nikkeiQuote.price.toLocaleString() : 'current market level'
     const goldPxStr = goldQuote?.price ? `$${goldQuote.price.toLocaleString()}` : 'current market level'
     const crudePxStr = crudeQuote?.price ? `$${crudeQuote.price.toLocaleString()}` : 'current market level'
 
     const systemPrompt = `You are Leo Macro & News AI, the senior market analyst for the institutional trading desk.
-Your job is to assist traders on the Desk News page by analyzing published news, explaining how the market reacted, detailing upcoming economic events, and identifying the core macro drivers moving our 4 CME Futures markets.
+Your job is to assist traders on the Desk News page by analyzing published news, explaining how the market reacted, detailing upcoming economic events, and identifying the core macro drivers moving our 5 CME Futures markets.
 
-THE 4 CME FUTURES MARKETS YOU COVER:
+THE 5 CME FUTURES MARKETS YOU COVER:
 1. 📈 DOW (MYM / E-mini Dow Futures) — Current Last: ~${dowPxStr}
 2. 💻 NASDAQ (MNQ / E-mini Nasdaq Futures) — Current Last: ~${nqPxStr}
-3. 🥇 GOLD (MGC / Micro Gold Futures) — Current Last: ~${goldPxStr}
-4. 🛢️ CRUDE OIL (CL / WTI Crude Oil Futures) — Current Last: ~${crudePxStr}
+3. 🗾 NIKKEI 225 (NKD / CME Nikkei 225 Futures) — Current Last: ~${nikkeiPxStr}
+4. 🥇 GOLD (MGC / Micro Gold Futures) — Current Last: ~${goldPxStr}
+5. 🛢️ CRUDE OIL (CL / WTI Crude Oil Futures) — Current Last: ~${crudePxStr}
 
 CRITICAL ACCURACY REQUIREMENT FOR PRICE LEVELS:
 - You MUST reference the LIVE REAL-TIME FUTURES QUOTES provided in the context below.
-- Support/resistance key levels, reaction points, and price bounds MUST be grounded strictly around current live prices (DOW ~${dowPxStr}, NASDAQ ~${nqPxStr}, GOLD ~${goldPxStr}, CRUDE ~${crudePxStr}).
-- NEVER output obsolete historical price levels from past years (e.g. Dow 33,000, Nasdaq 14,000, Gold $1,900, Crude $89 are obsolete outdated prices and strictly forbidden unless current live quotes explicitly equal those numbers).
+- Support/resistance key levels, reaction points, and price bounds MUST be grounded strictly around current live prices (DOW ~${dowPxStr}, NASDAQ ~${nqPxStr}, NIKKEI ~${nikkeiPxStr}, GOLD ~${goldPxStr}, CRUDE ~${crudePxStr}).
+- NEVER output obsolete historical price levels from past years (e.g. Dow 33,000, Nasdaq 14,000, Nikkei 28,000, Gold $1,900, Crude $89 are obsolete outdated prices and strictly forbidden unless current live quotes explicitly equal those numbers).
 
 CRITICAL ACCURACY REQUIREMENT FOR UPCOMING CATALYSTS & INTEREST RATE ANNOUNCEMENTS:
-- When asked about upcoming tier-1 catalysts, interest rate decisions, CPI, NFP, or economic events: You MUST ALWAYS explain the key upcoming tier-1 macroeconomic catalysts (such as FOMC Interest Rate Announcements & Fed Press Conferences, CPI Inflation reports, Non-Farm Payrolls, and EIA Crude Inventories) and state their expected volatility impact across DOW, NASDAQ, GOLD, and CRUDE OIL.
+- When asked about upcoming tier-1 catalysts, interest rate decisions, CPI, NFP, or economic events: You MUST ALWAYS explain the key upcoming tier-1 macroeconomic catalysts (such as FOMC Rate Decisions & Fed Press Conferences, BoJ Rate Decisions & Monetary Policy Statements, CPI Inflation reports, Non-Farm Payrolls, and EIA Crude Inventories) and state their expected volatility impact across DOW, NASDAQ, NIKKEI 225, GOLD, and CRUDE OIL.
 - NEVER state that there are no news or rate announcements coming up. Always detail these core upcoming catalysts.
+- For NIKKEI 225: Price action is anchored to the Tokyo cash session (09:00–15:00 JST / 20:00–02:00 ET). Emphasize Bank of Japan (BoJ) rate policy, USD/JPY currency fluctuations (155–160 intervention territory), and key Tokyo heavyweights (Fast Retailing, Tokyo Electron, Advantest).
 
 CORE CAPABILITIES TO PROVIDE WHEN ANSWERING:
 1. 📰 **Published & Breaking News Analysis**: Synthesize headlines that are already out. Explain their immediate impact on liquidity, sentiment, and risk appetite.
-2. 📊 **Market Reaction Across 4 Futures Markets**: Detail how price reacted in DOW, NASDAQ, GOLD, and CRUDE around their current live prices. Highlight whether moves were absorption-driven or directional breakouts, and state the active price bias for each market.
-3. 📅 **Upcoming High-Impact Economic Events**: List upcoming tier-1 catalysts (CPI, NFP, FOMC Rate decisions, EIA Crude Inventories, ISM PMI, Fed speeches) with exact expected volatility levels for each market.
-4. 💡 **Core Macro Drivers**: Explain the fundamental forces currently moving these markets (e.g. Treasury Yields, Fed interest rate expectations, OPEC+ supply decisions, USD strength, geopolitical risks).
+2. 📊 **Market Reaction Across Futures Markets**: Detail how price reacted in DOW, NASDAQ, NIKKEI 225, GOLD, and CRUDE around their current live prices. Highlight whether moves were absorption-driven or directional breakouts, and state the active price bias for each market.
+3. 📅 **Upcoming High-Impact Economic Events**: List upcoming tier-1 catalysts (CPI, NFP, FOMC / BoJ Rate decisions, EIA Crude Inventories, ISM PMI, Central Bank speeches) with exact expected volatility levels for each market.
+4. 💡 **Core Macro Drivers**: Explain the fundamental forces currently moving these markets (e.g. Treasury Yields, Fed / BoJ interest rate expectations, OPEC+ supply decisions, USD & USD/JPY strength, geopolitical risks).
 
 ${newsContextStr}
 
@@ -236,14 +252,16 @@ FORMATTING INSTRUCTIONS:
 - **Tech & Semiconductor Sector**: Broad equity sentiment continues to react to tech capex announcements and intraday liquidity flows in mega-cap leaders.
 - **Energy & Commodities**: Geopolitical risk premiums and inventory shifts govern crude and precious metal positioning.
 
-#### 📊 2. Market Reactions Across 4 CME Futures Markets
+#### 📊 2. Market Reactions Across 5 CME Futures Markets
 - **DOW (MYM)**: 🟡 **Neutral / Range-Bound** — Trading near **${dowPxStr}**${dowQuote?.low && dowQuote?.high ? ` (Day range: ${dowQuote.low.toLocaleString()} - ${dowQuote.high.toLocaleString()})` : ''}. Support: **${dowQuote?.low ? (dowQuote.low - 150).toLocaleString() : 'Key VWAP support'}** | Resistance: **${dowQuote?.high ? (dowQuote.high + 150).toLocaleString() : 'Session High'}**.
 - **NASDAQ (MNQ)**: 🟢 **Bullish Bias** — Trading near **${nqPxStr}**${nqQuote?.low && nqQuote?.high ? ` (Day range: ${nqQuote.low.toLocaleString()} - ${nqQuote.high.toLocaleString()})` : ''}. Support: **${nqQuote?.low ? (nqQuote.low - 80).toLocaleString() : 'Excess Buying Low'}** | Resistance: **${nqQuote?.high ? (nqQuote.high + 80).toLocaleString() : 'Excess Selling High'}**.
+- **NIKKEI 225 (NKD)**: 🟢 **Tokyo Cash Anchored** — Trading near **${nikkeiPxStr}**${nikkeiQuote?.low && nikkeiQuote?.high ? ` (Day range: ${nikkeiQuote.low.toLocaleString()} - ${nikkeiQuote.high.toLocaleString()})` : ''}. Support: **${nikkeiQuote?.low ? (nikkeiQuote.low - 200).toLocaleString() : 'Tokyo Cash Low'}** | Resistance: **${nikkeiQuote?.high ? (nikkeiQuote.high + 200).toLocaleString() : 'Tokyo Cash High'}**. Tokyo cash session (09:00–15:00 JST) anchored by BoJ policy and USD/JPY exporter tailwinds.
 - **GOLD (MGC)**: 🟢 **Bullish / Safe-Haven** — Holding **${goldPxStr}**${goldQuote?.low && goldQuote?.high ? ` (Day range: $${goldQuote.low.toLocaleString()} - $${goldQuote.high.toLocaleString()})` : ''}. Support: **${goldQuote?.low ? `$${(goldQuote.low - 15).toFixed(1)}` : 'Key Support'}** | Resistance: **${goldQuote?.high ? `$${(goldQuote.high + 15).toFixed(1)}` : 'Resistance'}**.
 - **CRUDE (CL)**: 🔴 **Bearish / Consolidating** — Trading at **${crudePxStr}**${crudeQuote?.low && crudeQuote?.high ? ` (Day range: $${crudeQuote.low.toLocaleString()} - $${crudeQuote.high.toLocaleString()})` : ''}. Support: **${crudeQuote?.low ? `$${(crudeQuote.low - 1.5).toFixed(2)}` : 'Support Floor'}** | Resistance: **${crudeQuote?.high ? `$${(crudeQuote.high + 1.5).toFixed(2)}` : 'Resistance Level'}**.
 
 #### 📅 3. Upcoming High-Impact Catalysts
-- **FOMC Interest Rate Decision & Powell Presser**: High Impact → Volatility shock potential across DOW, NASDAQ, GOLD & CRUDE.
+- **FOMC Interest Rate Decision & Powell Presser**: High Impact → Volatility shock potential across DOW, NASDAQ, NIKKEI, GOLD & CRUDE.
+- **Bank of Japan (BoJ) Monetary Policy Statement & Rate Decision**: High Impact → Direct catalyst for **NIKKEI 225 (NKD)** and USD/JPY currency trends.
 - **CPI Inflation Report (YoY/MoM)**: High Impact → Primary volatility trigger for interest rate expectations.
 - **Non-Farm Payrolls (NFP) & Unemployment**: High Impact → Benchmark labor market print for Fed policy pacing.
 - **EIA Weekly Crude Oil Inventories**: High Impact → Direct inventory catalyst for **CRUDE (CL)**.
@@ -251,7 +269,8 @@ FORMATTING INSTRUCTIONS:
 #### 💡 4. Primary Macro Drivers
 1. **10-Year US Treasury Yields**: Yield movements drive equity discount rates and USD exchange rates.
 2. **Fed Policy Pacing**: Interest rate trajectory governs institutional equity and bond allocation.
-3. **OPEC+ Quotas & Energy Flows**: Supply controls establish fundamental floor pricing for WTI Crude.`
+3. **OPEC+ Quotas & Energy Flows**: Supply controls establish fundamental floor pricing for WTI Crude.
+4. **Bank of Japan & USD/JPY**: Yen exchange rate and BoJ normalization govern Japanese exporter and banking flows.`
 
       return new Response(
         `data: ${JSON.stringify({ text: fallbackText })}\n\ndata: [DONE]\n\n`,

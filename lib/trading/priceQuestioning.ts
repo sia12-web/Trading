@@ -49,9 +49,31 @@ export type CritiqueSessionStart = '09:00' | '09:15'
  */
 export function isPriceQuestioningSessionActive(
   now: Date | number = Date.now(),
-  start: CritiqueSessionStart | string = '09:00'
+  start: CritiqueSessionStart | string = '09:00',
+  instrument?: string
 ): boolean {
   const d = typeof now === 'number' ? new Date(now) : now
+  const inst = (instrument || '').toUpperCase()
+
+  if (inst === 'NIKKEI') {
+    const tz = 'Asia/Tokyo'
+    const dayStr = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' }).format(d)
+    if (dayStr === 'Sat' || dayStr === 'Sun') return false
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).formatToParts(d)
+    const h = parts.find((p) => p.type === 'hour')?.value ?? '00'
+    const m = parts.find((p) => p.type === 'minute')?.value ?? '00'
+    const s = parts.find((p) => p.type === 'second')?.value ?? '00'
+    const timeStr = `${h.padStart(2, '0')}:${m.padStart(2, '0')}:${s.padStart(2, '0')}`
+    // Tokyo cash session 09:00:00 - 15:00:00 JST
+    return timeStr >= '09:00:00' && timeStr < '15:00:00'
+  }
+
   const tz = 'America/New_York'
 
   // Monday through Friday only
@@ -191,6 +213,8 @@ function getInstrumentStdScale(instrument: string): number {
       return 0.75
     case 'DOW':
       return 100.0
+    case 'NIKKEI':
+      return 80.0
     case 'NASDAQ':
     default:
       return 35.0
@@ -209,7 +233,7 @@ function isRoundNumber(price: number, instrument: string): boolean {
     const modHalf = Math.abs((price * 10) % 5)
     return modHalf < 0.5 || modHalf > 4.5
   }
-  if (inst === 'DOW') {
+  if (inst === 'DOW' || inst === 'NIKKEI') {
     // 500 or 100 handles
     const mod100 = Math.abs(price % 100)
     return mod100 < 5 || mod100 > 95

@@ -264,7 +264,7 @@ export function CrossMarketRadarStrip({
         {/* Right: 5-Market Opportunity Radar */}
         <div className="flex items-center gap-1.5 overflow-x-auto font-mono">
           <span className="text-[9px] uppercase tracking-wider text-gray-400 font-bold mr-1">
-            5-Market Radar:
+            Cross-Market Radar:
           </span>
 
           {markets.map((m) => {
@@ -273,7 +273,8 @@ export function CrossMarketRadarStrip({
               (m.market === 'DOW' && (currentInstrument === 'DOW' || currentInstrument === 'YM')) ||
               (m.market === 'SP500' && (currentInstrument === 'SP500' || currentInstrument === 'ES')) ||
               (m.market === 'GOLD' && (currentInstrument === 'GOLD' || currentInstrument === 'GC')) ||
-              (m.market === 'CRUDE' && (currentInstrument === 'CRUDE' || currentInstrument === 'CL'))
+              (m.market === 'CRUDE' && (currentInstrument === 'CRUDE' || currentInstrument === 'CL')) ||
+              (m.market === 'NIKKEI' && (currentInstrument === 'NIKKEI' || currentInstrument === 'NKD'))
 
             const isGradeA = m.grade === 'A'
             const isGradeB = m.grade === 'B'
@@ -297,6 +298,7 @@ export function CrossMarketRadarStrip({
                       SP500: 'NASDAQ', // route to desk instrument if S&P not separate chart tab
                       GOLD: 'GOLD',
                       CRUDE: 'CRUDE',
+                      NIKKEI: 'NIKKEI',
                     }
                     onSelectInstrument(instMap[m.market])
                   }

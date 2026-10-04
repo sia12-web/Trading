@@ -38,7 +38,7 @@ export function liveDeskContractLabel(instrument: string | null | undefined): st
   if (instrument === 'NASDAQ') return 'NASDAQ · MNQ'
   if (instrument === 'GOLD') return 'GOLD · MGC'
   if (instrument === 'CRUDE') return 'CRUDE · CL'
-  if (instrument === 'NIKKEI') return 'NIKKEI'
+  if (instrument === 'NIKKEI') return 'NIKKEI · NKD'
   return instrument?.trim() || '—'
 }
 
@@ -54,6 +54,9 @@ export function liveDeskIndexHint(instrument: string | null | undefined): string
   }
   if (instrument === 'CRUDE') {
     return 'Crude oil CL — match Tradovate CL / TradingView CL1!. Shared 3-fill desk with indexes + gold.'
+  }
+  if (instrument === 'NIKKEI') {
+    return 'CME Nikkei NKD — USD futures ($5/pt). Tokyo cash session anchors price action (09:00–15:00 JST).'
   }
   return ''
 }

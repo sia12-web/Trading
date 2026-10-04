@@ -499,6 +499,9 @@ export const FUTURES_POINT_VALUES = {
   SIL: 1000.0, // Micro Silver ($1,000 per $1.00 move)
   SI: 1000.0,
   SILVER: 1000.0,
+  NKD: 5.0, // CME Nikkei 225 USD futures ($5 per point)
+  NIY: 500.0, // CME Nikkei 225 JPY futures (¥500 per point)
+  NIKKEI: 5.0,
 }
 
 export function calculateFuturesContractSize(
