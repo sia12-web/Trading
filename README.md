@@ -36,7 +36,7 @@ The complete technical and operational documentation is organized under the [`do
 
 ### 2. Institutional Financial Charting & Visual Quality Engine (Lightweight Charts v4)
 - **Institutional Styling**: Standard TradingView green (`#089981`) and red (`#f23645`) candles desk-wide.
-- **5-Month Anchored VWAP & Standard Deviation Bands**: Macro institutional benchmark with `±1σ`, `±2σ`, and `±3σ` volatility bands on Daily (`1D`) and intraday charts, controlled via a clean `5M AVWAP: ON/OFF` toggle button on the chart HUD strip.
+- **Simplified 5-Month Anchored VWAP Hierarchy & Floating Inspection Modal**: Macro institutional benchmark featuring Center Line, `±1σ` Value Area (68.2%), `±2σ` Statistical Boundary (95.4%), and subtle dashed `±3σ` extreme reference (99.7%). Cluttering `±4σ` through `±7σ` bands are permanently eliminated. The series are kept invisible on the chart canvas by default (`show5mAvwapOnChart = false`) to keep the chart clean, with live distance displayed on the top HUD button next to CVD (`[🟢 5M AVWAP: <price> 5 MO]`). Clicking launches the interactive floating inspection modal with live Globex distance, macro regime badge, visual position gauge, and exact band levels.
 - **5-Day Fixed Range Volume Profile (FRVP)**: Calculates Point of Control (POC), Value Area High (VAH), and Value Area Low (VAL), with the POC line terminating precisely at the current candle.
 - **Dalton Auction Theory & Excess Reference Ranges**: Canonical Excess Selling High and Excess Buying Low reference boundaries (`excessLevelsFromCandles()`), 30-minute TPO period Day Type classification (`classifyMarketDayType`), Opening Ranges (OR15, OR30), and Late-Session Spikes.
 - **Daily & Intraday Tested Extremes**: Structural swing highs/lows with traded volume badges (`(142.5k)`), retest confirmation (`[Retest 0.82x]`), and bounded horizontal shelves.
@@ -44,16 +44,19 @@ The complete technical and operational documentation is organized under the [`do
 - **Horizontal S/R Runway & Empirical Velocity Corridor**: Computes scale-invariant momentum slope ($\Delta P / \Delta t$) with $1.0\times$ Equilibrium, $1.5\times$ Climax, and $0.5\times$ Retest Floor rays, paired with multi-session overhead resistance runway evaluation to flag tight runway traps ($< 1.5:1$ R:R).
 
 ### 3. The 22-Rule Wyckoff Strategy & Globex Session-Aware Opportunity Radar
-- **The 4 Valid Trade Setups (Absolute Directive)**:
+- **The ONLY 4 Valid Trades in the Universe (Absolute Directive)**:
   1. **Support: Spring $\rightarrow$ Reclaim $\rightarrow$ LONG** (Stop strictly below spring low)
   2. **Support: Breakdown $\rightarrow$ Failed Reclaim $\rightarrow$ SHORT** (Stop strictly above failed reclaim)
   3. **Resistance: Upthrust $\rightarrow$ Return Below $\rightarrow$ SHORT** (Stop strictly above upthrust high)
   4. **Resistance: Breakout $\rightarrow$ Successful Retest (SOS $\rightarrow$ LPS / SOW $\rightarrow$ LPSY) $\rightarrow$ LONG** (Stop strictly below retest low)
-  *Everything else in the execution universe is ignored.*
-- **3-Tier Chart Hierarchy**:
-  - **Tier 1 (Mandatory)**: 5-Day Volume Profile, Yesterday's Profile, Overnight/London. **Pre-market map frozen at 09:30 ET**.
-  - **Tier 2 (Execution Confirmation)**: Volume (Effort vs. Result), CVD (Absorption & Confirmation).
+  *All other market moves are treated as noise and ignored.*
+- **3-Tier Chart & Structure Hierarchy**:
+  - **Tier 1 (Mandatory Pre-Market Map)**: 5-Day Volume Profile, Yesterday's Profile, Overnight/London. **Map permanently frozen at 09:30 AM ET** (no mid-day level invention).
+  - **Tier 2 (Execution Confirmation)**: Volume (Effort vs. Result), CVD (Aggressive Order Flow Absorption & Divergence).
   - **Tier 3 (Context Only)**: 5-Month Anchored VWAP, Volatility Gauges.
+- **Automatic Trendline Classification**: `classifyWyckoffLine()` automatically identifies user-drawn lines as Wyckoff Supply Lines (Creek / Resistance, `#f59e0b`) or Wyckoff Demand Lines (Ice / Support, `#38bdf8`).
+- **The 8-Step Screen-Reading Sequence**: Deterministic 8-step pre-flight checklist enforcing structure check, location check, candle inspection, volume/CVD audit, setup identification, 2.0R runway validation, fixed stop placement, and structural hands-off execution.
+- **Mandatory $\ge 2.0\text{R}$ Target Runway Check (`is2RValid`)**: Scans all pre-market Tier-1 zones via `findNextStructuralTarget()`. If the distance to the next opposing zone is $< 2.0\times$ the stop distance, the trade is rejected.
 - **Spring & Upthrust Institutional Scoring (0–100 Pts)**: Evaluates trendlines drawn from Spring/Upthrust origins across volume expansion (25 pts), CVD absorption divergence (25 pts), multi-touch validation (20 pts), Tier-1 profile confluence (20 pts), and 5M AVWAP alignment (10 pts). Awards Grades A ($\ge 75$), B ($50-74$), or C ($< 50$).
 - **Globex Session Awareness & 5-Market Radar (`lib/trading/crossMarketRadar.ts`)**: Continuous opportunity matrix across `NQ`, `ES`, `YM`, `GC` (Gold), and `CL` (Crude Oil) with session awareness (`CLOSED`, `ASIA`, `LONDON`, `NEW YORK`, `MAINTENANCE`) and overnight inventory tracking.
 

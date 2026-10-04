@@ -61,36 +61,42 @@ Server-Sent Events (SSE) stream delivering real-time price updates and forming-b
 ---
 
 ### 1.3 `GET /api/trading/context-55`
-Provides comprehensive Higher Timeframe market context, 5-month AVWAP baselines, and auction references.
+Provides comprehensive Higher Timeframe market context, 5-month AVWAP baselines, and auction references computed directly from CME Globex daily bars.
 
 - **Query Parameters**:
-  - `instrument` (string, required): `DOW` | `NASDAQ` | `GOLD` | `CRUDE`
+  - `instrument` (string, required): `DOW` | `NASDAQ` | `GOLD` | `CRUDE` | `NIKKEI` (Default: `DOW`)
 - **Response Format (`200 OK`)**:
   ```json
   {
+    "ok": true,
     "instrument": "DOW",
-    "avwap5mBaseline": {
-      "anchorUnix": 1715693400,
-      "sumPV": 429583000,
-      "sumP2V": 17402800000000,
-      "sumV": 10580,
-      "lastBarTime": 1726272000,
-      "vwap": 40603.3
+    "avwap5m": {
+      "anchorDate": "2026-05-04",
+      "anchorUnix": 1714800000,
+      "vwap": 40603.3,
+      "sigma1Upper": 41120.5,
+      "sigma1Lower": 40086.1,
+      "sigma2Upper": 41637.7,
+      "sigma2Lower": 39568.9,
+      "sigma3Upper": 42154.9,
+      "sigma3Lower": 39051.7,
+      "barCount": 105,
+      "baseline": {
+        "sumPV": 429583000,
+        "sumV": 10580,
+        "sumP2V": 17402800000000
+      }
     },
-    "yesterdayNyc": {
-      "date": "2026-09-11",
-      "openUnix": 1726061400,
-      "closeUnix": 1726084800,
-      "poc": 40480.0,
-      "vah": 40560.0,
-      "val": 40390.0
-    },
-    "overnightInventory": {
-      "netInventoryPct": 42.5,
-      "status": "LONG_IMBALANCE"
-    }
+    "cached": false,
+    "source": "cme_globex"
   }
   ```
+- **Simplified Band Model**:
+  - `vwap`: 5-month volume-weighted wholesale benchmark center line.
+  - `sigma1Upper` / `sigma1Lower`: $\pm 1\sigma$ Value Area (68.2% of auction distribution).
+  - `sigma2Upper` / `sigma2Lower`: $\pm 2\sigma$ Statistical Boundary (95.4% of distribution).
+  - `sigma3Upper` / `sigma3Lower`: $\pm 3\sigma$ Extreme Outlier Reference (99.7% of distribution).
+  - Multi-band clutter ($\pm 4\sigma \dots \pm 7\sigma$) is strictly eliminated.
 
 ---
 
@@ -325,8 +331,63 @@ Continuous Server-Sent Events (SSE) feed of incoming CME tick executions for ult
 
 ## 6. Wyckoff Strategy & 5-Market Opportunity Radar Services
 
-### 6.1 `evaluateSpringOrUpthrustTrendline(tl, bars, ctx)` (`lib/trading/wyckoffStrategy.ts`)
-Evaluates an Action Trendline drawn from a Spring or Upthrust origin.
+### 6.1 `classifyWyckoffLine(tl, referenceBars)` (`lib/trading/wyckoffStrategy.ts`)
+Automatically classifies a trendline or price level into a Wyckoff Supply Line (Creek) or Wyckoff Demand Line (Ice).
+
+- **Parameters**:
+  - `tl`: UserTrendline object with `p1`, `p2`, `instrument`, `direction`
+  - `referenceBars` (optional): Array of ContextBar historical candles
+- **Return Contract**:
+  ```json
+  {
+    "role": "SUPPLY_LINE",
+    "label": "Wyckoff Supply Line (Creek)",
+    "color": "#f59e0b"
+  }
+  ```
+  *(Returns `role: "DEMAND_LINE"`, `label: "Wyckoff Demand Line (Ice)"`, `color: "#38bdf8"` for ascending support lines)*
+
+---
+
+### 6.2 `evaluateWyckoffSetup(line, bars, ctx)` (`lib/trading/wyckoffStrategy.ts`)
+Evaluates candlestick interactions against a Wyckoff Structure Line, checking for one of the ONLY 4 Valid Trades in the Universe:
+1. `SPRING`: Support Sweep $\rightarrow$ Reclaim $\rightarrow$ Long
+2. `BREAKDOWN_RETEST`: Support Breakdown $\rightarrow$ Failed Reclaim $\rightarrow$ Short
+3. `UPTHRUST`: Resistance Sweep $\rightarrow$ Return Below $\rightarrow$ Short
+4. `BREAKOUT_RETEST`: Resistance Breakout $\rightarrow$ SOS Retest $\rightarrow$ Long
+
+- **Parameters**:
+  - `line`: UserTrendline structural line
+  - `bars`: Array of ContextBar recent candles
+  - `ctx`: WyckoffChartContext containing Tier-1 pre-marked zones
+- **Return Contract (`WyckoffSetupResult`)**:
+  ```json
+  {
+    "setupType": "SPRING",
+    "lineRole": "DEMAND_LINE",
+    "roleLabel": "Wyckoff Demand Line (Ice)",
+    "linePriceAtTrigger": 21485.0,
+    "entryPrice": 21492.5,
+    "stopLoss": 21478.0,
+    "targetPrice": 21545.0,
+    "targetZoneLabel": "5D-POC / Yesterday VAH",
+    "riskPoints": 14.5,
+    "rewardPoints": 52.5,
+    "rrRatio": 3.62,
+    "is2RValid": true,
+    "cvdAbsorption": true,
+    "cvdExplanation": "CVD Lower Low + Price Reclaim = Heavy seller absorption by passive buyers",
+    "effortVsResult": "BULLISH_ABSORPTION",
+    "badgeText": "⚡ Wyckoff Spring: Reclaim + CVD Absorption · 3.62R to 5D-POC / Yesterday VAH",
+    "statusTag": "SPRING TRIGGER ⚡",
+    "color": "#10b981"
+  }
+  ```
+
+---
+
+### 6.3 `evaluateSpringOrUpthrustTrendline(tl, bars, ctx)` (`lib/trading/wyckoffStrategy.ts`)
+Evaluates an Action Trendline drawn from a Spring or Upthrust origin using 0–100 institutional factor scoring.
 
 - **Parameters**:
   - `tl`: UserTrendline object with `p1`, `p2`, `instrument`, `direction`
@@ -350,7 +411,7 @@ Evaluates an Action Trendline drawn from a Spring or Upthrust origin.
 
 ---
 
-### 6.2 `build5MarketOpportunityRadar(inputs)` (`lib/trading/crossMarketRadar.ts`)
+### 6.4 `build5MarketOpportunityRadar(inputs)` (`lib/trading/crossMarketRadar.ts`)
 Computes 3-factor market selection across 5 benchmark instruments (`NQ`, `YM`, `ES`, `GC`, `CL`).
 
 - **Return Contract (`CrossMarketRadarReport`)**:

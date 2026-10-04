@@ -133,20 +133,151 @@ At the 9:30 AM New York Cash Open (and throughout the session), the platform com
 
 ## 6. The 22-Rule Wyckoff Execution & Risk Discipline Protocol
 
-The desk strictly operates under the **22-Rule Wyckoff Playbook**:
+The desk operates under an absolute, non-negotiable **22-Rule Wyckoff & Auction Market Theory Strategy Engine** (`lib/trading/wyckoffStrategy.ts`, `app/dashboard/chart/components/WyckoffRulesPanel.tsx`, and `lib/ai/leoAssistant.ts`).
 
-### 6.1 The 4 Valid Trade Setups (Absolute Universe)
-*Only 4 setups are permitted for execution:*
-1. **Support: Spring $\rightarrow$ Reclaim $\rightarrow$ LONG** (Stop strictly below spring low).
-2. **Support: Breakdown $\rightarrow$ Failed Reclaim $\rightarrow$ SHORT** (Stop strictly above failed reclaim).
-3. **Resistance: Upthrust $\rightarrow$ Return Below $\rightarrow$ SHORT** (Stop strictly above upthrust high).
-4. **Resistance: Breakout $\rightarrow$ Successful Retest (SOS $\rightarrow$ LPS / SOW $\rightarrow$ LPSY) $\rightarrow$ LONG** (Stop strictly below retest low).
+### 6.1 The 3-Tier Chart & Structural Hierarchy
 
-### 6.2 Pre-Market Frozen Levels (09:30 ET Lock)
-- Tier 1 key levels (Yesterday VAH/VAL/POC, 5D-POC/HVN/LVN, Overnight High/Low/POC) are permanently **frozen at 09:30 AM ET**.
-- Execution decisions must be referenced against these frozen pre-market zones throughout the NY session.
+Every screen reading decision must obey a strict top-down structural filter:
 
-### 6.3 Absolute Filters & Minimum 2R Rule
-- **Minimum 2R Distance (`is2RValid`)**: Entry is permitted ONLY if distance to the next opposing Tier-1 zone is $\ge 2.0\times$ stop loss distance.
-- **Stop Loss Invalidation**: Stop loss is placed at structural invalidation (Spring low / Upthrust high). Stops are **never widened or moved backwards**.
-- **Chop Guard**: No trading inside tight balance ranges without structural sweeps.
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│  TIER 1: MANDATORY PRE-MARKET STRUCTURAL MAP (FROZEN AT 09:30 AM ET)  │
+│  • 5-Day Fixed Range Volume Profile (FRVP): 5D-POC, 5D-VAH, 5D-VAL, LVN│
+│  • Yesterday NYC Cash Session: VAH, VAL, POC                           │
+│  • Overnight / London Auction: ONH, ONL, ON-POC, LH, LL                │
+│  *RULE: No new structural levels may be invented mid-session.*         │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ Must test a Tier 1 level
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│  TIER 2: VOLUME & CVD EXECUTION CONFIRMATION                           │
+│  • Effort vs. Result: High volume with narrow spread = Absorption      │
+│  • CVD Aggressive Order Flow: Divergence confirms institutional trap   │
+│  • Retest Confirmation: Spring reclaim or Upthrust failure             │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ Confirms the trade setup
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│  TIER 3: CONTEXT & MACRO REFERENCE ONLY                                │
+│  • 5-Month Anchored VWAP (Macro institutional bias)                    │
+│  • Cross-Market Opportunity Radar (NQ, ES, YM, GC, CL selection)       │
+│  • Cboe Volatility Gauges (VIX, VIX1D, OVX, GVZ)                       │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 6.2 The Complete 22 Wyckoff Execution Rules
+
+| Rule # | Category | Core Mandate | Operational Detail & Code Reference |
+| :---: | :--- | :--- | :--- |
+| **1** | Pre-Market Map | **Pre-Market Levels Frozen at 09:30 ET** | Tier-1 levels (5D FRVP, Yesterday NYC, ONH/ONL) are locked at cash open. Never invent mid-day levels out of thin air. |
+| **2** | Pre-Market Map | **No Execution Without Tier-1 Location** | Every trade entry must originate from a pre-marked Tier-1 structural boundary. No mid-air entries. |
+| **3** | Pre-Market Map | **Identify Range Structure First** | Classify market state (Accumulation, Distribution, Re-accumulation, Re-distribution, or Trend) before looking for candles. |
+| **4** | Pre-Market Map | **Mark the Creek and the Ice** | Identify the upper resistance boundary (Wyckoff Supply Line / Creek) and lower support boundary (Wyckoff Demand Line / Ice). |
+| **5** | Pre-Market Map | **Map Liquidity Pools** | Locate buy-side liquidity (BSL) above swing highs and sell-side liquidity (SSL) below swing lows where retail stops cluster. |
+| **6** | Execution | **The ONLY 4 Trades in the Universe** | Only 4 setups are valid: Spring Reclaim, Breakdown Failed Reclaim, Upthrust Return Below, Breakout Retest. All others are noise. |
+| **7** | Execution | **Wait for the Reclaim Candle Close** | Never enter on the sweep itself. Wait for the candle to close back inside the structural boundary (`isReclaimed = true`). |
+| **8** | Execution | **Test Confirms the Spring (Phase C)** | The safest entry is the secondary test (LPS / Phase C) following the initial Spring reclaim on reduced volume. |
+| **9** | Execution | **Upthrust Requires Return Below** | Short only after price pokes above resistance, sweeps liquidity, and decisively closes back below the level. |
+| **10** | Execution | **Breakout Requires Confirmed Retest** | Never chase a breakout bar. Enter only on the Sign of Strength (SOS) pullback retesting former resistance as support (LPS). |
+| **11** | Volume & CVD | **Effort vs. Result** | High volume with narrow spread signifies institutional absorption. High volume without progress signals an immediate reversal. |
+| **12** | Volume & CVD | **CVD Absorption Divergence** | If price pushes lower to a new low but CVD creates a higher low, aggressive sellers are being absorbed by institutional limit buyers. |
+| **13** | Volume & CVD | **Volume Must Dry Up on Pullbacks** | Healthy trend pullbacks must show declining volume. Heavy volume on a pullback indicates opposing institutional participation. |
+| **14** | Volume & CVD | **Volume Climax Signals Exhaustion** | Ultra-high volume spikes at range extremes mark selling or buying climaxes (SC/BC). Prepare for reversal, not continuation. |
+| **15** | Risk Management | **Stop Placed at Structural Invalidation** | Stop loss is placed strictly beyond the sweep low (Spring) or sweep high (Upthrust). No arbitrary point stops. |
+| **16** | Risk Management | **Mandatory $\ge 2.0\text{R}$ Target Runway** | Distance to the next opposing Tier-1 zone must be at least $2.0\times$ the stop loss distance (`is2RValid = true`). |
+| **17** | Risk Management | **Never Widen a Stop Loss** | Stop loss is mathematically fixed upon order placement. Widening a stop loss is a catastrophic protocol violation. |
+| **18** | Risk Management | **Scale Out at Opposing Structure** | Take first profit (TP1) at the range midpoint or first opposing Tier-1 zone; trail the remainder to breakeven. |
+| **19** | Desk Discipline | **No Trades in the Middle of Balance** | The center of a trading range is the chop zone. All trading is strictly forbidden in fair value equilibrium. |
+| **20** | Desk Discipline | **3-Stop Daily Lockout** | Three consecutive stopped-out executions permanently lock the desk until the next trading day. |
+| **21** | Desk Discipline | **Respect the Lunch Doldrums** | 11:30 AM to 1:30 PM ET is the low-volume algorithmic rotation window. Avoid initiating new breakout positions. |
+| **22** | Desk Discipline | **Zero FOMO / Wait for the Market** | The market is an auction. If price does not test your pre-marked zone with confirming order flow, do not trade. |
+
+---
+
+### 6.3 The ONLY 4 Valid Trades in the Universe
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                        THE 4 VALID TRADES IN THE UNIVERSE                              │
+├────────────────────────────────────────┬───────────────────────────────────────────────┤
+│ 1. SUPPORT: SPRING RECLAIM (LONG)      │ 2. SUPPORT: BREAKDOWN FAILED RECLAIM (SHORT)  │
+│    • Price sweeps below Ice / Support  │    • Price breaks below Ice / Support         │
+│    • Candle closes BACK ABOVE Support  │    • Retest tries to reclaim and FAILS        │
+│    • CVD shows bullish absorption      │    • Weak volume on retest push               │
+│    • Entry: On reclaim or LPS retest   │    • Entry: On confirmation of failed reclaim │
+│    • Stop: Strictly below spring low   │    • Stop: Strictly above failed reclaim high │
+│    • Target: Range POC / Range High    │    • Target: Next major lower Tier-1 zone     │
+├────────────────────────────────────────┼───────────────────────────────────────────────┤
+│ 3. RESISTANCE: UPTHRUST RETURN (SHORT) │ 4. RESISTANCE: BREAKOUT RETEST (LONG)         │
+│    • Price sweeps above Creek / Resist │    • Price breaks decisively above Creek      │
+│    • Candle closes BACK BELOW Resist   │    • Pullback retests former resistance (LPS) │
+│    • CVD shows bearish absorption      │    • Volume dries up on pullback              │
+│    • Entry: On return below level      │    • Entry: On bounce from retest level       │
+│    • Stop: Strictly above upthrust high│    • Stop: Strictly below retest low           │
+│    • Target: Range POC / Range Low     │    • Target: Next major overhead Tier-1 zone  │
+└────────────────────────────────────────┴───────────────────────────────────────────────┘
+```
+
+---
+
+### 6.4 The 8-Step Screen-Reading Sequence
+
+Before clicking Buy or Sell, every trader must execute this deterministic sequence:
+
+1. **Step 1: Check Pre-Market Structure**: Are Tier-1 levels (5D FRVP, Yesterday NYC, Overnight) clearly plotted and locked from 09:30 AM ET?
+2. **Step 2: Check Price Location**: Is price at an extreme structural boundary (Creek/Resistance or Ice/Support)? If price is in the middle of balance, **STOP — DO NOT TRADE**.
+3. **Step 3: Inspect Candle Action**: Is price sweeping liquidity beyond the boundary, or breaking out?
+4. **Step 4: Audit Volume & CVD**: Is volume elevated on the sweep? Does CVD show absorption divergence (aggressive market orders trapped by passive limit orders)?
+5. **Step 5: Identify the Setup**: Does this match one of the ONLY 4 valid setups (Spring Reclaim, Breakdown Failed Reclaim, Upthrust Return Below, Breakout Retest)?
+6. **Step 6: Calculate Risk/Reward Runway**: Where is the next opposing Tier-1 structural zone? Is the profit runway $\ge 2.0\times$ the stop distance (`is2RValid`)? If $< 2.0\text{R}$, **SKIP THE TRADE**.
+7. **Step 7: Formulate Order & Fixed Stop**: Calculate contract quantity via the \$400 dollar risk formula. Set the stop loss strictly at structural invalidation.
+8. **Step 8: Execute & Hands Off**: Submit paired bracket. Do not micro-manage or move the stop backwards. Let the auction resolve.
+
+---
+
+### 6.5 Absolute Filters & Hard Desk Guardrails
+
+- **The Invalidation Rule**: If price closes beyond the structural invalidation level (Spring low or Upthrust high), the premise is invalidated. Exit immediately. Never widen or remove a stop loss.
+- **Runway Filter (`findNextStructuralTarget`)**: In `lib/trading/wyckoffStrategy.ts`, the strategy engine scans all pre-marked Tier-1 zones. If the distance to the nearest opposing zone yields an R:R below $2.0:1$, the setup is rejected with `is2RValid: false`.
+- **Chop Guard**: Range-bound chop between Yesterday POC and Today VWAP is an institutional distribution trap. Wait for the boundary test.
+- **Institutional Factor Scoring (0–100 pts)**:
+  - $\ge 75$ pts = **Grade A Setup** (Full risk sizing: \$400).
+  - $50-74$ pts = **Grade B Setup** (Reduced sizing: 0.5x risk / \$200).
+  - $< 50$ pts = **Grade C Setup** (Strictly filtered — no execution).
+
+---
+
+## 7. Simplified AVWAP Hierarchy & 5M Inspection Modal Desk Protocol
+
+To prevent cognitive overload, analysis paralysis, and "seven different excuses to enter a bad trade," TradePulse eliminates multi-band visual spiderwebs.
+
+### 7.1 Simplified Bands Standard
+
+The 5-Month Anchored VWAP engine (`lib/chart/context55.ts`, `app/dashboard/chart/components/TradingChart.tsx`) enforces a streamlined standard:
+- **AVWAP Center Line**: Institutional 5-month volume-weighted wholesale benchmark.
+- **$\pm 1\sigma$ Standard Deviation Bands**: Inner statistical Value Area (68.2% of auction volume).
+- **$\pm 2\sigma$ Standard Deviation Bands**: Primary statistical outer boundary (95.4% of auction volume).
+- **$\pm 3\sigma$ Subtle Dashed Bands**: Extreme outlier reference only (99.7% of volume). Rendered with thin dashed styling (`LineStyle.Dashed`).
+- **$\pm 4\sigma$ through $\pm 7\sigma$ permanently eliminated**: Completely removed from calculations and chart series.
+
+### 7.2 Invisible-by-Default Canvas State
+
+- The 5-Month AVWAP series are kept **invisible on the chart canvas by default** (`show5mAvwapOnChart = false`).
+- Intraday price action, candle sweeps, and Tier-1 auction zones remain completely unobstructed.
+- The trader is freed from visual noise while the system continuously updates 5-month benchmark math in the background.
+
+### 7.3 Top HUD Quick Action & Floating 5M Modal
+
+- **Placement**: Directly on the top chart HUD toolbar, positioned next to Cumulative Volume Delta:
+  ```
+  [VWAP: 21,520.25] | [📊 CVD: ON/OFF] | [🟢 5M AVWAP: 21,450.75 5 MO]
+  ```
+- **Live Indicator Badge**: Displays live distance in points and percent from the 5-month benchmark.
+- **1-Click Modal Inspection**: Clicking the `[🟢 5M AVWAP]` button launches the floating **5-Month Anchored VWAP Benchmark** inspection modal:
+  - **Live Globex Distance**: Current price relative to 5M AVWAP (`+74.50 pts (+0.35%)`).
+  - **Macro Regime Classification**: `BULLISH_EXPANSION` ($> +1\sigma$), `FAIR_VALUE_CORE` (within $\pm 1\sigma$), or `BEARISH_DISCOUNT` ($< -1\sigma$).
+  - **Visual Position Gauge**: Horizontal gauge bar visually plotting current price between $-3\sigma$ and $+3\sigma$.
+  - **Simplified Bands Table**: Exact price levels for Center, $\pm 1\sigma$, $\pm 2\sigma$, and $\pm 3\sigma$.
+  - **Dismissal**: Easily dismissed via the `Esc` key or close button (`✕`) without altering chart state.
