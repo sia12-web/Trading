@@ -250,10 +250,24 @@ export interface WtiTelemetry {
   previousClose: number
   promptSpread: number // e.g. +0.45 (backwardation) or -0.30 (contango)
   spreadRegime: CurveRegime
+  brentPrice?: number
+  brentWtiSpread?: number
+  crackSpread321?: number
+  gasolinePrice?: number
+  heatingOilPrice?: number
   volume?: number
   timestamp: number
   source: string
   updatedAt: string
+}
+
+export interface LiveOilHeadline {
+  id: string
+  headline: string
+  source: string
+  datetime: number
+  url: string | null
+  summary: string | null
 }
 
 export interface OilCatalystEvent {
@@ -285,4 +299,5 @@ export interface OilFundamentalDashboardState {
   pillars: Record<FundamentalPillarId, FundamentalPillarState>
   recentEvents: OilEventEvaluation[]
   scheduledCatalysts: OilCatalystEvent[]
+  liveOilHeadlines: LiveOilHeadline[]
 }

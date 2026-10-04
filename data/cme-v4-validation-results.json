@@ -1,0 +1,1394 @@
+[
+  {
+    "market": "NASDAQ",
+    "totalUniqueFirstTouches": 876,
+    "results": [
+      {
+        "key": "INV_POC (LONG)",
+        "level": "INV_POC",
+        "direction": "LONG",
+        "n": 91,
+        "uniqueDays": 11,
+        "winRate": 61.53846153846154,
+        "bootCiWin": [
+          45.8,
+          77.3
+        ],
+        "matchedControlWinRate": 49.6,
+        "excessWinPct": 12,
+        "meanATR": 0.69,
+        "bootCiMeanATR": [
+          -0.35,
+          1.72
+        ],
+        "matchedControlMeanATR": -0.04,
+        "excessMeanATR": 0.74,
+        "avgMfeATR": 3.86,
+        "avgMaeATR": 3.63,
+        "gateStatus": "PRELIMINARY (Days=11 < 60)"
+      },
+      {
+        "key": "AVWAP_-2σ (LONG)",
+        "level": "AVWAP_-2σ",
+        "direction": "LONG",
+        "n": 43,
+        "uniqueDays": 4,
+        "winRate": 60.46511627906976,
+        "bootCiWin": [
+          31.3,
+          83.3
+        ],
+        "matchedControlWinRate": 50.8,
+        "excessWinPct": 9.7,
+        "meanATR": 0.71,
+        "bootCiMeanATR": [
+          -0.26,
+          2.69
+        ],
+        "matchedControlMeanATR": 0.19,
+        "excessMeanATR": 0.52,
+        "avgMfeATR": 4.1,
+        "avgMaeATR": 2.32,
+        "gateStatus": "PRELIMINARY (Days=4 < 60)"
+      },
+      {
+        "key": "YEST_VAH (SHORT)",
+        "level": "YEST_VAH",
+        "direction": "SHORT",
+        "n": 153,
+        "uniqueDays": 11,
+        "winRate": 62.091503267973856,
+        "bootCiWin": [
+          51,
+          73.3
+        ],
+        "matchedControlWinRate": 55.5,
+        "excessWinPct": 6.6,
+        "meanATR": 0.73,
+        "bootCiMeanATR": [
+          -0.19,
+          2.09
+        ],
+        "matchedControlMeanATR": 0.47,
+        "excessMeanATR": 0.27,
+        "avgMfeATR": 4.23,
+        "avgMaeATR": 3.25,
+        "gateStatus": "PRELIMINARY (Days=11 < 60)"
+      },
+      {
+        "key": "YEST_VAL (LONG)",
+        "level": "YEST_VAL",
+        "direction": "LONG",
+        "n": 134,
+        "uniqueDays": 7,
+        "winRate": 48.507462686567166,
+        "bootCiWin": [
+          28.4,
+          73.9
+        ],
+        "matchedControlWinRate": 47.8,
+        "excessWinPct": 0.7,
+        "meanATR": -0.02,
+        "bootCiMeanATR": [
+          -1.03,
+          1.34
+        ],
+        "matchedControlMeanATR": -0.17,
+        "excessMeanATR": 0.15,
+        "avgMfeATR": 3.5,
+        "avgMaeATR": 3.32,
+        "gateStatus": "PRELIMINARY (Days=7 < 60)"
+      },
+      {
+        "key": "YEST_POC (LONG)",
+        "level": "YEST_POC",
+        "direction": "LONG",
+        "n": 55,
+        "uniqueDays": 10,
+        "winRate": 41.81818181818181,
+        "bootCiWin": [
+          21.8,
+          64.7
+        ],
+        "matchedControlWinRate": 47.3,
+        "excessWinPct": -5.5,
+        "meanATR": -0.17,
+        "bootCiMeanATR": [
+          -1.1,
+          1.06
+        ],
+        "matchedControlMeanATR": -0.17,
+        "excessMeanATR": 0,
+        "avgMfeATR": 2.81,
+        "avgMaeATR": 3.86,
+        "gateStatus": "PRELIMINARY (Days=10 < 60)"
+      },
+      {
+        "key": "5D_VAH (SHORT)",
+        "level": "5D_VAH",
+        "direction": "SHORT",
+        "n": 42,
+        "uniqueDays": 5,
+        "winRate": 45.23809523809524,
+        "bootCiWin": [
+          24.1,
+          67.7
+        ],
+        "matchedControlWinRate": 51,
+        "excessWinPct": -5.8,
+        "meanATR": -0.17,
+        "bootCiMeanATR": [
+          -0.91,
+          1.17
+        ],
+        "matchedControlMeanATR": 0.09,
+        "excessMeanATR": -0.26,
+        "avgMfeATR": 2.29,
+        "avgMaeATR": 3.29,
+        "gateStatus": "PRELIMINARY (Days=5 < 60)"
+      },
+      {
+        "key": "5D_LVN (LONG)",
+        "level": "5D_LVN",
+        "direction": "LONG",
+        "n": 115,
+        "uniqueDays": 8,
+        "winRate": 39.130434782608695,
+        "bootCiWin": [
+          25.9,
+          52.6
+        ],
+        "matchedControlWinRate": 48.1,
+        "excessWinPct": -8.9,
+        "meanATR": -0.49,
+        "bootCiMeanATR": [
+          -1.71,
+          0.65
+        ],
+        "matchedControlMeanATR": -0.16,
+        "excessMeanATR": -0.33,
+        "avgMfeATR": 2.97,
+        "avgMaeATR": 3.48,
+        "gateStatus": "PRELIMINARY (Days=8 < 60)"
+      },
+      {
+        "key": "5D_VAL (LONG)",
+        "level": "5D_VAL",
+        "direction": "LONG",
+        "n": 15,
+        "uniqueDays": 2,
+        "winRate": 26.666666666666668,
+        "bootCiWin": [
+          0,
+          50
+        ],
+        "matchedControlWinRate": 44.7,
+        "excessWinPct": -18,
+        "meanATR": -0.8,
+        "bootCiMeanATR": [
+          -1.86,
+          0.12
+        ],
+        "matchedControlMeanATR": -0.4,
+        "excessMeanATR": -0.4,
+        "avgMfeATR": 2.77,
+        "avgMaeATR": 5.46,
+        "gateStatus": "PRELIMINARY (Days=2 < 60)"
+      },
+      {
+        "key": "AVWAP_MID (LONG)",
+        "level": "AVWAP_MID",
+        "direction": "LONG",
+        "n": 21,
+        "uniqueDays": 5,
+        "winRate": 42.857142857142854,
+        "bootCiWin": [
+          17.6,
+          60
+        ],
+        "matchedControlWinRate": 46.9,
+        "excessWinPct": -4,
+        "meanATR": -0.63,
+        "bootCiMeanATR": [
+          -3.19,
+          1.12
+        ],
+        "matchedControlMeanATR": -0.22,
+        "excessMeanATR": -0.41,
+        "avgMfeATR": 2.99,
+        "avgMaeATR": 4.56,
+        "gateStatus": "PRELIMINARY (Days=5 < 60)"
+      },
+      {
+        "key": "INV_POC (SHORT)",
+        "level": "INV_POC",
+        "direction": "SHORT",
+        "n": 66,
+        "uniqueDays": 12,
+        "winRate": 43.93939393939394,
+        "bootCiWin": [
+          26.2,
+          64.4
+        ],
+        "matchedControlWinRate": 52.8,
+        "excessWinPct": -8.8,
+        "meanATR": -0.48,
+        "bootCiMeanATR": [
+          -1.67,
+          1.31
+        ],
+        "matchedControlMeanATR": 0.23,
+        "excessMeanATR": -0.71,
+        "avgMfeATR": 2.95,
+        "avgMaeATR": 4.01,
+        "gateStatus": "PRELIMINARY (Days=12 < 60)"
+      },
+      {
+        "key": "AVWAP_MID (SHORT)",
+        "level": "AVWAP_MID",
+        "direction": "SHORT",
+        "n": 25,
+        "uniqueDays": 5,
+        "winRate": 44,
+        "bootCiWin": [
+          18.2,
+          64.7
+        ],
+        "matchedControlWinRate": 54.2,
+        "excessWinPct": -10.2,
+        "meanATR": -0.5,
+        "bootCiMeanATR": [
+          -2.41,
+          1.36
+        ],
+        "matchedControlMeanATR": 0.24,
+        "excessMeanATR": -0.74,
+        "avgMfeATR": 3.59,
+        "avgMaeATR": 4,
+        "gateStatus": "PRELIMINARY (Days=5 < 60)"
+      },
+      {
+        "key": "YEST_POC (SHORT)",
+        "level": "YEST_POC",
+        "direction": "SHORT",
+        "n": 62,
+        "uniqueDays": 8,
+        "winRate": 38.70967741935484,
+        "bootCiWin": [
+          17.8,
+          53.4
+        ],
+        "matchedControlWinRate": 53.1,
+        "excessWinPct": -14.4,
+        "meanATR": -0.79,
+        "bootCiMeanATR": [
+          -2.16,
+          0.44
+        ],
+        "matchedControlMeanATR": 0.2,
+        "excessMeanATR": -0.99,
+        "avgMfeATR": 2.84,
+        "avgMaeATR": 3.83,
+        "gateStatus": "PRELIMINARY (Days=8 < 60)"
+      },
+      {
+        "key": "AVWAP_-1σ (LONG)",
+        "level": "AVWAP_-1σ",
+        "direction": "LONG",
+        "n": 43,
+        "uniqueDays": 7,
+        "winRate": 23.25581395348837,
+        "bootCiWin": [
+          0,
+          41.2
+        ],
+        "matchedControlWinRate": 42.5,
+        "excessWinPct": -19.2,
+        "meanATR": -2.47,
+        "bootCiMeanATR": [
+          -5.59,
+          -0.36
+        ],
+        "matchedControlMeanATR": -0.62,
+        "excessMeanATR": -1.85,
+        "avgMfeATR": 3.54,
+        "avgMaeATR": 6.42,
+        "gateStatus": "PRELIMINARY (Days=7 < 60)"
+      }
+    ]
+  },
+  {
+    "market": "DOW",
+    "totalUniqueFirstTouches": 748,
+    "results": [
+      {
+        "key": "AVWAP_-1σ (LONG)",
+        "level": "AVWAP_-1σ",
+        "direction": "LONG",
+        "n": 36,
+        "uniqueDays": 6,
+        "winRate": 58.333333333333336,
+        "bootCiWin": [
+          33.3,
+          75
+        ],
+        "matchedControlWinRate": 47.5,
+        "excessWinPct": 10.8,
+        "meanATR": 0.8,
+        "bootCiMeanATR": [
+          -1.04,
+          3.52
+        ],
+        "matchedControlMeanATR": -0.2,
+        "excessMeanATR": 1,
+        "avgMfeATR": 3.57,
+        "avgMaeATR": 4.13,
+        "gateStatus": "PRELIMINARY (Days=6 < 60)"
+      },
+      {
+        "key": "YEST_POC (LONG)",
+        "level": "YEST_POC",
+        "direction": "LONG",
+        "n": 32,
+        "uniqueDays": 5,
+        "winRate": 65.625,
+        "bootCiWin": [
+          42.9,
+          89.7
+        ],
+        "matchedControlWinRate": 48.5,
+        "excessWinPct": 17.1,
+        "meanATR": 0.95,
+        "bootCiMeanATR": [
+          -0.59,
+          2.36
+        ],
+        "matchedControlMeanATR": -0.01,
+        "excessMeanATR": 0.95,
+        "avgMfeATR": 4.19,
+        "avgMaeATR": 2.94,
+        "gateStatus": "PRELIMINARY (Days=5 < 60)"
+      },
+      {
+        "key": "5D_VAH (SHORT)",
+        "level": "5D_VAH",
+        "direction": "SHORT",
+        "n": 63,
+        "uniqueDays": 5,
+        "winRate": 69.84126984126983,
+        "bootCiWin": [
+          61.9,
+          90
+        ],
+        "matchedControlWinRate": 54.7,
+        "excessWinPct": 15.1,
+        "meanATR": 1.42,
+        "bootCiMeanATR": [
+          0.92,
+          2.5
+        ],
+        "matchedControlMeanATR": 0.5,
+        "excessMeanATR": 0.92,
+        "avgMfeATR": 4.53,
+        "avgMaeATR": 2.66,
+        "gateStatus": "PRELIMINARY (Days=5 < 60)"
+      },
+      {
+        "key": "5D_POC (LONG)",
+        "level": "5D_POC",
+        "direction": "LONG",
+        "n": 32,
+        "uniqueDays": 5,
+        "winRate": 62.5,
+        "bootCiWin": [
+          48.8,
+          91.7
+        ],
+        "matchedControlWinRate": 48.5,
+        "excessWinPct": 14,
+        "meanATR": 0.51,
+        "bootCiMeanATR": [
+          -0.44,
+          2.04
+        ],
+        "matchedControlMeanATR": -0.12,
+        "excessMeanATR": 0.62,
+        "avgMfeATR": 3.9,
+        "avgMaeATR": 2.8,
+        "gateStatus": "PRELIMINARY (Days=5 < 60)"
+      },
+      {
+        "key": "INV_POC (SHORT)",
+        "level": "INV_POC",
+        "direction": "SHORT",
+        "n": 46,
+        "uniqueDays": 9,
+        "winRate": 58.69565217391305,
+        "bootCiWin": [
+          32.3,
+          74.6
+        ],
+        "matchedControlWinRate": 52.9,
+        "excessWinPct": 5.8,
+        "meanATR": 0.65,
+        "bootCiMeanATR": [
+          -1,
+          1.77
+        ],
+        "matchedControlMeanATR": 0.27,
+        "excessMeanATR": 0.38,
+        "avgMfeATR": 4.22,
+        "avgMaeATR": 3.49,
+        "gateStatus": "PRELIMINARY (Days=9 < 60)"
+      },
+      {
+        "key": "AVWAP_-2σ (LONG)",
+        "level": "AVWAP_-2σ",
+        "direction": "LONG",
+        "n": 77,
+        "uniqueDays": 5,
+        "winRate": 50.649350649350644,
+        "bootCiWin": [
+          27.1,
+          82.5
+        ],
+        "matchedControlWinRate": 47.5,
+        "excessWinPct": 3.1,
+        "meanATR": -0.09,
+        "bootCiMeanATR": [
+          -1.72,
+          2.29
+        ],
+        "matchedControlMeanATR": -0.21,
+        "excessMeanATR": 0.13,
+        "avgMfeATR": 3.35,
+        "avgMaeATR": 3.59,
+        "gateStatus": "PRELIMINARY (Days=5 < 60)"
+      },
+      {
+        "key": "5D_LVN (LONG)",
+        "level": "5D_LVN",
+        "direction": "LONG",
+        "n": 107,
+        "uniqueDays": 4,
+        "winRate": 50.467289719626166,
+        "bootCiWin": [
+          0,
+          53.5
+        ],
+        "matchedControlWinRate": 49.2,
+        "excessWinPct": 1.2,
+        "meanATR": 0.02,
+        "bootCiMeanATR": [
+          -5.17,
+          0.33
+        ],
+        "matchedControlMeanATR": -0.08,
+        "excessMeanATR": 0.1,
+        "avgMfeATR": 3.28,
+        "avgMaeATR": 3.02,
+        "gateStatus": "PRELIMINARY (Days=4 < 60)"
+      },
+      {
+        "key": "YEST_VAL (LONG)",
+        "level": "YEST_VAL",
+        "direction": "LONG",
+        "n": 38,
+        "uniqueDays": 6,
+        "winRate": 55.26315789473685,
+        "bootCiWin": [
+          22.2,
+          85.7
+        ],
+        "matchedControlWinRate": 48.5,
+        "excessWinPct": 6.8,
+        "meanATR": -0.11,
+        "bootCiMeanATR": [
+          -3.7,
+          2.76
+        ],
+        "matchedControlMeanATR": -0.12,
+        "excessMeanATR": 0.01,
+        "avgMfeATR": 3.86,
+        "avgMaeATR": 3.73,
+        "gateStatus": "PRELIMINARY (Days=6 < 60)"
+      },
+      {
+        "key": "5D_POC (SHORT)",
+        "level": "5D_POC",
+        "direction": "SHORT",
+        "n": 38,
+        "uniqueDays": 5,
+        "winRate": 63.1578947368421,
+        "bootCiWin": [
+          41.2,
+          84.1
+        ],
+        "matchedControlWinRate": 51.5,
+        "excessWinPct": 11.7,
+        "meanATR": 0.12,
+        "bootCiMeanATR": [
+          -2.41,
+          2.21
+        ],
+        "matchedControlMeanATR": 0.18,
+        "excessMeanATR": -0.06,
+        "avgMfeATR": 3.59,
+        "avgMaeATR": 3.3,
+        "gateStatus": "PRELIMINARY (Days=5 < 60)"
+      },
+      {
+        "key": "AVWAP_MID (SHORT)",
+        "level": "AVWAP_MID",
+        "direction": "SHORT",
+        "n": 27,
+        "uniqueDays": 6,
+        "winRate": 59.25925925925925,
+        "bootCiWin": [
+          39.1,
+          79.2
+        ],
+        "matchedControlWinRate": 55,
+        "excessWinPct": 4.3,
+        "meanATR": 0.32,
+        "bootCiMeanATR": [
+          -0.86,
+          1.76
+        ],
+        "matchedControlMeanATR": 0.43,
+        "excessMeanATR": -0.11,
+        "avgMfeATR": 4.14,
+        "avgMaeATR": 3.61,
+        "gateStatus": "PRELIMINARY (Days=6 < 60)"
+      },
+      {
+        "key": "INV_POC (LONG)",
+        "level": "INV_POC",
+        "direction": "LONG",
+        "n": 53,
+        "uniqueDays": 9,
+        "winRate": 33.9622641509434,
+        "bootCiWin": [
+          17.9,
+          47.9
+        ],
+        "matchedControlWinRate": 46.7,
+        "excessWinPct": -12.7,
+        "meanATR": -1.01,
+        "bootCiMeanATR": [
+          -1.98,
+          0.27
+        ],
+        "matchedControlMeanATR": -0.25,
+        "excessMeanATR": -0.75,
+        "avgMfeATR": 2.62,
+        "avgMaeATR": 4.66,
+        "gateStatus": "PRELIMINARY (Days=9 < 60)"
+      },
+      {
+        "key": "5D_VAL (LONG)",
+        "level": "5D_VAL",
+        "direction": "LONG",
+        "n": 27,
+        "uniqueDays": 3,
+        "winRate": 48.148148148148145,
+        "bootCiWin": [
+          0,
+          64.3
+        ],
+        "matchedControlWinRate": 47,
+        "excessWinPct": 1.1,
+        "meanATR": -1.01,
+        "bootCiMeanATR": [
+          -5.63,
+          0.63
+        ],
+        "matchedControlMeanATR": -0.22,
+        "excessMeanATR": -0.78,
+        "avgMfeATR": 2.89,
+        "avgMaeATR": 5.44,
+        "gateStatus": "PRELIMINARY (Days=3 < 60)"
+      },
+      {
+        "key": "YEST_POC (SHORT)",
+        "level": "YEST_POC",
+        "direction": "SHORT",
+        "n": 36,
+        "uniqueDays": 5,
+        "winRate": 44.44444444444444,
+        "bootCiWin": [
+          4.3,
+          66.7
+        ],
+        "matchedControlWinRate": 51.2,
+        "excessWinPct": -6.7,
+        "meanATR": -0.9,
+        "bootCiMeanATR": [
+          -2.87,
+          0.29
+        ],
+        "matchedControlMeanATR": 0.13,
+        "excessMeanATR": -1.03,
+        "avgMfeATR": 3.12,
+        "avgMaeATR": 3.94,
+        "gateStatus": "PRELIMINARY (Days=5 < 60)"
+      },
+      {
+        "key": "AVWAP_MID (LONG)",
+        "level": "AVWAP_MID",
+        "direction": "LONG",
+        "n": 29,
+        "uniqueDays": 6,
+        "winRate": 24.137931034482758,
+        "bootCiWin": [
+          8.3,
+          42.9
+        ],
+        "matchedControlWinRate": 45,
+        "excessWinPct": -20.9,
+        "meanATR": -1.47,
+        "bootCiMeanATR": [
+          -2.87,
+          0.28
+        ],
+        "matchedControlMeanATR": -0.3,
+        "excessMeanATR": -1.17,
+        "avgMfeATR": 2.75,
+        "avgMaeATR": 4.43,
+        "gateStatus": "PRELIMINARY (Days=6 < 60)"
+      },
+      {
+        "key": "YEST_VAH (SHORT)",
+        "level": "YEST_VAH",
+        "direction": "SHORT",
+        "n": 106,
+        "uniqueDays": 7,
+        "winRate": 40.56603773584906,
+        "bootCiWin": [
+          17.3,
+          59.4
+        ],
+        "matchedControlWinRate": 53.7,
+        "excessWinPct": -13.1,
+        "meanATR": -0.82,
+        "bootCiMeanATR": [
+          -2.59,
+          0.34
+        ],
+        "matchedControlMeanATR": 0.4,
+        "excessMeanATR": -1.22,
+        "avgMfeATR": 2.61,
+        "avgMaeATR": 4.27,
+        "gateStatus": "PRELIMINARY (Days=7 < 60)"
+      }
+    ]
+  },
+  {
+    "market": "CRUDE",
+    "totalUniqueFirstTouches": 551,
+    "results": [
+      {
+        "key": "5D_LVN (LONG)",
+        "level": "5D_LVN",
+        "direction": "LONG",
+        "n": 9,
+        "uniqueDays": 1,
+        "winRate": 100,
+        "bootCiWin": [
+          0,
+          0
+        ],
+        "matchedControlWinRate": 70.1,
+        "excessWinPct": 29.9,
+        "meanATR": 3.76,
+        "bootCiMeanATR": [
+          0,
+          0
+        ],
+        "matchedControlMeanATR": 1.18,
+        "excessMeanATR": 2.58,
+        "avgMfeATR": 8.76,
+        "avgMaeATR": 1.12,
+        "gateStatus": "PRELIMINARY (Days=1 < 60)"
+      },
+      {
+        "key": "5D_VAL (LONG)",
+        "level": "5D_VAL",
+        "direction": "LONG",
+        "n": 9,
+        "uniqueDays": 1,
+        "winRate": 100,
+        "bootCiWin": [
+          0,
+          0
+        ],
+        "matchedControlWinRate": 70.1,
+        "excessWinPct": 29.9,
+        "meanATR": 2.75,
+        "bootCiMeanATR": [
+          0,
+          0
+        ],
+        "matchedControlMeanATR": 1.18,
+        "excessMeanATR": 1.57,
+        "avgMfeATR": 7.06,
+        "avgMaeATR": 1.05,
+        "gateStatus": "PRELIMINARY (Days=1 < 60)"
+      },
+      {
+        "key": "AVWAP_+2σ (SHORT)",
+        "level": "AVWAP_+2σ",
+        "direction": "SHORT",
+        "n": 125,
+        "uniqueDays": 8,
+        "winRate": 56.00000000000001,
+        "bootCiWin": [
+          37.7,
+          68.5
+        ],
+        "matchedControlWinRate": 41,
+        "excessWinPct": 15,
+        "meanATR": 0.19,
+        "bootCiMeanATR": [
+          -0.58,
+          0.81
+        ],
+        "matchedControlMeanATR": -0.68,
+        "excessMeanATR": 0.87,
+        "avgMfeATR": 3.46,
+        "avgMaeATR": 3.67,
+        "gateStatus": "PRELIMINARY (Days=8 < 60)"
+      },
+      {
+        "key": "YEST_VAL (LONG)",
+        "level": "YEST_VAL",
+        "direction": "LONG",
+        "n": 22,
+        "uniqueDays": 4,
+        "winRate": 50,
+        "bootCiWin": [
+          31.6,
+          85.7
+        ],
+        "matchedControlWinRate": 56.8,
+        "excessWinPct": -6.8,
+        "meanATR": 1.38,
+        "bootCiMeanATR": [
+          -0.38,
+          2.75
+        ],
+        "matchedControlMeanATR": 0.52,
+        "excessMeanATR": 0.86,
+        "avgMfeATR": 4.38,
+        "avgMaeATR": 2.44,
+        "gateStatus": "PRELIMINARY (Days=4 < 60)"
+      },
+      {
+        "key": "5D_POC (LONG)",
+        "level": "5D_POC",
+        "direction": "LONG",
+        "n": 10,
+        "uniqueDays": 3,
+        "winRate": 50,
+        "bootCiWin": [
+          40,
+          100
+        ],
+        "matchedControlWinRate": 55.8,
+        "excessWinPct": -5.8,
+        "meanATR": 1.26,
+        "bootCiMeanATR": [
+          0.86,
+          4.19
+        ],
+        "matchedControlMeanATR": 0.62,
+        "excessMeanATR": 0.64,
+        "avgMfeATR": 4.78,
+        "avgMaeATR": 3.03,
+        "gateStatus": "PRELIMINARY (Days=3 < 60)"
+      },
+      {
+        "key": "AVWAP_MID (SHORT)",
+        "level": "AVWAP_MID",
+        "direction": "SHORT",
+        "n": 21,
+        "uniqueDays": 4,
+        "winRate": 47.61904761904761,
+        "bootCiWin": [
+          22.2,
+          80
+        ],
+        "matchedControlWinRate": 37.5,
+        "excessWinPct": 10.1,
+        "meanATR": -0.21,
+        "bootCiMeanATR": [
+          -1.09,
+          1.88
+        ],
+        "matchedControlMeanATR": -0.81,
+        "excessMeanATR": 0.6,
+        "avgMfeATR": 4.34,
+        "avgMaeATR": 5.68,
+        "gateStatus": "PRELIMINARY (Days=4 < 60)"
+      },
+      {
+        "key": "INV_POC (SHORT)",
+        "level": "INV_POC",
+        "direction": "SHORT",
+        "n": 87,
+        "uniqueDays": 13,
+        "winRate": 42.5287356321839,
+        "bootCiWin": [
+          25.3,
+          63.5
+        ],
+        "matchedControlWinRate": 38.7,
+        "excessWinPct": 3.8,
+        "meanATR": -0.44,
+        "bootCiMeanATR": [
+          -1.29,
+          0.44
+        ],
+        "matchedControlMeanATR": -0.79,
+        "excessMeanATR": 0.35,
+        "avgMfeATR": 3,
+        "avgMaeATR": 4.34,
+        "gateStatus": "PRELIMINARY (Days=13 < 60)"
+      },
+      {
+        "key": "YEST_POC (LONG)",
+        "level": "YEST_POC",
+        "direction": "LONG",
+        "n": 16,
+        "uniqueDays": 5,
+        "winRate": 56.25,
+        "bootCiWin": [
+          38.9,
+          83.3
+        ],
+        "matchedControlWinRate": 59.6,
+        "excessWinPct": -3.4,
+        "meanATR": 1.13,
+        "bootCiMeanATR": [
+          -0.25,
+          2.82
+        ],
+        "matchedControlMeanATR": 0.79,
+        "excessMeanATR": 0.34,
+        "avgMfeATR": 4.42,
+        "avgMaeATR": 3.08,
+        "gateStatus": "PRELIMINARY (Days=5 < 60)"
+      },
+      {
+        "key": "YEST_VAH (SHORT)",
+        "level": "YEST_VAH",
+        "direction": "SHORT",
+        "n": 80,
+        "uniqueDays": 7,
+        "winRate": 45,
+        "bootCiWin": [
+          26.1,
+          57.8
+        ],
+        "matchedControlWinRate": 42,
+        "excessWinPct": 3,
+        "meanATR": -0.54,
+        "bootCiMeanATR": [
+          -1.35,
+          0.39
+        ],
+        "matchedControlMeanATR": -0.49,
+        "excessMeanATR": -0.05,
+        "avgMfeATR": 3.25,
+        "avgMaeATR": 4.6,
+        "gateStatus": "PRELIMINARY (Days=7 < 60)"
+      },
+      {
+        "key": "5D_VAH (SHORT)",
+        "level": "5D_VAH",
+        "direction": "SHORT",
+        "n": 31,
+        "uniqueDays": 4,
+        "winRate": 51.61290322580645,
+        "bootCiWin": [
+          9.1,
+          65.2
+        ],
+        "matchedControlWinRate": 37.4,
+        "excessWinPct": 14.2,
+        "meanATR": -1.07,
+        "bootCiMeanATR": [
+          -7.78,
+          0.19
+        ],
+        "matchedControlMeanATR": -0.79,
+        "excessMeanATR": -0.28,
+        "avgMfeATR": 2.95,
+        "avgMaeATR": 5.6,
+        "gateStatus": "PRELIMINARY (Days=4 < 60)"
+      },
+      {
+        "key": "INV_POC (LONG)",
+        "level": "INV_POC",
+        "direction": "LONG",
+        "n": 80,
+        "uniqueDays": 11,
+        "winRate": 61.25000000000001,
+        "bootCiWin": [
+          45.8,
+          74.4
+        ],
+        "matchedControlWinRate": 58.5,
+        "excessWinPct": 2.7,
+        "meanATR": 0.49,
+        "bootCiMeanATR": [
+          -0.32,
+          1.12
+        ],
+        "matchedControlMeanATR": 0.8,
+        "excessMeanATR": -0.31,
+        "avgMfeATR": 4.37,
+        "avgMaeATR": 3,
+        "gateStatus": "PRELIMINARY (Days=11 < 60)"
+      },
+      {
+        "key": "AVWAP_+1σ (SHORT)",
+        "level": "AVWAP_+1σ",
+        "direction": "SHORT",
+        "n": 12,
+        "uniqueDays": 3,
+        "winRate": 58.333333333333336,
+        "bootCiWin": [
+          0,
+          87.5
+        ],
+        "matchedControlWinRate": 42.5,
+        "excessWinPct": 15.8,
+        "meanATR": -1.09,
+        "bootCiMeanATR": [
+          -9.56,
+          2.27
+        ],
+        "matchedControlMeanATR": -0.72,
+        "excessMeanATR": -0.37,
+        "avgMfeATR": 3.8,
+        "avgMaeATR": 4.95,
+        "gateStatus": "PRELIMINARY (Days=3 < 60)"
+      },
+      {
+        "key": "AVWAP_MID (LONG)",
+        "level": "AVWAP_MID",
+        "direction": "LONG",
+        "n": 14,
+        "uniqueDays": 3,
+        "winRate": 57.14285714285714,
+        "bootCiWin": [
+          0,
+          87.5
+        ],
+        "matchedControlWinRate": 61.5,
+        "excessWinPct": -4.4,
+        "meanATR": 0.37,
+        "bootCiMeanATR": [
+          -2.84,
+          2.07
+        ],
+        "matchedControlMeanATR": 0.81,
+        "excessMeanATR": -0.44,
+        "avgMfeATR": 3.68,
+        "avgMaeATR": 3.51,
+        "gateStatus": "PRELIMINARY (Days=3 < 60)"
+      },
+      {
+        "key": "AVWAP_+3σ (SHORT)",
+        "level": "AVWAP_+3σ",
+        "direction": "SHORT",
+        "n": 5,
+        "uniqueDays": 1,
+        "winRate": 40,
+        "bootCiWin": [
+          0,
+          0
+        ],
+        "matchedControlWinRate": 43.4,
+        "excessWinPct": -3.4,
+        "meanATR": -1.4,
+        "bootCiMeanATR": [
+          0,
+          0
+        ],
+        "matchedControlMeanATR": -0.54,
+        "excessMeanATR": -0.86,
+        "avgMfeATR": 8.17,
+        "avgMaeATR": 5.08,
+        "gateStatus": "PRELIMINARY (Days=1 < 60)"
+      },
+      {
+        "key": "YEST_POC (SHORT)",
+        "level": "YEST_POC",
+        "direction": "SHORT",
+        "n": 19,
+        "uniqueDays": 5,
+        "winRate": 26.31578947368421,
+        "bootCiWin": [
+          0,
+          44
+        ],
+        "matchedControlWinRate": 39.8,
+        "excessWinPct": -13.5,
+        "meanATR": -2.11,
+        "bootCiMeanATR": [
+          -4.11,
+          -0.42
+        ],
+        "matchedControlMeanATR": -0.6,
+        "excessMeanATR": -1.51,
+        "avgMfeATR": 1.88,
+        "avgMaeATR": 6.02,
+        "gateStatus": "PRELIMINARY (Days=5 < 60)"
+      },
+      {
+        "key": "5D_POC (SHORT)",
+        "level": "5D_POC",
+        "direction": "SHORT",
+        "n": 9,
+        "uniqueDays": 3,
+        "winRate": 11.11111111111111,
+        "bootCiWin": [
+          0,
+          50
+        ],
+        "matchedControlWinRate": 40.5,
+        "excessWinPct": -29.4,
+        "meanATR": -4.68,
+        "bootCiMeanATR": [
+          -7.13,
+          -2.46
+        ],
+        "matchedControlMeanATR": -0.66,
+        "excessMeanATR": -4.02,
+        "avgMfeATR": 1.25,
+        "avgMaeATR": 9.95,
+        "gateStatus": "PRELIMINARY (Days=3 < 60)"
+      }
+    ]
+  },
+  {
+    "market": "GOLD",
+    "totalUniqueFirstTouches": 248,
+    "results": [
+      {
+        "key": "AVWAP_+1σ (SHORT)",
+        "level": "AVWAP_+1σ",
+        "direction": "SHORT",
+        "n": 6,
+        "uniqueDays": 1,
+        "winRate": 100,
+        "bootCiWin": [
+          0,
+          0
+        ],
+        "matchedControlWinRate": 43.1,
+        "excessWinPct": 56.9,
+        "meanATR": 12.79,
+        "bootCiMeanATR": [
+          0,
+          0
+        ],
+        "matchedControlMeanATR": -0.18,
+        "excessMeanATR": 12.97,
+        "avgMfeATR": 19.06,
+        "avgMaeATR": 5.12,
+        "gateStatus": "PRELIMINARY (Days=1 < 60)"
+      },
+      {
+        "key": "INV_POC (SHORT)",
+        "level": "INV_POC",
+        "direction": "SHORT",
+        "n": 20,
+        "uniqueDays": 5,
+        "winRate": 55.00000000000001,
+        "bootCiWin": [
+          28.6,
+          93.3
+        ],
+        "matchedControlWinRate": 44.9,
+        "excessWinPct": 10.1,
+        "meanATR": 3.11,
+        "bootCiMeanATR": [
+          -3.19,
+          14.6
+        ],
+        "matchedControlMeanATR": -0.4,
+        "excessMeanATR": 3.51,
+        "avgMfeATR": 10.11,
+        "avgMaeATR": 4.85,
+        "gateStatus": "PRELIMINARY (Days=5 < 60)"
+      },
+      {
+        "key": "AVWAP_MID (SHORT)",
+        "level": "AVWAP_MID",
+        "direction": "SHORT",
+        "n": 20,
+        "uniqueDays": 2,
+        "winRate": 85,
+        "bootCiWin": [
+          83.3,
+          85.7
+        ],
+        "matchedControlWinRate": 66.3,
+        "excessWinPct": 18.7,
+        "meanATR": 2.43,
+        "bootCiMeanATR": [
+          2.04,
+          2.6
+        ],
+        "matchedControlMeanATR": 0.95,
+        "excessMeanATR": 1.48,
+        "avgMfeATR": 7.84,
+        "avgMaeATR": 1.83,
+        "gateStatus": "PRELIMINARY (Days=2 < 60)"
+      },
+      {
+        "key": "5D_LVN (LONG)",
+        "level": "5D_LVN",
+        "direction": "LONG",
+        "n": 14,
+        "uniqueDays": 2,
+        "winRate": 64.28571428571429,
+        "bootCiWin": [
+          62.5,
+          66.7
+        ],
+        "matchedControlWinRate": 58.7,
+        "excessWinPct": 5.6,
+        "meanATR": 1.64,
+        "bootCiMeanATR": [
+          0.1,
+          2.8
+        ],
+        "matchedControlMeanATR": 0.25,
+        "excessMeanATR": 1.39,
+        "avgMfeATR": 9.87,
+        "avgMaeATR": 2.84,
+        "gateStatus": "PRELIMINARY (Days=2 < 60)"
+      },
+      {
+        "key": "AVWAP_MID (LONG)",
+        "level": "AVWAP_MID",
+        "direction": "LONG",
+        "n": 13,
+        "uniqueDays": 3,
+        "winRate": 38.46153846153847,
+        "bootCiWin": [
+          25,
+          100
+        ],
+        "matchedControlWinRate": 42.2,
+        "excessWinPct": -3.7,
+        "meanATR": 0.6,
+        "bootCiMeanATR": [
+          -1.01,
+          18.8
+        ],
+        "matchedControlMeanATR": -0.34,
+        "excessMeanATR": 0.94,
+        "avgMfeATR": 4.81,
+        "avgMaeATR": 3.34,
+        "gateStatus": "PRELIMINARY (Days=3 < 60)"
+      },
+      {
+        "key": "YEST_POC (LONG)",
+        "level": "YEST_POC",
+        "direction": "LONG",
+        "n": 5,
+        "uniqueDays": 2,
+        "winRate": 80,
+        "bootCiWin": [
+          75,
+          100
+        ],
+        "matchedControlWinRate": 59.2,
+        "excessWinPct": 20.8,
+        "meanATR": 0.58,
+        "bootCiMeanATR": [
+          -0.42,
+          4.57
+        ],
+        "matchedControlMeanATR": -0.01,
+        "excessMeanATR": 0.59,
+        "avgMfeATR": 3.24,
+        "avgMaeATR": 3.92,
+        "gateStatus": "PRELIMINARY (Days=2 < 60)"
+      },
+      {
+        "key": "YEST_POC (SHORT)",
+        "level": "YEST_POC",
+        "direction": "SHORT",
+        "n": 7,
+        "uniqueDays": 2,
+        "winRate": 57.14285714285714,
+        "bootCiWin": [
+          0,
+          66.7
+        ],
+        "matchedControlWinRate": 40,
+        "excessWinPct": 17.1,
+        "meanATR": -0.15,
+        "bootCiMeanATR": [
+          -7,
+          0.99
+        ],
+        "matchedControlMeanATR": 0.07,
+        "excessMeanATR": -0.22,
+        "avgMfeATR": 5.55,
+        "avgMaeATR": 3.21,
+        "gateStatus": "PRELIMINARY (Days=2 < 60)"
+      },
+      {
+        "key": "5D_VAL (LONG)",
+        "level": "5D_VAL",
+        "direction": "LONG",
+        "n": 6,
+        "uniqueDays": 1,
+        "winRate": 66.66666666666666,
+        "bootCiWin": [
+          0,
+          0
+        ],
+        "matchedControlWinRate": 61,
+        "excessWinPct": 5.7,
+        "meanATR": 0.1,
+        "bootCiMeanATR": [
+          0,
+          0
+        ],
+        "matchedControlMeanATR": 0.49,
+        "excessMeanATR": -0.39,
+        "avgMfeATR": 5.25,
+        "avgMaeATR": 3.61,
+        "gateStatus": "PRELIMINARY (Days=1 < 60)"
+      },
+      {
+        "key": "YEST_VAH (SHORT)",
+        "level": "YEST_VAH",
+        "direction": "SHORT",
+        "n": 24,
+        "uniqueDays": 2,
+        "winRate": 54.166666666666664,
+        "bootCiWin": [
+          52.9,
+          57.1
+        ],
+        "matchedControlWinRate": 56,
+        "excessWinPct": -1.9,
+        "meanATR": -0.02,
+        "bootCiMeanATR": [
+          -0.23,
+          0.51
+        ],
+        "matchedControlMeanATR": 0.43,
+        "excessMeanATR": -0.45,
+        "avgMfeATR": 3.83,
+        "avgMaeATR": 2.35,
+        "gateStatus": "PRELIMINARY (Days=2 < 60)"
+      },
+      {
+        "key": "AVWAP_-2σ (LONG)",
+        "level": "AVWAP_-2σ",
+        "direction": "LONG",
+        "n": 27,
+        "uniqueDays": 2,
+        "winRate": 37.03703703703704,
+        "bootCiWin": [
+          19,
+          100
+        ],
+        "matchedControlWinRate": 49.8,
+        "excessWinPct": -12.8,
+        "meanATR": -1.01,
+        "bootCiMeanATR": [
+          -2.59,
+          4.53
+        ],
+        "matchedControlMeanATR": -0.11,
+        "excessMeanATR": -0.9,
+        "avgMfeATR": 2.99,
+        "avgMaeATR": 5.08,
+        "gateStatus": "PRELIMINARY (Days=2 < 60)"
+      },
+      {
+        "key": "INV_POC (LONG)",
+        "level": "INV_POC",
+        "direction": "LONG",
+        "n": 15,
+        "uniqueDays": 5,
+        "winRate": 60,
+        "bootCiWin": [
+          0,
+          85.7
+        ],
+        "matchedControlWinRate": 58.4,
+        "excessWinPct": 1.6,
+        "meanATR": -0.69,
+        "bootCiMeanATR": [
+          -8.21,
+          3.66
+        ],
+        "matchedControlMeanATR": 0.46,
+        "excessMeanATR": -1.14,
+        "avgMfeATR": 3.87,
+        "avgMaeATR": 5.4,
+        "gateStatus": "PRELIMINARY (Days=5 < 60)"
+      },
+      {
+        "key": "AVWAP_-1σ (LONG)",
+        "level": "AVWAP_-1σ",
+        "direction": "LONG",
+        "n": 33,
+        "uniqueDays": 3,
+        "winRate": 27.27272727272727,
+        "bootCiWin": [
+          13.3,
+          100
+        ],
+        "matchedControlWinRate": 53.6,
+        "excessWinPct": -26.3,
+        "meanATR": -1.36,
+        "bootCiMeanATR": [
+          -2.46,
+          9.3
+        ],
+        "matchedControlMeanATR": -0.2,
+        "excessMeanATR": -1.16,
+        "avgMfeATR": 2.62,
+        "avgMaeATR": 6.82,
+        "gateStatus": "PRELIMINARY (Days=3 < 60)"
+      },
+      {
+        "key": "YEST_VAL (LONG)",
+        "level": "YEST_VAL",
+        "direction": "LONG",
+        "n": 44,
+        "uniqueDays": 5,
+        "winRate": 38.63636363636363,
+        "bootCiWin": [
+          22.8,
+          78.9
+        ],
+        "matchedControlWinRate": 51.4,
+        "excessWinPct": -12.8,
+        "meanATR": -1.98,
+        "bootCiMeanATR": [
+          -10.83,
+          2.62
+        ],
+        "matchedControlMeanATR": -0.17,
+        "excessMeanATR": -1.81,
+        "avgMfeATR": 3.59,
+        "avgMaeATR": 7.67,
+        "gateStatus": "PRELIMINARY (Days=5 < 60)"
+      }
+    ]
+  }
+]

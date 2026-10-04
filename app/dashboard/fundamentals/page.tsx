@@ -7,17 +7,19 @@
  * Implements:
  * 1. "TODAY'S OIL FUNDAMENTAL STATE" with 8 physical dimensions & invalidation rules
  * 2. Machine-readable Structured JSON Event Evaluator for trading agents
- * 3. Pragmatic 5-Feed Data Architecture
- * 4. 10-Pillar State Matrix & Live Prompt Price / Front Calendar Spread Confirmation
+ * 3. Live real-time Finnhub / Reuters oil news wire with 1-click analysis
+ * 4. Pragmatic 5-Feed Data Architecture & multi-asset CME telemetry (WTI, Brent, 3:2:1 Crack)
  */
 
 import { useState, useEffect, useCallback } from 'react'
 import type {
   OilFundamentalDashboardState,
   OilEventEvaluation,
+  LiveOilHeadline,
 } from '@/types/fundamentals'
 import { FundamentalsHeader } from './components/FundamentalsHeader'
 import { TodayFundamentalCard } from './components/TodayFundamentalCard'
+import { LiveOilNewsWire } from './components/LiveOilNewsWire'
 import { FiveFeedsCard } from './components/FiveFeedsCard'
 import { PillarMatrix } from './components/PillarMatrix'
 import { EventEvaluatorCard } from './components/EventEvaluatorCard'
@@ -25,11 +27,12 @@ import { EvaluatedEventsHistory } from './components/EvaluatedEventsHistory'
 import { OilCatalystCalendar } from './components/OilCatalystCalendar'
 import { OilAnalystChat } from './components/OilAnalystChat'
 
-type TabKey = 'today' | 'evaluator' | 'matrix' | 'feeds' | 'history' | 'calendar' | 'terminal'
+type TabKey = 'today' | 'wire' | 'evaluator' | 'matrix' | 'feeds' | 'history' | 'calendar' | 'terminal'
 
 export default function FundamentalsPage() {
   const [tab, setTab] = useState<TabKey>('today')
   const [state, setState] = useState<OilFundamentalDashboardState | null>(null)
+  const [selectedHeadline, setSelectedHeadline] = useState<LiveOilHeadline | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -97,6 +100,11 @@ export default function FundamentalsPage() {
     }
   }
 
+  const handleSelectWireHeadline = (headline: LiveOilHeadline) => {
+    setSelectedHeadline(headline)
+    setTab('evaluator')
+  }
+
   const handleEvaluateEvent = async (params: {
     rawText: string
     sourceHint?: string
@@ -131,7 +139,7 @@ export default function FundamentalsPage() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-8 h-8 animate-spin text-brand-400">
             <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="16" />
           </svg>
-          <span className="text-xs font-medium">Assembling Oil Fundamental State & Feeds...</span>
+          <span className="text-xs font-medium">Assembling Real-Time Oil Telemetry & News Wire...</span>
         </div>
       </div>
     )
@@ -186,6 +194,22 @@ export default function FundamentalsPage() {
 
           <button
             type="button"
+            onClick={() => setTab('wire')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition ${
+              tab === 'wire'
+                ? 'bg-brand-600 text-white shadow-sm'
+                : 'bg-surface-800 text-gray-400 hover:text-gray-200 hover:bg-surface-700 border border-surface-600'
+            }`}
+          >
+            <span>⚡</span>
+            <span>Live Breaking Wire</span>
+            {state.liveOilHeadlines.length > 0 && (
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            )}
+          </button>
+
+          <button
+            type="button"
             onClick={() => setTab('evaluator')}
             className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition ${
               tab === 'evaluator'
@@ -193,8 +217,8 @@ export default function FundamentalsPage() {
                 : 'bg-surface-800 text-gray-400 hover:text-gray-200 hover:bg-surface-700 border border-surface-600'
             }`}
           >
-            <span>⚡</span>
-            <span>Structured Event Evaluator</span>
+            <span>⚙️</span>
+            <span>Structured Evaluator</span>
           </button>
 
           <button
@@ -273,16 +297,44 @@ export default function FundamentalsPage() {
       {tab === 'today' && (
         <div className="space-y-5">
           <TodayFundamentalCard today={state.today} telemetry={state.wtiTelemetry} />
+          <LiveOilNewsWire
+            headlines={state.liveOilHeadlines}
+            onSelectHeadline={handleSelectWireHeadline}
+            onRefreshNews={handleRefresh}
+            loading={refreshing}
+          />
           <FiveFeedsCard feeds={state.fiveFeeds} />
         </div>
       )}
 
+      {tab === 'wire' && (
+        <div className="space-y-5">
+          <LiveOilNewsWire
+            headlines={state.liveOilHeadlines}
+            onSelectHeadline={handleSelectWireHeadline}
+            onRefreshNews={handleRefresh}
+            loading={refreshing}
+          />
+        </div>
+      )}
+
       {tab === 'evaluator' && (
-        <EventEvaluatorCard
-          onEvaluate={handleEvaluateEvent}
-          currentTelemetry={state.wtiTelemetry}
-          onStateUpdated={loadState}
-        />
+        <div className="space-y-5">
+          <EventEvaluatorCard
+            onEvaluate={handleEvaluateEvent}
+            currentTelemetry={state.wtiTelemetry}
+            selectedHeadline={selectedHeadline}
+            onStateUpdated={loadState}
+          />
+          {state.liveOilHeadlines.length > 0 && (
+            <LiveOilNewsWire
+              headlines={state.liveOilHeadlines}
+              onSelectHeadline={handleSelectWireHeadline}
+              onRefreshNews={handleRefresh}
+              loading={refreshing}
+            />
+          )}
+        </div>
       )}
 
       {tab === 'matrix' && (

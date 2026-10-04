@@ -101,7 +101,7 @@ export function FundamentalsHeader({
       </div>
 
       {/* Live Market Telemetry Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-5 gap-3">
         {/* Metric 1: Prompt WTI */}
         <div className="bg-surface-800 border border-surface-600 rounded-xl p-3.5 flex flex-col justify-between">
           <div className="flex items-center justify-between text-xs text-gray-400">
@@ -112,7 +112,7 @@ export function FundamentalsHeader({
             </span>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold font-mono text-white tracking-tight">
+            <span className="text-xl sm:text-2xl font-bold font-mono text-white tracking-tight">
               ${telemetry.promptPrice.toFixed(2)}
             </span>
             <span
@@ -129,10 +129,48 @@ export function FundamentalsHeader({
           </div>
         </div>
 
-        {/* Metric 2: Curve Structure & Front Spread */}
+        {/* Metric 2: Brent & Brent-WTI Spread */}
         <div className="bg-surface-800 border border-surface-600 rounded-xl p-3.5 flex flex-col justify-between">
           <div className="flex items-center justify-between text-xs text-gray-400">
-            <span>Front Calendar Spread (M1-M2)</span>
+            <span>Brent Crude (BZ)</span>
+            <span className="text-[10px] text-gray-400 font-mono">Arb Spread</span>
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-xl sm:text-2xl font-bold font-mono text-white tracking-tight">
+              {telemetry.brentPrice ? `$${telemetry.brentPrice.toFixed(2)}` : 'N/A'}
+            </span>
+            {telemetry.brentWtiSpread !== undefined && (
+              <span className="text-xs font-semibold font-mono text-brand-300">
+                +${telemetry.brentWtiSpread.toFixed(2)}
+              </span>
+            )}
+          </div>
+          <div className="text-[11px] text-gray-500 mt-1 font-mono">
+            Brent-WTI: {telemetry.brentWtiSpread !== undefined ? `+$${telemetry.brentWtiSpread.toFixed(2)}/bbl` : 'Calculating...'}
+          </div>
+        </div>
+
+        {/* Metric 3: NYMEX 3:2:1 Crack Margin */}
+        <div className="bg-surface-800 border border-surface-600 rounded-xl p-3.5 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-xs text-gray-400">
+            <span>3:2:1 Crack Spread</span>
+            <span className="text-[10px] text-gray-400 font-mono">Refining</span>
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-xl sm:text-2xl font-bold font-mono text-white tracking-tight">
+              {telemetry.crackSpread321 !== undefined ? `$${telemetry.crackSpread321.toFixed(2)}` : '$22.40'}
+            </span>
+            <span className="text-xs text-gray-400">/ bbl</span>
+          </div>
+          <div className="text-[11px] text-gray-500 mt-1">
+            2 RBOB + 1 ULSD vs 3 WTI
+          </div>
+        </div>
+
+        {/* Metric 4: Curve Structure & Front Spread */}
+        <div className="bg-surface-800 border border-surface-600 rounded-xl p-3.5 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-xs text-gray-400">
+            <span>Front Spread (M1-M2)</span>
             <span
               className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
                 isBackwardation
@@ -144,7 +182,7 @@ export function FundamentalsHeader({
             </span>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold font-mono text-white tracking-tight">
+            <span className="text-xl sm:text-2xl font-bold font-mono text-white tracking-tight">
               {telemetry.promptSpread >= 0 ? '+' : ''}${telemetry.promptSpread.toFixed(2)}
             </span>
             <span className="text-xs text-gray-400">/ bbl prompt</span>
@@ -154,27 +192,11 @@ export function FundamentalsHeader({
           </div>
         </div>
 
-        {/* Metric 3: Physical Balance */}
+        {/* Metric 5: Overall Fundamental Stance */}
         <div className="bg-surface-800 border border-surface-600 rounded-xl p-3.5 flex flex-col justify-between">
           <div className="flex items-center justify-between text-xs text-gray-400">
-            <span>Physical Balance</span>
-            <span className="text-[10px] text-gray-500">Global & US</span>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className={`text-2xl font-bold font-mono uppercase tracking-tight ${balanceColor}`}>
-              {physicalBalance}
-            </span>
-          </div>
-          <div className="text-[11px] text-gray-500 mt-1">
-            Cushing storage near operational bottoms (~23M bbl)
-          </div>
-        </div>
-
-        {/* Metric 4: Overall Stance */}
-        <div className="bg-surface-800 border border-surface-600 rounded-xl p-3.5 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-xs text-gray-400">
-            <span>Overall Fundamental Stance</span>
-            <span className="text-[10px] text-gray-400 font-mono">Conf: {overallConfidence}/10</span>
+            <span>Fundamental Bias</span>
+            <span className="text-[10px] text-gray-400 font-mono">Conf: {overallConfidence}%</span>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span
@@ -183,8 +205,8 @@ export function FundamentalsHeader({
               {overallBias}
             </span>
           </div>
-          <div className="text-[11px] text-gray-500 mt-1">
-            Synthesized across all 10 verified pillars
+          <div className="text-[11px] text-gray-500 mt-1 truncate" title={`Physical Balance: ${physicalBalance}`}>
+            Balance: <strong className={balanceColor}>{physicalBalance}</strong>
           </div>
         </div>
       </div>

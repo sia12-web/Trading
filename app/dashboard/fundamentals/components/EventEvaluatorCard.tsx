@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
-import type { OilEventEvaluation, WtiTelemetry } from '@/types/fundamentals'
+import type { OilEventEvaluation, WtiTelemetry, LiveOilHeadline } from '@/types/fundamentals'
 import { PRESET_EVENTS_FOR_EVALUATION } from '@/lib/fundamentals/oilAnalystConfig'
 
 interface EventEvaluatorCardProps {
@@ -12,12 +12,14 @@ interface EventEvaluatorCardProps {
     autoCommitIfMaterial: boolean
   }) => Promise<OilEventEvaluation | null>
   currentTelemetry: WtiTelemetry
+  selectedHeadline?: LiveOilHeadline | null
   onStateUpdated?: () => void
 }
 
 export function EventEvaluatorCard({
   onEvaluate,
   currentTelemetry,
+  selectedHeadline,
   onStateUpdated,
 }: EventEvaluatorCardProps) {
   const [inputText, setInputText] = useState('')
@@ -29,6 +31,15 @@ export function EventEvaluatorCard({
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'STRUCTURED_JSON' | 'AUDIT_CARD'>('STRUCTURED_JSON')
   const [copiedJson, setCopiedJson] = useState(false)
+
+  React.useEffect(() => {
+    if (selectedHeadline) {
+      setInputText(selectedHeadline.headline + (selectedHeadline.summary ? `\n\nSummary: ${selectedHeadline.summary}` : ''))
+      setSourceHint(selectedHeadline.source)
+      setTimestampHint(new Date(selectedHeadline.datetime * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }))
+      setErrorMsg(null)
+    }
+  }, [selectedHeadline])
 
   const handleLoadPreset = (presetId: string) => {
     const found = PRESET_EVENTS_FOR_EVALUATION.find((p) => p.id === presetId)
