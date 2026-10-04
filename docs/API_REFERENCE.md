@@ -321,3 +321,54 @@ Returns the latest trade tick, bid/ask spread, and forming bar for an instrument
 ### 5.3 `GET /stream`
 Continuous Server-Sent Events (SSE) feed of incoming CME tick executions for ultra-low latency sub-second chart rendering.
 
+---
+
+## 6. Wyckoff Strategy & 5-Market Opportunity Radar Services
+
+### 6.1 `evaluateSpringOrUpthrustTrendline(tl, bars, ctx)` (`lib/trading/wyckoffStrategy.ts`)
+Evaluates an Action Trendline drawn from a Spring or Upthrust origin.
+
+- **Parameters**:
+  - `tl`: UserTrendline object with `p1`, `p2`, `instrument`, `direction`
+  - `bars`: Array of ContextBar historical OHLCV data
+  - `ctx`: WyckoffChartContext object with `yesterday`, `overnight`, `frvp5d`, `avwap5m`
+- **Return Contract (`SpringUpthrustEvaluation`)**:
+  ```json
+  {
+    "originType": "SPRING",
+    "totalScore": 85,
+    "grade": "A",
+    "stopLoss": 21480.0,
+    "targetPrice": 21550.0,
+    "rrRatio": 2.4,
+    "is2RValid": true,
+    "color": "#10b981",
+    "targetZoneLabel": "5D-POC / Yesterday VAH",
+    "summary": "Spring @ 21485.0: Score 85/100 (A). High Location Confluence (5D LVN). Volume Ratio 1.45x. Confirmed 5m Reclaim. CVD Divergence present. 2.4R to 5D-POC."
+  }
+  ```
+
+---
+
+### 6.2 `build5MarketOpportunityRadar(inputs)` (`lib/trading/crossMarketRadar.ts`)
+Computes 3-factor market selection across 5 benchmark instruments (`NQ`, `YM`, `ES`, `GC`, `CL`).
+
+- **Return Contract (`CrossMarketRadarReport`)**:
+  ```json
+  {
+    "timestampEt": "10:15:00",
+    "topPick": {
+      "instrument": "CL",
+      "grade": "A",
+      "summary": "CRUDE OIL (CL) is the Grade A Top Pick! Elevated OVX (38.2), 5D-LVN location, confirmed Wyckoff Spring."
+    },
+    "marketRankings": [
+      { "instrument": "CL", "grade": "A", "score": 92, "volatilityGauge": "OVX (38.2)", "participation": true, "location": true, "structure": true },
+      { "instrument": "NQ", "grade": "B", "score": 68, "volatilityGauge": "VIX1D (16.4)", "participation": true, "location": false, "structure": true },
+      { "instrument": "YM", "grade": "B", "score": 62, "volatilityGauge": "VIX (15.8)", "participation": false, "location": true, "structure": true },
+      { "instrument": "ES", "grade": "C", "score": 40, "volatilityGauge": "VIX (15.8)", "participation": false, "location": false, "structure": false },
+      { "instrument": "GC", "grade": "C", "score": 35, "volatilityGauge": "GVZ (12.1)", "participation": false, "location": false, "structure": false }
+    ]
+  }
+  ```
+

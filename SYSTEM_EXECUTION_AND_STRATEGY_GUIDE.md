@@ -2,14 +2,14 @@
 
 > **Institutional Automated Trading Architecture**  
 > **Target Account**: Tradeify Growth $50,000 Evaluation & Funded Accounts  
-> **Execution Engine**: Hands-Free Autonomous System (02:00 AM & 09:30 AM ET Triggers)  
+> **Execution Engine**: Hands-Free Autonomous System & Institutional Trader Workstation  
 > **Timezone Standard**: Montreal Time (EDT - UTC-4)  
 
 ---
 
 ## 1. 🏗️ SYSTEM ARCHITECTURE & EXECUTOR OVERVIEW
 
-The system is a **100% deterministic, hands-free execution engine** designed to eliminate human bias, manual delay, and emotional intervention during high-probability trading windows.
+The system is a **100% deterministic, hands-free execution engine and trading workstation** designed to eliminate human bias, manual delay, and emotional intervention during high-probability trading windows.
 
 ```
                   ┌────────────────────────────────────────┐
@@ -25,8 +25,8 @@ The system is a **100% deterministic, hands-free execution engine** designed to 
                                       │
                                       ▼
                   ┌────────────────────────────────────────┐
-                  │     MARKET STRUCTURE & EDGE ANALYSIS   │
-                  │   OR15 | OR30 | IB | Dow Asia Narrow   │
+                  │   22-RULE WYCKOFF & AUCTION MARKET EDGE │
+                  │ 4 Valid Setups | Tier 1 Frozen Map | 2R │
                   └───────────────────┬────────────────────┘
                                       │
                                       ▼
@@ -38,8 +38,8 @@ The system is a **100% deterministic, hands-free execution engine** designed to 
           ┌───────────────────────────┴───────────────────────────┐
           ▼                                                       ▼
 ┌───────────────────────────┐                           ┌───────────────────┐
-│ REAL-TIME TELEGRAM ALERT  │                           │ DATABASE JOURNAL  │
-│ Entry, SL, TP & Contracts │                           │ Supabase Record   │
+│ REAL-TIME DASHBOARD SSE   │                           │ DATABASE JOURNAL  │
+│ Web Audio Chimes & Toasts │                           │ Supabase Record   │
 └───────────────────────────┘                           └───────────────────┘
 ```
 
@@ -142,7 +142,7 @@ Whenever an order or setup is triggered:
 
 All limit, stop-loss, and take-profit orders pass through the `snapDeskPrice()` utility (`lib/trading/instrumentTicks.ts`):
 
-- **Index Futures (NQ, YM)**: Snapped to whole points (1 pt tick).
+- **Index Futures (NQ, YM, ES)**: Snapped to whole points / 0.25 pt tick increments.
 - **Gold Futures (GC)**: Snapped to 0.10 pt tick increments.
 - **Russell 2000 (RTY)**: Snapped to 0.10 pt tick increments.
 - **Euro FX (6E)**: Snapped to 0.0001 (1 pip) tick increments.
@@ -168,3 +168,102 @@ Every setup is evaluated by the **Auction Price Critique & "Questioning" Engine*
 5. **NY Session Window Gating**:
    - Pre-trade critique is active strictly during New York pre-market & cash hours (09:00 ET / 09:15 ET to 16:00 ET close).
 
+---
+
+## 8. 🏛️ THE TRADER'S 22-RULE WYCKOFF & AUCTION MARKET THEORY PLAYBOOK
+
+The execution engine and Leo Assistant operate strictly according to the **22-Rule Wyckoff Playbook** (`lib/ai/leoAssistant.ts`, `lib/trading/wyckoffStrategy.ts`):
+
+### 8.1 The 4 Valid Trade Setups (Absolute Universe)
+*Only 4 trade setups are valid in the entire execution universe. Everything else MUST be ignored:*
+
+1. **Support: Spring $\rightarrow$ Reclaim $\rightarrow$ LONG**
+   - Price sweeps key support boundary (Yesterday VAL, 5D LVN, Overnight Low) and immediately **reclaims** back above support with buying absorption.
+   - **Stop Loss**: Strictly below the Spring low.
+2. **Support: Breakdown $\rightarrow$ Failed Reclaim $\rightarrow$ SHORT**
+   - Price breaks key support, attempts to reclaim, but fails at lower volume/delta.
+   - **Stop Loss**: Strictly above the failed reclaim pivot.
+3. **Resistance: Upthrust $\rightarrow$ Return Below $\rightarrow$ SHORT**
+   - Price sweeps key resistance boundary (Yesterday VAH, 5D HVN, Overnight High) and immediately **returns below** resistance with selling absorption.
+   - **Stop Loss**: Strictly above the Upthrust high.
+4. **Resistance: Breakout $\rightarrow$ Successful Retest (SOS $\rightarrow$ LPS / SOW $\rightarrow$ LPSY) $\rightarrow$ LONG**
+   - Price breaks out with strong volume/initiative, then successfully retests breakout level as new support (Sign of Strength $\rightarrow$ Last Point of Support).
+   - **Stop Loss**: Strictly below the retest low.
+
+---
+
+### 8.2 Three-Tier Chart Hierarchy
+1. **Tier 1 (Mandatory Key Levels)**:
+   - Price action, 5-Day Volume Profile (POC, HVN, LVN), Yesterday's Profile (VAH, POC, VAL, High, Low), Overnight/London (High, Low, POC).
+   - **Pre-Market Map Gating**: Levels are permanently **frozen at 09:30 ET cash open**.
+2. **Tier 2 (Execution Confirmation)**:
+   - Volume (Effort vs. Result), Cumulative Volume Delta (CVD Absorption & Divergence).
+3. **Tier 3 (Context Only - Never Overrides Tier 1)**:
+   - 5-Month CME Globex Anchored VWAP (AVWAP) and VIX/cross-asset volatility gauges.
+
+---
+
+### 8.3 Institutional Factor Scoring Engine (0–100 Points)
+`evaluateSpringOrUpthrustTrendline()` evaluates user-drawn Action/Demand/Supply Trendlines (Hotkey: W or X) connecting Spring or Upthrust origin pivots across 5 institutional factors:
+* **Volume Expansion (25 Pts)**: Volume ratio $> 1.2\times$ baseline indicating aggressive institutional participation.
+* **CVD Absorption Divergence (25 Pts)**: Positive delta divergence for Spring / Negative delta for Upthrust.
+* **Multi-Touch Structural Validation (20 Pts)**: $\ge 2$ structural touches confirming trendline validity.
+* **Tier-1 Volume Profile Confluence (20 Pts)**: Confluence with Yesterday VAH/VAL/POC or 5D LVN/HVN.
+* **HTF 5-Month AVWAP Alignment (10 Pts)**: Price relation alignment with 5-Month AVWAP trend direction.
+
+#### Grade Classifications:
+* **Grade A ($\ge 75$ Pts)**: High Probability Institutional Setup 🟢
+* **Grade B ($50-74$ Pts)**: Moderate Setup — Requires Tier-2 CVD confirmation 🟡
+* **Grade C ($< 50$ Pts)**: Weak / Speculative Setup — Stand Aside 🔴
+
+---
+
+### 8.4 Strict Risk & 2R Filter Rules
+- **Minimum 2R Distance**: Distance to the next major opposing Tier-1 zone must be $\ge 2.0\times$ stop loss distance (`is2RValid`). If distance $< 2\text{R}$, **STAND ASIDE**.
+- **Stop Loss = Structural Invalidation**: Stop loss is placed strictly beyond structural extremes. Stops are **never widened or expanded**.
+- **No Chop Execution**: Do not trade inside tight Dalton balance ranges without structural sweeps.
+
+---
+
+## 9. 🎯 CROSS-ASSET VOLATILITY GAUGES & GLOBEX SESSION-AWARE 5-MARKET RADAR
+
+The **5-Market Opportunity Radar** (`app/dashboard/chart/components/CrossMarketRadarStrip.tsx`, `lib/trading/crossMarketRadar.ts`) provides continuous market selection across 5 futures benchmarks: **`NQ`**, **`ES`**, **`YM`**, **`GC` (Gold)**, and **`CL` (Crude Oil)**.
+
+### 9.1 Globex Session Awareness & Pre-Market State
+- **Session State Recognition**: Dynamically tracks session windows (`CLOSED`, `ASIA`, `LONDON`, `NEW YORK`, `MAINTENANCE`).
+- **Closed / Pre-Market Behavior**: When markets are closed or in Globex pre-market, evaluates overnight inventory accumulation (Long/Short % bias) and pre-market structure without generating false intraday trade alerts.
+
+### 9.2 Asset-Specific Volatility Gauges
+- **Equities (`NQ`, `ES`, `YM`)**: `VIX` (30-day) & `VIX1D` (1-day 0DTE expected volatility).
+- **Crude Oil (`CL`)**: `OVX` (Cboe Crude Oil Volatility Index).
+- **Gold (`GC`)**: `GVZ` (Cboe Gold Volatility Index).
+
+---
+
+## 10. 📊 5-MONTH ANCHORED VWAP & STANDARD DEVIATION BANDS
+
+The chart features a **5-Month CME Globex Anchored VWAP** (`show5mAvwapOnChart`) providing macro institutional value benchmark context:
+
+- **Lookback**: Anchored to 5 months of continuous CME Globex trading data.
+- **Standard Deviation Bands**: Computes volume-weighted dispersion bands ($\pm 1\sigma, \pm 2\sigma, \pm 3\sigma$).
+- **Top HUD Controls**: Managed via a clean `5M AVWAP: ON/OFF` toggle button on the chart header strip right next to CVD and News.
+
+---
+
+## 11. 🤖 PURGED AI STACK & INTEGRATED WYCKOFF PLAYBOOK PANEL IN LEO
+
+### 11.1 Total Purge of AI Stacked & Hedging
+The experimental multi-agent AI Stack (Aegis hedging specialist, dealer gamma flip levels, CTA liquidation trigger bands, and consensus orchestrator) was **completely purged** from the codebase to eliminate speculative noise and confusion.
+
+### 11.2 Interactive `📜 Wyckoff 22 Rules` Panel
+In [`LeoAssistantPanel.tsx`](file:///c:/Users/shahb/myApplications/Trading/app/dashboard/chart/components/LeoAssistantPanel.tsx), the AI Stack tab has been replaced with the dedicated **`📜 Wyckoff 22 Rules`** interactive panel ([`WyckoffRulesPanel.tsx`](file:///c:/Users/shahb/myApplications/Trading/app/dashboard/chart/components/WyckoffRulesPanel.tsx)):
+- **4 Valid Setup Cards**: Diagrams and rules for Spring Reclaim, Breakdown Failed Reclaim, Upthrust Return Below, and Breakout Retest.
+- **3-Tier Hierarchy & 8-Step Checklist**: Visual guide to Tier 1 frozen levels, Tier 2 volume/CVD, and Tier 3 context.
+- **One-Click Audit Buttons**: Instantly prompt Leo to audit setups, verify frozen levels, or review CVD absorption.
+
+### 11.3 Relocated Chart HUD "Ask Leo" Quick Action Links
+Quick-action buttons are conveniently placed along the top chart HUD bar:
+- **Dalton Day Type**: `[🤖 Ask Leo]` button next to `Day: {badgeText}` (and `Day: Pre-Session` in Globex) to analyze session distribution and auction tails.
+- **Audit Order Flow**: `[🤖 Audit Order Flow]` button next to `CVD: ON/OFF` to audit buyer/seller absorption, CVD delta, and Tier-2 volume criteria vs. VWAP.
+- **Compare Range Volume**: `[📈 Compare Range Volume]` button on the top HUD to compare volume across all user-drawn range boxes and fixed volume profiles.
+- **Synchronized Leo Quick Chips**: `🏛️ Audit 4 Setups`, `⚡ Audit Order Flow`, `📈 Compare Range Volumes`, `📊 Dalton Day Type`.

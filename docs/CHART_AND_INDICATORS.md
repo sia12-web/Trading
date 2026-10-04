@@ -15,7 +15,7 @@ TradePulse's charting interface is built on **TradingView's Lightweight Charts v
 ┌────────────────────────────────────────────────────────────────────────┐
 │ Chart Toolbar (Instrument Tabs, Timeframe Selector, Drawing Tools)     │
 ├────────────────────────────────────────────────────────────────────────┤
-│ HUD Status Bar (Live Price, 5M VWAP Readout, CVD Stats, Tooltips)      │
+│ HUD Status Bar (Live Price, 5M VWAP, CVD, Day Type, Ask Leo Links)     │
 ├────────────────────────────────────────────────────────────────────────┤
 │ Main Chart Pane:                                                       │
 │   Layer 0: Lightweight Charts Candlestick Series (#089981 / #f23645)   │
@@ -23,7 +23,7 @@ TradePulse's charting interface is built on **TradingView's Lightweight Charts v
 │   Layer 2: Volume Histogram Series Overlay (Bottom Margin)             │
 │   Layer 3: HTML5 2D Canvas: Session Boxes, Dalton Spikes, FRVP POC     │
 │   Layer 4: HTML5 2D Canvas: Daily Tested Highs/Lows with Traded Volume │
-│   Layer 5: HTML5 2D Canvas: User Drawings & Leo Long-Term Memory Boxes │
+│   Layer 5: HTML5 2D Canvas: User Drawings & Wyckoff Spring/Upthrust    │
 │   Layer 6: Interactive Crosshair & OHLCV Tooltip                       │
 ├────────────────────────────────────────────────────────────────────────┤
 │ Cumulative Volume Delta (CVD) Candlestick Sub-Pane (Collapsible)       │
@@ -31,7 +31,7 @@ TradePulse's charting interface is built on **TradingView's Lightweight Charts v
 ```
 
 ### 1.1 Institutional Candlestick Styling
-To ensure immediate visual clarity and eliminate distracting instrument color overrides, all markets (DOW, NASDAQ, GOLD, CRUDE) enforce standard institutional colors:
+To ensure immediate visual clarity and eliminate distracting instrument color overrides, all markets (DOW, NASDAQ, ES, GOLD, CRUDE) enforce standard institutional colors:
 - **Up Candle Body**: `#089981` (Solid Emerald Green)
 - **Down Candle Body**: `#f23645` (Solid Crimson Red)
 - **Wicks & Borders**: Matching `#089981` / `#f23645`
@@ -69,7 +69,7 @@ Volume-Weighted Average Price (VWAP) represents the true institutional benchmark
 
 ### 2.2 Intraday Charts (`1m`, `5m`, `30m`): Session Anchored VWAP + Macro 5M Line
 - **Intraday Anchored VWAP**: Anchors to the active session cash open, wrapping the candlesticks tightly within intraday statistical deviation bands.
-- **Macro 5M Benchmark Line**: A horizontal dashed cyan line (`paint5mAvwapBenchmark`) displays the 5-month macro anchor level simultaneously, giving traders both immediate scalp context and institutional macro inflection levels.
+- **5-Month Anchored VWAP & SD Bands Toggle**: Managed via the `5M AVWAP: ON/OFF` button on the top chart HUD strip. When toggled ON, displays the 5-month macro anchor level and standard deviation bands ($\pm 1\sigma, \pm 2\sigma, \pm 3\sigma$).
 
 ---
 
@@ -171,9 +171,6 @@ An Excess Tail signifies rapid, aggressive rejection at price extremes where mar
 - **Tweezer Tops / Bottoms**: Exact test and rejection of high/low across two candles.
 - **LVN Rejection Confluence**: Evaluates Bullish Engulfing or Excess Tail occurring directly at a Low Volume Node (LVN) or Value Area boundary, generating automated trade setups with defined risk points and take-profit targets.
 
-### 7.3 Leo AI Integration
-When the Candlestick Patterns toggle (`showCandlestickPatterns` 🕯️) is active, all triggered patterns on the latest bar are streamed directly to Leo AI's market context (`activePatterns`), enabling automated voice and text commentary on real-time rejections and momentum shifts.
-
 ---
 
 ## 8. Chart Visual Stability, Sub-Pane TimeScale Sync Lock & Aligned Price Scale Widths
@@ -229,3 +226,32 @@ $$\text{Runway Ratio} = \frac{\text{Distance to Nearest Overhead Resistance (pts
 - Displays a visual gradient pointer from $-100$ (Deep Discount) to $+100$ (Extreme Premium).
 - Critiques 9:30 AM NY Open price action against overnight participants: *"Why buy at 9:30 AM when Asian & London buyers accumulated 30 points lower?"*
 - Features 1-click **Ask Leo to Critique Price** integration, populating Leo with full telemetry and auto-executing an institutional auction audit.
+
+---
+
+## 11. Wyckoff Spring & Upthrust Trendline Factor Evaluation
+
+### 11.1 Spring & Upthrust Trendline Tool (Hotkey: W or X)
+- Traders manually draw Action/Demand/Supply Trendlines connecting Spring (support sweep) or Upthrust (resistance sweep) origin pivots.
+- The canvas engine automatically runs `evaluateSpringOrUpthrustTrendline()` on active lines.
+
+### 11.2 Institutional Factor Scoring (0–100 Pts)
+- **Volume Expansion (25 pts)**: $> 1.2\times$ volume baseline.
+- **CVD Absorption Divergence (25 pts)**: Delta divergence confirming absorption.
+- **Multi-Touch Validation (20 pts)**: $\ge 2$ structural touches.
+- **Tier-1 Volume Profile Confluence (20 pts)**: Confluence with Yesterday VAH/VAL/POC or 5D LVN/HVN.
+- **5M AVWAP Alignment (10 pts)**: Alignment with 5-Month Anchored VWAP trend direction.
+
+### 11.3 Midpoint Evaluation Badge & Stop/Target Rendering
+- **Midpoint Badge**: Renders score tag: `📐 Spring Line (85/100 pts · Grade A) | Stop: 21480.0 | Tgt: 21550.0 (2.4R)`.
+- **Dashed Structural Stop & Target Lines**: Renders horizontal dashed lines on the chart canvas corresponding to the structural stop loss and target level calculated by the Wyckoff engine.
+
+---
+
+## 12. Top Chart HUD Quick Action Links
+
+The top chart HUD strip integrates convenient 1-click action links:
+- **Dalton Day Type**: `Day: {badgeText} [🤖 Ask Leo]` (or `Day: Pre-Session [🤖 Ask Leo]` in Globex) to evaluate session distribution and auction tails.
+- **Audit Order Flow**: `[🤖 Audit Order Flow]` button placed next to `CVD: ON/OFF`.
+- **Compare Range Volume**: `[📈 Compare Range Volume]` button on the top HUD to compare volume across all user-drawn range boxes and fixed volume profiles.
+- **Clean 5M AVWAP Control**: Single toggle `5M AVWAP: ON/OFF` next to `News: ON/OFF`.

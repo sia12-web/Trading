@@ -16,7 +16,7 @@ graph TD
     subgraph Context_Ingestion [Real-Time Context Pipeline]
         LIVE_PRICE[Live Price & Tick Velocity]
         CANDLES[Multi-TF OHLCV History - 1m, 5m, 1D]
-        AUCTION[Auction Metrics - IB, OR15, OR30, AVWAP, POC]
+        AUCTION[Auction Metrics - IB, OR15, OR30, 5M AVWAP, POC]
         POSITIONS[Open Broker Positions & Working Orders]
         MEMORIES[Active Long-Term Memory Zones & Notes]
         DRAWINGS[User Chart Drawings - Trendlines, Boxes]
@@ -42,9 +42,10 @@ graph TD
 
 ### 1.1 Hierarchical Prompt System
 Leo's system prompt (`lib/ai/leoAssistant.ts`) enforces strict trading desk principles:
+- **Authoritative 22-Rule Wyckoff Directive**: Evaluates setups strictly according to the **22-Rule Wyckoff Playbook** (4 valid setups only: Spring Reclaim LONG, Breakdown Failed Reclaim SHORT, Upthrust Return Below SHORT, Breakout Retest LONG).
 - **Higher-Timeframe Primacy**: Evaluates Daily (`1D`) structural levels as major institutional pivot zones rather than short-term scalp noise.
-- **Auction Market Context**: Evaluates price relative to the 5-Month Anchored VWAP, Day POC, and Initial Balance.
-- **Disciplined Execution**: Discourages overtrading, warns when Daily Loss Limits are near, and validates that stop-loss orders are placed at structural levels.
+- **Auction Market Context**: Evaluates price relative to 5-Day VPOC/VAH/VAL, Yesterday VAH/VAL/POC, Overnight/London POC, and the 5-Month Anchored VWAP.
+- **Disciplined Execution**: Discourages overtrading, warns when Daily Loss Limits are near, requires minimum 2R distance to next Tier-1 zone, and enforces structural stop loss boundaries.
 
 ---
 
@@ -65,7 +66,7 @@ Traders frequently identify critical weekly, monthly, or daily inflection zones 
 ### 2.1 Memory Zone Structure (`lib/trading/leoLongTermMemory.ts`)
 Each memory zone stores:
 - `id`: Unique identifier.
-- `instrument`: Associated asset (`DOW`, `NASDAQ`, `GOLD`, etc.).
+- `instrument`: Associated asset (`DOW`, `NASDAQ`, `ES`, `GOLD`, `CRUDE`).
 - `priceHigh` & `priceLow`: Zone boundaries.
 - `purpose`: High-level tactical description (e.g. "Weekly Absorption Zone").
 - `notes`: Detailed trader notes and game plan.
@@ -139,36 +140,37 @@ Trading desks prepare and debate playbooks during pre-market liquidity formation
 
 - **Pre-Market Viability Window (00:00 - 09:15 AM EDT)**:
   - The `Discuss Playbook` trigger is actively available.
-  - Traders review overnight inventory, Initial Balance projections, CME dealer Gamma Flips, and institutional stop pools with Leo.
+  - Traders review overnight inventory, Initial Balance projections, Tier-1 frozen levels, and institutional setups with Leo.
 - **09:15 AM Cutoff (`isPlaybookDiscussionEligible()`)**:
   - Exactly at 09:15 AM EDT (15 minutes prior to cash equity open at 09:30 AM), pre-market playbook discussions are **locked**.
-  - **Rationale**: Cash open institutional order flows (dealer hedging, CTA trend liquidations, index rebalancing) override overnight models. Attempting to trade static pre-market theses into high-velocity open imbalances without live reaction validation leads to adverse selection.
+  - **Rationale**: Cash open institutional order flows override overnight models. Attempting to trade static pre-market theses into high-velocity open imbalances without live reaction validation leads to adverse selection.
   - **Dynamic Desk Transition**: The UI displays a live countdown timer until 09:15 AM. Once passed, the prompt badge transitions to `🔒 Locked (09:15 AM Cutoff Passed - Live Reaction Mode Active)`.
 
 ---
 
-## 6. AI Stacked Hedging & CME Big Money Flow Integration
+## 6. The Interactive `📜 Wyckoff 22 Rules` Panel & Purge of AI Stacked Hedging
 
-The Leo Assistant Panel embeds the **AI Stacked & Hedging Engine** directly into the workstation:
+The speculative multi-agent AI Stack (Aegis hedging specialist, dealer gamma flip levels, CTA liquidation trigger bands) has been **completely purged** from the platform.
+
+In its place, the Leo Assistant drawer integrates the dedicated **`📜 Wyckoff 22 Rules`** interactive panel ([`WyckoffRulesPanel.tsx`](file:///c:/Users/shahb/myApplications/Trading/app/dashboard/chart/components/WyckoffRulesPanel.tsx)):
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│  ⚡ AI STACKED HEDGING & CME BIG MONEY FLOWS                           │
+│  📜 THE TRADER'S 22-RULE WYCKOFF & AUCTION MARKET PLAYBOOK             │
 ├────────────────────────────────────────────────────────────────────────┤
-│  Dealer & CTA Triggers:                                                │
-│  • 28,886.34 [HIGH]   PUT WALL          (+126.5 pts) [📌 Attach]       │
-│    Dealer Put Wall support; institutional strike pinning & gamma floor.│
-│  • 28,929.92 [MED]    CTA LIQUIDATION   (+82.9 pts)  [📌 Attach]       │
-│    CTA trend liquidation trigger; systematic momentum forced exits.    │
-│  • 29,012.07 [EXTR]   GAMMA FLIP        (+0.8 pts)   [📌 Attach]       │
-│    Zero-gamma flip boundary; dealers shift from dampening to chasing.  │
-│  • 29,147.05 [HIGH]   CALL WALL         (-134.2 pts) [📌 Attach]       │
-│    Dealer Call Wall resistance; upside hedging supply ceiling.         │
+│  • Support: Spring ➔ Reclaim ➔ LONG (Stop below spring low)            │
+│  • Support: Breakdown ➔ Failed Reclaim ➔ SHORT (Stop above failed)     │
+│  • Resistance: Upthrust ➔ Return Below ➔ SHORT (Stop above upthrust)   │
+│  • Resistance: Breakout ➔ Retest (SOS ➔ LPS / SOW ➔ LPSY) ➔ LONG       │
+├────────────────────────────────────────────────────────────────────────┤
+│  Quick Actions:                                                        │
+│  [🏛️ Audit 4 Setups] [⚡ Audit Order Flow] [📈 Compare Range Volume]    │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Interactive Attachment**: Each institutional trigger features a `📌 Attach` button. Clicking attaches the level as an interactive chip inside Leo's prompt box, auto-injecting its strike, distance, and institutional role into the LLM context.
-- **Live Reaction Verification**: Playbook levels actively display real-time verification badges (`HELD 75%`, `BROKE`, `RESPECTED`, `CONTESTED`) computed on every incoming 1-minute candle close.
+- **4 Valid Trade Setup Cards**: Interactive breakdown of Spring Reclaim, Breakdown Failed Reclaim, Upthrust Return Below, and Breakout Retest.
+- **3-Tier Hierarchy & 8-Step Checklist**: Visual reference for Tier 1 frozen levels (09:30 ET map), Tier 2 Volume/CVD confirmation, and Tier 3 context (5M AVWAP).
+- **One-Click Audit Integration**: Directly triggers Leo to audit setup validity, inspect CVD absorption, or confirm minimum 2R distance to opposing zones.
 
 ---
 
@@ -187,10 +189,11 @@ When Leo drafts entry orders (`PLACE_ORDER` / `OPEN_POSITION` / `ARM_CONDITIONAL
 1. **Instrument-Aware Base Prices**: Fallbacks query exact canonical 2026 CME market levels rather than outdated static prices:
    - **DOW**: Base `52,500.00` | SL `60 pts` | TP `120 pts`
    - **NASDAQ**: Base `29,500.00` | SL `25 pts` | TP `50 pts`
+   - **ES (S&P 500)**: Base `6,000.00` | SL `10.0 pts` | TP `20.0 pts`
    - **GOLD**: Base `4,350.00` | SL `5.0 pts` | TP `10.0 pts`
    - **CRUDE**: Base `104.00` | SL `0.50 pts` | TP `1.00 pt`
-2. **Directive Type Sanitization**: `parseLeoDirectives` cleanly casts stringified LLM outputs (e.g. `"maxMinutes": "5"`, `"quantity": "2"`) into finite numbers and strips trailing commas before JSON parsing.
-3. **Safe Notification Formatting**: Notification routes (`/api/trading/leo/notify`) format `priceDisplay` defensively to prevent unhandled `TypeError` exceptions on undefined/null prices.
+2. **Directive Type Sanitization**: `parseLeoDirectives` cleanly casts stringified LLM outputs into finite numbers and strips trailing commas before JSON parsing.
+3. **Safe Notification Formatting**: Notification routes format `priceDisplay` defensively to prevent unhandled `TypeError` exceptions on undefined/null prices.
 4. **Bracket Sanity**:
    - **LONG**: Validates `stopLoss < entryPrice` and `profitTarget > entryPrice`. If inverted, snaps stop loss to `entryPrice - slDist` and target to `entryPrice + tpDist`.
    - **SHORT**: Validates `stopLoss > entryPrice` and `profitTarget < entryPrice`. If inverted, snaps stop loss to `entryPrice + slDist` and target to `entryPrice - tpDist`.
@@ -232,7 +235,6 @@ The trader input in `LeoAssistantPanel.tsx` is engineered for rapid keyboard wor
 - **Keybindings**:
   - `Enter`: Submits message immediately.
   - `Shift + Enter`: Inserts a clean newline without submitting.
-- **Attachment Chips**: Attached CME triggers (Gamma Flips, Put Walls, CTA Liquidations) appear as interactive dismissible tags directly above the input box.
 - **Voice-to-Text Support**: Includes Web Speech Recognition integration for hands-free audio dictation during fast-moving trading sessions.
 
 ---
@@ -247,7 +249,7 @@ Every armed rule carries full timestamping, session provenance, and structured c
 ```typescript
 export interface ArmedRule {
   id: string
-  instrument: 'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE' | 'NIKKEI'
+  instrument: 'DOW' | 'NASDAQ' | 'ES' | 'GOLD' | 'CRUDE'
   type: 'CONDITIONAL_ENTRY' | 'STAGNATION_TIMEOUT' | 'DESK_ALERT' | 'TELEGRAM_ALERT'
   status: 'ARMED' | 'TRIGGERED' | 'EXECUTED' | 'SATISFIED' | 'CANCELLED' | 'EXPIRED'
   createdDateFormatted: string  // e.g. "Sep 15, 2026 • 21:04 EDT"
@@ -287,14 +289,6 @@ export interface ArmedRule {
    - Spoken phrases like *"if CVD divergence at the level"* flag `cvdDivergence = true`.
    - Displayed on situation cards as **`📊 CVD: ✅ Divergence Required`**.
 
-### 10.4 3-Tile Condition Layout & Cross-Tab Sync
-The Market Situations dashboard (`/dashboard/situations`) organizes each rule into a 3-tile condition structure:
-1. **🎯 Trigger Conditions**: Target Reference, Level, Pattern / Level Touch, Timeframe, CVD Divergence.
-2. **🛡️ Risk & Execution**: Direction, Sizing, Dynamic SL (e.g. Below Bar Low -2p), TP Risk:Reward ratio.
-3. **⏱️ Safeguards & Expiry**: Session Provenance (NYC vs LTM), Stagnation Timeouts, Expiration Window, Dated Stamp.
-
-**Cross-Tab Synchronization**: Any rule armed in the chat panel, updated on the chart, or modified in the dashboard broadcasts `leo-rules-updated` via `CustomEvent` and `StorageEvent` listeners, keeping all open browser tabs continuously in sync.
-
 ---
 
 ## 11. Leo Questioning Engine, System Prompt Section 5f & Telemetry Integration
@@ -306,32 +300,33 @@ Leo integrates the **Auction Price Critique & Questioning Protocol** into its co
 - **Aggressive Price Critique**: Commands Leo to challenge the trader whenever they attempt to chase a single green/red candle or buy into expensive overnight retail inventory: *"Why the hell should we buy here at 9:30 AM when Asian & London participants bought 30 points lower?"*
 - **6-Point Pre-Trade Self-Audit Checklist**: Leo incorporates Q1 Impulse Trap, Q2 Psychological Magnet, Q3 Liquidity Vacuum, Q4 Time Regulation, Q5 Global Inventory, and Q6 Wholesale vs Retail Valuation into every trade evaluation.
 
-### 11.2 System Telemetry Ingestion
-When the chart computes live price critique telemetry (`evaluatePriceQuestioning`), it injects a structured block directly into Leo's prompt context:
+---
 
-```
-[AUCTION PRICE CRITIQUE & "QUESTIONING" TELEMETRY]
-• Valuation State: EXTREME_PREMIUM (Score: +78/100)
-• Suitability Verdict: WEAK_HAND_TRAP_RISK
-• Wholesale Target: 2045.00 (Yesterday NYC POC)
-• Session Inventory Reality: Asian/London participants accumulated lower overnight. Buying here risks providing exit liquidity.
-• Weak-Hand Trap Alert: SINGLE_CANDLE_FOMO (Spike into retail premium)
-• 6-Question Pre-Trade Audit:
-  1. Impulse Trap: DANGER (Single-candle FOMO detected)
-  2. Psychological Magnet: PASSED
-  3. Liquidity Vacuum: WARNING (Low volume extension)
-  4. Time Regulation: PASSED (RTH Cash Open)
-  5. Inventory Overhang: DANGER (Overnight long inventory overhead)
-  6. Wholesale vs Retail: DANGER (Price 35pts above 5D-POC)
-• Desk Recommendation: Hold patient. Market is advertising at retail premium. Await responsive rotation into 2045 before buying.
-```
+## 12. Leo Desk Assistant Quick Action Suggestion Chips & Relocated HUD Controls
 
-### 11.3 1-Click Dossier Submission ("Ask Leo to Critique Price")
-- Clicking **Ask Leo to Critique Price** on the floating Questioning card automatically formats the live critique dossier, populates Leo's input box, and dispatches the auto-prompt.
-- Leo responds with a structured institutional report detailing Valuation & Location, Overnight Inventory Reality, Weak-Hand Trap breakdown, the 6-Question Audit status, and actionable patience guidance.
+### 12.1 Synchronized Quick Action Chips inside Leo Drawer
+All major quick analysis actions inside `LeoAssistantPanel.tsx` are aligned with the 22-Rule Wyckoff Strategy:
+- **`🏛️ Audit 4 Setups`**: Requests Leo to audit the 4 valid trade setups (Spring Reclaim, Breakdown Failed Reclaim, Upthrust Return Below, Breakout Retest) on the current instrument.
+- **`⚡ Audit Order Flow`**: Triggers immediate cumulative volume delta (CVD) vs VWAP absorption/divergence audit.
+- **`📈 Compare Range Volumes`**: Compares traded volume and S/R quality across active user-drawn range boxes.
+- **`📊 Dalton Day Type`**: Summarizes 30-minute TPO period expansion, session auction tails, and Dalton day type.
 
-### 11.4 Deterministic Off-Session Fallback Handlers
-- When a trader asks questioning inquiries outside New York active hours (or without pre-computed telemetry), `buildDeskFallbackResponse` in `/api/trading/leo/chat/route.ts` catches questioning keywords (*"critique price"*, *"why should I buy here?"*, *"is price expensive?"*, *"am I trapped?"*).
-- Provides off-session guidance explaining that Globex participants in Asia/London are currently establishing initial inventory and directs the trader to await NY pre-market formation at 09:00 AM / 09:15 AM ET.
+### 12.2 Relocated Chart HUD Top Bar Action Links
+Quick-action buttons are directly accessible on the top chart HUD strip:
+- **Dalton Day Type**: `Day: {badgeText} [🤖 Ask Leo]` (or `Day: Pre-Session [🤖 Ask Leo]` in Globex).
+- **Audit Order Flow**: `[🤖 Audit Order Flow]` button placed next to `CVD: ON/OFF`.
+- **Compare Range Volume**: `[📈 Compare Range Volume]` button on the top HUD.
 
+---
 
+## 13. Market Closed Session Day Type Protocol & Settlement Lock
+
+### 13.1 Post-Market Settlement Lock
+During regular trading hours (09:30–16:00 ET), Dalton Day Type classification updates dynamically with 30-minute TPO period expansion. When the NYC cash session closes (post-16:00 ET), the system automatically locks the day type state:
+- **Settled Telemetry (`TradingChart.tsx`)**: Sends `${dayTypeEval.badgeText} (FINAL / SESSION CLOSED)` to Leo rather than resetting `dayType` to `null`.
+- **Header HUD Readout**: Displays **`Day: [DAY_TYPE] (Closed)`** with 1-click Ask Leo summary integration.
+
+### 13.2 Anti-Hallucination Prompt Policy
+Leo's system prompt (`lib/ai/leoAssistant.ts`) enforces the **Market Closed Session Rule**:
+- When the session is tagged as `FINAL / SESSION CLOSED`, Leo is strictly forbidden from stating that the day type is "forming", "waiting", or "in progress".
+- Leo authoritatively reports the exact settled day type (e.g. *"Today's session closed as a completed Bullish Trend Day..."*) and details the final auction structure.

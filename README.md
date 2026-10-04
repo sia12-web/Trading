@@ -6,7 +6,7 @@
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?style=flat-square&logo=supabase)](https://supabase.com/)
 [![Web Audio API](https://img.shields.io/badge/Web_Audio_API-Dual_Tone_Chimes-orange?style=flat-square)](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API)
 
-> **TradePulse** is a high-performance, real-time trading platform designed for institutional futures (DOW, NASDAQ, GOLD, CRUDE) and equity swing traders. It pairs institutional auction market theory (Steidlmayer/Dalton), 5-month anchored VWAP bands, multi-tiered CME market data pipelines (Databento Live Hub), live broker portfolio synchronization (Questrade), prop firm challenge tracking (TopstepX), and an intelligent AI copilot (Leo) with persistent memory zones and procedural audio synthesis.
+> **TradePulse** is a high-performance, real-time trading platform designed for institutional futures (DOW, NASDAQ, ES, GOLD, CRUDE) and equity swing traders. It pairs the **22-Rule Wyckoff & Auction Market Theory Strategy**, 5-month anchored VWAP bands ($\pm 1\sigma, \pm 2\sigma, \pm 3\sigma$), multi-tiered CME market data pipelines (Databento Live Hub), live broker portfolio synchronization (Questrade), prop firm challenge tracking (TopstepX), and an intelligent AI copilot (Leo) with an interactive 22-Rule Playbook, persistent memory zones, and procedural audio synthesis.
 
 ---
 
@@ -16,11 +16,11 @@ The complete technical and operational documentation is organized under the [`do
 
 | Document | Description |
 | :--- | :--- |
-| **[System Architecture Guide](docs/ARCHITECTURE.md)** | Core system topology, client-server boundaries, event-driven data flows, and state management. |
+| **[System Architecture Guide](docs/ARCHITECTURE.md)** | Core system topology, client-server boundaries, event-driven data flows, state management, and Wyckoff engine architecture. |
 | **[Market Data Pipelines & CME Basis](docs/MARKET_DATA_AND_FEEDS.md)** | Multi-tier feeds (CME Globex MDP 3.0 via Databento, OANDA 24/7 CFDs, Yahoo Finance Daily), dynamic CME basis calculation, and time shifting (`toChartTime`). |
 | **[Trading Desk Operations & Risk Guard](docs/TRADING_DESK_AND_OPERATIONS.md)** | Multi-session framework (Asia, London, NY Cash, Afternoon), attendance clock-in, DLL circuit breakers, attempt ladder, and zero-telemetry policy. |
-| **[Chart Engine & Technical Indicators](docs/CHART_AND_INDICATORS.md)** | Lightweight Charts v4, institutional candle styling, 5-Month Anchored VWAP + bands, 5-Day FRVP with candle-bounded POC, Dalton auction overlays, daily tested swing extremes, and CVD sub-pane. |
-| **[Leo AI Assistant & Web Audio Alerts](docs/LEO_AI_AND_AUDIO_ALERTS.md)** | Leo multi-tier AI copilot, persistent Long-Term Memory (LTM) zones, real-time proximity scanner, and procedural dual-tone chime synthesizer. |
+| **[Chart Engine & Technical Indicators](docs/CHART_AND_INDICATORS.md)** | Lightweight Charts v4, institutional candle styling, 5-Month Anchored VWAP + SD bands, 5-Day FRVP with candle-bounded POC, Dalton auction overlays, daily tested swing extremes, and CVD sub-pane. |
+| **[Leo AI Assistant & Web Audio Alerts](docs/LEO_AI_AND_AUDIO_ALERTS.md)** | Leo multi-tier AI copilot, interactive 22-Rule Wyckoff Playbook panel, persistent Long-Term Memory (LTM) zones, real-time proximity scanner, and procedural dual-tone chime synthesizer. |
 | **[Broker & Prop Firm Integrations](docs/BROKER_AND_PROP_INTEGRATIONS.md)** | Questrade live OAuth portfolio sync, intelligent delayed TP/SL bracket pairing, and TopstepX $1,500 challenge sync ($183.64 / 66 trades ledger). |
 | **[REST API Reference & Data Contracts](docs/API_REFERENCE.md)** | Exhaustive reference for all API endpoints (`/api/trading/*`, `/api/levels/*`, `/api/health`), schemas, and Server-Sent Events (SSE). |
 
@@ -36,36 +36,46 @@ The complete technical and operational documentation is organized under the [`do
 
 ### 2. Institutional Financial Charting & Visual Quality Engine (Lightweight Charts v4)
 - **Institutional Styling**: Standard TradingView green (`#089981`) and red (`#f23645`) candles desk-wide.
-- **5-Month Anchored VWAP**: Macro institutional benchmark with `±1σ`, `±2σ`, and `±3σ` volatility bands on Daily (`1D`) and dynamic session VWAP + 5M benchmark line on intraday charts (`1m`, `5m`, `30m`).
+- **5-Month Anchored VWAP & Standard Deviation Bands**: Macro institutional benchmark with `±1σ`, `±2σ`, and `±3σ` volatility bands on Daily (`1D`) and intraday charts, controlled via a clean `5M AVWAP: ON/OFF` toggle button on the chart HUD strip.
 - **5-Day Fixed Range Volume Profile (FRVP)**: Calculates Point of Control (POC), Value Area High (VAH), and Value Area Low (VAL), with the POC line terminating precisely at the current candle.
 - **Dalton Auction Theory & Excess Reference Ranges**: Canonical Excess Selling High and Excess Buying Low reference boundaries (`excessLevelsFromCandles()`), 30-minute TPO period Day Type classification (`classifyMarketDayType`), Opening Ranges (OR15, OR30), and Late-Session Spikes.
 - **Daily & Intraday Tested Extremes**: Structural swing highs/lows with traded volume badges (`(142.5k)`), retest confirmation (`[Retest 0.82x]`), and bounded horizontal shelves.
-- **Cumulative Volume Delta (CVD) & TimeScale Sync Locking**: Interactive candlestick sub-pane displaying buy/sell volume imbalances. Features a unified mutual exclusion lock (`isSyncingTimeScale`) and sub-pixel epsilon threshold (`< 0.05 bars`) to eliminate chart shaking, combined with aligned `minimumWidth: 75px` price scales and 150ms throttled single-pass overlay painting.
+- **Cumulative Volume Delta (CVD) & TimeScale Sync Locking**: Interactive candlestick sub-pane displaying buy/sell volume imbalances. Features a unified mutual exclusion lock (`isSyncingTimeScale`) and sub-pixel epsilon threshold (`< 0.05 bars`) to eliminate chart shaking.
 - **Horizontal S/R Runway & Empirical Velocity Corridor**: Computes scale-invariant momentum slope ($\Delta P / \Delta t$) with $1.0\times$ Equilibrium, $1.5\times$ Climax, and $0.5\times$ Retest Floor rays, paired with multi-session overhead resistance runway evaluation to flag tight runway traps ($< 1.5:1$ R:R).
 
-### 3. "Questioning" — Auction Price Critique & Pre-Trade Self-Audit Protocol
+### 3. The 22-Rule Wyckoff Strategy & Globex Session-Aware Opportunity Radar
+- **The 4 Valid Trade Setups (Absolute Directive)**:
+  1. **Support: Spring $\rightarrow$ Reclaim $\rightarrow$ LONG** (Stop strictly below spring low)
+  2. **Support: Breakdown $\rightarrow$ Failed Reclaim $\rightarrow$ SHORT** (Stop strictly above failed reclaim)
+  3. **Resistance: Upthrust $\rightarrow$ Return Below $\rightarrow$ SHORT** (Stop strictly above upthrust high)
+  4. **Resistance: Breakout $\rightarrow$ Successful Retest (SOS $\rightarrow$ LPS / SOW $\rightarrow$ LPSY) $\rightarrow$ LONG** (Stop strictly below retest low)
+  *Everything else in the execution universe is ignored.*
+- **3-Tier Chart Hierarchy**:
+  - **Tier 1 (Mandatory)**: 5-Day Volume Profile, Yesterday's Profile, Overnight/London. **Pre-market map frozen at 09:30 ET**.
+  - **Tier 2 (Execution Confirmation)**: Volume (Effort vs. Result), CVD (Absorption & Confirmation).
+  - **Tier 3 (Context Only)**: 5-Month Anchored VWAP, Volatility Gauges.
+- **Spring & Upthrust Institutional Scoring (0–100 Pts)**: Evaluates trendlines drawn from Spring/Upthrust origins across volume expansion (25 pts), CVD absorption divergence (25 pts), multi-touch validation (20 pts), Tier-1 profile confluence (20 pts), and 5M AVWAP alignment (10 pts). Awards Grades A ($\ge 75$), B ($50-74$), or C ($< 50$).
+- **Globex Session Awareness & 5-Market Radar (`lib/trading/crossMarketRadar.ts`)**: Continuous opportunity matrix across `NQ`, `ES`, `YM`, `GC` (Gold), and `CL` (Crude Oil) with session awareness (`CLOSED`, `ASIA`, `LONDON`, `NEW YORK`, `MAINTENANCE`) and overnight inventory tracking.
+
+### 4. "Questioning" — Auction Price Critique & Pre-Trade Self-Audit Protocol
 - **The Market as an Auction Place**: Evaluates whether price is advertising opportunity at a wholesale discount or expensive retail premium (`DEEP_DISCOUNT`, `DISCOUNT`, `FAIR_VALUE`, `PREMIUM`, `EXTREME_PREMIUM`).
 - **Session Inventory Reality Check**: Critiques price relative to Asian, London, and Overnight participants at the 9:30 AM NY Open: *"Why buy at 9:30 AM when overnight participants accumulated 30 points lower?"*
 - **6-Point Pre-Trade Self-Audit Checklist**: Interactive audit verifying Q1 Impulse Trap, Q2 Psychological Magnet, Q3 Liquidity Vacuum, Q4 Time Regulation (Open Drive vs 11:30–13:30 Lunch Doldrums), Q5 Inventory Overhang, and Q6 Wholesale vs Retail Valuation.
 - **NY Session Window Gating**: Strictly restricted to New York pre-market & cash hours (09:00 ET / 09:15 ET through 16:00 ET close via `America/New_York` clock). Completely deactivated during Asian, London, post-close, and weekend hours.
-- **Interactive Visual HUD & Leo Integration**: Features a color-coded `⚖️ Critique: [STATUS]` HUD button, hotkey `Q`, floating desk card with valuation meter, and 1-click dossier submission into Leo AI (Section 5f system prompt & telemetry).
 
-### 4. Leo AI Copilot, Market Situations & Web Audio Alert Engine
-- **Context-Aware Assistance**: Continuous situational awareness across live chart price action, Higher Timeframe daily structure, open broker positions, and Auction Price Critique telemetry.
-- **Market Situations & Armed Rules Manager (`/dashboard/situations`)**: Centralized command dashboard organizing conditional entries, desk alarms, level monitors, and stagnation rules with full date/time provenance (`createdDateFormatted`), auto-calculated R:R ratios, and cross-tab sync.
-- **Smart Entry Triggers**:
-  - **Level Touch Default**: Defaults to `LEVEL_TOUCH` (Price Touch at Level) when no candlestick pattern is specified, eliminating auto-assigned patterns.
-  - **Dynamic Timeframe Rules**: Evaluates rules on specific chart timeframes (e.g. `5m`, `15m`, `30m`) or monitors all timeframes when unspecified (`entryTimeframe = null`).
-  - **CVD Divergence Conditions**: Integrates order flow volume delta divergence checks directly into armed entry rules.
+### 5. Leo AI Copilot, Interactive Wyckoff Playbook & Web Audio Alert Engine
+- **Purged AI Stacked & Hedging**: Completely purged speculative multi-agent hedging models (Aegis, dealer gamma flip levels, CTA liquidation bands) in favor of strict adherence to the trader's 22 Wyckoff rules.
+- **Interactive `📜 Wyckoff 22 Rules` Panel (`WyckoffRulesPanel.tsx`)**: Embedded panel in the Leo Assistant drawer offering visual guides to the 4 setups, 3-tier hierarchy, 8-step screen-reading sequence, and absolute risk filters.
+- **Relocated "Ask Leo" HUD Buttons**: Convenient top chart HUD buttons for **Dalton Day Type** (`[🤖 Ask Leo]`), **Audit Order Flow** (`[🤖 Audit Order Flow]`), and **Compare Range Volume** (`[📈 Compare Range Volume]`), alongside synchronized Leo quick chips (`🏛️ Audit 4 Setups`, `⚡ Audit Order Flow`, `📈 Compare Range Volumes`, `📊 Dalton Day Type`).
 - **Persistent Long-Term Memory (LTM)**: 1-click conversion of chart Range Boxes into persistent memory zones with trader notes and audible alarms.
 - **Procedural Two-Tone Chime Synthesis**: Zero-latency TradingView-style alert chime synthesized in real time via the Web Audio API (880 Hz fundamental $\rightarrow$ 1318.51 Hz harmonic shimmer) without external audio files.
 
-### 5. Questrade Broker & TopstepX Prop Firm Integration
+### 6. Questrade Broker & TopstepX Prop Firm Integration
 - **Questrade Live Sync**: Real-time portfolio book, cash balance, open multi-day swing equities (SPY, GOOG, SLV, COPX).
 - **Intelligent Delayed TP/SL Bracket Pairing**: Proprietary algorithm pairing delayed limit targets and stop orders with open positions based on price relationship sanity (Long TP > Entry > SL) and recency scoring, completely isolating unexecuted entry limits.
 - **TopstepX $1,500 Challenge**: Zero-base prop equity engine tracking official challenge `1.5KCHCR-LABS004-V2-675081-67067724`, Max Loss Limit floor (-$500.00), live cushion ($683.64), win rate (56.06%), and the verified 66-trade ledger.
 
-### 6. Strict Desk Risk Controls & Zero-Telemetry Privacy
+### 7. Strict Desk Risk Controls & Zero-Telemetry Privacy
 - **Risk Limits**: Fixed $400 dollar risk per setup, Daily Loss Limit (DLL) circuit breakers, 3-attempt daily ladder, and +$700 Green Day lock.
 - **Zero Telemetry**: All Telegram notifications are permanently disabled desk-wide. Telemetry, order execution, and trading signals remain 100% private on the local platform.
 
@@ -91,6 +101,7 @@ The complete technical and operational documentation is organized under the [`do
 │   │       └── ...
 │   ├── dashboard/               # Next.js App Router Client Pages
 │   │   ├── chart/               # Fullscreen Institutional Trading Chart & CVD
+│   │   │   └── components/      # TradingChart, WyckoffRulesPanel, LeoAssistantPanel, Radar
 │   │   ├── journal/             # TopstepX Prop Challenge Ledger & Equity Curve
 │   │   ├── positions/           # Live Execution Dashboard & Bracket Controls
 │   │   ├── swing/               # Questrade Swing Portfolio & Team Tape
@@ -99,6 +110,7 @@ The complete technical and operational documentation is organized under the [`do
 │   └── page.tsx                 # Landing / Redirect Entrypoint
 ├── lib/
 │   ├── ai/                      # Leo AI Assistant & Prompt Engines
+│   │   └── leoAssistant.ts      # Authoritative 22-Rule Wyckoff System Prompt
 │   ├── chart/                   # Charting Engines, AVWAP, Canvas Overlays, Sound
 │   │   ├── chartTime.ts         # Montreal Wall Clock toChartTime Converter
 │   │   ├── deskChartTheme.ts    # Lightweight Charts Institutional Theme
@@ -110,10 +122,10 @@ The complete technical and operational documentation is organized under the [`do
 │   ├── oanda/                   # OANDA v20 REST & CFD Pricing Service
 │   ├── questrade/               # Questrade OAuth & Live Account Service
 │   ├── supabase/                # Supabase Database & Mock Client
-│   ├── trading/                 # Trading Operations, CME Basis, Bracket Pairing
+│   ├── trading/                 # Trading Operations, CME Basis, Wyckoff Engine
 │   │   ├── cmeBasis.ts          # Spot-Futures Basis Calculation Engine
-│   │   ├── deskInstrumentPreference.ts # Viewport Storage per Timeframe
-│   │   ├── journalHistory.ts    # Prop Firm Challenge & Equity Calculation
+│   │   ├── crossMarketRadar.ts  # Globex Session-Aware 5-Market Radar
+│   │   ├── wyckoffStrategy.ts   # 0-100 Institutional Factor Scoring Engine
 │   │   ├── leoLongTermMemory.ts # Persistent Memory Zones & Proximity Engine
 │   │   ├── questradeOrders.ts   # Intelligent Delayed TP/SL Bracket Pairing
 │   │   ├── sessionGate.ts       # Multi-Session Desk Trading Windows

@@ -50,6 +50,8 @@ graph TD
         AVWAP_ENG[5-Month & Session Anchored VWAP Engine with ±1σ, ±2σ, ±3σ]
         AUCTION_ENG[Dalton Auction Market Engine - Excess Selling/Buying, Spikes, Extremes]
         PAIRING_ENG[Intelligent TP/SL Bracket Pairing Engine with Price Sanity]
+        WYCKOFF_ENG[Wyckoff Spring/Upthrust Factor Evaluation Engine - lib/trading/wyckoffStrategy.ts]
+        RADAR_ENG[Cross-Asset Volatility & 5-Market Radar - lib/trading/crossMarketRadar.ts]
         LTM_ENG[Leo Long-Term Memory & Proximity Scanner]
         LEO_RULES[Leo Rules Manager & Dated Provenance Engine - lib/trading/leoRules.ts]
         AUDIO_SYNTH[Web Audio API Dual-Tone Chime Synthesizer]

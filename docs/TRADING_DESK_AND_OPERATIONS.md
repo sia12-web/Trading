@@ -45,9 +45,17 @@ TradePulse structures the trading day into four distinct market regimes based on
 ### 1.5 Active CME Quarterly Contract Alignment (December 2026 Z6 Roll)
 - **Contract Alignment**: Databento live futures hubs and OANDA basis offsets automatically adjust to active December 2026 quarterly contracts (`MYMZ6`, `MNQZ6`, `NKDZ6`, `MGCZ6`, `CLZ6`) via `getActiveCmeQuarterlyContract()`.
 
-### 1.6 End-of-Day (EOD) Risk Flatten Window (16:59 EDT)
-- **Rule**: All intraday day-trading positions must be flattened by 16:59 EDT.
-- Prevents overnight margin expansion and eliminates gap risk across non-trading hours for prop firm accounts. Multi-day swing positions (e.g. SPY, GOOG equities in Questrade) remain unaffected.
+### 1.7 Cross-Asset Volatility Gauges & 5-Market Selection Process
+- Instead of deciding on a single asset class every morning, traders let the 5 benchmark markets (`NQ`, `YM`, `ES`, `GC`, `CL`) compete for attention based on volatility expansion and location.
+- **Dedicated Cboe Volatility Gauges**:
+  - `VIX` (30-day) & `VIX1D` (1-day expected 0DTE volatility) for Equities (`NQ`, `YM`, `ES`).
+  - `OVX` (Cboe Crude Oil Volatility Index) for Crude Oil (`CL`).
+  - `GVZ` (Cboe Gold Volatility Index) for Gold (`GC`).
+- **3-Factor Opportunity Matrix (`lib/trading/crossMarketRadar.ts`)**:
+  1. **Participation**: Is volume/range expanding rapidly?
+  2. **Location**: Is price sitting at an important level (5D-LVN, Yesterday VAH/VAL/POC, 5M AVWAP)?
+  3. **Structure**: Is a clean Wyckoff pattern forming (Spring, Upthrust, Absorption)?
+- **Grade A Selection**: Execution is granted ONLY when all 3 factors are present. Markets moving $+4.0\%$ without Location are tagged Grade B (Trap Risk) under the **Anti-Chase Rule**.
 
 ---
 
