@@ -11,7 +11,36 @@ export const DESK_CHART_GRID = '#161b22'
 export const DESK_CHART_TEXT = '#8b949e'
 export const DESK_CHART_BORDER = '#21262d'
 export const DESK_CANDLE_UP = '#089981'
-export const DESK_CANDLE_DOWN = '#f23645'
+export const DESK_LIGHT_CHART_BG = '#ffffff'
+export const DESK_LIGHT_CHART_GRID = '#f0f3f6'
+export const DESK_LIGHT_CHART_TEXT = '#131722'
+export const DESK_LIGHT_CHART_BORDER = '#e0e3eb'
+
+export function getDeskChartThemeOptions(theme: 'dark' | 'light') {
+  const isDark = theme === 'dark'
+  const bg = isDark ? DESK_CHART_BG : DESK_LIGHT_CHART_BG
+  const grid = isDark ? DESK_CHART_GRID : DESK_LIGHT_CHART_GRID
+  const text = isDark ? DESK_CHART_TEXT : DESK_LIGHT_CHART_TEXT
+  const border = isDark ? DESK_CHART_BORDER : DESK_LIGHT_CHART_BORDER
+
+  return {
+    layout: {
+      background: { type: ColorType.Solid, color: bg },
+      textColor: text,
+    },
+    grid: {
+      vertLines: { color: grid, style: LineStyle.Solid },
+      horzLines: { color: grid, style: LineStyle.Solid },
+    },
+    rightPriceScale: {
+      borderColor: border,
+      textColor: text,
+    },
+    timeScale: {
+      borderColor: border,
+    },
+  }
+}
 
 /** 14px slot produces the dense 8–10px solid body used by TradingView. */
 export const DESK_BAR_SPACING = 14

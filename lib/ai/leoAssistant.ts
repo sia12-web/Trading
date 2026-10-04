@@ -251,6 +251,16 @@ export interface LeoChatContext {
   rangeComparisons?: RangeComparisonResult[]
   crossMarketVolatility?: CrossMarketVolatilityState
   marketRadar?: CrossMarketRadarReport
+  newsCatalystVwap?: {
+    catalystTitle?: string
+    eventTime?: string
+    atrSurgeRatio?: number
+    latestVwap?: number | null
+    sigma1Upper?: number | null
+    sigma1Lower?: number | null
+    sigma2Upper?: number | null
+    sigma2Lower?: number | null
+  } | null
 }
 
 export interface LeoMessage {
@@ -502,6 +512,18 @@ export function extractChartDataPoints(ctx: LeoChatContext): LeoDataPoint[] {
       tier: 'LT',
       category: 'VWAP',
       description: '5-Month AVWAP -1σ Volatility Band',
+    })
+  }
+
+  // News Catalyst Anchored VWAP
+  if (ctx.newsCatalystVwap?.latestVwap != null) {
+    points.push({
+      id: 'st-news-vwap',
+      label: `News AVWAP (${ctx.newsCatalystVwap.catalystTitle || 'Macro Catalyst'})`,
+      value: ctx.newsCatalystVwap.latestVwap,
+      tier: 'ST',
+      category: 'VWAP',
+      description: `Anchored VWAP from major catalyst (${ctx.newsCatalystVwap.catalystTitle ?? 'Macro News'} @ ${ctx.newsCatalystVwap.eventTime ?? ''}). Surge: ${ctx.newsCatalystVwap.atrSurgeRatio ?? 1}x ATR`,
     })
   }
 

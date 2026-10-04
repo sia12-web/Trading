@@ -86,7 +86,60 @@ function isAbortError(err: unknown): boolean {
 }
 
 
-import { DeskNewsAiAssistant } from './components/DeskNewsAiAssistant'
+import { isHighImpact } from '@/lib/trading/deskNewsHazard'
+
+function NewsCatalystAvwapCard({ calendar }: { calendar: DeskCalendarEvent[] }) {
+  const catalysts = useMemo(() => {
+    return (calendar || [])
+      .filter((ev) => isHighImpact(ev.impact))
+      .slice(0, 4)
+  }, [calendar])
+
+  if (catalysts.length === 0) return null
+
+  return (
+    <section className="rounded-2xl border border-amber-500/40 bg-gradient-to-r from-amber-950/30 via-zinc-900 to-zinc-950 p-5 space-y-4 shadow-xl">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-500/20 pb-3">
+        <div className="flex items-center gap-2.5">
+          <span className="text-xl">⚡</span>
+          <div>
+            <h2 className="text-sm font-bold text-amber-200">Macro Catalysts & Institutional Anchored VWAP</h2>
+            <p className="text-xs text-gray-400">High-impact news events that reset institutional volatility benchmarks</p>
+          </div>
+        </div>
+        <Link
+          href="/dashboard/chart"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-xs font-semibold border border-amber-500/40 transition shadow-sm"
+        >
+          <span>Open Chart with News AVWAP</span>
+          <span>→</span>
+        </Link>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        {catalysts.map((ev, i) => (
+          <div key={i} className="rounded-xl border border-zinc-800 bg-zinc-950/80 p-3.5 space-y-2">
+            <div className="flex items-start justify-between gap-2">
+              <span className="font-semibold text-white text-xs leading-tight">{ev.event}</span>
+              <span className="text-[9.5px] uppercase font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0 font-bold">
+                {ev.impact}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-[11px] text-gray-400 font-mono pt-1">
+              <span>Time: <strong className="text-zinc-200">{ev.time}</strong></span>
+              {ev.actual && <span>Actual: <strong className="text-emerald-400">{ev.actual}</strong></span>}
+              {ev.estimate && <span>Est: <strong className="text-zinc-400">{ev.estimate}</strong></span>}
+            </div>
+            <div className="text-[10.5px] text-amber-300/90 pt-1 border-t border-zinc-800/60 flex items-center justify-between">
+              <span>Institutional Anchored VWAP</span>
+              <span className="font-bold text-amber-300">Active on Chart</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
 
 export default function DeskNewsPage() {
   const [tab, setTab] = useState<DeskTab>('DOW')
@@ -212,12 +265,6 @@ export default function DeskNewsPage() {
           >
             Refresh
           </button>
-          <Link
-            href="/dashboard/chart"
-            className="rounded border border-sky-600/40 bg-sky-950/40 px-2 py-1 text-sky-200 hover:bg-sky-900/50 hover:text-white transition-colors"
-          >
-            TradePulse →
-          </Link>
         </div>
       </div>
 
@@ -264,6 +311,9 @@ export default function DeskNewsPage() {
           {sessionFilter ? 'Session filter on' : 'Show all'}
         </button>
       </div>
+
+      {/* Macro Catalyst AVWAP & Volatility Benchmarks Card */}
+      <NewsCatalystAvwapCard calendar={data?.calendar || []} />
 
       {/* Desk News & Market Reaction AI Assistant */}
       <DeskNewsAiAssistant tab={tab} />

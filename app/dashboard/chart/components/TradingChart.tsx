@@ -259,6 +259,7 @@ import {
   DESK_CANDLE_DOWN,
   DESK_CANDLE_UP,
   DESK_CHART_THEME,
+  getDeskChartThemeOptions,
 } from '@/lib/chart/deskChartTheme'
 import {
   lockToCandleAutoscale,

@@ -458,12 +458,6 @@ function JournalPageInner() {
           >
             Refresh
           </button>
-          <Link
-            href="/dashboard/chart"
-            className="rounded-lg border border-sky-600/40 bg-sky-950/40 px-3 py-1.5 text-xs font-semibold text-sky-200 hover:bg-sky-900/50 hover:text-white transition-colors"
-          >
-            TradePulse →
-          </Link>
         </div>
 
         {/* CMC Markets CFD Account ($2,000 Capital) HUD */}
