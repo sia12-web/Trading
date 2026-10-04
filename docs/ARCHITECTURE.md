@@ -11,16 +11,16 @@
 
 ## 1. High-Level Architecture & System Topology
 
-TradePulse is an event-driven institutional day and swing trading workstation. It integrates multi-source market data pipelines (CME Globex MDP 3.0 via Databento, OANDA continuous CFDs with CME basis adjustments, and Yahoo Finance Daily macro history), proprietary auction market analytics (5-Month Anchored VWAP, 5-Day FRVP, Initial Balance, Dalton Spikes), broker portfolio tracking (Questrade live OAuth & TopstepX prop firm challenge), and an intelligent trading copilot (Leo AI with persistent Long-Term Memory zones).
+TradePulse is an event-driven institutional day and swing trading workstation. It integrates multi-source market data pipelines (CME Globex MDP 3.0 via Databento, OANDA continuous CFDs with CME basis adjustments, and Yahoo Finance Daily macro history), proprietary auction market analytics (5-Month Anchored VWAP with SD bands, 5-Day FRVP, Initial Balance, Dalton Spikes), broker portfolio tracking (Questrade live OAuth & TopstepX prop firm challenge), and an intelligent trading copilot (Leo AI with the 22-Rule Wyckoff Playbook and persistent Long-Term Memory zones).
 
 ```mermaid
 graph TD
     subgraph Client [Frontend Workstation - Next.js 14 App Router]
         TC[TradingChart - Lightweight Charts v4]
-        CO[HTML5 Canvas Overlay Layer - Sessions, Spikes, Extremes, FRVP]
-        HUD[Chart Toolbar, Timeframe Selector, Tooltip & Status HUD]
+        CO[HTML5 Canvas Overlay Layer - Sessions, Spikes, Extremes, Wyckoff Spring/Upthrust]
+        HUD[Chart Toolbar, Timeframe Selector, Tooltip, 5M AVWAP & Top HUD Action Links]
         CVD[Cumulative Volume Delta Sub-Pane]
-        LEO_UI[Leo AI Chat & Memory Zone Manager]
+        LEO_UI[Leo AI Chat & Interactive Wyckoff 22 Rules Panel - WyckoffRulesPanel.tsx]
         SITUATIONS_UI[Market Situations & Leo Rules Dashboard - /dashboard/situations]
         NOTIF[Notifications Center & Audio Alert Dispatcher]
         DESK[Desk Journal, Swing Positions, Team Tape & Book Cards]
@@ -29,7 +29,7 @@ graph TD
     subgraph API_Gateway [Next.js App Router API Layer]
         API_Candles["/api/trading/candles (Multi-TF Market Data)"]
         API_Stream["/api/trading/quote/stream (SSE Live Stream)"]
-        API_Context["/api/trading/context-55 (5M AVWAP, YDay NYC, ON)"]
+        API_Context["/api/trading/context-55 (5M AVWAP, YDay NYC, ON Inventory)"]
         API_Positions["/api/trading/current-position & positions/*"]
         API_Questrade["/api/trading/questrade/book (Live Broker)"]
         API_Journal["/api/trading/journal & sim-journal (TopstepX Sync)"]
@@ -47,11 +47,11 @@ graph TD
 
     subgraph Core_Services [TypeScript Service & Strategy Layer]
         CANDLE_NORM[Candle Normalizer & Time Shifter toChartTime]
-        AVWAP_ENG[5-Month & Session Anchored VWAP Engine with ±1σ, ±2σ, ±3σ]
+        AVWAP_ENG[5-Month Anchored VWAP Engine with ±1σ, ±2σ, ±3σ Bands]
         AUCTION_ENG[Dalton Auction Market Engine - Excess Selling/Buying, Spikes, Extremes]
         PAIRING_ENG[Intelligent TP/SL Bracket Pairing Engine with Price Sanity]
-        WYCKOFF_ENG[Wyckoff Spring/Upthrust Factor Evaluation Engine - lib/trading/wyckoffStrategy.ts]
-        RADAR_ENG[Cross-Asset Volatility & 5-Market Radar - lib/trading/crossMarketRadar.ts]
+        WYCKOFF_ENG[Wyckoff Spring/Upthrust 0-100 Factor Evaluation Engine - lib/trading/wyckoffStrategy.ts]
+        RADAR_ENG[Globex Session-Aware 5-Market Opportunity Radar - lib/trading/crossMarketRadar.ts]
         LTM_ENG[Leo Long-Term Memory & Proximity Scanner]
         LEO_RULES[Leo Rules Manager & Dated Provenance Engine - lib/trading/leoRules.ts]
         AUDIO_SYNTH[Web Audio API Dual-Tone Chime Synthesizer]
@@ -76,18 +76,19 @@ graph TD
 
 ### 2.1 Client-Side Rendering Strategy
 - **Client Components (`'use client'`)**:
-  - `TradingChart.tsx`: Houses the primary Lightweight Charts container, HTML5 transparent canvas overlay, live crosshair tooltips, CVD sub-pane, and interactive drawing tools.
+  - `TradingChart.tsx`: Houses the primary Lightweight Charts container, HTML5 transparent canvas overlay, live crosshair tooltips, CVD sub-pane, top HUD quick action buttons, and interactive drawing tools.
+  - `WyckoffRulesPanel.tsx`: Interactive 22-Rule Wyckoff playbook embedded inside the Leo Assistant panel.
   - `DashboardPositionsClient.tsx`: Real-time execution dashboard showing active positions, working limit orders, live P&L, stop-loss / take-profit bracket controls, and manual flatten triggers.
   - `QuestradeBookCard.tsx`: Displays live broker equity, open multi-day swing positions, and execution metrics.
   - `DashboardNotifications.tsx`: Real-time alarm banner feed and memory breach logs.
-  - `LeoChat.tsx`: Conversational AI copilot interface.
+  - `LeoAssistantPanel.tsx`: Conversational AI copilot interface with dedicated Wyckoff rules tab.
 - **Server Components & Route Handlers**:
   - All routes under `app/api/` execute server-side within the Next.js Node.js runtime, ensuring that sensitive API keys (OANDA, Databento, Anthropic, Questrade, Supabase Service Role) are never exposed to the client browser.
 
 ### 2.2 Reactivity Without UI Freezing
 High-frequency market data streams (quotes every 250ms to 1s) can easily trigger severe React reconciliation lag if handled via standard `useState` hooks. TradePulse employs an imperative, decoupled rendering architecture:
 1. **Direct Series Mutations**: Live quotes call `candleSeries.update()` directly via mutable React references (`candleRef.current`, `volumeSeriesRef.current`, `vwapSeriesRef.current`).
-2. **Animation Frame Scheduling (`requestAnimationFrame`)**: Canvas overlays (session boxes, FRVP histograms, Dalton spike markers, daily extremes) schedule rendering passes using `requestAnimationFrame`, throttling canvas repaints to the monitor refresh rate (60Hz / 120Hz).
+2. **Animation Frame Scheduling (`requestAnimationFrame`)**: Canvas overlays (session boxes, FRVP histograms, Dalton spike markers, daily extremes, Wyckoff trendlines) schedule rendering passes using `requestAnimationFrame`, throttling canvas repaints to the monitor refresh rate (60Hz / 120Hz).
 3. **Dedicated Canvas Layers**: Rather than creating thousands of DOM elements for chart annotations, overlays are rendered onto stacked `<canvas>` elements positioned directly above the Lightweight Charts pane.
 4. **Timeframe State Isolation**: Switching timeframes (`1m`, `5m`, `30m`, `1D`) explicitly purges cached timestamps, resets seeded price lines, and clears intraday series before mounting the new resolution.
 
@@ -147,6 +148,7 @@ The platform utilizes a structured relational schema enforcing strict Row-Level 
 | **Frontend Framework** | Next.js 14.2, React 18 | App Router, Server Components, Client Workstation |
 | **Styling & HUD** | TailwindCSS 3.4, Lucide Icons | Responsive institutional trading theme (`#0d1117`) |
 | **Financial Charting** | Lightweight Charts v4, HTML5 Canvas 2D | Candlestick rendering, indicators, volume profiles |
+| **Wyckoff Playbook Engine** | `lib/ai/leoAssistant.ts`, `WyckoffRulesPanel.tsx` | 22-Rule Wyckoff system prompt, 4 valid trade setups |
 | **Audio Engine** | Web Audio API (`AudioContext`) | Real-time dual-tone synthesizers, zero latency |
 | **Market Data Providers**| Databento, OANDA v20, Yahoo Finance | CME Globex MDP 3.0, 24/7 CFDs, Daily macro data |
 | **Broker Integrations** | Questrade API, TopstepX | OAuth portfolio sync, prop firm challenge tracking |
@@ -177,7 +179,7 @@ To eliminate pricing gaps during fast-moving New York and London opens without i
 │  Next.js Server Hub & Frontend Lightweight Charts       │
 │  • Direct tick consumption for smooth price continuity │
 │  • Zero-gap candle formation even during macro prints  │
-└────────────────────────────────────────────────────────┘
+└──────────────────────────┘
 ```
 
 - **Zero-Drop Resilience**: The daemon operates as an autonomous background service, handling reconnects and socket heartbeats independently of page reloads or Next.js rebuilds.
@@ -192,4 +194,3 @@ Trade levels generated by the AI Playbook or historical auction analysis are gra
 - **Contested**: Price consolidated inside the zone for >3 bars without definitive directional acceptance.
 - **Broken**: Price closed beyond the opposing zone boundary, indicating failed absorption and stop-pool liquidation.
 - **Live Badging**: Level verdicts are tagged on chart overlays (`HELD 75%`, `BROKE`, `RESPECTED`), giving the trader real-time feedback on institutional level validity.
-

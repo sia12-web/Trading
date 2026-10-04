@@ -40,12 +40,26 @@ graph TD
     SANITY_FILTER --> Outputs
 ```
 
-### 1.1 Hierarchical Prompt System
-Leo's system prompt (`lib/ai/leoAssistant.ts`) enforces strict trading desk principles:
-- **Authoritative 22-Rule Wyckoff Directive**: Evaluates setups strictly according to the **22-Rule Wyckoff Playbook** (4 valid setups only: Spring Reclaim LONG, Breakdown Failed Reclaim SHORT, Upthrust Return Below SHORT, Breakout Retest LONG).
-- **Higher-Timeframe Primacy**: Evaluates Daily (`1D`) structural levels as major institutional pivot zones rather than short-term scalp noise.
-- **Auction Market Context**: Evaluates price relative to 5-Day VPOC/VAH/VAL, Yesterday VAH/VAL/POC, Overnight/London POC, and the 5-Month Anchored VWAP.
-- **Disciplined Execution**: Discourages overtrading, warns when Daily Loss Limits are near, requires minimum 2R distance to next Tier-1 zone, and enforces structural stop loss boundaries.
+### 1.1 Hierarchical Prompt System & The 22-Rule Wyckoff Directive
+Leo's system prompt (`lib/ai/leoAssistant.ts`) enforces strict institutional trading desk principles:
+- **Authoritative 22-Rule Wyckoff Directive (Absolute Directive)**: Evaluates setups strictly according to the **22-Rule Wyckoff Playbook**. Leo enforces the 4 valid execution triggers (Spring Reclaim LONG, Breakdown Failed Reclaim SHORT, Upthrust Return Below SHORT, Breakout Retest LONG) and discards all random trading ranges away from predetermined levels.
+- **Pre-Market Frozen Tier-1 Map (Rule 3)**: Recognizes pre-market structural zones (5D Profile, Yesterday Profile, Overnight) as permanently frozen at 09:30 ET cash open. Rejects dynamically invented levels mid-session.
+- **Volume & CVD Effort vs. Result (Rules 12 & 13)**: Evaluates whether aggressive order flow is achieving expected price progress or being absorbed by passive liquidity at key boundaries.
+- **Strict $\ge 2.0\text{R}$ Reward-to-Risk Requirement (Rule 17)**: Requires verified distance to the next major opposing Tier-1 zone before validating any trade setup.
+- **Structural Invalidation Stops (Rule 18 & 19)**: Enforces stops strictly beyond the Spring low or Upthrust high. Emphasizes that invalidation is final and stops must never be widened.
+- **Zero-Hallucination Mandate**: Leo is strictly forbidden from fabricating price levels, VWAP numbers, or order states. Every numerical value cited must derive from verified live telemetry.
+
+### 1.2 Dedicated `📜 Wyckoff 22 Rules` Interactive Panel (`WyckoffRulesPanel.tsx`)
+Embedded inside the Leo Assistant drawer, the **Wyckoff 22 Rules Panel** provides immediate visual reference and quick-audit capabilities:
+- **Header Banner**: Dynamic asset indicator showing current active instrument (`NQ`, `ES`, `YM`, `Gold`, `Oil`).
+- **1-Click Audit Buttons**:
+  - `🎯 Audit 4 Setups on [Instrument]`: Asks Leo to audit Spring, Upthrust, Breakout Retest, and Breakdown Retest against live price.
+  - `🗺️ Check Frozen Tier 1 Map`: Asks Leo to verify which pre-marked Tier 1 zone price is currently approaching.
+  - `📊 Audit CVD Effort vs Result`: Asks Leo to analyze aggressive order flow absorption at key levels.
+- **The ONLY 4 Trades Cards**: Color-coded breakdown of the 4 valid execution setups with exact entry triggers, stop placement, and CVD criteria.
+- **Final Chart Hierarchy**: Visual breakdown of Tier 1 (Mandatory), Tier 2 (Confirmation), and Tier 3 (Context Only).
+- **The 8-Step Screen-Reading Sequence**: Step-by-step checklist from Location to Entry.
+- **Absolute Filters (When NOT to Trade)**: 8 non-negotiable conditions for standing aside.
 
 ---
 
@@ -315,7 +329,9 @@ All major quick analysis actions inside `LeoAssistantPanel.tsx` are aligned with
 Quick-action buttons are directly accessible on the top chart HUD strip:
 - **Dalton Day Type**: `Day: {badgeText} [🤖 Ask Leo]` (or `Day: Pre-Session [🤖 Ask Leo]` in Globex).
 - **Audit Order Flow**: `[🤖 Audit Order Flow]` button placed next to `CVD: ON/OFF`.
+- **5-Month Macro AVWAP**: `[🟢 5M AVWAP: <price> 5 MO]` button placed directly next to `CVD: ON/OFF`. Keeps chart canvas invisible by default while providing 1-click access to the 5-Month Benchmark Inspection Modal.
 - **Compare Range Volume**: `[📈 Compare Range Volume]` button on the top HUD.
+- **Auction Price Critique**: `[⚖️ Critique: STANDBY/DISCOUNT/PREMIUM]` button (Hotkey: `Q`).
 
 ---
 

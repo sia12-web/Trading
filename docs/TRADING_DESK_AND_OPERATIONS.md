@@ -43,19 +43,15 @@ TradePulse structures the trading day into four distinct market regimes based on
 - Generates the Afternoon Playbook (`/api/trading/afternoon-playbook`), analyzing whether price is accepted above Excess Selling High (`above_excess_selling`), below Excess Buying Low (`below_excess_buying`), or rotating within the excess range (`within_excess_range`).
 
 ### 1.5 Active CME Quarterly Contract Alignment (December 2026 Z6 Roll)
-- **Contract Alignment**: Databento live futures hubs and OANDA basis offsets automatically adjust to active December 2026 quarterly contracts (`MYMZ6`, `MNQZ6`, `NKDZ6`, `MGCZ6`, `CLZ6`) via `getActiveCmeQuarterlyContract()`.
+- **Contract Alignment**: Databento live futures hubs and OANDA basis offsets automatically adjust to active December 2026 quarterly contracts (`MYMZ6`, `MNQZ6`, `ESZ6`, `NKDZ6`, `MGCZ6`, `CLZ6`) via `getActiveCmeQuarterlyContract()`.
 
-### 1.7 Cross-Asset Volatility Gauges & 5-Market Selection Process
-- Instead of deciding on a single asset class every morning, traders let the 5 benchmark markets (`NQ`, `YM`, `ES`, `GC`, `CL`) compete for attention based on volatility expansion and location.
+### 1.6 Globex Session-Aware 5-Market Radar
+- Instead of deciding on a single asset class every morning, traders let the 5 benchmark markets (`NQ`, `ES`, `YM`, `GC`, `CL`) compete for attention based on volatility expansion and location.
 - **Dedicated Cboe Volatility Gauges**:
-  - `VIX` (30-day) & `VIX1D` (1-day expected 0DTE volatility) for Equities (`NQ`, `YM`, `ES`).
+  - `VIX` (30-day) & `VIX1D` (1-day expected 0DTE volatility) for Equities (`NQ`, `ES`, `YM`).
   - `OVX` (Cboe Crude Oil Volatility Index) for Crude Oil (`CL`).
   - `GVZ` (Cboe Gold Volatility Index) for Gold (`GC`).
-- **3-Factor Opportunity Matrix (`lib/trading/crossMarketRadar.ts`)**:
-  1. **Participation**: Is volume/range expanding rapidly?
-  2. **Location**: Is price sitting at an important level (5D-LVN, Yesterday VAH/VAL/POC, 5M AVWAP)?
-  3. **Structure**: Is a clean Wyckoff pattern forming (Spring, Upthrust, Absorption)?
-- **Grade A Selection**: Execution is granted ONLY when all 3 factors are present. Markets moving $+4.0\%$ without Location are tagged Grade B (Trap Risk) under the **Anti-Chase Rule**.
+- **Globex Session State Tracking**: Automatically recognizes session state (`CLOSED`, `ASIA`, `LONDON`, `NEW YORK`, `MAINTENANCE`). Evaluates overnight inventory accumulation (Long/Short %) during pre-market hours without generating false trade alerts.
 
 ---
 
@@ -89,15 +85,12 @@ The platform embeds institutional risk controls designed to pass and preserve pr
 | **Max Trailing Drawdown** | **-$2,000.00** | Absolute liquidation boundary relative to high-water mark |
 | **Green Day Lock** | **+$700.00** | Halts new entries once daily net profit reaches +$700 |
 | **Attempt Ladder** | **3 Attempts Max** | Locks desk trading after 3 stop-out executions per day |
-| **Reward-to-Risk Ratio** | **$\ge 1.5\text{R}$ to $2.0\text{R}$** | Take-profit must be at least 1.5x stop distance |
+| **Reward-to-Risk Ratio** | **$\ge 2.0\text{R}$ Filter** | Take-profit distance must be at least 2.0x stop distance |
 
 ### 3.1 Position Sizing Formula
 Every order's contract quantity is calculated deterministically from the user's defined risk limit:
 
 $$\text{Contracts} = \left\lfloor \frac{\text{Dollar Risk Limit (\$400)}}{\text{Stop Loss Distance (pts)} \times \text{Point Value (\$/pt)}} \right\rfloor$$
-
-*Example*: For Micro Nasdaq (`MNQ`) with a 20-point stop loss ($2.00/pt):
-$$\text{Contracts} = \left\lfloor \frac{400}{20 \times 2.00} \right\rfloor = 10\text{ MNQ contracts}$$
 
 ---
 
@@ -136,12 +129,24 @@ At the 9:30 AM New York Cash Open (and throughout the session), the platform com
 5. **Q5: Global Inventory**: *Where did Asian, London & Overnight participants do business?*
 6. **Q6: Wholesale vs. Retail**: *Is current price a wholesale discount or an expensive retail premium relative to Yesterday POC & 5D POC?*
 
-### 5.4 Weak-Hand Trap & Emotional Retail Protection
-- **Single-Candle FOMO**: Flagged when a large impulse candle spikes into Extreme Premium or Deep Discount.
-- **Round-Number Magnet**: Flagged when price approaches century/half-century handles without supporting volume.
-- **Thin Liquidity Vacuum**: Flagged when price extends rapidly on low volume.
-- **Lunch Doldrums Chop**: Flagged during 11:30 AM – 1:30 PM ET low-liquidity rotational chop.
+---
 
-### 5.5 Accurate NY Session Window Gating
-- **Active Window**: Weekdays (Mon–Fri) from **09:00 AM / 09:15 AM ET** (pre-market unlock) through **16:00 ET** (Cash Market Close) strictly locked to `America/New_York` timezone.
-- **Off-Session Inactivity**: During Asian session (18:00–03:00 ET), London session (03:00–09:00 ET), post-close (16:00+ ET), and weekends, the `⚖️ Critique:` HUD button is completely hidden, hotkey `Q` is disabled, and Leo provides off-session guidance directing traders to wait for NY pre-market formation.
+## 6. The 22-Rule Wyckoff Execution & Risk Discipline Protocol
+
+The desk strictly operates under the **22-Rule Wyckoff Playbook**:
+
+### 6.1 The 4 Valid Trade Setups (Absolute Universe)
+*Only 4 setups are permitted for execution:*
+1. **Support: Spring $\rightarrow$ Reclaim $\rightarrow$ LONG** (Stop strictly below spring low).
+2. **Support: Breakdown $\rightarrow$ Failed Reclaim $\rightarrow$ SHORT** (Stop strictly above failed reclaim).
+3. **Resistance: Upthrust $\rightarrow$ Return Below $\rightarrow$ SHORT** (Stop strictly above upthrust high).
+4. **Resistance: Breakout $\rightarrow$ Successful Retest (SOS $\rightarrow$ LPS / SOW $\rightarrow$ LPSY) $\rightarrow$ LONG** (Stop strictly below retest low).
+
+### 6.2 Pre-Market Frozen Levels (09:30 ET Lock)
+- Tier 1 key levels (Yesterday VAH/VAL/POC, 5D-POC/HVN/LVN, Overnight High/Low/POC) are permanently **frozen at 09:30 AM ET**.
+- Execution decisions must be referenced against these frozen pre-market zones throughout the NY session.
+
+### 6.3 Absolute Filters & Minimum 2R Rule
+- **Minimum 2R Distance (`is2RValid`)**: Entry is permitted ONLY if distance to the next opposing Tier-1 zone is $\ge 2.0\times$ stop loss distance.
+- **Stop Loss Invalidation**: Stop loss is placed at structural invalidation (Spring low / Upthrust high). Stops are **never widened or moved backwards**.
+- **Chop Guard**: No trading inside tight balance ranges without structural sweeps.

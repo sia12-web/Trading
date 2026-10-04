@@ -174,37 +174,95 @@ Every setup is evaluated by the **Auction Price Critique & "Questioning" Engine*
 
 The execution engine and Leo Assistant operate strictly according to the **22-Rule Wyckoff Playbook** (`lib/ai/leoAssistant.ts`, `lib/trading/wyckoffStrategy.ts`):
 
-### 8.1 The 4 Valid Trade Setups (Absolute Universe)
+### 8.1 The 4 Valid Trade Setups (The ONLY 4 Trades in the Universe - Rule 11)
 *Only 4 trade setups are valid in the entire execution universe. Everything else MUST be ignored:*
 
-1. **Support: Spring $\rightarrow$ Reclaim $\rightarrow$ LONG**
-   - Price sweeps key support boundary (Yesterday VAL, 5D LVN, Overnight Low) and immediately **reclaims** back above support with buying absorption.
-   - **Stop Loss**: Strictly below the Spring low.
-2. **Support: Breakdown $\rightarrow$ Failed Reclaim $\rightarrow$ SHORT**
-   - Price breaks key support, attempts to reclaim, but fails at lower volume/delta.
+1. **Support: Spring $\rightarrow$ Reclaim $\rightarrow$ LONG (Rule 5)**
+   - Price reaches predetermined support zone $\rightarrow$ sweeps underneath $\rightarrow$ sellers fail to continue $\rightarrow$ price reclaims zone $\rightarrow$ **LONG**.
+   - Buying the failed breakdown and reclaim, not the falling knife bottom.
+   - **Stop Loss**: Strictly below the Spring low (Rule 6). Never widen stop.
+   - **CVD Confirmation (Rule 7)**: Bullish Absorption (price makes equal/higher low while CVD makes lower low).
+
+2. **Support: Breakdown $\rightarrow$ Failed Reclaim $\rightarrow$ SHORT (Rule 10/11)**
+   - Price cleanly breaks predetermined support zone with initiative volume $\rightarrow$ weak bounce fails to reclaim level $\rightarrow$ **SHORT**.
    - **Stop Loss**: Strictly above the failed reclaim pivot.
-3. **Resistance: Upthrust $\rightarrow$ Return Below $\rightarrow$ SHORT**
-   - Price sweeps key resistance boundary (Yesterday VAH, 5D HVN, Overnight High) and immediately **returns below** resistance with selling absorption.
+   - **Target**: Next pre-marked 5D / Yesterday structural support zone.
+
+3. **Resistance: Upthrust $\rightarrow$ Return Below $\rightarrow$ SHORT (Rule 8)**
+   - Price reaches predetermined resistance zone $\rightarrow$ breaks above $\rightarrow$ buyers fail to continue higher $\rightarrow$ price returns below resistance $\rightarrow$ **SHORT**.
    - **Stop Loss**: Strictly above the Upthrust high.
-4. **Resistance: Breakout $\rightarrow$ Successful Retest (SOS $\rightarrow$ LPS / SOW $\rightarrow$ LPSY) $\rightarrow$ LONG**
-   - Price breaks out with strong volume/initiative, then successfully retests breakout level as new support (Sign of Strength $\rightarrow$ Last Point of Support).
-   - **Stop Loss**: Strictly below the retest low.
+   - **CVD Confirmation (Rule 9)**: Bearish Absorption (price makes same/lower high while CVD makes higher high).
+
+4. **Resistance: Breakout $\rightarrow$ Successful Retest (SOS $\rightarrow$ LPS) $\rightarrow$ LONG (Rule 10)**
+   - Price destroys resistance with initiative volume (Jump Across Creek / Sign of Strength) $\rightarrow$ **never chase the breakout candle** $\rightarrow$ wait for pullback to hold as new support (Last Point of Support) $\rightarrow$ **LONG**.
+   - **Stop Loss**: Strictly below the retest floor.
 
 ---
 
-### 8.2 Three-Tier Chart Hierarchy
-1. **Tier 1 (Mandatory Key Levels)**:
-   - Price action, 5-Day Volume Profile (POC, HVN, LVN), Yesterday's Profile (VAH, POC, VAL, High, Low), Overnight/London (High, Low, POC).
-   - **Pre-Market Map Gating**: Levels are permanently **frozen at 09:30 ET cash open**.
+### 8.2 Three-Tier Chart & Structure Hierarchy (Rule 2)
+1. **Tier 1 (Mandatory - Pre-market Structure)**:
+   - **Rolling 5-Day Volume Profile (5D)**: 5D POC, 5D HVNs (Value Area High), 5D LVNs (Value Area Low). Identifies where business was accepted across recent sessions.
+   - **Yesterday's Volume Profile**: Yesterday VAH, Yesterday POC, Yesterday VAL, Yesterday High, Yesterday Low. Essential intraday pivot zones.
+   - **Overnight / London Profile**: Overnight High (`ONH`), Overnight Low (`ONL`), Overnight POC, London High/Low. Contextual inventory reference only; does not alone trigger trades.
+   - **Pre-Market Map Gating (Rule 3)**: Combine nearby levels into **ZONES** (not laser beams). **Freeze the map permanently at 09:30 ET cash open**. Do not invent new levels every 15 minutes. If a random trading range appears in the middle of nowhere: **IGNORE IT**.
+
 2. **Tier 2 (Execution Confirmation)**:
-   - Volume (Effort vs. Result), Cumulative Volume Delta (CVD Absorption & Divergence).
-3. **Tier 3 (Context Only - Never Overrides Tier 1)**:
-   - 5-Month CME Globex Anchored VWAP (AVWAP) and VIX/cross-asset volatility gauges.
+   - Current Price Action, Volume Bars (Effort vs. Result), Cumulative Volume Delta (CVD Absorption & Confirmation). This is the execution information that confirms setup quality.
+
+3. **Tier 3 (Context Only - NEVER Overrides Tier 1)**:
+   - 5-Month CME Globex Anchored VWAP (5M AVWAP) + simplified $\pm 1\sigma, \pm 2\sigma, \pm 3\sigma$ bands.
+   - Cross-Asset Volatility Gauges (`VIX1D`, `OVX`, `GVZ`).
+   - **Golden Rule**: *Tier 3 can NEVER override Tier 1.*
 
 ---
 
-### 8.3 Institutional Factor Scoring Engine (0–100 Points)
-`evaluateSpringOrUpthrustTrendline()` evaluates user-drawn Action/Demand/Supply Trendlines (Hotkey: W or X) connecting Spring or Upthrust origin pivots across 5 institutional factors:
+### 8.3 The 22 Complete Strategy Rules
+
+| Rule # | Category | Core Execution Principle |
+| :---: | :--- | :--- |
+| **Rule 1** | **Watchlist & Scanning** | Primary watchlist: `NQ`, `ES`, `YM`, `Gold`, `Oil`. Never pre-decide that today is a "Nasdaq day". At open, seek the asset showing the best confluence of: **Volatility + Participation + Location**. |
+| **Rule 2** | **Chart Hierarchy** | Tier 1 (5D Profile, Yesterday Profile, Overnight) $\rightarrow$ Tier 2 (Volume Effort vs Result, CVD) $\rightarrow$ Tier 3 (5M AVWAP, VIX context). |
+| **Rule 3** | **Pre-Market Map Gating** | Build zones before 09:30 ET. **Freeze the map at 09:30 ET**. Never invent levels dynamically mid-session. |
+| **Rule 4** | **First Question After Open** | Never ask "Long or short?". Ask: *"Which of my important pre-marked zones is price approaching?"* If not near one $\rightarrow$ **NO TRADE**. |
+| **Rule 5** | **Primary Long (Spring)** | Predetermined support sweep $\rightarrow$ sellers fail $\rightarrow$ price reclaims zone $\rightarrow$ **LONG**. |
+| **Rule 6** | **Stop for Spring** | Strictly below the Spring low. If breached, hypothesis was wrong $\rightarrow$ exit immediately. Never widen stop. |
+| **Rule 7** | **CVD for Spring** | Bullish absorption: Price equal/higher low while CVD lower low. CVD confirms quality; price reclaim triggers trade. |
+| **Rule 8** | **Primary Short (Upthrust)** | Predetermined resistance sweep $\rightarrow$ buyers fail $\rightarrow$ price returns below $\rightarrow$ **SHORT**. Stop strictly above Upthrust high. |
+| **Rule 9** | **CVD for Short** | Bearish absorption: Price same/lower high while CVD higher high. Confirms sellers absorbing aggressive market buyers. |
+| **Rule 10** | **Secondary (Breakout Retest)**| Never chase initial breakout candle! Wait for pullback to hold (SOS $\rightarrow$ LPS for long; SOW $\rightarrow$ LPSY for short). |
+| **Rule 11** | **The ONLY 4 Trades** | 1. Spring Reclaim (Long), 2. Breakdown Retest (Short), 3. Upthrust Return (Short), 4. Breakout Retest (Long). *Everything else: IGNORE.* |
+| **Rule 12** | **Volume's Job** | Effort vs. Result. Heavy selling + little downward price progress = Absorption. Heavy buying + little upside = Absorption. |
+| **Rule 13** | **CVD's Job** | Ask only: *"Is aggressive order flow actually achieving a result?"* Falling CVD + holding price = Bullish absorption. Rising CVD + rejecting price = Bearish absorption. |
+| **Rule 14** | **Ignore Participant Identity**| Never speculate on "London is trapped" or "dealers hedging gamma". Trade observable, measurable auction behavior. |
+| **Rule 15** | **Market Selection Method** | Across NQ/ES/YM/GC/CL, evaluate: 1. Is participation expanding? 2. Is price near a predetermined zone? 3. Is a setup forming? Focus 100% on the asset with all three. |
+| **Rule 16** | **Highest-Ranked Asset Rule**| Do not trade the most volatile market. Trade the market with **Volatility + Location + Structure**. |
+| **Rule 17** | **Take-Profit Rule ($\ge 2\text{R}$)**| Check distance to next major pre-marked zone before entering. If room to next major obstacle is $< 2.0\text{R}$, **SKIP THE TRADE**. |
+| **Rule 18** | **Position Sizing** | Stop loss is determined strictly by market structure (Spring low / Upthrust high). Contract quantity is calculated from fixed $400 risk (1R). |
+| **Rule 19** | **Never Widen the Stop** | Invalidation is final. Exit immediately. Never turn -1R into -3R while holding an emergency internal seminar. |
+| **Rule 20** | **Absolute Filters (When NOT to Trade)**| No predetermined zone $\rightarrow$ NO TRADE. Middle of value chop $\rightarrow$ NO TRADE. Random range $\rightarrow$ NO TRADE. Spring without reclaim $\rightarrow$ NO TRADE. Upthrust without return $\rightarrow$ NO TRADE. Breakout without pullback $\rightarrow$ DON'T CHASE. $< 2\text{R}$ room $\rightarrow$ NO TRADE. Confusing structure $\rightarrow$ NO TRADE. Nothing happens all day $\rightarrow$ **ZERO TRADES (Fully OK)**. |
+| **Rule 21** | **Friday Rule** | Friday does not change the strategy. Setups stay identical. Be increasingly selective in the afternoon. Never force trades because it's Friday. |
+| **Rule 22** | **Observable Structure Over Speculation**| Trade the observable auction event (Sweep & Reclaim / Spring / Upthrust), not speculative market narratives. |
+
+---
+
+### 8.4 The 8-Step Screen-Reading Sequence (Rule 23)
+Traders and the Leo AI engine execute a strict 8-step screen-reading sequence before taking any action:
+
+$$\boxed{\text{1. LOCATION}} \longrightarrow \boxed{\text{2. REACTION}} \longrightarrow \boxed{\text{3. RESULT}} \longrightarrow \boxed{\text{4. CVD + VOL}} \longrightarrow \boxed{\text{5. TRIGGER}} \longrightarrow \boxed{\text{6. RISK}} \longrightarrow \boxed{\text{7. REWARD } (\ge 2\text{R})} \longrightarrow \boxed{\text{8. ENTER}}$$
+
+1. **LOCATION**: Is price interacting with one of our frozen pre-market Tier-1 zones?
+2. **REACTION**: Did price sweep through the level and attempt expansion?
+3. **RESULT**: Did the sweep fail to continue (Spring / Upthrust)?
+4. **CVD + VOLUME**: Is aggressive market order flow being absorbed (Effort vs. Result divergence)?
+5. **TRIGGER**: Has price cleanly reclaimed the key level?
+6. **RISK**: Is the structural invalidation stop clearly defined beyond the pivot?
+7. **REWARD**: Is there at least $\ge 2.0\text{R}$ of clean runway before the next opposing pre-marked zone?
+8. **ENTER**: Execute disciplined order sizing ($400 fixed 1R risk).
+
+---
+
+### 8.5 Institutional Factor Scoring Engine (0–100 Points)
+The `evaluateWyckoffSetup()` engine (`lib/trading/wyckoffStrategy.ts`) classifies user-drawn trendlines into **Wyckoff Supply Lines (Creek)** and **Wyckoff Demand Lines (Ice)** based on slope and price orientation, scoring setups across 5 factors:
 * **Volume Expansion (25 Pts)**: Volume ratio $> 1.2\times$ baseline indicating aggressive institutional participation.
 * **CVD Absorption Divergence (25 Pts)**: Positive delta divergence for Spring / Negative delta for Upthrust.
 * **Multi-Touch Structural Validation (20 Pts)**: $\ge 2$ structural touches confirming trendline validity.
@@ -215,13 +273,6 @@ The execution engine and Leo Assistant operate strictly according to the **22-Ru
 * **Grade A ($\ge 75$ Pts)**: High Probability Institutional Setup 🟢
 * **Grade B ($50-74$ Pts)**: Moderate Setup — Requires Tier-2 CVD confirmation 🟡
 * **Grade C ($< 50$ Pts)**: Weak / Speculative Setup — Stand Aside 🔴
-
----
-
-### 8.4 Strict Risk & 2R Filter Rules
-- **Minimum 2R Distance**: Distance to the next major opposing Tier-1 zone must be $\ge 2.0\times$ stop loss distance (`is2RValid`). If distance $< 2\text{R}$, **STAND ASIDE**.
-- **Stop Loss = Structural Invalidation**: Stop loss is placed strictly beyond structural extremes. Stops are **never widened or expanded**.
-- **No Chop Execution**: Do not trade inside tight Dalton balance ranges without structural sweeps.
 
 ---
 
@@ -240,13 +291,34 @@ The **5-Market Opportunity Radar** (`app/dashboard/chart/components/CrossMarketR
 
 ---
 
-## 10. 📊 5-MONTH ANCHORED VWAP & STANDARD DEVIATION BANDS
+## 10. 📊 5-MONTH ANCHORED VWAP & SIMPLIFIED BANDS (INSPECTION MODAL)
 
-The chart features a **5-Month CME Globex Anchored VWAP** (`show5mAvwapOnChart`) providing macro institutional value benchmark context:
+Seven AVWAP bands make the chart look scientific while quietly giving traders seven different excuses to enter a bad trade. TradePulse eliminates chart clutter and enforces strict execution discipline:
 
-- **Lookback**: Anchored to 5 months of continuous CME Globex trading data.
-- **Standard Deviation Bands**: Computes volume-weighted dispersion bands ($\pm 1\sigma, \pm 2\sigma, \pm 3\sigma$).
-- **Top HUD Controls**: Managed via a clean `5M AVWAP: ON/OFF` toggle button on the chart header strip right next to CVD and News.
+### 10.1 Simplified Band Hierarchy (Max 4 Reference Boundaries)
+The system tracks at most:
+- **AVWAP Center Line**: Institutional 5-month volume-weighted equilibrium (`#10b981`, lineWidth: 2).
+- **$\pm 1\sigma$ Standard Deviation Bands**: Primary Value Area High & Low boundaries (68% normal distribution, `#3b82f6` / `#b8a04a`, lineWidth: 2).
+- **$\pm 2\sigma$ Standard Deviation Bands**: Institutional expansion limits (95% statistical boundary, lineWidth: 1).
+- **$\pm 3\sigma$ Extreme Reference Bands**: Extreme multi-month exhaustion reference only (`LineStyle.Dashed`, low-opacity lines).
+- **$\pm 4\sigma$ through $\pm 7\sigma$ Bands**: **Permanently eliminated** for routine intraday decisions.
+
+### 10.2 Invisible on Chart Canvas by Default
+- The 5-Month AVWAP horizontal benchmark lines and multi-month bands are **invisible on the chart canvas by default** (`show5mAvwapOnChart = false`) to keep intraday candlestick execution clean and focused.
+- **Dynamic Background Updates**: Sourced from genuine CME Globex daily bars via `/api/trading/context-55`, recomputed and polled every 60 seconds in the background so Leo AI, risk models, and valuation metrics are always real-time.
+
+### 10.3 Top Toolbar Button & 5M Inspection Modal
+- **Toolbar Button**: Located on the top HUD strip directly next to Cumulative Volume (`CVD`):
+  ```
+  [VWAP: ...] | [📊 CVD: ON/OFF] | [🟢 5M AVWAP: 43,921.50 5 MO] | [⚖️ Critique: ...]
+  ```
+- **Interactive 5M AVWAP Modal**: Clicking the button opens an on-demand inspection window without putting lines on the chart screen:
+  - **Center Line & Anchor Date**: Exact 5M AVWAP price and lookback anchor date (~105 CME Globex daily sessions).
+  - **Live Price Comparison**: Distance in points and percentage divergence.
+  - **Macro Valuation Regime**: `VALUE EQUILIBRIUM` ($\pm 1\sigma$), `INSTITUTIONAL MARKUP/MARKDOWN` ($\pm 1\sigma$ to $\pm 2\sigma$), or `EXTREME EXHAUSTION` ($> \pm 3\sigma$).
+  - **Visual Position Gauge**: A horizontal spectrum meter showing where current price sits between $-3\sigma$ and $+3\sigma$.
+  - **Simplified Bands Table**: Exact prices, point distances, and strategic roles for Center, $\pm 1\sigma$, $\pm 2\sigma$, and $\pm 3\sigma$.
+  - **Optional Chart Toggle**: In-modal checkbox allowing traders to temporarily project the 5M line onto the chart canvas if desired (defaulted OFF).
 
 ---
 

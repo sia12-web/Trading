@@ -52,24 +52,38 @@ To ensure immediate visual clarity and eliminate distracting instrument color ov
 
 ---
 
-## 2. Anchored VWAP & Standard Deviation Bands
+## 2. Anchored VWAP, Simplified Standard Deviation Bands & Inspection Modal
 
-Volume-Weighted Average Price (VWAP) represents the true institutional benchmark price. TradePulse computes two distinct AVWAP models based on the active timeframe:
+Volume-Weighted Average Price (VWAP) represents the institutional volume-weighted benchmark. TradePulse provides a clear, clutter-free VWAP framework:
 
-### 2.1 Daily Chart (`1D`): 5-Month Anchored VWAP
-- **Anchor Point**: RTH open 5 months prior to the current date.
-- **Mathematical Formulation**:
-  $$\text{VWAP}_t = \frac{\sum_{i=1}^t P_i \times V_i}{\sum_{i=1}^t V_i}$$
-  $$\sigma_t = \sqrt{\frac{\sum_{i=1}^t P_i^2 \times V_i}{\sum_{i=1}^t V_i} - (\text{VWAP}_t)^2}$$
-- **Volatility Bands**:
-  - **Upper 1σ / Lower 1σ**: $\text{VWAP} \pm 1\sigma$ (Blue `#3b82f6` / Gold `#b8a04a`)
-  - **Upper 2σ / Lower 2σ**: $\text{VWAP} \pm 2\sigma$ (Teal `#3d8f7a`)
-  - **Upper 3σ / Lower 3σ**: $\text{VWAP} \pm 3\sigma$ (Subtle Teal `#3d8f7a`)
-- **Axis Readout**: `lastValueVisible: true` ensures exact numerical price tags are pinned to the right price scale.
+### 2.1 Simplified Band Hierarchy (Elimination of 7-Band Noise)
+Seven AVWAP bands make the chart look scientific while quietly giving traders seven different excuses to enter bad trades. TradePulse strictly limits visible bands to at most:
+- **AVWAP Center Line**: Volume-weighted mean price (`#10b981`, lineWidth: 2, prominent).
+- **$\pm 1\sigma$ Standard Deviation Bands**: Primary Value Area High (`+1σ` blue `#3b82f6`) and Value Area Low (`-1σ` gold `#b8a04a`, lineWidth: 2, 68% normal distribution).
+- **$\pm 2\sigma$ Standard Deviation Bands**: Institutional expansion limits (95% statistical boundary, lineWidth: 1).
+- **$\pm 3\sigma$ Extreme Reference Bands**: Strict exhaustion reference only (`LineStyle.Dashed`, faint low-opacity lines) so they are never mistaken for routine intraday entries.
+- **$\pm 4\sigma$ through $\pm 7\sigma$ Bands**: **Permanently eliminated** for routine intraday decisions.
 
-### 2.2 Intraday Charts (`1m`, `5m`, `30m`): Session Anchored VWAP + Macro 5M Line
-- **Intraday Anchored VWAP**: Anchors to the active session cash open, wrapping the candlesticks tightly within intraday statistical deviation bands.
-- **5-Month Anchored VWAP & SD Bands Toggle**: Managed via the `5M AVWAP: ON/OFF` button on the top chart HUD strip. When toggled ON, displays the 5-month macro anchor level and standard deviation bands ($\pm 1\sigma, \pm 2\sigma, \pm 3\sigma$).
+### 2.2 5-Month Macro Anchored VWAP (Invisible on Chart Canvas by Default)
+- **Anchor Point**: Cash open 5 months prior (~105 CME Globex daily sessions).
+- **Screen Clarity Guarantee**: Kept **invisible on the chart canvas by default** (`show5mAvwapOnChart = false`) so the screen remains free of distracting multi-month lines during routine intraday execution.
+- **Continuous Background Updating**: Sourced from genuine CME Globex daily bars via `/api/trading/context-55`, polled and recomputed every 60 seconds so Leo AI, risk models, and valuation metrics stay 100% live.
+
+### 2.3 Top Toolbar Button & 5M Inspection Modal
+- **Placement**: Sits on the top HUD toolbar directly next to Cumulative Volume (`CVD`):
+  ```
+  [VWAP: ...] | [📊 CVD: ON/OFF] | [🟢 5M AVWAP: 43,921.50 5 MO] | [⚖️ Critique: ...]
+  ```
+- **Interactive 5M AVWAP Modal**: Clicking the button opens a clean floating inspection window without putting lines on the chart screen:
+  - **Center Line & Anchor Date**: Exact 5M AVWAP price and lookback anchor date.
+  - **Live Price Comparison**: Distance in points and percentage divergence.
+  - **Macro Valuation Regime**: `VALUE EQUILIBRIUM` ($\pm 1\sigma$), `INSTITUTIONAL MARKUP/MARKDOWN` ($\pm 1\sigma$ to $\pm 2\sigma$), or `EXTREME EXHAUSTION` ($> \pm 3\sigma$).
+  - **Visual Position Gauge**: A horizontal spectrum meter showing where current price sits between $-3\sigma$ and $+3\sigma$.
+  - **Simplified Bands Table**: Exact prices, point distances, and strategic roles for Center, $\pm 1\sigma$, $\pm 2\sigma$, and $\pm 3\sigma$.
+  - **Optional Chart Toggle**: In-modal checkbox allowing traders to temporarily project the 5M line onto the chart canvas if desired (defaulted OFF).
+
+### 2.4 Intraday Session Anchored VWAP
+- On intraday timeframes (`1m`, `5m`, `30m`), the active session VWAP anchors to the cash open of the lookback sessions, providing clean intraday value reference without multi-month chart clutter.
 
 ---
 
@@ -229,29 +243,44 @@ $$\text{Runway Ratio} = \frac{\text{Distance to Nearest Overhead Resistance (pts
 
 ---
 
-## 11. Wyckoff Spring & Upthrust Trendline Factor Evaluation
+## 11. Wyckoff Structure Line Engine & Trendline Setup Evaluation
 
-### 11.1 Spring & Upthrust Trendline Tool (Hotkey: W or X)
-- Traders manually draw Action/Demand/Supply Trendlines connecting Spring (support sweep) or Upthrust (resistance sweep) origin pivots.
-- The canvas engine automatically runs `evaluateSpringOrUpthrustTrendline()` on active lines.
+TradePulse embeds the complete Wyckoff Structure Line & Auction Market Theory Strategy Engine (`lib/trading/wyckoffStrategy.ts`):
 
-### 11.2 Institutional Factor Scoring (0–100 Pts)
-- **Volume Expansion (25 pts)**: $> 1.2\times$ volume baseline.
-- **CVD Absorption Divergence (25 pts)**: Delta divergence confirming absorption.
-- **Multi-Touch Validation (20 pts)**: $\ge 2$ structural touches.
-- **Tier-1 Volume Profile Confluence (20 pts)**: Confluence with Yesterday VAH/VAL/POC or 5D LVN/HVN.
-- **5M AVWAP Alignment (10 pts)**: Alignment with 5-Month Anchored VWAP trend direction.
+### 11.1 Dynamic Trendline Classification (`classifyWyckoffLine`)
+When traders draw trendlines on the chart canvas (Hotkey: `W` or `X`), the engine classifies the line automatically:
+- **Descending Slope ($p_2 \le p_1$)**: **Wyckoff Supply Line (Creek)** (`#f59e0b`, Warm Amber/Gold). Acts as primary resistance boundary.
+- **Ascending Slope ($p_2 > p_1$)**: **Wyckoff Demand Line (Ice)** (`#38bdf8`, Sky Blue). Acts as primary support boundary.
+- **Horizontal / S/R Lines**: Classified based on trader label (`support`/`demand` vs. `resistance`/`supply`) or price relation.
 
-### 11.3 Midpoint Evaluation Badge & Stop/Target Rendering
-- **Midpoint Badge**: Renders score tag: `📐 Spring Line (85/100 pts · Grade A) | Stop: 21480.0 | Tgt: 21550.0 (2.4R)`.
-- **Dashed Structural Stop & Target Lines**: Renders horizontal dashed lines on the chart canvas corresponding to the structural stop loss and target level calculated by the Wyckoff engine.
+### 11.2 The 4 Intraday Execution Setups (`evaluateWyckoffSetup`)
+The chart canvas continuously evaluates price interaction against active Wyckoff lines:
+1. **Demand Line $\rightarrow$ Spring (Long)**: Price sweeps underneath the Ice line $\rightarrow$ sellers fail to continue lower $\rightarrow$ price reclaims above line.
+   - **Stop**: Strictly below Spring low.
+   - **CVD**: Bullish absorption (price equal/higher low, CVD lower low).
+2. **Demand Line $\rightarrow$ Breakdown Failed Reclaim (Short)**: Price breaks Ice line with initiative drive $\rightarrow$ weak pullback fails to reclaim $\rightarrow$ Short continuation.
+3. **Supply Line $\rightarrow$ Upthrust (Short)**: Price sweeps above Creek line $\rightarrow$ buyers fail to expand $\rightarrow$ price returns below line.
+   - **Stop**: Strictly above Upthrust high.
+   - **CVD**: Bearish absorption (price same/lower high, CVD higher high).
+4. **Supply Line $\rightarrow$ Breakout Retest (Long - SOS $\rightarrow$ LPS)**: Price destroys Creek line with initiative volume $\rightarrow$ pullback holds as new support $\rightarrow$ Long continuation. **Never chase initial breakout.**
+
+### 11.3 Mandatory $\ge 2.0\text{R}$ Target Verification (Rules 17 & 20)
+- Before signaling a valid trade, the engine calls `findNextStructuralTarget()`, projecting reward to the nearest opposing pre-marked Tier-1 zone (5D POC/VAH/VAL, Yesterday VAH/VAL/POC, Overnight High/Low).
+- If distance to the next major obstacle provides $< 2.0\text{R}$ risk/reward, `is2RValid` returns `false` and the setup is **STAND ASIDE**.
+
+### 11.4 Midpoint Evaluation Badge & Canvas Overlays
+- **Midpoint Badge**: Displays live classification tag: `📐 Wyckoff Demand Line (Ice) · Spring Setup | Stop: 21,480.0 | Tgt: 21,550.0 (2.4R) 🟢`.
+- **Structural Invalidation Lines**: Automatically projects dashed price lines for structural stop loss and target zones directly on the chart canvas.
 
 ---
 
 ## 12. Top Chart HUD Quick Action Links
 
 The top chart HUD strip integrates convenient 1-click action links:
-- **Dalton Day Type**: `Day: {badgeText} [🤖 Ask Leo]` (or `Day: Pre-Session [🤖 Ask Leo]` in Globex) to evaluate session distribution and auction tails.
-- **Audit Order Flow**: `[🤖 Audit Order Flow]` button placed next to `CVD: ON/OFF`.
-- **Compare Range Volume**: `[📈 Compare Range Volume]` button on the top HUD to compare volume across all user-drawn range boxes and fixed volume profiles.
-- **Clean 5M AVWAP Control**: Single toggle `5M AVWAP: ON/OFF` next to `News: ON/OFF`.
+- **Session VWAP HUD**: Clean readout displaying active session VWAP level.
+- **Cumulative Volume Delta (`CVD`)**: `[📊 CVD: ON/OFF]` button toggles the synchronized CVD sub-chart pane.
+- **5-Month Macro AVWAP (`5M AVWAP`)**: `[🟢 5M AVWAP: <price> 5 MO]` button placed directly next to `CVD`. Keeps the chart canvas clean and invisible by default while opening the comprehensive 5-Month Benchmark Inspection Modal on click.
+- **Dalton Day Type**: `Day: {badgeText} [🤖 Ask Leo]` to evaluate session distribution and auction tails.
+- **Audit Order Flow**: `[🤖 Audit Order Flow]` button placed next to CVD.
+- **Compare Range Volume**: `[📈 Compare Range Volume]` button on the top HUD to compare volume across all user-drawn range boxes.
+- **Auction Critique**: `[⚖️ Critique: STANDBY/DISCOUNT/PREMIUM]` button (Hotkey: `Q`).
