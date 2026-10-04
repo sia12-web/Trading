@@ -116,7 +116,7 @@ export function formatDowAsiaTelegramAlert(args: {
         `Entry Order: ${args.entryPrice.toLocaleString('en-US')}`,
         `Stop Loss: ${args.stopLossPrice.toLocaleString('en-US')} (Asia Midpoint)`,
         `Take Profit: ${args.takeProfitPrice.toLocaleString('en-US')} (${rr} Target)`,
-        `Tradeify $50K Risk: $${args.riskDollars} (Step 1)`,
+        `Fixed Risk: $${args.riskDollars} (1R)`,
         `Timestamp: ${new Date().toISOString()}`,
     ].join('\n')
 }
@@ -141,7 +141,7 @@ export function createDowAsiaJournalPayload(args: {
         risk_dollars: args.riskDollars,
         risk_reward_ratio: 1.5,
         asia_range_pts: args.asiaRange,
-        tradeify_session_key: args.sessionKey,
+        desk_session_key: args.sessionKey,
         notes: `Automated 8:00 PM - 2:00 AM ET Asia Breakout execution. Asia Range ${args.asiaRange} pts < 80 pts. SL at Asia Midpoint ${args.stopLossPrice}. 1.5R TP at ${args.takeProfitPrice}.`,
         created_at: new Date().toISOString(),
     }

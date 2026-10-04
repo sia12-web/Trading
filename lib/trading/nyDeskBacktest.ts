@@ -15,13 +15,8 @@ import { isNyCallSetup, NY_MAX_FILLS, NY_MAX_STOP_OUTS } from '@/lib/trading/nyD
 import { calculateFuturesContractSize } from '@/lib/trading/positionSizing'
 import { RANGE_EDGE_BAND_POINTS } from '@/lib/trading/deskCall'
 import { strategyEntryRisk } from '@/lib/trading/strategyRiskGeometry'
-import {
-  TRADEIFY_DLL_DOLLARS,
-  TRADEIFY_GREEN_DAY_LOCK_DOLLARS,
-  TRADEIFY_RISK_FIRST_DOLLARS,
-  TRADEIFY_RISK_SECOND_DOLLARS,
-  TRADEIFY_RISK_THIRD_DOLLARS,
-} from '@/lib/trading/tradeifyGrowth50k'
+export const DESK_DAILY_LOSS_LIMIT_DOLLARS = 1250
+export const DESK_RISK_DOLLARS = 400
 
 export const NY_BACKTEST_INSTRUMENTS = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'] as const
 export type NyBacktestInstrument = (typeof NY_BACKTEST_INSTRUMENTS)[number]
@@ -66,9 +61,9 @@ const IB_ENTRY_END_SEC = 5 * 3600 + 45 * 60
 /** Region uses 5 completed cash days; stay-out uses 10 day ranges. */
 const CALL_LOOKBACK_DAYS = 10
 const RISK = [
-  TRADEIFY_RISK_FIRST_DOLLARS,
-  TRADEIFY_RISK_SECOND_DOLLARS,
-  TRADEIFY_RISK_THIRD_DOLLARS,
+  DESK_RISK_DOLLARS,
+  DESK_RISK_DOLLARS,
+  DESK_RISK_DOLLARS,
 ] as const
 
 /** Civil YYYY-MM-DD in America/New_York for this Jun–Aug 2026 EDT tape. */
@@ -287,8 +282,7 @@ export function runNyDeskInstrumentBacktest(args: {
     const histBase = histForDay(days, d, byDay)
     while (i < session.length) {
       if (fills >= NY_MAX_FILLS || stops >= NY_MAX_STOP_OUTS) break
-      if (dayPnl >= TRADEIFY_GREEN_DAY_LOCK_DOLLARS) break
-      if (dayPnl <= -TRADEIFY_DLL_DOLLARS) break
+      if (dayPnl <= -DESK_DAILY_LOSS_LIMIT_DOLLARS) break
 
       const bar = session[i]!
       const elapsed = bar.time - openU
@@ -484,8 +478,7 @@ export function runNyDeskBoardBacktest(args: {
     let tPtr = 0
     while (tPtr < timeline.length) {
       if (fills >= NY_MAX_FILLS || stops >= NY_MAX_STOP_OUTS) break
-      if (dayPnl >= TRADEIFY_GREEN_DAY_LOCK_DOLLARS) break
-      if (dayPnl <= -TRADEIFY_DLL_DOLLARS) break
+      if (dayPnl <= -DESK_DAILY_LOSS_LIMIT_DOLLARS) break
 
       const t = timeline[tPtr]!
       const elapsed = t - openU

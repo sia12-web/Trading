@@ -1,9 +1,10 @@
 # 📘 SYSTEM EXECUTION & STRATEGY SPECIFICATION GUIDE
 
 > **Institutional Automated Trading Architecture**  
-> **Target Account**: Tradeify Growth $50,000 Evaluation & Funded Accounts  
+> **Market Analysis**: CME Globex Real Exchange Data (NQ, YM, GC, CL)  
+> **Execution Platforms**: CMC Markets CFD Execution & CME Direct Futures  
 > **Execution Engine**: Hands-Free Autonomous System & Institutional Trader Workstation  
-> **Timezone Standard**: Montreal Time (EDT - UTC-4)  
+> **Timezone Standard**: Montreal Time (EDT - UTC-4) / America/New_York  
 
 ---
 
@@ -20,7 +21,7 @@ The system is a **100% deterministic, hands-free execution engine and trading wo
                                       ▼
                   ┌────────────────────────────────────────┐
                   │       PRE-FLIGHT RISK CHECKS           │
-                  │  Check DLL ($1,250), Drawdown, Attempts│
+                  │  Check DLL Threshold, Account Balance  │
                   └───────────────────┬────────────────────┘
                                       │
                                       ▼
@@ -45,18 +46,18 @@ The system is a **100% deterministic, hands-free execution engine and trading wo
 
 ---
 
-## 2. 🛡️ RISK MANAGEMENT & FUNDING RULE CONSTRAINTS
+## 2. 🛡️ RISK MANAGEMENT & EXECUTION CONSTRAINTS
 
-The trading architecture strictly enforces **Tradeify 50k Growth Rules**:
+The trading architecture enforces institutional capital preservation and risk sizing:
 
 | Risk Metric | Parameter Level | System Action / Fail-Safe |
 | :--- | :--- | :--- |
-| **Account Capital** | **$50,000.00** | Evaluation & Funded Base Capital |
-| **Fixed Risk Per Trade** | **$400.00** | Strict Step 1 sizing per setup (0.80% of account) |
-| **Daily Loss Limit (DLL)** | **$1,250.00** | Immediate circuit-breaker halt if breached |
-| **Max Trailing Drawdown** | **$2,000.00** | Absolute liquidation boundary ($48,000 floor) |
-| **Green Day Lock** | **+$700.00** | System stops opening new setups once day P&L $\ge +\$700$ |
-| **Max Daily Attempts** | **3 Attempts** | Attempt Ladder locks desk after 3 attempts |
+| **Account Capital Model** | **Institutional Base Capital** | Calibrated to real account equity balance |
+| **Fixed Risk Per Trade** | **$400.00 (1R)** | Fixed risk per setup based on structural invalidation |
+| **Daily Loss Limit (DLL)** | **$1,250.00 (Configurable)** | Circuit-breaker halts execution if intraday threshold breached |
+| **Stop Loss Invalidation** | **Market Structure Level** | Strictly anchored to Spring Low / Upthrust High (Never widened) |
+| **Risk-to-Reward Geometry** | **Minimum 2.0R to Target** | Setup skipped if clearance to next structural obstacle < 2R |
+| **Execution Routing** | **CME Analysis → CMC CFD / Futures** | Signal derived from CME Globex, executed via broker CFD/Futures |
 
 ---
 

@@ -1,6 +1,4 @@
-/** Live order-history rows. Working limits and broker ghosts stay off the tape. */
-
-import { TRADEIFY_STARTING_BALANCE } from '@/lib/trading/tradeifyGrowth50k'
+import { DEFAULT_PERSONAL_BALANCE } from '@/lib/trading/deskRiskProfile'
 
 export const LIVE_JOURNAL_INSTRUMENTS = ['DOW', 'NASDAQ', 'NIKKEI', 'GOLD', 'CRUDE', 'RUSSELL'] as const
 export type LiveJournalInstrument = (typeof LIVE_JOURNAL_INSTRUMENTS)[number]
@@ -56,7 +54,7 @@ export function journalTicketEquity(rows: readonly JournalEquityRow[]): {
       Number(t.account_size) >= 0 &&
       String(t.account_size).trim() !== ''
   )
-  const startingAccount = sized ? Number(sized.account_size) : TRADEIFY_STARTING_BALANCE
+  const startingAccount = sized ? Number(sized.account_size) : DEFAULT_PERSONAL_BALANCE
 
   let running = startingAccount
   const equityAfter = new Map<string, number>()

@@ -4,9 +4,11 @@
  * Oil Fundamental Analyst Dashboard Feature
  * Market: NYMEX WTI Crude Oil (CL)
  *
- * Implements the continuous 10-pillar fundamental state matrix,
- * the 10-step institutional event evaluation framework,
- * and live prompt price & calendar spread validation.
+ * Implements:
+ * 1. "TODAY'S OIL FUNDAMENTAL STATE" with 8 physical dimensions & invalidation rules
+ * 2. Machine-readable Structured JSON Event Evaluator for trading agents
+ * 3. Pragmatic 5-Feed Data Architecture
+ * 4. 10-Pillar State Matrix & Live Prompt Price / Front Calendar Spread Confirmation
  */
 
 import { useState, useEffect, useCallback } from 'react'
@@ -15,16 +17,18 @@ import type {
   OilEventEvaluation,
 } from '@/types/fundamentals'
 import { FundamentalsHeader } from './components/FundamentalsHeader'
+import { TodayFundamentalCard } from './components/TodayFundamentalCard'
+import { FiveFeedsCard } from './components/FiveFeedsCard'
 import { PillarMatrix } from './components/PillarMatrix'
 import { EventEvaluatorCard } from './components/EventEvaluatorCard'
 import { EvaluatedEventsHistory } from './components/EvaluatedEventsHistory'
 import { OilCatalystCalendar } from './components/OilCatalystCalendar'
 import { OilAnalystChat } from './components/OilAnalystChat'
 
-type TabKey = 'matrix' | 'evaluator' | 'history' | 'calendar' | 'terminal'
+type TabKey = 'today' | 'evaluator' | 'matrix' | 'feeds' | 'history' | 'calendar' | 'terminal'
 
 export default function FundamentalsPage() {
-  const [tab, setTab] = useState<TabKey>('matrix')
+  const [tab, setTab] = useState<TabKey>('today')
   const [state, setState] = useState<OilFundamentalDashboardState | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -74,7 +78,7 @@ export default function FundamentalsPage() {
   }
 
   const handleReset = async () => {
-    if (!window.confirm('Reset the 10-pillar fundamental state to baseline?')) return
+    if (!window.confirm('Reset fundamental state to baseline?')) return
     setRefreshing(true)
     try {
       const res = await fetch('/api/fundamentals', {
@@ -111,7 +115,7 @@ export default function FundamentalsPage() {
     }
 
     const data = await res.json()
-    if (data.ok && data.evaluation) {
+    if (data.ok && (data.evaluation || data.structured)) {
       if (data.state) {
         setState(data.state)
       }
@@ -127,7 +131,7 @@ export default function FundamentalsPage() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-8 h-8 animate-spin text-brand-400">
             <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="16" />
           </svg>
-          <span className="text-xs font-medium">Assembling 10-Pillar Oil Fundamental State...</span>
+          <span className="text-xs font-medium">Assembling Oil Fundamental State & Feeds...</span>
         </div>
       </div>
     )
@@ -157,7 +161,7 @@ export default function FundamentalsPage() {
       <FundamentalsHeader
         telemetry={state.wtiTelemetry}
         overallBias={state.overallBias}
-        overallConfidence={state.overallConfidence}
+        overallConfidence={state.today ? Math.round(state.today.confidence * 100) : state.overallConfidence}
         physicalBalance={state.physicalBalance}
         onRefresh={handleRefresh}
         onReset={handleReset}
@@ -169,15 +173,15 @@ export default function FundamentalsPage() {
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
           <button
             type="button"
-            onClick={() => setTab('matrix')}
+            onClick={() => setTab('today')}
             className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition ${
-              tab === 'matrix'
+              tab === 'today'
                 ? 'bg-brand-600 text-white shadow-sm'
                 : 'bg-surface-800 text-gray-400 hover:text-gray-200 hover:bg-surface-700 border border-surface-600'
             }`}
           >
-            <span>🏛️</span>
-            <span>10-Pillar State Matrix</span>
+            <span>🛢️</span>
+            <span>Today&apos;s State (V1)</span>
           </button>
 
           <button
@@ -190,7 +194,33 @@ export default function FundamentalsPage() {
             }`}
           >
             <span>⚡</span>
-            <span>10-Step Event Evaluator</span>
+            <span>Structured Event Evaluator</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setTab('matrix')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition ${
+              tab === 'matrix'
+                ? 'bg-brand-600 text-white shadow-sm'
+                : 'bg-surface-800 text-gray-400 hover:text-gray-200 hover:bg-surface-700 border border-surface-600'
+            }`}
+          >
+            <span>🏛️</span>
+            <span>10-Pillar Matrix</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setTab('feeds')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition ${
+              tab === 'feeds'
+                ? 'bg-brand-600 text-white shadow-sm'
+                : 'bg-surface-800 text-gray-400 hover:text-gray-200 hover:bg-surface-700 border border-surface-600'
+            }`}
+          >
+            <span>📡</span>
+            <span>5 Data Feeds</span>
           </button>
 
           <button
@@ -203,7 +233,7 @@ export default function FundamentalsPage() {
             }`}
           >
             <span>📜</span>
-            <span>Evaluated Events Ledger</span>
+            <span>Event History</span>
             {state.recentEvents.length > 0 && (
               <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-brand-500/30 text-brand-200 font-mono">
                 {state.recentEvents.length}
@@ -234,19 +264,17 @@ export default function FundamentalsPage() {
             }`}
           >
             <span>💬</span>
-            <span>Analyst Terminal (Chat)</span>
+            <span>Analyst Chat</span>
           </button>
         </div>
       </div>
 
       {/* Tab Workspaces */}
-      {tab === 'matrix' && (
-        <PillarMatrix
-          pillars={state.pillars}
-          onSelectPillar={() => {
-            /* optional handler */
-          }}
-        />
+      {tab === 'today' && (
+        <div className="space-y-5">
+          <TodayFundamentalCard today={state.today} telemetry={state.wtiTelemetry} />
+          <FiveFeedsCard feeds={state.fiveFeeds} />
+        </div>
       )}
 
       {tab === 'evaluator' && (
@@ -256,6 +284,17 @@ export default function FundamentalsPage() {
           onStateUpdated={loadState}
         />
       )}
+
+      {tab === 'matrix' && (
+        <PillarMatrix
+          pillars={state.pillars}
+          onSelectPillar={() => {
+            /* optional handler */
+          }}
+        />
+      )}
+
+      {tab === 'feeds' && <FiveFeedsCard feeds={state.fiveFeeds} />}
 
       {tab === 'history' && <EvaluatedEventsHistory events={state.recentEvents} />}
 

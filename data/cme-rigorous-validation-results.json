@@ -1,0 +1,786 @@
+[
+  {
+    "market": "NASDAQ",
+    "firstTouchesCount": 887,
+    "secondPlusTouchesCount": 1327,
+    "baselineWinRate": 48.8,
+    "results": [
+      {
+        "market": "NASDAQ",
+        "level": "YEST_VAH",
+        "n": 148,
+        "winRate30m": 61.5,
+        "ci95": [
+          53.5,
+          68.9
+        ],
+        "excessWinPct": 12.7,
+        "meanRet30m": 9.5,
+        "medianRet30m": 8.5,
+        "stdDevRet30m": 55.27,
+        "avgMfe": 56.49,
+        "avgMae": 45.19
+      },
+      {
+        "market": "NASDAQ",
+        "level": "INV_POC",
+        "n": 154,
+        "winRate30m": 51.9,
+        "ci95": [
+          44.1,
+          59.7
+        ],
+        "excessWinPct": 3.1,
+        "meanRet30m": -1.13,
+        "medianRet30m": 2.25,
+        "stdDevRet30m": 61.57,
+        "avgMfe": 55.9,
+        "avgMae": 66.3
+      },
+      {
+        "market": "NASDAQ",
+        "level": "AVWAP_+1σ",
+        "n": 3,
+        "winRate30m": 100,
+        "ci95": [
+          43.8,
+          100
+        ],
+        "excessWinPct": 51.2,
+        "meanRet30m": 48.67,
+        "medianRet30m": 50.5,
+        "stdDevRet30m": 20.56,
+        "avgMfe": 78,
+        "avgMae": 4.75
+      },
+      {
+        "market": "NASDAQ",
+        "level": "5D_VAH",
+        "n": 42,
+        "winRate30m": 45.2,
+        "ci95": [
+          31.2,
+          60.1
+        ],
+        "excessWinPct": -3.6,
+        "meanRet30m": -4.02,
+        "medianRet30m": -3.38,
+        "stdDevRet30m": 27.9,
+        "avgMfe": 33.82,
+        "avgMae": 49.47
+      },
+      {
+        "market": "NASDAQ",
+        "level": "YEST_POC",
+        "n": 117,
+        "winRate30m": 40.2,
+        "ci95": [
+          31.7,
+          49.2
+        ],
+        "excessWinPct": -8.7,
+        "meanRet30m": -7.18,
+        "medianRet30m": -13.25,
+        "stdDevRet30m": 58.19,
+        "avgMfe": 48.69,
+        "avgMae": 63.06
+      },
+      {
+        "market": "NASDAQ",
+        "level": "AVWAP_-1σ",
+        "n": 43,
+        "winRate30m": 23.3,
+        "ci95": [
+          13.2,
+          37.7
+        ],
+        "excessWinPct": -25.6,
+        "meanRet30m": -52.52,
+        "medianRet30m": -58.25,
+        "stdDevRet30m": 67.64,
+        "avgMfe": 49.01,
+        "avgMae": 118.09
+      },
+      {
+        "market": "NASDAQ",
+        "level": "5D_LVN",
+        "n": 140,
+        "winRate30m": 44.3,
+        "ci95": [
+          36.3,
+          52.6
+        ],
+        "excessWinPct": -4.5,
+        "meanRet30m": -1.33,
+        "medianRet30m": -7,
+        "stdDevRet30m": 53.88,
+        "avgMfe": 54.28,
+        "avgMae": 56.7
+      },
+      {
+        "market": "NASDAQ",
+        "level": "AVWAP_-2σ",
+        "n": 43,
+        "winRate30m": 60.5,
+        "ci95": [
+          45.6,
+          73.6
+        ],
+        "excessWinPct": 11.6,
+        "meanRet30m": 18.19,
+        "medianRet30m": 15,
+        "stdDevRet30m": 82.94,
+        "avgMfe": 100.8,
+        "avgMae": 56.7
+      },
+      {
+        "market": "NASDAQ",
+        "level": "YEST_VAL",
+        "n": 126,
+        "winRate30m": 43.7,
+        "ci95": [
+          35.3,
+          52.4
+        ],
+        "excessWinPct": -5.2,
+        "meanRet30m": -6.58,
+        "medianRet30m": -11.63,
+        "stdDevRet30m": 54.65,
+        "avgMfe": 53.97,
+        "avgMae": 58.1
+      },
+      {
+        "market": "NASDAQ",
+        "level": "5D_VAL",
+        "n": 15,
+        "winRate30m": 26.7,
+        "ci95": [
+          10.9,
+          52
+        ],
+        "excessWinPct": -22.2,
+        "meanRet30m": -11.88,
+        "medianRet30m": -16.75,
+        "stdDevRet30m": 39.98,
+        "avgMfe": 41.92,
+        "avgMae": 80.63
+      },
+      {
+        "market": "NASDAQ",
+        "level": "AVWAP_MID",
+        "n": 46,
+        "winRate30m": 43.5,
+        "ci95": [
+          30.2,
+          57.8
+        ],
+        "excessWinPct": -5.4,
+        "meanRet30m": -1.95,
+        "medianRet30m": -13,
+        "stdDevRet30m": 69.51,
+        "avgMfe": 60.73,
+        "avgMae": 65.57
+      },
+      {
+        "market": "NASDAQ",
+        "level": "5D_POC",
+        "n": 10,
+        "winRate30m": 30,
+        "ci95": [
+          10.8,
+          60.3
+        ],
+        "excessWinPct": -18.8,
+        "meanRet30m": -7.08,
+        "medianRet30m": -9,
+        "stdDevRet30m": 52.23,
+        "avgMfe": 70.97,
+        "avgMae": 74.38
+      }
+    ]
+  },
+  {
+    "market": "DOW",
+    "firstTouchesCount": 728,
+    "secondPlusTouchesCount": 886,
+    "baselineWinRate": 48.9,
+    "results": [
+      {
+        "market": "DOW",
+        "level": "AVWAP_-2σ",
+        "n": 77,
+        "winRate30m": 50.6,
+        "ci95": [
+          39.7,
+          61.5
+        ],
+        "excessWinPct": 1.8,
+        "meanRet30m": 0.96,
+        "medianRet30m": 1,
+        "stdDevRet30m": 82.45,
+        "avgMfe": 75.68,
+        "avgMae": 74.71
+      },
+      {
+        "market": "DOW",
+        "level": "INV_POC",
+        "n": 96,
+        "winRate30m": 50,
+        "ci95": [
+          40.2,
+          59.8
+        ],
+        "excessWinPct": 1.1,
+        "meanRet30m": -4.65,
+        "medianRet30m": -1.5,
+        "stdDevRet30m": 84.08,
+        "avgMfe": 87.98,
+        "avgMae": 95.33
+      },
+      {
+        "market": "DOW",
+        "level": "5D_VAL",
+        "n": 22,
+        "winRate30m": 45.5,
+        "ci95": [
+          26.9,
+          65.3
+        ],
+        "excessWinPct": -3.4,
+        "meanRet30m": -12.32,
+        "medianRet30m": -29.5,
+        "stdDevRet30m": 78.68,
+        "avgMfe": 60.41,
+        "avgMae": 101
+      },
+      {
+        "market": "DOW",
+        "level": "AVWAP_-1σ",
+        "n": 36,
+        "winRate30m": 58.3,
+        "ci95": [
+          42.2,
+          72.9
+        ],
+        "excessWinPct": 9.5,
+        "meanRet30m": 20.81,
+        "medianRet30m": 38.5,
+        "stdDevRet30m": 69.76,
+        "avgMfe": 70.19,
+        "avgMae": 74.22
+      },
+      {
+        "market": "DOW",
+        "level": "5D_LVN",
+        "n": 100,
+        "winRate30m": 51,
+        "ci95": [
+          41.3,
+          60.6
+        ],
+        "excessWinPct": 2.1,
+        "meanRet30m": 6.14,
+        "medianRet30m": 1,
+        "stdDevRet30m": 66.39,
+        "avgMfe": 62.35,
+        "avgMae": 51.13
+      },
+      {
+        "market": "DOW",
+        "level": "YEST_VAH",
+        "n": 115,
+        "winRate30m": 35.7,
+        "ci95": [
+          27.5,
+          44.7
+        ],
+        "excessWinPct": -13.2,
+        "meanRet30m": -19.23,
+        "medianRet30m": -14,
+        "stdDevRet30m": 62.74,
+        "avgMfe": 50.31,
+        "avgMae": 83.82
+      },
+      {
+        "market": "DOW",
+        "level": "YEST_POC",
+        "n": 73,
+        "winRate30m": 50.7,
+        "ci95": [
+          39.5,
+          61.8
+        ],
+        "excessWinPct": 1.8,
+        "meanRet30m": -0.38,
+        "medianRet30m": 2,
+        "stdDevRet30m": 72.47,
+        "avgMfe": 81.22,
+        "avgMae": 79.22
+      },
+      {
+        "market": "DOW",
+        "level": "5D_POC",
+        "n": 53,
+        "winRate30m": 67.9,
+        "ci95": [
+          54.5,
+          78.9
+        ],
+        "excessWinPct": 19.1,
+        "meanRet30m": 15.02,
+        "medianRet30m": 16,
+        "stdDevRet30m": 66.86,
+        "avgMfe": 73.57,
+        "avgMae": 51.26
+      },
+      {
+        "market": "DOW",
+        "level": "5D_VAH",
+        "n": 63,
+        "winRate30m": 69.8,
+        "ci95": [
+          57.6,
+          79.8
+        ],
+        "excessWinPct": 21,
+        "meanRet30m": 39.75,
+        "medianRet30m": 47,
+        "stdDevRet30m": 89.45,
+        "avgMfe": 115.95,
+        "avgMae": 68.87
+      },
+      {
+        "market": "DOW",
+        "level": "AVWAP_MID",
+        "n": 56,
+        "winRate30m": 41.1,
+        "ci95": [
+          29.2,
+          54.1
+        ],
+        "excessWinPct": -7.8,
+        "meanRet30m": -13.79,
+        "medianRet30m": -11,
+        "stdDevRet30m": 101.02,
+        "avgMfe": 85.46,
+        "avgMae": 95.3
+      },
+      {
+        "market": "DOW",
+        "level": "YEST_VAL",
+        "n": 36,
+        "winRate30m": 58.3,
+        "ci95": [
+          42.2,
+          72.9
+        ],
+        "excessWinPct": 9.5,
+        "meanRet30m": 9.44,
+        "medianRet30m": 7,
+        "stdDevRet30m": 84.46,
+        "avgMfe": 74.89,
+        "avgMae": 63.86
+      }
+    ]
+  },
+  {
+    "market": "CRUDE",
+    "firstTouchesCount": 573,
+    "secondPlusTouchesCount": 801,
+    "baselineWinRate": 55.8,
+    "results": [
+      {
+        "market": "CRUDE",
+        "level": "INV_POC",
+        "n": 180,
+        "winRate30m": 51.1,
+        "ci95": [
+          43.9,
+          58.3
+        ],
+        "excessWinPct": -4.7,
+        "meanRet30m": 0.01,
+        "medianRet30m": 0.01,
+        "stdDevRet30m": 0.26,
+        "avgMfe": 0.37,
+        "avgMae": 0.35
+      },
+      {
+        "market": "CRUDE",
+        "level": "5D_POC",
+        "n": 19,
+        "winRate30m": 31.6,
+        "ci95": [
+          15.4,
+          54
+        ],
+        "excessWinPct": -24.2,
+        "meanRet30m": -0.07,
+        "medianRet30m": -0.1,
+        "stdDevRet30m": 0.49,
+        "avgMfe": 0.35,
+        "avgMae": 0.54
+      },
+      {
+        "market": "CRUDE",
+        "level": "5D_VAH",
+        "n": 36,
+        "winRate30m": 52.8,
+        "ci95": [
+          37,
+          68
+        ],
+        "excessWinPct": -3,
+        "meanRet30m": -0.14,
+        "medianRet30m": 0.02,
+        "stdDevRet30m": 0.39,
+        "avgMfe": 0.32,
+        "avgMae": 0.62
+      },
+      {
+        "market": "CRUDE",
+        "level": "AVWAP_+1σ",
+        "n": 12,
+        "winRate30m": 58.3,
+        "ci95": [
+          32,
+          80.7
+        ],
+        "excessWinPct": 2.6,
+        "meanRet30m": -0.12,
+        "medianRet30m": 0.24,
+        "stdDevRet30m": 0.58,
+        "avgMfe": 0.39,
+        "avgMae": 0.53
+      },
+      {
+        "market": "CRUDE",
+        "level": "AVWAP_+2σ",
+        "n": 125,
+        "winRate30m": 56,
+        "ci95": [
+          47.2,
+          64.4
+        ],
+        "excessWinPct": 0.2,
+        "meanRet30m": 0.02,
+        "medianRet30m": 0.03,
+        "stdDevRet30m": 0.27,
+        "avgMfe": 0.34,
+        "avgMae": 0.37
+      },
+      {
+        "market": "CRUDE",
+        "level": "YEST_VAL",
+        "n": 23,
+        "winRate30m": 47.8,
+        "ci95": [
+          29.2,
+          67
+        ],
+        "excessWinPct": -7.9,
+        "meanRet30m": 0.18,
+        "medianRet30m": 0,
+        "stdDevRet30m": 0.46,
+        "avgMfe": 0.5,
+        "avgMae": 0.27
+      },
+      {
+        "market": "CRUDE",
+        "level": "YEST_POC",
+        "n": 35,
+        "winRate30m": 40,
+        "ci95": [
+          25.6,
+          56.4
+        ],
+        "excessWinPct": -15.8,
+        "meanRet30m": -0.07,
+        "medianRet30m": -0.09,
+        "stdDevRet30m": 0.38,
+        "avgMfe": 0.31,
+        "avgMae": 0.46
+      },
+      {
+        "market": "CRUDE",
+        "level": "YEST_VAH",
+        "n": 82,
+        "winRate30m": 47.6,
+        "ci95": [
+          37.1,
+          58.2
+        ],
+        "excessWinPct": -8.2,
+        "meanRet30m": -0.03,
+        "medianRet30m": -0.03,
+        "stdDevRet30m": 0.33,
+        "avgMfe": 0.34,
+        "avgMae": 0.44
+      },
+      {
+        "market": "CRUDE",
+        "level": "AVWAP_+3σ",
+        "n": 5,
+        "winRate30m": 40,
+        "ci95": [
+          11.8,
+          76.9
+        ],
+        "excessWinPct": -15.8,
+        "meanRet30m": -0.11,
+        "medianRet30m": -0.23,
+        "stdDevRet30m": 0.33,
+        "avgMfe": 0.59,
+        "avgMae": 0.37
+      },
+      {
+        "market": "CRUDE",
+        "level": "AVWAP_MID",
+        "n": 35,
+        "winRate30m": 51.4,
+        "ci95": [
+          35.6,
+          67
+        ],
+        "excessWinPct": -4.3,
+        "meanRet30m": 0.02,
+        "medianRet30m": 0.03,
+        "stdDevRet30m": 0.34,
+        "avgMfe": 0.38,
+        "avgMae": 0.38
+      },
+      {
+        "market": "CRUDE",
+        "level": "5D_VAL",
+        "n": 9,
+        "winRate30m": 100,
+        "ci95": [
+          70.1,
+          100
+        ],
+        "excessWinPct": 44.2,
+        "meanRet30m": 0.24,
+        "medianRet30m": 0.27,
+        "stdDevRet30m": 0.12,
+        "avgMfe": 0.62,
+        "avgMae": 0.1
+      },
+      {
+        "market": "CRUDE",
+        "level": "5D_LVN",
+        "n": 10,
+        "winRate30m": 100,
+        "ci95": [
+          72.2,
+          100
+        ],
+        "excessWinPct": 44.2,
+        "meanRet30m": 0.31,
+        "medianRet30m": 0.23,
+        "stdDevRet30m": 0.17,
+        "avgMfe": 0.8,
+        "avgMae": 0.09
+      }
+    ]
+  },
+  {
+    "market": "GOLD",
+    "firstTouchesCount": 255,
+    "secondPlusTouchesCount": 252,
+    "baselineWinRate": 47.5,
+    "results": [
+      {
+        "market": "GOLD",
+        "level": "5D_LVN",
+        "n": 28,
+        "winRate30m": 57.1,
+        "ci95": [
+          39.1,
+          73.5
+        ],
+        "excessWinPct": 9.7,
+        "meanRet30m": -1.05,
+        "medianRet30m": 2.95,
+        "stdDevRet30m": 17.95,
+        "avgMfe": 24.84,
+        "avgMae": 25.88
+      },
+      {
+        "market": "GOLD",
+        "level": "5D_VAL",
+        "n": 6,
+        "winRate30m": 66.7,
+        "ci95": [
+          30,
+          90.3
+        ],
+        "excessWinPct": 19.2,
+        "meanRet30m": -5.72,
+        "medianRet30m": 4.2,
+        "stdDevRet30m": 19.76,
+        "avgMfe": 16.4,
+        "avgMae": 21.88
+      },
+      {
+        "market": "GOLD",
+        "level": "AVWAP_MID",
+        "n": 33,
+        "winRate30m": 66.7,
+        "ci95": [
+          49.6,
+          80.2
+        ],
+        "excessWinPct": 19.2,
+        "meanRet30m": 3.07,
+        "medianRet30m": 2.6,
+        "stdDevRet30m": 14.88,
+        "avgMfe": 20.65,
+        "avgMae": 9.81
+      },
+      {
+        "market": "GOLD",
+        "level": "AVWAP_+1σ",
+        "n": 6,
+        "winRate30m": 100,
+        "ci95": [
+          61,
+          100
+        ],
+        "excessWinPct": 52.5,
+        "meanRet30m": 50.92,
+        "medianRet30m": 52.6,
+        "stdDevRet30m": 12.05,
+        "avgMfe": 78.13,
+        "avgMae": 18.95
+      },
+      {
+        "market": "GOLD",
+        "level": "5D_POC",
+        "n": 7,
+        "winRate30m": 57.1,
+        "ci95": [
+          25,
+          84.2
+        ],
+        "excessWinPct": 9.7,
+        "meanRet30m": 11.36,
+        "medianRet30m": 1.6,
+        "stdDevRet30m": 52.33,
+        "avgMfe": 47.37,
+        "avgMae": 31.91
+      },
+      {
+        "market": "GOLD",
+        "level": "INV_POC",
+        "n": 28,
+        "winRate30m": 60.7,
+        "ci95": [
+          42.4,
+          76.4
+        ],
+        "excessWinPct": 13.2,
+        "meanRet30m": 3.71,
+        "medianRet30m": 4.2,
+        "stdDevRet30m": 27.55,
+        "avgMfe": 25.6,
+        "avgMae": 16.8
+      },
+      {
+        "market": "GOLD",
+        "level": "AVWAP_-1σ",
+        "n": 33,
+        "winRate30m": 27.3,
+        "ci95": [
+          15.1,
+          44.2
+        ],
+        "excessWinPct": -20.2,
+        "meanRet30m": -4.92,
+        "medianRet30m": -3.8,
+        "stdDevRet30m": 15.61,
+        "avgMfe": 11.75,
+        "avgMae": 31.54
+      },
+      {
+        "market": "GOLD",
+        "level": "YEST_POC",
+        "n": 12,
+        "winRate30m": 66.7,
+        "ci95": [
+          39.1,
+          86.2
+        ],
+        "excessWinPct": 19.2,
+        "meanRet30m": 1.13,
+        "medianRet30m": 5.05,
+        "stdDevRet30m": 18.28,
+        "avgMfe": 29.28,
+        "avgMae": 22.67
+      },
+      {
+        "market": "GOLD",
+        "level": "YEST_VAH",
+        "n": 24,
+        "winRate30m": 54.2,
+        "ci95": [
+          35.1,
+          72.1
+        ],
+        "excessWinPct": 6.7,
+        "meanRet30m": -1.77,
+        "medianRet30m": 2,
+        "stdDevRet30m": 11.36,
+        "avgMfe": 17,
+        "avgMae": 10.49
+      },
+      {
+        "market": "GOLD",
+        "level": "YEST_VAL",
+        "n": 44,
+        "winRate30m": 38.6,
+        "ci95": [
+          25.7,
+          53.4
+        ],
+        "excessWinPct": -8.8,
+        "meanRet30m": -4.71,
+        "medianRet30m": -2,
+        "stdDevRet30m": 20.66,
+        "avgMfe": 11.53,
+        "avgMae": 24.35
+      },
+      {
+        "market": "GOLD",
+        "level": "AVWAP_-2σ",
+        "n": 27,
+        "winRate30m": 37,
+        "ci95": [
+          21.5,
+          55.8
+        ],
+        "excessWinPct": -10.4,
+        "meanRet30m": -4.28,
+        "medianRet30m": -2.7,
+        "stdDevRet30m": 27.99,
+        "avgMfe": 17.38,
+        "avgMae": 27.24
+      },
+      {
+        "market": "GOLD",
+        "level": "AVWAP_-3σ",
+        "n": 4,
+        "winRate30m": 75,
+        "ci95": [
+          30.1,
+          95.4
+        ],
+        "excessWinPct": 27.5,
+        "meanRet30m": 5.9,
+        "medianRet30m": 6.75,
+        "stdDevRet30m": 8.11,
+        "avgMfe": 11.7,
+        "avgMae": 11.18
+      }
+    ]
+  }
+]
