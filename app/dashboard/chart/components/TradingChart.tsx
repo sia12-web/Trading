@@ -9448,7 +9448,7 @@ export function TradingChart({
       try { nvs.upper3.setData([]) } catch {}
       try { nvs.lower3.setData([]) } catch {}
     }
-  }, [candles, newsEvents, instrument, timeframe, showNewsAvwap, newsAvwapBandCount, selectedCatalystId])
+  }, [candles, newsEvents, instrument, timeframe, showNewsAvwap, newsAvwapBandCount])
 
 
   // ── Session color boxes (cached spans + imperative paint = smooth pan)
