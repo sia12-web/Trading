@@ -64,7 +64,8 @@ export function detectCandlestickPatterns(
   bars: Candle[],
   index = bars.length - 1,
   trend = 5,
-  dojiSize = 0.05
+  dojiSize = 0.05,
+  pocs?: Array<number | null | undefined>
 ): CandlestickPatternResult {
   const result: CandlestickPatternResult = {
     doji: false,
@@ -126,7 +127,9 @@ export function detectCandlestickPatterns(
     topWick >= 1.8 * Math.max(0.0001, bottomWick) &&
     isHigherProbe
 
-  if (!c1) return result
+  if (!c1) {
+    return pocs && pocs.length > 0 ? filterCandlestickPatternsByPoc(result, c, pocs) : result
+  }
 
   const open1 = c1.open
   const high1 = c1.high
@@ -228,7 +231,9 @@ export function detectCandlestickPatterns(
     (high - close) / (0.001 + high - low) > 0.6 &&
     (high - open) / (0.001 + high - low) > 0.6
 
-  if (!c2) return result
+  if (!c2) {
+    return pocs && pocs.length > 0 ? filterCandlestickPatternsByPoc(result, c, pocs) : result
+  }
 
   const open2 = c2.open
   const close2 = c2.close
@@ -247,7 +252,68 @@ export function detectCandlestickPatterns(
     open > Math.max(open1, close1) &&
     close > open
 
+  if (pocs && pocs.length > 0) {
+    return filterCandlestickPatternsByPoc(result, c, pocs)
+  }
+
   return result
+}
+
+/**
+ * Filters detected candlestick patterns based on price position relative to fixed range POCs
+ * (Yesterday POC, Overnight/Inventory POC, Last 5 Days POC).
+ *
+ * Rules:
+ * - Bullish patterns are ONLY visible/returned when price is BELOW at least one reference POC of yesterday, inventory, or last 5 days.
+ * - Bearish patterns are ONLY visible/returned when price is ABOVE at least one reference POC of yesterday, inventory, or last 5 days.
+ */
+export function filterCandlestickPatternsByPoc(
+  result: CandlestickPatternResult,
+  candle: Candle,
+  pocs?: Array<number | null | undefined>
+): CandlestickPatternResult {
+  if (!pocs || pocs.length === 0) {
+    return result
+  }
+
+  const validPocs = pocs.filter(
+    (p): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0
+  )
+
+  if (validPocs.length === 0) {
+    return result
+  }
+
+  // Price below POC: candle close or candle low is strictly below or equal to a reference POC
+  const isBelowPoc = validPocs.some((poc) => candle.close <= poc || candle.low <= poc)
+  // Price above POC: candle close or candle high is strictly above or equal to a reference POC
+  const isAbovePoc = validPocs.some((poc) => candle.close >= poc || candle.high >= poc)
+
+  const filtered: CandlestickPatternResult = { ...result }
+
+  if (!isBelowPoc) {
+    filtered.bullEng = false
+    filtered.buyingExcess = false
+    filtered.hammer = false
+    filtered.invHammer = false
+    filtered.morningStar = false
+    filtered.bullHarami = false
+    filtered.bullKick = false
+    filtered.piercing = false
+    filtered.bullBelt = false
+  }
+
+  if (!isAbovePoc) {
+    filtered.bearEng = false
+    filtered.sellingExcess = false
+    filtered.shootingStar = false
+    filtered.hangingMan = false
+    filtered.eveningStar = false
+    filtered.bearHarami = false
+    filtered.bearKick = false
+  }
+
+  return filtered
 }
 
 /**

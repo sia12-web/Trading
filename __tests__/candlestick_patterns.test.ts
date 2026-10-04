@@ -72,3 +72,34 @@ test('detectCandlestickPatterns - Selling Excess Tail', () => {
   assert.equal(res.sellingExcess, true)
   assert.equal(res.buyingExcess, false)
 })
+
+test('detectCandlestickPatterns - POC Filtering Rules', () => {
+  // Bullish Engulfing bar at price ~112
+  const barsBull: Candle[] = [
+    { time: 1, open: 110, high: 112, low: 100, close: 105, volume: 100 },
+    { time: 2, open: 104, high: 115, low: 102, close: 112, volume: 150 },
+  ]
+
+  // When POC is 120 (price 112 is BELOW POC) -> Bullish pattern should be KEPT
+  const resBelowPoc = detectCandlestickPatterns(barsBull, 1, 5, 0.05, [120])
+  assert.equal(resBelowPoc.bullEng, true)
+
+  // When POC is 100 (price 112 is ABOVE POC) -> Bullish pattern should be FILTERED OUT
+  const resAbovePoc = detectCandlestickPatterns(barsBull, 1, 5, 0.05, [100])
+  assert.equal(resAbovePoc.bullEng, false)
+
+  // Bearish Engulfing bar at price ~98
+  const barsBear: Candle[] = [
+    { time: 1, open: 100, high: 106, low: 99, close: 105, volume: 100 },
+    { time: 2, open: 106, high: 107, low: 95, close: 98, volume: 150 },
+  ]
+
+  // When POC is 90 (price 98 is ABOVE POC) -> Bearish pattern should be KEPT
+  const resBearAbovePoc = detectCandlestickPatterns(barsBear, 1, 5, 0.05, [90])
+  assert.equal(resBearAbovePoc.bearEng, true)
+
+  // When POC is 110 (price 98 is BELOW POC) -> Bearish pattern should be FILTERED OUT
+  const resBearBelowPoc = detectCandlestickPatterns(barsBear, 1, 5, 0.05, [110])
+  assert.equal(resBearBelowPoc.bearEng, false)
+})
+
