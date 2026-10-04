@@ -53,7 +53,7 @@ export async function GET(request: Request) {
     const instruments: DeskNewsInstrument[] = ['DOW', 'NASDAQ', 'NIKKEI', 'GOLD', 'CRUDE']
 
     const calendarRowsPromise = finnhub.getEconomicCalendar(
-      ymd(now),
+      ymd(new Date(now.getTime() - 21 * 86400000)),
       ymd(new Date(now.getTime() + 7 * 86400000))
     )
 
@@ -178,7 +178,7 @@ export async function GET(request: Request) {
     releasedRecent.sort(byTime)
     otherHigh.sort(byTime)
     rest.sort(byTime)
-    let calendar = [...releasedRecent, ...otherHigh, ...rest].slice(0, 40)
+    let calendar = [...releasedRecent, ...otherHigh, ...rest].slice(0, 100)
 
     // Optional desk filter for chart banner polls
     if (desk !== 'ALL') {

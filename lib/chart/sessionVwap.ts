@@ -1319,6 +1319,8 @@ export function computeVwapFromCustomAnchor(
   lower1: { time: UTCTimestamp; value: number }[]
   upper2: { time: UTCTimestamp; value: number }[]
   lower2: { time: UTCTimestamp; value: number }[]
+  upper3: { time: UTCTimestamp; value: number }[]
+  lower3: { time: UTCTimestamp; value: number }[]
 } | null {
   if (candles.length === 0) return null
 
@@ -1335,6 +1337,8 @@ export function computeVwapFromCustomAnchor(
   const lower1: { time: UTCTimestamp; value: number }[] = []
   const upper2: { time: UTCTimestamp; value: number }[] = []
   const lower2: { time: UTCTimestamp; value: number }[] = []
+  const upper3: { time: UTCTimestamp; value: number }[] = []
+  const lower3: { time: UTCTimestamp; value: number }[] = []
 
   for (let i = startIdx; i < endIdx; i++) {
     const c = candles[i]!
@@ -1353,7 +1357,9 @@ export function computeVwapFromCustomAnchor(
     lower1.push({ time: t, value: Number((v - std).toFixed(2)) })
     upper2.push({ time: t, value: Number((v + 2 * std).toFixed(2)) })
     lower2.push({ time: t, value: Number((v - 2 * std).toFixed(2)) })
+    upper3.push({ time: t, value: Number((v + 3 * std).toFixed(2)) })
+    lower3.push({ time: t, value: Number((v - 3 * std).toFixed(2)) })
   }
 
-  return vwap.length ? { vwap, upper1, lower1, upper2, lower2 } : null
+  return vwap.length ? { vwap, upper1, lower1, upper2, lower2, upper3, lower3 } : null
 }
