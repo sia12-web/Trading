@@ -4806,6 +4806,7 @@ export function TradingChart({
               impact: m.impact || 'High',
               instruments: [instrument],
               isReleased: true,
+              deskNote: `${m.eventName} · Volatility active`,
             }
             visibleItems.push({ event: fallbackEv, x: rx })
           }
