@@ -4751,7 +4751,7 @@ export function TradingChart({
     const host = newsMarkersOverlayRef.current
     const chart = chartRef.current
     const list = candlesRef.current
-    if (!host || !chart || !containerRef.current || list.length === 0 || newsEvents.length === 0 || timeframe === '1D' || !showNewsOnChart) {
+    if (!host || !chart || !containerRef.current || list.length === 0 || timeframe === '1D' || !showNewsOnChart) {
       if (host) host.innerHTML = ''
       return
     }
@@ -4764,21 +4764,52 @@ export function TradingChart({
         : list.map((c) => toChartTime(c.time as number, tz))
     const nowMs = Date.now()
 
+    const firstCandleSec = (list[0]!.time as number) - 3600
+    const lastCandleSec = (list[list.length - 1]!.time as number) + 48 * 3600
+
     const visibleItems: Array<{ event: DeskCalendarEvent; x: number }> = []
+    const seenX = new Set<number>()
 
     for (const e of newsEvents) {
       const ms = parseCalendarEventMs(e.time, nowMs)
       if (!ms || !Number.isFinite(ms)) continue
 
-      // Include upcoming events and recent events within 24h window
-      if (nowMs - ms > 24 * 3600 * 1000) continue
-      if (ms - nowMs > 48 * 3600 * 1000) continue
-
       const sec = Math.floor(ms / 1000)
+      if (sec < firstCandleSec || sec > lastCandleSec) continue
+
       const chartT = toChartTime(sec, tz)
-      const x = timeToX(chart.timeScale(), chartT, candleTimes)
+      const x = timeToX(chart.timeScale(), chartT, candleTimes, false, barSeconds)
       if (x != null && Number.isFinite(x) && x >= 12 && x <= paneW - 14) {
-        visibleItems.push({ event: e, x: Math.round(x) })
+        const rx = Math.round(x)
+        if (!seenX.has(rx)) {
+          seenX.add(rx)
+          visibleItems.push({ event: e, x: rx })
+        }
+      }
+    }
+
+    // Fallback: If no calendar events match visible range, plot detected emotional news moves
+    if (visibleItems.length === 0 && newsMovesRef.current && newsMovesRef.current.length > 0) {
+      for (const m of newsMovesRef.current) {
+        const sec = m.reactionStartTime
+        const chartT = toChartTime(sec, tz)
+        const x = timeToX(chart.timeScale(), chartT, candleTimes, false, barSeconds)
+        if (x != null && Number.isFinite(x) && x >= 12 && x <= paneW - 14) {
+          const rx = Math.round(x)
+          if (!seenX.has(rx)) {
+            seenX.add(rx)
+            const fallbackEv: DeskCalendarEvent = {
+              id: `move-${sec}-${m.eventName}`,
+              time: new Date(sec * 1000).toISOString(),
+              country: m.country || 'US',
+              event: m.eventName,
+              impact: m.impact || 'High',
+              instruments: [instrument],
+              isReleased: true,
+            }
+            visibleItems.push({ event: fallbackEv, x: rx })
+          }
+        }
       }
     }
 
@@ -4850,7 +4881,7 @@ export function TradingChart({
         </div>
       `
     }
-  }, [newsEvents, timeframe, showNewsOnChart])
+  }, [newsEvents, timeframe, showNewsOnChart, barSeconds, instrument])
 
   useEffect(() => {
     paintNewsMarkersRef.current = paintNewsMarkers
