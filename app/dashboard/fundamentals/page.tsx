@@ -24,15 +24,17 @@ import { EvaluatedEventsHistory } from './components/EvaluatedEventsHistory'
 import { OilCatalystCalendar } from './components/OilCatalystCalendar'
 import { OilAnalystChat } from './components/OilAnalystChat'
 import { GoldDashboard } from './gold/GoldDashboard'
+import { NasdaqDashboard } from './nasdaq/NasdaqDashboard'
 
 type OilTabKey = 'today' | 'wire' | 'evaluator' | 'matrix' | 'feeds' | 'history' | 'calendar' | 'terminal'
-type MarketKey = 'CL' | 'GC'
+type MarketKey = 'CL' | 'GC' | 'NQ'
 
 function FundamentalsContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
 
-  const initialMarket = (searchParams.get('market')?.toUpperCase() === 'GC' ? 'GC' : 'CL') as MarketKey
+  const marketParam = searchParams.get('market')?.toUpperCase()
+  const initialMarket: MarketKey = marketParam === 'GC' ? 'GC' : marketParam === 'NQ' ? 'NQ' : 'CL'
   const [market, setMarket] = useState<MarketKey>(initialMarket)
 
   // Oil State
@@ -143,9 +145,9 @@ function FundamentalsContent() {
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
-      {/* Top-Level Asset Switcher: Oil vs Gold */}
+      {/* Top-Level Asset Switcher: Oil vs Gold vs Nasdaq */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-2 bg-slate-900/90 border border-slate-800 rounded-2xl backdrop-blur-md shadow-lg">
-        <div className="flex items-center gap-1.5 p-1 bg-slate-950/80 rounded-xl border border-slate-800/80">
+        <div className="flex items-center gap-1.5 p-1 bg-slate-950/80 rounded-xl border border-slate-800/80 flex-wrap">
           <button
             onClick={() => handleMarketChange('CL')}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition ${
@@ -155,7 +157,7 @@ function FundamentalsContent() {
             }`}
           >
             <span>🛢️</span>
-            <span>WTI Crude Oil (CL)</span>
+            <span>WTI Crude (CL)</span>
             <span className="text-[10px] font-mono opacity-80">Physical</span>
           </button>
 
@@ -170,20 +172,39 @@ function FundamentalsContent() {
             <span>🪙</span>
             <span>COMEX Gold (GC)</span>
             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-400/30 text-amber-200">
+              Macro/Monetary
+            </span>
+          </button>
+
+          <button
+            onClick={() => handleMarketChange('NQ')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition ${
+              market === 'NQ'
+                ? 'bg-cyan-500 text-slate-950 shadow-md font-extrabold'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/80'
+            }`}
+          >
+            <span>💻</span>
+            <span>Nasdaq-100 (NQ)</span>
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-400/30 text-cyan-950 font-bold">
               NEW AGENT
             </span>
           </button>
         </div>
 
         <div className="px-3 text-[11px] text-slate-400 hidden sm:block">
-          {market === 'GC'
+          {market === 'NQ'
+            ? 'Nasdaq Analyst: Macro · Rates Engine · Mega-Cap Guidance · AI/Semis · Breadth'
+            : market === 'GC'
             ? 'Gold Analyst: Real Rates · USD · Fed · Central Banks · WGC ETFs · Wyckoff Rejection'
             : 'Oil Analyst: Physical balances · Cushing inventories · OPEC+ quota · 3:2:1 Crack margins'}
         </div>
       </div>
 
       {/* Render Selected Market Engine */}
-      {market === 'GC' ? (
+      {market === 'NQ' ? (
+        <NasdaqDashboard />
+      ) : market === 'GC' ? (
         <GoldDashboard />
       ) : (
         /* Oil Fundamental Analyst */

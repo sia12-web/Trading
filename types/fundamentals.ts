@@ -601,3 +601,332 @@ export interface GoldFundamentalDashboardState {
   liveGoldHeadlines: LiveGoldHeadline[]
 }
 
+// ==========================================
+// NASDAQ-100 FUNDAMENTAL ANALYST DOMAIN TYPES (NQ)
+// Macro + Earnings + Rates + Flow Analyst
+// ==========================================
+
+export type NasdaqEventCategory =
+  | 'MONETARY_POLICY'
+  | 'RATES'
+  | 'INFLATION'
+  | 'LABOR'
+  | 'GROWTH'
+  | 'LIQUIDITY'
+  | 'EARNINGS'
+  | 'GUIDANCE'
+  | 'AI_CAPEX'
+  | 'SEMICONDUCTORS'
+  | 'REGULATION'
+  | 'GEOPOLITICS'
+  | 'VOLATILITY'
+  | 'OPTIONS'
+  | 'POSITIONING'
+  | 'BREADTH'
+
+export type NasdaqDirectionalStance = 'BULLISH' | 'BEARISH' | 'MIXED' | 'NEUTRAL' | 'UNCERTAIN'
+
+export type NasdaqHorizon = 'INTRADAY' | 'SHORT_TERM' | 'MEDIUM_TERM'
+
+export interface NasdaqAbnormalBehavior {
+  detected: boolean
+  type:
+    | 'BULLISH_RELATIVE_STRENGTH'
+    | 'BEARISH_RELATIVE_WEAKNESS'
+    | 'RATES_DIVERGENCE'
+    | 'BREADTH_DIVERGENCE'
+    | 'VOLATILITY_EXPANSION_ON_RALLY'
+    | 'NONE'
+  description: string
+}
+
+export interface StructuredNasdaqEventOutput {
+  timestamp: string
+  market: 'NQ'
+  event: string
+  importance: 'HIGH' | 'MEDIUM' | 'LOW'
+
+  // Prompt 34 schema:
+  fundamental_effect: {
+    intraday: NasdaqDirectionalStance
+    short_term: NasdaqDirectionalStance
+    medium_term: NasdaqDirectionalStance
+  }
+
+  drivers: Array<{
+    factor: string
+    actual: number | string
+    consensus: number | string | null
+    unit: string
+    effect: NasdaqDirectionalStance
+    standardized_surprise?: number
+    capex_guidance_nuance?: string
+  }>
+
+  market_confirmation: {
+    cl_5m_return: number // or nq_5m_return %
+    us2y_bps_change?: number
+    us10y_bps_change?: number
+    vxn_point_change?: number
+    advance_decline_ratio?: number
+    confirmation: 'STRONG' | 'MODERATE' | 'WEAK' | 'CONTRADICTED'
+    market_state?: string
+  }
+
+  // Prompt 35: Abnormal behavior detection
+  abnormal_behavior: NasdaqAbnormalBehavior
+
+  confidence: number // 0.0 to 1.0 (e.g. 0.86)
+  summary: string // crisp 1-2 sentence institutional summary, no essays
+
+  // Extended macro transmission & response
+  event_analysis?: {
+    category: NasdaqEventCategory
+    expected_direction: NasdaqDirectionalStance
+    magnitude: 'HIGH' | 'MEDIUM' | 'LOW'
+    surprise: string
+    raw_surprise?: number
+    standardized_surprise?: number
+    index_relevance_pct?: number
+  }
+
+  transmission?: {
+    fed_expectations: 'MORE_HAWKISH' | 'MORE_DOVISH' | 'UNCHANGED' | 'UNCERTAIN'
+    us2y: 'UP' | 'DOWN' | 'FLAT'
+    us10y: 'UP' | 'DOWN' | 'FLAT'
+    usd: 'UP' | 'DOWN' | 'FLAT'
+  }
+
+  fundamental_state?: {
+    intraday: NasdaqDirectionalStance
+    short_term: NasdaqDirectionalStance
+    medium_term: NasdaqDirectionalStance
+  }
+
+  market_response?: {
+    nq_initial: 'UP' | 'DOWN' | 'FLAT'
+    nq_5m: 'UP' | 'DOWN' | 'FLAT'
+    nq_15m: 'CONTINUING' | 'REVERSING' | 'RECLAIMING' | 'ACCEPTING' | 'STALLED'
+    rates_confirmation: 'YES' | 'NO' | 'MIXED'
+    volatility_confirmation: 'YES' | 'NO' | 'DIVERGENT'
+    nq_response_quality:
+      | 'CONFIRMED'
+      | 'PARTIAL_CONFIRMATION'
+      | 'PARTIAL_REJECTION'
+      | 'COMPLETE_REJECTION'
+      | 'INCONCLUSIVE'
+  }
+
+  unified_protocol?: UnifiedAgentProtocolOutput
+}
+
+export interface TodaysNasdaqFundamentalState {
+  fed_regime: string
+  rate_regime: string
+  us2y: string
+  us10y: string
+  inflation_trend: string
+  labor_trend: string
+  growth_trend: string
+  financial_conditions: string
+  ndx_earnings_trend: string
+  forward_guidance_trend: string
+  ai_capex_trend: string
+  semiconductor_trend: string
+  breadth: string
+  leadership: string
+  volatility: string
+  positioning: string
+  main_current_market_driver: string
+
+  intraday_bias: NasdaqDirectionalStance
+  short_term_bias: NasdaqDirectionalStance
+  medium_term_bias: NasdaqDirectionalStance
+
+  upcoming_catalysts: string
+  what_changed_since_yesterday: string
+  what_would_invalidate_the_current_interpretation: string
+}
+
+export type NasdaqDriverId =
+  | 'fed_rate_expectations'
+  | 'treasury_yields'
+  | 'inflation'
+  | 'labor_growth'
+  | 'ndx_earnings_guidance'
+  | 'ai_semi_cycle'
+  | 'market_breadth'
+  | 'volatility_options'
+  | 'positioning'
+  | 'usd_financial_conditions'
+  | 'regulation_geopolitics'
+
+export interface NasdaqDriverMetric {
+  label: string
+  value: string
+  change?: string
+  trend: 'UP' | 'DOWN' | 'FLAT'
+  stance: NasdaqDirectionalStance
+}
+
+export interface NasdaqDriverState {
+  id: NasdaqDriverId
+  name: string
+  intradayStars: number // 1 to 5
+  longTermStars: number // 1 to 5
+  stance: NasdaqDirectionalStance
+  transmissionRole: string
+  summary: string
+  metrics: NasdaqDriverMetric[]
+  lastUpdated: string
+}
+
+export interface NdxConstituentWeight {
+  symbol: string
+  name: string
+  weight: number // % of index
+  sector: string
+  price: number
+  changePct: number
+  lastEpsSurprise?: string
+  forwardGuidanceStance?: 'RAISED' | 'LOWERED' | 'MAINTAINED'
+}
+
+export interface NdxBreadthState {
+  advancingCount: number
+  decliningCount: number
+  advanceDeclineRatio: number
+  pctAbove20dMa: number
+  pctAbove50dMa: number
+  pctAbove200dMa: number
+  pctAboveVwap: number
+  qqqVsQqqeRatio: number // cap-weighted vs equal-weighted
+  marketParticipationStance:
+    | 'BROAD_EXPANSION'
+    | 'CONCENTRATED_MEGA_CAP_RALLY'
+    | 'BROAD_DETERIORATION'
+    | 'NEUTRAL'
+}
+
+export interface AiSemiCycleState {
+  acceleratorDemandTrend: 'ACCELERATING' | 'STEADY' | 'DECELERATING'
+  hyperscalerCapexRunRateBillions: number
+  semiconductorEquipmentCycle: string
+  exportRestrictionsStatus: string
+  aiLeadershipStance: 'TECH_LEADING_BROAD_EXPANSION' | 'NARROW_CHIP_CONCENTRATION' | 'DEFENSIVE_ROTATION'
+}
+
+export interface NdxEarningsCycleState {
+  blendedEarningsGrowthPct: number
+  guidanceRevisionRatio: number
+  capexGrowthPct: number
+  notableRecentReports: Array<{
+    company: string
+    symbol: string
+    epsResult: 'BEAT' | 'MISS' | 'INLINE'
+    revenueResult: 'BEAT' | 'MISS' | 'INLINE'
+    guidanceResult: 'RAISED' | 'LOWERED' | 'REAFFIRMED'
+    indexImpactPoints: number
+  }>
+}
+
+export interface NasdaqTelemetry {
+  nqPrice: number // e.g. 24850.50
+  nqChange: number
+  nqChangePct: number
+  esPrice: number // e.g. 6420.25
+  esChangePct: number
+  ymPrice: number // e.g. 46500
+  ymChangePct: number
+  relativeStrengthStance:
+    | 'GROWTH_TECH_LEADERSHIP'
+    | 'VALUE_DEFENSIVE_LEADERSHIP'
+    | 'BROAD_RISK_ON'
+    | 'BROAD_LIQUIDATION'
+    | 'NEUTRAL'
+  us2yNominalYield: number // e.g. 4.88%
+  us10yNominalYield: number // e.g. 5.28%
+  yieldCurve2s10sSpreadBps: number // 10Y - 2Y in bps
+  us10yRealYield: number // e.g. 2.88% (FRED DFII10)
+  dxyIndex: number // e.g. 101.92
+  dxyChangePct: number
+  vixIndex: number // e.g. 15.20
+  vxnIndex: number // e.g. 18.40 (Nasdaq-100 implied volatility)
+  semiBasketChangePct: number // SOXX / NVDA basket
+  topConstituents: NdxConstituentWeight[]
+  advanceDeclineRatio: number
+  cvdAggressionStance?: 'AGGRESSIVE_BUYING' | 'AGGRESSIVE_SELLING' | 'ABSORPTION' | 'NEUTRAL'
+  timestamp: number
+  source: string
+  updatedAt: string
+}
+
+export interface LiveNasdaqHeadline {
+  id: string
+  eventId?: string // Deduplicated event cluster ID
+  headline: string
+  source: string
+  datetime: number
+  url: string | null
+  summary: string | null
+  isDuplicateCluster?: boolean
+  duplicateCount?: number
+  indexRelevance: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'
+}
+
+export interface NasdaqFeedStatus {
+  id: string
+  name: string
+  subtitle: string
+  category:
+    | 'MACRO_CALENDAR'
+    | 'CENTRAL_BANK'
+    | 'RATES_ENGINE'
+    | 'CME_GLOBEX'
+    | 'SEC_EDGAR_EARNINGS'
+    | 'INDEX_CONSTITUENTS'
+    | 'VOLATILITY_CBOE'
+    | 'CFTC'
+    | 'NEWS_WIRE'
+  status: 'ONLINE' | 'ACTIVE' | 'POLLING' | 'DEGRADED' | 'CONFIG_REQUIRED'
+  latency: string
+  lastSync: string
+  primarySource: string
+}
+
+export interface NasdaqEventEvaluation {
+  id: string
+  timestamp: string
+  event: string
+  rawText: string
+  structuredOutput: StructuredNasdaqEventOutput
+  safeguards: {
+    noInventedData: boolean
+    rateCutNotAutoBullish: boolean
+    earningsBeatNotAutoBullish: boolean
+    correlationNotCausation: boolean
+    noHeadlineOnlyTrade: boolean
+    cftcNotRealtimeFlow: boolean
+    eventDeduplicated: boolean
+  }
+}
+
+export interface NasdaqFundamentalDashboardState {
+  market: 'CME_NQ'
+  analystPersona: 'Nasdaq-100 Macro, Earnings and Market-Flow Analyst'
+  updatedAt: string
+  overallBias: NasdaqDirectionalStance
+  overallConfidence: number
+  biasSummary: string
+  nasdaqTelemetry: NasdaqTelemetry
+  today: TodaysNasdaqFundamentalState
+  drivers: Record<NasdaqDriverId, NasdaqDriverState>
+  breadth: NdxBreadthState
+  semiCycle: AiSemiCycleState
+  earningsCycle: NdxEarningsCycleState
+  feeds: NasdaqFeedStatus[]
+  recentEvents: NasdaqEventEvaluation[]
+  liveHeadlines: LiveNasdaqHeadline[]
+}
+
+

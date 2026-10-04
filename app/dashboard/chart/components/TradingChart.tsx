@@ -1556,7 +1556,7 @@ export function TradingChart({
   const [showSdBands] = useState(true) // Standard Deviation bands enabled with AVWAP
   const avwap5mLinesRef = useRef<IPriceLine[]>([])
   const paint5mAvwapBenchmarkRef = useRef<() => void>(() => { })
-  const [currentVwap, setCurrentVwap] = useState<{ vwap: number; upper1: number; lower1: number } | null>(null)
+  const [_currentVwap, setCurrentVwap] = useState<{ vwap: number; upper1: number; lower1: number } | null>(null)
   const latestVwapBandsRef = useRef<any>(null)
   const [showCvdSubPane, setShowCvdSubPane] = useState(false)
   const showCvdSubPaneRef = useRef(showCvdSubPane)
