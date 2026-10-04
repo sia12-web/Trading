@@ -15,6 +15,7 @@ import type {
   DeskNewsWindowHours,
 } from '@/lib/trading/deskNews'
 import { buildDeskNewsHazards, type DeskNewsHazard } from '@/lib/trading/deskNewsHazard'
+import { DeskNewsAiAssistant } from './components/DeskNewsAiAssistant'
 
 type DeskTab = DeskNewsInstrument | 'ALL'
 
