@@ -66,6 +66,18 @@ const LIVE_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: '/dashboard/fundamentals',
+    label: 'Fundamentals',
+    hint: 'Oil Analyst · WTI',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-4 h-4">
+        <ellipse cx="12" cy="5" rx="7" ry="2.5" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M5 5v14c0 1.38 3.13 2.5 7 2.5s7-1.12 7-2.5V5" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M5 12c0 1.38 3.13 2.5 7 2.5s7-1.12 7-2.5" />
+      </svg>
+    ),
+  },
+  {
     href: '/dashboard/swing',
     label: 'Team tape',
     hint: 'NYC stocks + Questrade book',

@@ -168,7 +168,7 @@ describe('User Drawings: Leo AI Integration', () => {
 
     assert.ok(tlChip)
     assert.equal(tlChip.tier, 'DRAWING')
-    assert.equal(tlChip.label, 'Bullish Support TL')
+    assert.equal(tlChip.label, '📐 Bullish Support TL')
 
     assert.ok(rangeChip)
     assert.equal(rangeChip.tier, 'DRAWING')

@@ -55,6 +55,7 @@ import {
   lastNTradingSessions as trimDeskCandles,
 } from '@/lib/chart/sessionVwap'
 import { parseCalendarEventMs } from '@/lib/trading/deskNewsHazard'
+import AtrSubPane from './AtrSubPane'
 import type { DeskCalendarEvent } from '@/lib/trading/deskNews'
 import {
   detect5DaySessionExtremes,
@@ -960,7 +961,7 @@ function OHLCVTooltip({ data, color }: { data: TooltipData | null; color: string
   const isUp = data.change >= 0
 
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs price-mono select-none pointer-events-none">
+    <div className="flex items-center flex-nowrap whitespace-nowrap gap-x-3.5 text-xs price-mono select-none pointer-events-none">
       <span className="text-gray-600">{data.time}</span>
       <span className="text-gray-500">O <span className="text-gray-300">{data.open.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
       <span className="text-gray-500">H <span className="text-green-400">{data.high.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
@@ -1281,6 +1282,7 @@ export function TradingChart({
 }: TradingChartProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartFrameRef = useRef<HTMLDivElement>(null)
+  const chartHeaderRef = useRef<HTMLDivElement>(null)
   const outerWrapperRef = useRef<HTMLDivElement>(null)
   const renderedSessionExtremesRef = useRef<RenderedSessionExtremeHit[]>([])
   const sessionOverlayRef = useRef<HTMLDivElement>(null)
@@ -1541,6 +1543,19 @@ export function TradingChart({
   const showCvdSubPaneRef = useRef(showCvdSubPane)
   showCvdSubPaneRef.current = showCvdSubPane
   const [cvdSubPaneHeight, setCvdSubPaneHeight] = useState(185)
+  // ATR (Average True Range) sub-pane — TradingView built-in ATR, persisted on/off
+  const [showAtrSubPane, setShowAtrSubPane] = useState(false)
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem('desk.atr.paneOpen.v1') === '1') setShowAtrSubPane(true)
+    } catch {}
+  }, [])
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('desk.atr.paneOpen.v1', showAtrSubPane ? '1' : '0')
+    } catch {}
+  }, [showAtrSubPane])
+  const closeAtrSubPane = useCallback(() => setShowAtrSubPane(false), [])
   const cvdContainerRef = useRef<HTMLDivElement>(null)
   const cvdChartRef = useRef<IChartApi | null>(null)
   const cvdCandleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -7858,8 +7873,17 @@ export function TradingChart({
     chart.timeScale().subscribeVisibleLogicalRangeChange(onScroll)
 
     // Responsive resize — re-stick SL/TP after zoom / fullscreen
+    let lastRoWidth = 0
+    let lastRoHeight = 0
     const ro = new ResizeObserver(() => {
       if (containerRef.current && chartRef.current) {
+        const w = containerRef.current.clientWidth
+        const h = containerRef.current.clientHeight
+        if (Math.abs(w - lastRoWidth) < 1 && Math.abs(h - lastRoHeight) < 1) {
+          return
+        }
+        lastRoWidth = w
+        lastRoHeight = h
         const dragging =
           draggingRiskLineRef.current ||
           draggingBracketRef.current ||
@@ -7867,10 +7891,7 @@ export function TradingChart({
         if (!dragging) {
           ignorePriceFromPointerUntilRef.current = Date.now() + 80
         }
-        chartRef.current.resize(
-          containerRef.current.clientWidth,
-          containerRef.current.clientHeight
-        )
+        chartRef.current.resize(w, h)
         pokeOverlayLayoutRef.current()
         paintFrvpHistogramRef.current?.()
         paintExcessesAndRoundedRef.current?.()
@@ -7880,6 +7901,35 @@ export function TradingChart({
       }
     })
     ro.observe(containerRef.current)
+
+    // Intercept wheel events on the toolbar & OHLC header to prevent page bounce/shaking and zoom chart seamlessly
+    const onHeaderWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (!chartRef.current) return
+      const delta = e.deltaY
+      if (Math.abs(delta) < 1) return
+      const ts = chartRef.current.timeScale()
+      try {
+        const range = ts.getVisibleLogicalRange()
+        if (range) {
+          const factor = delta > 0 ? 0.08 : -0.08
+          const width = range.to - range.from
+          const change = width * factor
+          const newFrom = range.from - change / 2
+          const newTo = range.to + change / 2
+          if (newTo - newFrom > 2) {
+            ts.setVisibleLogicalRange({ from: newFrom, to: newTo })
+            pokeOverlayLayoutRef.current()
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    const headerEl = chartHeaderRef.current
+    headerEl?.addEventListener('wheel', onHeaderWheel, { passive: false })
+
     const onWheelLayout = () => {
       pokeOverlayLayoutRef.current()
       relinkCvdToPriceRef.current()
@@ -7906,6 +7956,7 @@ export function TradingChart({
 
     return () => {
       ro.disconnect()
+      headerEl?.removeEventListener('wheel', onHeaderWheel)
       containerRef.current?.removeEventListener('mousemove', onPointerMove)
       containerRef.current?.removeEventListener('mouseleave', onPointerLeave)
       containerRef.current?.removeEventListener('wheel', onWheelLayout)
@@ -8082,12 +8133,18 @@ export function TradingChart({
       // Lockstep bidirectional scroll/pan with main price chart
       cvdChart.timeScale().subscribeVisibleLogicalRangeChange(() => syncMainFromCvdRef.current())
 
+      let lastCvdRoWidth = 0
+      let lastCvdRoHeight = 0
       const ro = new ResizeObserver(() => {
         if (cvdContainerRef.current && cvdChartRef.current && showCvdSubPane) {
-          cvdChartRef.current.resize(
-            cvdContainerRef.current.clientWidth,
-            cvdContainerRef.current.clientHeight
-          )
+          const w = cvdContainerRef.current.clientWidth
+          const h = cvdContainerRef.current.clientHeight
+          if (Math.abs(w - lastCvdRoWidth) < 1 && Math.abs(h - lastCvdRoHeight) < 1) {
+            return
+          }
+          lastCvdRoWidth = w
+          lastCvdRoHeight = h
+          cvdChartRef.current.resize(w, h)
         }
       })
       ro.observe(cvdContainer)
@@ -12523,9 +12580,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     >
       {/* ── Toolbar & Sub-header HUD (Hidden in Fullscreen Mode) ────────────────── */}
       {!isFullscreen && (
-        <>
+        <div ref={chartHeaderRef} className="flex flex-col gap-1 shrink-0 select-none overscroll-none">
           {/* ── Toolbar ─────────────────────────────────────────────────────────── */}
-          <div className="flex flex-wrap items-center gap-1.5 pb-0.5">
+          <div className="flex flex-wrap items-center gap-1.5 pb-0.5 shrink-0">
             {/* Instrument tabs — LIVE focus hides off-session desks */}
             <div className="tab-bar">
               {visibleInstruments.map((inst) => (
@@ -12640,7 +12697,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </div>
 
           {/* ── Compact Evaluators & OHLCV Tooltip Row ─────────────────────────── */}
-          <div className="flex flex-wrap items-center justify-between gap-x-2.5 gap-y-1 px-1 py-0.5 text-[10.5px] text-gray-400 min-h-[22px]">
+          <div className="flex flex-wrap items-center justify-between gap-x-2.5 gap-y-1 px-1 py-0.5 text-[10.5px] text-gray-400 min-h-[22px] shrink-0">
             <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
               {/* Structural Evaluators: Day Type, Opening, and Overnight Inventory */}
               {(() => {
@@ -12870,6 +12927,23 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   </span>
                 )}
               </button>
+              {/* ATR (Average True Range) Sub-Pane Button */}
+              <button
+                type="button"
+                onClick={() => setShowAtrSubPane((prev) => !prev)}
+                className={`transition flex items-center gap-1.5 select-none px-1.5 py-0.5 rounded cursor-pointer ${
+                  showAtrSubPane
+                    ? 'bg-red-500/20 text-red-200 border border-red-400/60 shadow-sm font-semibold'
+                    : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
+                }`}
+                title="Toggle ATR (Average True Range) pane — TradingView built-in, 14 RMA"
+              >
+                <span className="text-[11px]">〽️</span>
+                <span className="text-gray-400 font-semibold">ATR:</span>
+                <span className={`font-mono font-bold ${showAtrSubPane ? 'text-red-300' : 'text-zinc-400'}`}>
+                  {showAtrSubPane ? 'ON' : 'OFF'}
+                </span>
+              </button>
               {isCritiqueSessionActiveState && (
                 <>
                   <span className="text-gray-600 text-[10px]">|</span>
@@ -12914,7 +12988,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               <OHLCVTooltip data={tooltip} color={meta.color} />
             </div>
           </div>
-        </>
+        </div>
       )}
 
       <div
@@ -13084,6 +13158,15 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           />
         </div>
 
+        {/* ATR (Average True Range) Sub-Pane — TradingView built-in, 1:1 linked with price */}
+        {showAtrSubPane && (
+          <AtrSubPane
+            mainChart={chartReady ? chartRef.current : null}
+            mainSeries={chartReady ? candleRef.current : null}
+            onClose={closeAtrSubPane}
+          />
+        )}
+
         {/* Synchronized TradingView Crosshair Guide & Column Beam across Main & CVD Panes */}
         {showCvdSubPane && syncCrosshair && (
           <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
@@ -13249,6 +13332,20 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               title="Toggle CVD Sub-Chart Pane"
             >
               <span>📊</span>
+            </button>
+
+            {/* ATR Sub-Chart Toggle */}
+            <button
+              type="button"
+              onClick={() => setShowAtrSubPane((prev) => !prev)}
+              className={`flex h-9 px-2 items-center justify-center rounded-lg text-[11px] font-mono font-bold transition-all ${
+                showAtrSubPane
+                  ? 'bg-[#B71C1C] text-white shadow-lg shadow-red-700/30'
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-red-300'
+              }`}
+              title="Toggle ATR (Average True Range) Pane"
+            >
+              ATR
             </button>
 
 

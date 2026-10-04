@@ -2089,8 +2089,8 @@ export default function ChartPage() {
   const deskAttended = clockedIn || attendedToday
 
   return (
-    <div className="flex h-screen w-full max-w-full overflow-hidden relative flex-col bg-[#0d1117]">
-      <div className="px-2 pt-1 pb-0.5 shrink-0 z-20">
+    <div className="flex h-screen w-full max-w-full overflow-hidden relative flex-col bg-[#0d1117] overscroll-none">
+      <div className="px-2 pt-1 pb-0.5 shrink-0 z-20 overscroll-none">
         <SessionBanner
           onGate={handleGate}
           refreshKey={gateTick}
@@ -2111,7 +2111,7 @@ export default function ChartPage() {
         />
       </div>
 
-      <div className="flex-1 w-full max-w-full h-full min-h-0 min-w-0 relative p-1 flex flex-col gap-1 overflow-hidden">
+      <div className="flex-1 w-full max-w-full min-h-0 min-w-0 relative p-1 flex flex-col gap-1 overflow-hidden overscroll-none">
         {showDeskOverlay ? (
           <div className="absolute bottom-14 left-3 z-30 pointer-events-auto flex flex-col gap-2 items-start max-h-[min(72vh,calc(100%-3.5rem))] overflow-y-auto">
             {showManageBar && managePos ? (
@@ -2187,7 +2187,7 @@ export default function ChartPage() {
           />
         )}
 
-        <div className="relative flex-1 w-full max-w-full h-full min-h-0 overflow-hidden">
+        <div className="relative flex-1 w-full max-w-full min-h-0 overflow-hidden overscroll-none">
           {chartBooted && (
             <TradingChart
               initialInstrument={instrument}

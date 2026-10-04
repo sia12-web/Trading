@@ -5,7 +5,7 @@
  */
 export default function ChartLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
+    <div className="flex flex-col h-screen overflow-hidden overscroll-none">
       {children}
     </div>
   )

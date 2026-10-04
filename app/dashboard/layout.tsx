@@ -13,7 +13,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // Chart / sim replay desk: full-bleed, no left nav
   if (isFullBleedDesk) {
     return (
-      <div className="h-screen max-h-screen bg-surface-900 overflow-hidden">
+      <div className="h-screen max-h-screen bg-surface-900 overflow-hidden overscroll-none">
         {children}
       </div>
     )
