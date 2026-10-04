@@ -58,10 +58,7 @@ import {
 import { parseCalendarEventMs } from '@/lib/trading/deskNewsHazard'
 import AtrSubPane from './AtrSubPane'
 import type { DeskCalendarEvent } from '@/lib/trading/deskNews'
-import {
-  computeNewsCatalystVwap,
-  type NewsCatalystVwapResult,
-} from '@/lib/chart/newsCatalystVwap'
+import { computeNewsCatalystVwap } from '@/lib/chart/newsCatalystVwap'
 import {
   detect5DaySessionExtremes,
   detectDailyExtremes,
@@ -9400,7 +9397,6 @@ export function TradingChart({
         try { nvs.upper3.setData([]) } catch {}
         try { nvs.lower3.setData([]) } catch {}
       }
-      setLatestNewsCatalystResult(null)
       return
     }
 
@@ -9413,8 +9409,7 @@ export function TradingChart({
       volume: c.volume,
     }))
 
-    const result = computeNewsCatalystVwap(mappedBars, newsEvents, selectedCatalystId)
-    setLatestNewsCatalystResult(result)
+    const result = computeNewsCatalystVwap(mappedBars, newsEvents)
 
     if (!nvs) return
 
