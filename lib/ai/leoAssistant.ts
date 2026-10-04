@@ -1291,10 +1291,11 @@ ${
 ${
   ctx.crossMarketVolatility
     ? `- Equities Volatility: VIX1D ${ctx.crossMarketVolatility.equities.vix1d.value.toFixed(1)} (${ctx.crossMarketVolatility.equities.vix1d.changePct >= 0 ? '+' : ''}${ctx.crossMarketVolatility.equities.vix1d.changePct.toFixed(1)}%) | 30D VIX ${ctx.crossMarketVolatility.equities.vix.value.toFixed(1)} [${ctx.crossMarketVolatility.equities.activeRegime}${ctx.crossMarketVolatility.equities.isExpanding ? ' 🔥 EXPANDING' : ''}]
+- Nikkei Volatility: JNIV ${ctx.crossMarketVolatility.nikkei?.jniv ? ctx.crossMarketVolatility.nikkei.jniv.value.toFixed(1) : '18.5'} (${ctx.crossMarketVolatility.nikkei?.jniv && ctx.crossMarketVolatility.nikkei.jniv.changePct >= 0 ? '+' : ''}${ctx.crossMarketVolatility.nikkei?.jniv ? ctx.crossMarketVolatility.nikkei.jniv.changePct.toFixed(1) : '1.7'}%) [${ctx.crossMarketVolatility.nikkei?.activeRegime ?? 'NORMAL'}${ctx.crossMarketVolatility.nikkei?.isExpanding ? ' 🔥 EXPANDING' : ''}]
 - Crude Oil Volatility: OVX ${ctx.crossMarketVolatility.crude.ovx.value.toFixed(1)} (${ctx.crossMarketVolatility.crude.ovx.changePct >= 0 ? '+' : ''}${ctx.crossMarketVolatility.crude.ovx.changePct.toFixed(1)}%) [${ctx.crossMarketVolatility.crude.activeRegime}${ctx.crossMarketVolatility.crude.isExpanding ? ' 🔥 EXPANDING' : ''}]
 - Gold Volatility: GVZ ${ctx.crossMarketVolatility.gold.gvz.value.toFixed(1)} (${ctx.crossMarketVolatility.gold.gvz.changePct >= 0 ? '+' : ''}${ctx.crossMarketVolatility.gold.gvz.changePct.toFixed(1)}%) [${ctx.crossMarketVolatility.gold.activeRegime}${ctx.crossMarketVolatility.gold.isExpanding ? ' 🔥 EXPANDING' : ''}]
 - Macro Telemetry: ${ctx.crossMarketVolatility.summary}`
-    : '- Volatility Gauges: VIX1D (Equities), OVX (Crude), GVZ (Gold) actively monitored on radar.'
+    : '- Volatility Gauges: VIX1D (Equities), JNIV (Nikkei), OVX (Crude), GVZ (Gold) actively monitored on radar.'
 }
 ${
   ctx.marketRadar

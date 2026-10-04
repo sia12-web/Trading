@@ -129,6 +129,8 @@ export function evaluateMarket(
       ? volState.crude.ovx
       : volMapping.primaryGauge === 'GVZ'
       ? volState.gold.gvz
+      : volMapping.primaryGauge === 'JNIV'
+      ? volState.nikkei.jniv
       : volState.equities.vix1d
 
   // 1. PARTICIPATION FACTOR

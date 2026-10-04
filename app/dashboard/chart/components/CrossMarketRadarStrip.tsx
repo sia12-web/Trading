@@ -224,6 +224,22 @@ export function CrossMarketRadarStrip({
             )}
           </div>
 
+          {/* JNIV (Nikkei 225) */}
+          <div
+            className={`px-2 py-0.5 rounded border flex items-center gap-1.5 ${
+              vol?.nikkei?.isExpanding
+                ? 'border-fuchsia-500/50 bg-fuchsia-950/40 text-fuchsia-200'
+                : 'border-surface-700 bg-surface-900/60 text-gray-300'
+            }`}
+            title="JNIV: Nikkei 225 Volatility Index (Nikkei VI)"
+          >
+            <span className="text-[9px] text-gray-400">NIKKEI (JNIV):</span>
+            <span className="font-bold">{vol?.nikkei?.jniv.value.toFixed(1) ?? '18.5'}</span>
+            {vol?.nikkei?.isExpanding && (
+              <span className="text-[9px] text-fuchsia-400 font-extrabold animate-pulse">EXPANDING 🔥</span>
+            )}
+          </div>
+
           {/* GVZ (Gold) */}
           <div
             className={`px-2 py-0.5 rounded border flex items-center gap-1.5 ${

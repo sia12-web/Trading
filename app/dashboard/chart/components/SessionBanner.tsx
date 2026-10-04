@@ -561,22 +561,14 @@ export function SessionBanner({
 
 
 
+  const currentPhaseLabel = phaseLabel(gate.phase, gate.rangeStrategy, gate.lockedInstrument)
+
   return (
     <>
       <div className={`rounded-lg border px-3 py-2 text-xs flex flex-wrap items-center gap-3 ${tone}`}>
-        <span className="font-semibold tracking-wide uppercase">
-          {phaseLabel(gate.phase, gate.rangeStrategy, gate.lockedInstrument)}
-        </span>
-        {gate.rankedBoard && gate.rankedBoard.length > 0 && (
-          <span
-            className="rounded bg-sky-500/15 px-2 py-0.5 text-[10px] text-sky-200 font-mono max-w-[28rem] truncate"
-            title="9:15 ranked board — soft priority across all four."
-          >
-            Board:{' '}
-            {gate.rankedBoard
-              .slice(0, 4)
-              .map((r, i) => `${i + 1}.${r.instrument}${r.confidence ? `(${Math.round(r.confidence)})` : ''}`)
-              .join(' · ')}
+        {currentPhaseLabel && currentPhaseLabel !== 'CLOSED' && (
+          <span className="font-semibold tracking-wide uppercase">
+            {currentPhaseLabel}
           </span>
         )}
         <span

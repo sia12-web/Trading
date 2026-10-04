@@ -37,6 +37,11 @@ describe('Cross-Asset Volatility & 5-Market Opportunity Radar Tests', () => {
     const gc = mapInstrumentToVolatilityGauge('GOLD')
     assert.strictEqual(gc.primaryGauge, 'GVZ')
     assert.strictEqual(gc.assetClass, 'GOLD')
+
+    // Nikkei -> JNIV (Nikkei VI)
+    const nk = mapInstrumentToVolatilityGauge('NIKKEI')
+    assert.strictEqual(nk.primaryGauge, 'JNIV')
+    assert.strictEqual(nk.assetClass, 'NIKKEI')
   })
 
   it('classifies volatility regimes and detects expansions accurately', () => {

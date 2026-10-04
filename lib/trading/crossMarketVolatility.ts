@@ -9,8 +9,8 @@
  * Eliminates the fallacy of treating VIX as a universal index for commodities.
  */
 
-export type VolatilitySymbol = 'VIX' | 'VIX1D' | 'OVX' | 'GVZ'
-export type VolatilityAssetClass = 'EQUITIES' | 'CRUDE' | 'GOLD'
+export type VolatilitySymbol = 'VIX' | 'VIX1D' | 'OVX' | 'GVZ' | 'JNIV'
+export type VolatilityAssetClass = 'EQUITIES' | 'CRUDE' | 'GOLD' | 'NIKKEI'
 export type VolatilityRegime = 'EXPANDING' | 'ELEVATED' | 'NORMAL' | 'COMPRESSED'
 
 export interface VolatilityQuote {
@@ -37,6 +37,12 @@ export interface CrossMarketVolatilityState {
     isExpanding: boolean
     bias: 'RISK_OFF' | 'RISK_ON' | 'NEUTRAL'
   }
+  nikkei: {
+    jniv: VolatilityQuote
+    activeRegime: VolatilityRegime
+    isExpanding: boolean
+    bias: 'VOLATILITY_EXPANSION' | 'COMPRESSED'
+  }
   crude: {
     ovx: VolatilityQuote
     activeRegime: VolatilityRegime
@@ -61,6 +67,9 @@ export function mapInstrumentToVolatilityGauge(instrument: string): {
   assetClass: VolatilityAssetClass
 } {
   const norm = instrument.toUpperCase()
+  if (norm.includes('NIKKEI') || norm.includes('NKD') || norm.includes('JPN225')) {
+    return { primaryGauge: 'JNIV', assetClass: 'NIKKEI' }
+  }
   if (norm.includes('OIL') || norm.includes('CRUDE') || norm.includes('CL')) {
     return { primaryGauge: 'OVX', assetClass: 'CRUDE' }
   }
@@ -85,6 +94,7 @@ export function classifyVolatilityRegime(
     VIX: { elevated: 18.0, high: 24.0 },
     OVX: { elevated: 34.0, high: 45.0 },
     GVZ: { elevated: 16.0, high: 21.0 },
+    JNIV: { elevated: 20.0, high: 26.0 },
   }
 
   const { elevated, high } = baselines[symbol] || { elevated: 18.0, high: 24.0 }
@@ -136,6 +146,20 @@ export function buildDefaultVolatilityQuotes(now: Date = new Date()): Record<Vol
       description: 'Measures expected 30-day equity volatility. Macro risk-off benchmark.',
       asOfIso: nowIso,
     },
+    JNIV: {
+      symbol: 'JNIV',
+      name: 'Nikkei 225 Volatility Index',
+      assetClass: 'NIKKEI',
+      targetMarkets: ['NIKKEI'],
+      value: 18.5,
+      previousClose: 18.2,
+      change: 0.3,
+      changePct: 1.65,
+      regime: 'NORMAL',
+      isExpanding: false,
+      description: 'Measures expected 30-day Nikkei 225 volatility (Nikkei VI / JNIV).',
+      asOfIso: nowIso,
+    },
     OVX: {
       symbol: 'OVX',
       name: 'Cboe Crude Oil Volatility Index',
@@ -175,6 +199,7 @@ export function buildCrossMarketVolatilityState(
 ): CrossMarketVolatilityState {
   const vix1d = quotes.VIX1D
   const vix = quotes.VIX
+  const jniv = quotes.JNIV
   const ovx = quotes.OVX
   const gvz = quotes.GVZ
 
@@ -193,6 +218,7 @@ export function buildCrossMarketVolatilityState(
 
   const activeSurges: string[] = []
   if (vix1d.isExpanding) activeSurges.push('Equities (VIX1D ↑)')
+  if (jniv && jniv.isExpanding) activeSurges.push('Nikkei (JNIV ↑)')
   if (ovx.isExpanding) activeSurges.push('Crude Oil (OVX ↑)')
   if (gvz.isExpanding) activeSurges.push('Gold (GVZ ↑)')
 
@@ -208,6 +234,12 @@ export function buildCrossMarketVolatilityState(
       activeRegime: equitiesRegime,
       isExpanding: equitiesExpanding,
       bias: equityBias,
+    },
+    nikkei: {
+      jniv,
+      activeRegime: jniv.regime,
+      isExpanding: jniv.isExpanding,
+      bias: jniv.isExpanding ? 'VOLATILITY_EXPANSION' : 'COMPRESSED',
     },
     crude: {
       ovx,
