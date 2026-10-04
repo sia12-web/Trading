@@ -65,7 +65,7 @@ export default function NotesPage() {
                   description: r.description || `Alert at ${r.targetReference || r.targetPrice}`,
                   targetReference: r.targetReference,
                   targetPrice: r.targetPrice,
-                  session: r.session || 'NYC',
+                  session: r.session || ((r.instrument || inst).toUpperCase() === 'NIKKEI' ? 'ASIA' : 'NYC'),
                   status: r.status,
                   createdAt: r.createdAt || Date.now(),
                 }))

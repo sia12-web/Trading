@@ -48,6 +48,8 @@ export interface ArmedDeskRule {
   direction?: 'LONG' | 'SHORT'
   targetReference?: string
   targetPrice?: number
+  targetPriceLow?: number
+  targetPriceHigh?: number
   drawingId?: string
   drawingType?: 'TRENDLINE' | 'RANGE' | 'FRVP'
   lastEvaluatedBarTime?: number
@@ -760,14 +762,18 @@ export function LeoAssistantPanel({
         const entryLabel =
           pat === 'LEVEL_TOUCH' ? 'price touch at level' : pat.replace(/_/g, ' ').toLowerCase()
 
+        const ruleInst = canonicalizeInstrument(inst || d.instrument || context.instrument)
+        const defaultSess = isAsiaDeskInstrument(ruleInst) ? 'ASIA' : 'NYC'
+        const sessVal = (d as any).session ?? (isLongTerm ? '24H' : defaultSess)
+
         const newRule: ArmedDeskRule = {
           id: `rule-${now}`,
           type: 'CONDITIONAL_ENTRY',
           description:
             d.description ||
-            `${dir} 1 ${inst} — ${entryLabel}${tfLabel}${cvdLabel} @ ${targetRef} (${targetPx.toLocaleString()})${isLongTerm ? ' [Long-Term Memory]' : ' [NYC Session]'}`,
+            `${dir} 1 ${ruleInst} — ${entryLabel}${tfLabel}${cvdLabel} @ ${targetRef} (${targetPx.toLocaleString()})${isLongTerm ? ' [Long-Term Memory]' : ` [${sessVal} Session]`}`,
           userPrompt: userSaid,
-          instrument: inst,
+          instrument: ruleInst,
           direction: dir,
           targetReference: targetRef,
           targetPrice: targetPx,
@@ -781,7 +787,7 @@ export function LeoAssistantPanel({
           takeProfitMode: tpMode,
           takeProfit: d.takeProfit,
           size,
-          session: (d as any).session ?? 'NYC',
+          session: sessVal,
           isLongTerm,
           createdAt: now,
           createdDateFormatted: dateMeta.formatted,
@@ -878,7 +884,24 @@ export function LeoAssistantPanel({
         setArmedRules((prev) => [...prev.filter((r) => r.type !== 'STAGNATION_TIMEOUT'), newRule])
       } else if (d.action === 'ARM_DESK_ALERT' || d.action === 'ARM_TELEGRAM_ALERT') {
         const isLongTerm = Boolean(d.isLongTerm || (d as any).longTermMemory)
+        const ruleInst = canonicalizeInstrument(d.instrument || context.instrument)
+        const defaultSess = isAsiaDeskInstrument(ruleInst) ? 'ASIA' : 'NYC'
+        const sessVal = d.session ?? (isLongTerm ? '24H' : defaultSess)
+
         let resolvedPx = Number(d.targetPrice)
+        const rawLow = d.priceLow ?? (d as any).targetPriceLow
+        const rawHigh = d.priceHigh ?? (d as any).targetPriceHigh
+        let targetLow: number | undefined
+        let targetHigh: number | undefined
+
+        if (rawLow != null && rawHigh != null && Number.isFinite(Number(rawLow)) && Number.isFinite(Number(rawHigh)) && Number(rawLow) > 0 && Number(rawHigh) > 0) {
+          targetLow = Math.min(Number(rawLow), Number(rawHigh))
+          targetHigh = Math.max(Number(rawLow), Number(rawHigh))
+          if (!resolvedPx || resolvedPx <= 0) {
+            resolvedPx = Number(((targetLow + targetHigh) / 2).toFixed(2))
+          }
+        }
+
         if (!Number.isFinite(resolvedPx) || resolvedPx <= 0) {
           const refLower = (d.targetReference || '').toLowerCase()
           if (refLower.includes('low volume') || refLower.includes('y-val') || refLower.includes('val')) {
@@ -893,13 +916,17 @@ export function LeoAssistantPanel({
         }
         const now = Date.now()
         const dateMeta = formatRuleDate(now)
+        const rangeText = targetLow != null && targetHigh != null ? `${targetLow.toLocaleString()} – ${targetHigh.toLocaleString()}` : (resolvedPx ? resolvedPx.toLocaleString() : 'Level')
         const newRule: ArmedDeskRule = {
           id: `desk-alert-${now}`,
           type: 'DESK_ALERT',
-          description: `Desk alert when price tests ${d.targetReference} (${resolvedPx ? resolvedPx.toLocaleString() : 'Level'})${isLongTerm ? ' [Long-Term Memory]' : ' [NYC Session]'}`,
+          description: `Desk alert when ${ruleInst} price tests ${d.targetReference || 'Target'} (${rangeText})${isLongTerm ? ' [Long-Term Memory]' : ` [${sessVal} Session]`}`,
+          instrument: ruleInst,
           targetPrice: resolvedPx > 0 ? resolvedPx : undefined,
-          targetReference: d.targetReference,
-          session: d.session ?? 'NYC',
+          targetPriceLow: targetLow,
+          targetPriceHigh: targetHigh,
+          targetReference: d.targetReference || 'Target Level',
+          session: sessVal,
           isLongTerm,
           requireHighVolume: d.requireHighVolume,
           requireConfidence: d.requireConfidence,
@@ -912,10 +939,10 @@ export function LeoAssistantPanel({
         setArmedRules((prev) => [...prev, newRule])
         playTradingViewChime()
         warningToast(
-          `🔔 Desk Alert Armed: ${d.targetReference} @ ${d.targetPrice.toLocaleString()}${isLongTerm ? ' (Long-Term Memory)' : ' (NYC Session Only)'}`,
+          `🔔 Desk Alert Armed (${ruleInst}): ${d.targetReference || 'Target Level'} @ ${rangeText}${isLongTerm ? ' (Long-Term Memory)' : ` (${sessVal} Session)`}`,
           8000
         )
-        speakText(`Desk alert armed for ${d.targetReference}${isLongTerm ? ' in Long-Term Memory' : ''}`)
+        speakText(`Desk alert armed for ${ruleInst} ${d.targetReference || 'level'}${isLongTerm ? ' in Long-Term Memory' : ''}`)
       } else if (d.action === 'SAVE_LONG_TERM_MEMORY') {
         const low = Math.min(d.priceLow, d.priceHigh)
         const high = Math.max(d.priceLow, d.priceHigh)
@@ -1011,7 +1038,15 @@ export function LeoAssistantPanel({
         const nextRules = prevRules.map((rule) => {
           if (rule.status !== 'ARMED') return rule
 
-          // 0. Session Expiration Guard:
+          // 0a. Instrument Isolation Guard:
+          // Do NOT evaluate a rule for NIKKEI when viewing DOW/NASDAQ/etc. (or vice versa)!
+          const ruleInst = canonicalizeInstrument(rule.instrument || ctx.instrument)
+          const activeInst = canonicalizeInstrument(ctx.instrument)
+          if (rule.instrument && ruleInst !== activeInst) {
+            return rule
+          }
+
+          // 0b. Session Expiration Guard:
           // If not explicitly marked as Long-Term Memory, check if NYC session has ended.
           // If ended, mark EXPIRED so it does NOT fire any notifications or place orders!
           if (isArmedRuleExpired(rule)) {
@@ -1070,30 +1105,46 @@ export function LeoAssistantPanel({
             (rule.type === 'DESK_ALERT' || (rule.type as any) === 'TELEGRAM_ALERT') &&
             curPrice != null
           ) {
-            let effectiveTargetPx = rule.targetPrice
-            if ((effectiveTargetPx == null || effectiveTargetPx <= 0) && rule.targetReference) {
-              const refLower = rule.targetReference.toLowerCase()
-              if (refLower.includes('low volume') || refLower.includes('y-val') || refLower.includes('val')) {
-                effectiveTargetPx = ctx.shortTermMoney?.yval ?? undefined
-              } else if (refLower.includes('y-poc') || refLower.includes('poc')) {
-                effectiveTargetPx = ctx.shortTermMoney?.ypoc ?? ctx.intermediateMoney?.poc5d ?? undefined
-              } else if (refLower.includes('y-low') || refLower.includes('low')) {
-                effectiveTargetPx = ctx.shortTermMoney?.ylow ?? undefined
-              } else if (refLower.includes('5d poc')) {
-                effectiveTargetPx = ctx.intermediateMoney?.poc5d ?? undefined
-              }
-            }
+            const tolerances = getInstrumentTolerances(rule.instrument || ctx.instrument)
+            const alertTolerance = Math.max(tolerances.touch * 1.5, 5.0)
 
-            if (effectiveTargetPx != null && effectiveTargetPx > 0) {
-              const tolerances = getInstrumentTolerances(rule.instrument || ctx.instrument)
-              const dist = Math.abs(curPrice - effectiveTargetPx)
-              const alertTolerance = Math.max(tolerances.touch * 1.5, 5.0)
-
-              if (dist <= alertTolerance) {
-                // Target price reached!
+            // Range Box boundary check (when Range High & Low are defined)
+            if (
+              rule.targetPriceLow != null &&
+              rule.targetPriceHigh != null &&
+              rule.targetPriceLow > 0 &&
+              rule.targetPriceHigh > 0
+            ) {
+              const minLow = Math.min(rule.targetPriceLow, rule.targetPriceHigh)
+              const maxHigh = Math.max(rule.targetPriceLow, rule.targetPriceHigh)
+              if (curPrice >= minLow - alertTolerance && curPrice <= maxHigh + alertTolerance) {
                 changed = true
-                dispatchDeskAlert({ ...rule, targetPrice: effectiveTargetPx })
+                dispatchDeskAlert({ ...rule, targetPrice: curPrice })
                 return { ...rule, status: 'TRIGGERED' as const }
+              }
+            } else {
+              let effectiveTargetPx = rule.targetPrice
+              if ((effectiveTargetPx == null || effectiveTargetPx <= 0) && rule.targetReference) {
+                const refLower = rule.targetReference.toLowerCase()
+                if (refLower.includes('low volume') || refLower.includes('y-val') || refLower.includes('val')) {
+                  effectiveTargetPx = ctx.shortTermMoney?.yval ?? undefined
+                } else if (refLower.includes('y-poc') || refLower.includes('poc')) {
+                  effectiveTargetPx = ctx.shortTermMoney?.ypoc ?? ctx.intermediateMoney?.poc5d ?? undefined
+                } else if (refLower.includes('y-low') || refLower.includes('low')) {
+                  effectiveTargetPx = ctx.shortTermMoney?.ylow ?? undefined
+                } else if (refLower.includes('5d poc')) {
+                  effectiveTargetPx = ctx.intermediateMoney?.poc5d ?? undefined
+                }
+              }
+
+              if (effectiveTargetPx != null && effectiveTargetPx > 0) {
+                const dist = Math.abs(curPrice - effectiveTargetPx)
+                if (dist <= alertTolerance) {
+                  // Target price reached!
+                  changed = true
+                  dispatchDeskAlert({ ...rule, targetPrice: effectiveTargetPx })
+                  return { ...rule, status: 'TRIGGERED' as const }
+                }
               }
             }
           }

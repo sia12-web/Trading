@@ -2019,13 +2019,14 @@ export function isArmedRuleExpired(
     session?: string
     status?: string
     market?: string
+    instrument?: string
   },
   now: Date | number = Date.now()
 ): boolean {
   const sess = (rule.session || '').toUpperCase()
   if (rule.isLongTerm || sess === '24H' || sess === 'ALL' || sess === 'ASIA' || sess === 'LTM') return false
   if (rule.status && rule.status !== 'ARMED') return true
-  const mkt = (rule.market || '').toUpperCase()
+  const mkt = (rule.instrument || rule.market || '').toUpperCase()
   if (mkt === 'NIKKEI' || mkt === 'TOKYO') {
     return isTokyoSessionExpired(rule.createdAt, now)
   }

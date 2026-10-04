@@ -286,7 +286,7 @@ export function normalizeArmedRule(raw: any, defaultInst: MarketInstrument = 'DO
     borningZoneGrade: conditions.borningZoneGrade,
     higherLowCount: conditions.higherLowCount,
     dynamicSlope: conditions.dynamicSlope,
-    session: raw.session || 'NYC',
+    session: raw.session || (inst === 'NIKKEI' ? 'ASIA' : 'NYC'),
     isLongTerm: Boolean(raw.isLongTerm),
     createdAt,
     createdDateFormatted: raw.createdDateFormatted || dates.formatted,

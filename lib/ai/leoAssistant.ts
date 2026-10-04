@@ -1123,11 +1123,12 @@ B) CONDITIONAL MARKET SITUATIONS & SETUP MONITORING (Tracked in Situations secti
   <execute>
   {
     "action": "ARM_DESK_ALERT",
+    "instrument": "${ctx.instrument}",
     "targetReference": "Target Reference Name",
     "targetPrice": 29140.0,
     "requireHighVolume": true,
     "requireConfidence": true,
-    "session": "NYC",
+    "session": "${ctx.instrument === 'NIKKEI' ? 'ASIA' : 'NYC'}",
     "isLongTerm": false
   }
   </execute>
