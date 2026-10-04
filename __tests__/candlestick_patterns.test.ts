@@ -73,20 +73,42 @@ test('detectCandlestickPatterns - Selling Excess Tail', () => {
   assert.equal(res.buyingExcess, false)
 })
 
-test('detectCandlestickPatterns - POC Filtering Rules', () => {
-  // Bullish Engulfing bar at price ~112
+test('detectCandlestickPatterns - Shared Zone POC & Structural Confluence Rules', () => {
+  // Bullish Engulfing bar at price ~112 (Low: 102, Close: 112)
   const barsBull: Candle[] = [
     { time: 1, open: 110, high: 112, low: 100, close: 105, volume: 100 },
     { time: 2, open: 104, high: 115, low: 102, close: 112, volume: 150 },
   ]
 
-  // When POC is 120 (price 112 is BELOW POC) -> Bullish pattern should be KEPT
+  // 1. Single POC 120 (price 112 is BELOW POC) -> Bullish pattern KEPT
   const resBelowPoc = detectCandlestickPatterns(barsBull, 1, 5, 0.05, [120])
   assert.equal(resBelowPoc.bullEng, true)
 
-  // When POC is 100 (price 112 is ABOVE POC) -> Bullish pattern should be FILTERED OUT
+  // 2. Single POC 100 (price 112 is ABOVE POC) -> Bullish pattern FILTERED OUT
   const resAbovePoc = detectCandlestickPatterns(barsBull, 1, 5, 0.05, [100])
   assert.equal(resAbovePoc.bullEng, false)
+
+  // 3. Shared Zone Multiple POCs: POCs [105, 120, 130]. Price 112 is ABOVE 105 -> FILTERED OUT because price is above minPoc
+  const resSharedZoneAboveOnePoc = detectCandlestickPatterns(barsBull, 1, 5, 0.05, [105, 120, 130])
+  assert.equal(resSharedZoneAboveOnePoc.bullEng, false)
+
+  // 4. Shared Zone Multiple POCs: POCs [120, 125, 130]. Price 112 is BELOW ALL POCs -> KEPT
+  const resSharedZoneBelowAllPocs = detectCandlestickPatterns(barsBull, 1, 5, 0.05, [120, 125, 130])
+  assert.equal(resSharedZoneBelowAllPocs.bullEng, true)
+
+  // 5. Important Places Confluence: Price 112 with POCs [120] and importantLevels: [112] (at Yesterday VAL 112) -> KEPT
+  const resAtImportantLevel = detectCandlestickPatterns(barsBull, 1, 5, 0.05, {
+    pocs: [120],
+    importantLevels: [112],
+  })
+  assert.equal(resAtImportantLevel.bullEng, true)
+
+  // 6. Important Places Confluence Rejection: Price 112 with POCs [120] and importantLevels: [50] (far from any structural level) -> FILTERED OUT
+  const resNotAtImportantLevel = detectCandlestickPatterns(barsBull, 1, 5, 0.05, {
+    pocs: [120],
+    importantLevels: [50],
+  })
+  assert.equal(resNotAtImportantLevel.bullEng, false)
 
   // Bearish Engulfing bar at price ~98
   const barsBear: Candle[] = [
@@ -94,12 +116,12 @@ test('detectCandlestickPatterns - POC Filtering Rules', () => {
     { time: 2, open: 106, high: 107, low: 95, close: 98, volume: 150 },
   ]
 
-  // When POC is 90 (price 98 is ABOVE POC) -> Bearish pattern should be KEPT
-  const resBearAbovePoc = detectCandlestickPatterns(barsBear, 1, 5, 0.05, [90])
-  assert.equal(resBearAbovePoc.bearEng, true)
+  // Shared Zone Bearish: POCs [80, 90, 95]. Price 98 is ABOVE ALL POCs -> KEPT
+  const resBearAboveAllPocs = detectCandlestickPatterns(barsBear, 1, 5, 0.05, [80, 90, 95])
+  assert.equal(resBearAboveAllPocs.bearEng, true)
 
-  // When POC is 110 (price 98 is BELOW POC) -> Bearish pattern should be FILTERED OUT
-  const resBearBelowPoc = detectCandlestickPatterns(barsBear, 1, 5, 0.05, [110])
-  assert.equal(resBearBelowPoc.bearEng, false)
+  // Shared Zone Bearish: POCs [80, 90, 105]. Price 98 is BELOW 105 -> FILTERED OUT because price is below maxPoc
+  const resBearBelowOnePoc = detectCandlestickPatterns(barsBear, 1, 5, 0.05, [80, 90, 105])
+  assert.equal(resBearBelowOnePoc.bearEng, false)
 })
 

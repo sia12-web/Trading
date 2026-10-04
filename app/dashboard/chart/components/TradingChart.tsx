@@ -4105,6 +4105,33 @@ export function TradingChart({
         frvp5d?.poc,
       ].filter((p): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0)
 
+      const importantLevels = [
+        yesterdayNyc?.yh,
+        yesterdayNyc?.yl,
+        yesterdayNyc?.vah,
+        yesterdayNyc?.val,
+        ydayProfile?.vah,
+        ydayProfile?.val,
+        overnightInventory?.overnight?.high,
+        overnightInventory?.overnight?.low,
+        overnightInventory?.overnight?.vah,
+        overnightInventory?.overnight?.val,
+        overnightInventory?.asia?.high,
+        overnightInventory?.asia?.low,
+        overnightInventory?.asia?.vah,
+        overnightInventory?.asia?.val,
+        overnightInventory?.london?.high,
+        overnightInventory?.london?.low,
+        overnightInventory?.london?.vah,
+        overnightInventory?.london?.val,
+        frvp5d?.high,
+        frvp5d?.low,
+        frvp5d?.vah,
+        frvp5d?.val,
+        ...(frvp5d?.hvn || []),
+        ...(frvp5d?.lvn || []),
+      ].filter((p): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0)
+
       for (let i = startIdx; i < totalBars; i++) {
         const bar = candleBars[i]!
         const chartT = toChartTime(bar.time, tz)
@@ -4114,7 +4141,10 @@ export function TradingChart({
 
         if (x == null || !Number.isFinite(x) || x < -30 || x > paneW + 30) continue
 
-        const patterns = detectCandlestickPatterns(candleBars, i, 5, 0.05, activePocs)
+        const patterns = detectCandlestickPatterns(candleBars, i, 5, 0.05, {
+          pocs: activePocs,
+          importantLevels,
+        })
 
         const badges: Array<{ text: string; bg: string; fg: string; pos: 'ABOVE' | 'BELOW' | 'MID' }> = []
 
@@ -5436,9 +5466,38 @@ export function TradingChart({
             overnightInventory?.london?.poc,
             frvp5d?.poc,
           ].filter((p): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0)
+          const importantLevels = [
+            yesterdayNyc?.yh,
+            yesterdayNyc?.yl,
+            yesterdayNyc?.vah,
+            yesterdayNyc?.val,
+            ydayProfile?.vah,
+            ydayProfile?.val,
+            overnightInventory?.overnight?.high,
+            overnightInventory?.overnight?.low,
+            overnightInventory?.overnight?.vah,
+            overnightInventory?.overnight?.val,
+            overnightInventory?.asia?.high,
+            overnightInventory?.asia?.low,
+            overnightInventory?.asia?.vah,
+            overnightInventory?.asia?.val,
+            overnightInventory?.london?.high,
+            overnightInventory?.london?.low,
+            overnightInventory?.london?.vah,
+            overnightInventory?.london?.val,
+            frvp5d?.high,
+            frvp5d?.low,
+            frvp5d?.vah,
+            frvp5d?.val,
+            ...(frvp5d?.hvn || []),
+            ...(frvp5d?.lvn || []),
+          ].filter((p): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0)
           const startIdx = Math.max(0, bars.length - 60)
           for (let i = startIdx; i < bars.length; i++) {
-            const res = detectCandlestickPatterns(bars, i, 5, 0.05, activePocs)
+            const res = detectCandlestickPatterns(bars, i, 5, 0.05, {
+              pocs: activePocs,
+              importantLevels,
+            })
             const bar = bars[i]!
             const timeEt = formatEtTime(bar.time)
             if (res.bullEng) active.push({ pattern: 'Bullish Engulfing', type: 'BULLISH', candleTimeEt: timeEt, candlePrice: bar.close, barIndex: i })

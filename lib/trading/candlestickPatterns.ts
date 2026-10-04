@@ -54,6 +54,15 @@ export interface CandlestickPatternResult {
   sellingExcess: boolean
 }
 
+export interface PatternFilterOptions {
+  /** Reference POC levels from Yesterday, Inventory, or 5-Day FRVP */
+  pocs?: Array<number | null | undefined>
+  /** Important structural price levels (High, Low, VAH, VAL, LVN, HVN of Yesterday, Inventory, or 5-Day) */
+  importantLevels?: Array<number | null | undefined>
+  /** Optional custom proximity tolerance in price points */
+  tolerance?: number
+}
+
 /**
  * Detect all candlestick patterns (including 15 standard patterns + Buying/Selling Excess Tails)
  * on the candle at `index` (defaults to the latest bar).
@@ -65,7 +74,7 @@ export function detectCandlestickPatterns(
   index = bars.length - 1,
   trend = 5,
   dojiSize = 0.05,
-  pocs?: Array<number | null | undefined>
+  pocsOrOptions?: Array<number | null | undefined> | PatternFilterOptions
 ): CandlestickPatternResult {
   const result: CandlestickPatternResult = {
     doji: false,
@@ -128,7 +137,7 @@ export function detectCandlestickPatterns(
     isHigherProbe
 
   if (!c1) {
-    return pocs && pocs.length > 0 ? filterCandlestickPatternsByPoc(result, c, pocs) : result
+    return pocsOrOptions ? filterCandlestickPatternsByPoc(result, c, pocsOrOptions) : result
   }
 
   const open1 = c1.open
@@ -232,7 +241,7 @@ export function detectCandlestickPatterns(
     (high - open) / (0.001 + high - low) > 0.6
 
   if (!c2) {
-    return pocs && pocs.length > 0 ? filterCandlestickPatternsByPoc(result, c, pocs) : result
+    return pocsOrOptions ? filterCandlestickPatternsByPoc(result, c, pocsOrOptions) : result
   }
 
   const open2 = c2.open
@@ -252,8 +261,8 @@ export function detectCandlestickPatterns(
     open > Math.max(open1, close1) &&
     close > open
 
-  if (pocs && pocs.length > 0) {
-    return filterCandlestickPatternsByPoc(result, c, pocs)
+  if (pocsOrOptions) {
+    return filterCandlestickPatternsByPoc(result, c, pocsOrOptions)
   }
 
   return result
@@ -261,37 +270,72 @@ export function detectCandlestickPatterns(
 
 /**
  * Filters detected candlestick patterns based on price position relative to fixed range POCs
- * (Yesterday POC, Overnight/Inventory POC, Last 5 Days POC).
+ * and key structural levels (Yesterday, Inventory, 5-Day FRVP).
  *
  * Rules:
- * - Bullish patterns are ONLY visible/returned when price is BELOW at least one reference POC of yesterday, inventory, or last 5 days.
- * - Bearish patterns are ONLY visible/returned when price is ABOVE at least one reference POC of yesterday, inventory, or last 5 days.
+ * 1. Strict POC Direction Filter:
+ *    - Bullish patterns are ONLY returned when price is BELOW ALL active reference POCs of yesterday, inventory, and last 5 days.
+ *    - Bearish patterns are ONLY returned when price is ABOVE ALL active reference POCs of yesterday, inventory, and last 5 days.
+ * 2. Structural Level / Node Confluence Filter:
+ *    - Patterns are ONLY displayed at important places: Low Volume Node (LVN), High Volume Node (HVN),
+ *      or near the High / Low / VAH / VAL of Yesterday, Inventory, or Last 5 Days.
  */
 export function filterCandlestickPatternsByPoc(
   result: CandlestickPatternResult,
   candle: Candle,
-  pocs?: Array<number | null | undefined>
+  pocsOrOptions?: Array<number | null | undefined> | PatternFilterOptions,
+  importantLevelsParam?: Array<number | null | undefined>
 ): CandlestickPatternResult {
-  if (!pocs || pocs.length === 0) {
-    return result
+  if (!pocsOrOptions) return result
+
+  let pocs: number[] = []
+  let importantLevels: number[] = []
+  let customTolerance: number | undefined
+
+  if (Array.isArray(pocsOrOptions)) {
+    pocs = pocsOrOptions.filter((p): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0)
+    if (importantLevelsParam && Array.isArray(importantLevelsParam)) {
+      importantLevels = importantLevelsParam.filter((p): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0)
+    }
+  } else if (typeof pocsOrOptions === 'object') {
+    if (Array.isArray(pocsOrOptions.pocs)) {
+      pocs = pocsOrOptions.pocs.filter((p): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0)
+    }
+    if (Array.isArray(pocsOrOptions.importantLevels)) {
+      importantLevels = pocsOrOptions.importantLevels.filter((p): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0)
+    }
+    customTolerance = pocsOrOptions.tolerance
   }
 
-  const validPocs = pocs.filter(
-    (p): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0
-  )
+  // 1. Strict POC Direction Filter:
+  // - Bullish patterns must be BELOW ALL active POCs (price <= minPoc)
+  // - Bearish patterns must be ABOVE ALL active POCs (price >= maxPoc)
+  let isBelowAllPocs = true
+  let isAboveAllPocs = true
 
-  if (validPocs.length === 0) {
-    return result
+  if (pocs.length > 0) {
+    const minPoc = Math.min(...pocs)
+    const maxPoc = Math.max(...pocs)
+    isBelowAllPocs = candle.close <= minPoc
+    isAboveAllPocs = candle.close >= maxPoc
   }
 
-  // Price below POC: candle close or candle low is strictly below or equal to a reference POC
-  const isBelowPoc = validPocs.some((poc) => candle.close <= poc || candle.low <= poc)
-  // Price above POC: candle close or candle high is strictly above or equal to a reference POC
-  const isAbovePoc = validPocs.some((poc) => candle.close >= poc || candle.high >= poc)
+  // 2. Important Places Confluence Filter (High/Low, VAH/VAL, LVN, HVN of Yesterday, Inventory, or 5-Day):
+  let isAtImportantPlace = true
+
+  if (importantLevels.length > 0) {
+    const tolerance = customTolerance ?? Math.max(12, candle.close * 0.0015)
+    isAtImportantPlace = importantLevels.some((lvl) => {
+      return (
+        (candle.low - tolerance <= lvl && candle.high + tolerance >= lvl) ||
+        Math.abs(candle.close - lvl) <= tolerance
+      )
+    })
+  }
 
   const filtered: CandlestickPatternResult = { ...result }
 
-  if (!isBelowPoc) {
+  if (!isBelowAllPocs || !isAtImportantPlace) {
     filtered.bullEng = false
     filtered.buyingExcess = false
     filtered.hammer = false
@@ -303,7 +347,7 @@ export function filterCandlestickPatternsByPoc(
     filtered.bullBelt = false
   }
 
-  if (!isAbovePoc) {
+  if (!isAboveAllPocs || !isAtImportantPlace) {
     filtered.bearEng = false
     filtered.sellingExcess = false
     filtered.shootingStar = false
