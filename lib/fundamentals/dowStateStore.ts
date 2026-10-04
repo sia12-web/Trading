@@ -36,6 +36,7 @@ import {
   classifyYieldMoveDriver,
 } from './dowAnalystEngine'
 import { logger } from '@/lib/utils/logger'
+import { candidateIsMaterial } from '@/lib/fundamentals/outputContract'
 
 // In-memory state singleton for Dow
 let currentDowState: DowFundamentalDashboardState = {
@@ -465,7 +466,7 @@ export function recordEvaluatedDowEvent(evaluation: DowEventEvaluation): void {
   }
 
   const out = evaluation.structuredOutput
-  if (out.importance !== 'LOW') {
+  if (candidateIsMaterial(out.importance, out.confidence)) {
     const effect = out.fundamental_effect || out.fundamental_state
     const intraday = effect?.intraday || 'NEUTRAL'
     const shortTerm = effect?.short_term || 'NEUTRAL'

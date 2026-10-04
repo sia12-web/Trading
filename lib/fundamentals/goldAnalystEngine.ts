@@ -23,11 +23,16 @@ import type {
   GoldMarketResponse,
 } from '@/types/fundamentals'
 import {
-  GOLD_ANALYST_SYSTEM_PROMPT,
+  GOLD_ANALYST_EVENT_PROMPT,
   HISTORICAL_SURPRISE_VOLATILITY,
 } from './goldAnalystConfig'
 import { refreshGoldTelemetry, recordEvaluatedGoldEvent } from './goldStateStore'
 import { logger } from '@/lib/utils/logger'
+import {
+  adaptLegacyFundamentalJson,
+  buildFundamentalEventUserPrompt,
+  datumLine,
+} from '@/lib/fundamentals/outputContract'
 
 interface AnalyzeGoldEventParams {
   rawText: string
@@ -475,67 +480,26 @@ async function runLlmEvaluation(params: {
 }): Promise<StructuredGoldEventOutput | null> {
   const { rawText, sourceHint, timestampHint, telemetry, anthropicKey, openaiKey } = params
 
-  const prompt = `You are evaluating an incoming market event affecting COMEX Gold futures (GC).
-
-CURRENT MARKET CONTEXT:
-- Gold Price: $${telemetry.goldPrice.toFixed(2)}/oz (${telemetry.goldChange >= 0 ? '+' : ''}${telemetry.goldChange.toFixed(2)}, ${telemetry.goldChangePct >= 0 ? '+' : ''}${telemetry.goldChangePct.toFixed(2)}%)
-- 10Y Nominal Treasury: ${telemetry.us10yNominalYield.toFixed(2)}%
-- 10Y Real Yield (TIPS DFII10): ${telemetry.us10yRealYield.toFixed(2)}%
-- 10Y Breakeven Inflation: ${telemetry.us10yBreakeven.toFixed(2)}%
-- US Dollar Index (DXY): ${telemetry.dxyIndex.toFixed(2)}
-- Silver: $${telemetry.silverPrice.toFixed(3)} (Gold/Silver Ratio: ${telemetry.goldSilverRatio.toFixed(2)})
-- Gold CVOL (Implied Volatility): ${telemetry.goldCvol.toFixed(1)}%
-
-RAW EVENT TEXT:
-"""
-${rawText}
-"""
-Source hint: ${sourceHint || 'Institutional Wire'}
-Timestamp hint: ${timestampHint || new Date().toISOString()}
-
-INSTRUCTIONS:
-Evaluate this event using the 11-step Gold Macro, Monetary and Physical Demand framework.
-Crucially:
-- Classify transmission: REAL_RATES (UP/DOWN/FLAT), NOMINAL_RATES (UP/DOWN/FLAT), USD (UP/DOWN/FLAT).
-- Identify whether GC price action and order flow CONFIRMS, PARTIALLY CONFIRMS, or REJECTS the expected macro shock (e.g. hot CPI followed by CVD absorption and price reclaim = PARTIAL_REJECTION or COMPLETE_REJECTION).
-- Remember: COMEX registered stock shifts are NOT trade signals. Central-bank buying is a medium-term monetary anchor, not an immediate intraday trade trigger.
-- Do not write essays.
-
-Return ONLY a valid JSON object matching this EXACT schema:
-{
-  "timestamp": "${new Date().toISOString()}",
-  "market": "GC",
-  "event": "EVENT_NAME_IN_CAPS",
-  "importance": "HIGH" | "MEDIUM" | "LOW",
-  "event_analysis": {
-    "category": "MONETARY_POLICY" | "REAL_RATES" | "NOMINAL_RATES" | "USD" | "INFLATION" | "LABOR" | "GROWTH" | "LIQUIDITY" | "GEOPOLITICAL_RISK" | "FINANCIAL_STRESS" | "CENTRAL_BANK_DEMAND" | "ETF_FLOWS" | "SPECULATIVE_POSITIONING" | "PHYSICAL_DEMAND" | "MINE_SUPPLY" | "RECYCLING" | "COMEX_INVENTORY" | "OPTIONS_VOLATILITY",
-    "expected_gold_effect": "BULLISH" | "BEARISH" | "MIXED" | "NEUTRAL" | "UNCERTAIN",
-    "magnitude": "HIGH" | "MEDIUM" | "LOW",
-    "surprise": "HOTTER_THAN_EXPECTED" | "COOLER_THAN_EXPECTED" | "HAWKISH_SURPRISE" | "DOVISH_SURPRISE" | "AS_EXPECTED" | "INLINE" | "UNEXPECTED_EVENT",
-    "raw_surprise": null | number,
-    "standardized_surprise": null | number
-  },
-  "transmission": {
-    "real_rates": "UP" | "DOWN" | "FLAT" | "UNCERTAIN",
-    "nominal_rates": "UP" | "DOWN" | "FLAT" | "UNCERTAIN",
-    "usd": "UP" | "DOWN" | "FLAT" | "UNCERTAIN"
-  },
-  "fundamental_state": {
-    "intraday": "BULLISH" | "BEARISH" | "MIXED" | "NEUTRAL" | "UNCERTAIN",
-    "short_term": "BULLISH" | "BEARISH" | "MIXED" | "NEUTRAL" | "UNCERTAIN",
-    "medium_term": "BULLISH" | "BEARISH" | "MIXED" | "NEUTRAL" | "UNCERTAIN"
-  },
-  "market_response": {
-    "gc_initial": "UP" | "DOWN" | "FLAT",
-    "gc_5m": "UP" | "DOWN" | "FLAT",
-    "gc_15m": "CONTINUING" | "REVERSING" | "RECLAIMING" | "ACCEPTING" | "STALLED",
-    "real_yield_confirmation": "BULLISH_GOLD" | "BEARISH_GOLD" | "NEUTRAL",
-    "usd_confirmation": "BULLISH_GOLD" | "BEARISH_GOLD" | "NEUTRAL",
-    "gold_response_quality": "CONFIRMED" | "PARTIAL_CONFIRMATION" | "PARTIAL_REJECTION" | "COMPLETE_REJECTION" | "INCONCLUSIVE"
-  },
-  "confidence": 0.85,
-  "summary": "1-2 sentence institutional summary"
-}`
+  const prompt = buildFundamentalEventUserPrompt({
+    roleLine: 'You are evaluating a supplied event for COMEX Gold futures (GC).',
+    telemetryLines: [
+      datumLine('GC price', `$${telemetry.goldPrice.toFixed(2)}/oz`, 'TICK', 'LIVE'),
+      datumLine('10Y nominal', `${telemetry.us10yNominalYield.toFixed(2)}%`, 'INTRADAY', 'RECENT'),
+      datumLine('10Y real', `${telemetry.us10yRealYield.toFixed(2)}%`, 'DAILY', 'RECENT'),
+      datumLine('10Y breakeven', `${telemetry.us10yBreakeven.toFixed(2)}%`, 'DAILY', 'RECENT'),
+      datumLine('DXY', telemetry.dxyIndex.toFixed(2), 'TICK', 'LIVE'),
+      datumLine('Silver', `$${telemetry.silverPrice.toFixed(3)}`, 'TICK', 'LIVE'),
+      datumLine('Gold CVOL', `${telemetry.goldCvol.toFixed(1)}%`, 'DAILY', 'RECENT'),
+      'CVD, volume, and profile: not supplied.',
+    ],
+    rawText,
+    source: sourceHint,
+    timestamp: timestampHint,
+    specialistNotes: `market is GC.
+Do not infer order flow. real_rates, nominal_rates, usd, and etf_flows are null or UNKNOWN unless the text or telemetry states the direction.
+COMEX stock changes are not proof of a shortage. Central-bank buying is not an intraday trigger.
+Put transmission in specialist. Fill evidence arrays. Leave standardized_surprise null.`,
+  })
 
   let rawJsonText = ''
 
@@ -550,7 +514,7 @@ Return ONLY a valid JSON object matching this EXACT schema:
       body: JSON.stringify({
         model: 'claude-3-5-sonnet-20241022',
         max_tokens: 1500,
-        system: GOLD_ANALYST_SYSTEM_PROMPT,
+        system: GOLD_ANALYST_EVENT_PROMPT,
         messages: [{ role: 'user', content: prompt }],
       }),
     })
@@ -570,7 +534,7 @@ Return ONLY a valid JSON object matching this EXACT schema:
       body: JSON.stringify({
         model: 'gpt-4o',
         messages: [
-          { role: 'system', content: GOLD_ANALYST_SYSTEM_PROMPT },
+          { role: 'system', content: GOLD_ANALYST_EVENT_PROMPT },
           { role: 'user', content: prompt },
         ],
         temperature: 0.1,
@@ -590,7 +554,7 @@ Return ONLY a valid JSON object matching this EXACT schema:
       .replace(/^```json\s*/, '')
       .replace(/\s*```$/, '')
       .trim()
-    const parsed = JSON.parse(cleanJson) as StructuredGoldEventOutput
+    const parsed = adaptLegacyFundamentalJson(JSON.parse(cleanJson)) as unknown as StructuredGoldEventOutput
     return parsed
   } catch (err) {
     logger.error('[GoldAnalystEngine] Failed to parse LLM JSON response', { err, rawJsonText })

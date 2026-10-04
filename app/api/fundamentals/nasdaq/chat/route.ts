@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { streamClaudeResponse, streamOpenAIResponse } from '@/lib/ai/leoAssistant'
 import { getNasdaqFundamentalState } from '@/lib/fundamentals/nasdaqStateStore'
-import { NASDAQ_ANALYST_SYSTEM_PROMPT } from '@/lib/fundamentals/nasdaqAnalystConfig'
+import { NASDAQ_ANALYST_CHAT_PROMPT } from '@/lib/fundamentals/nasdaqAnalystConfig'
 import { logger } from '@/lib/utils/logger'
 
 export const dynamic = 'force-dynamic'
@@ -40,9 +40,9 @@ export async function POST(request: Request) {
       .join('\n')
 
     const contextPrompt = `
-${NASDAQ_ANALYST_SYSTEM_PROMPT}
+${NASDAQ_ANALYST_CHAT_PROMPT}
 
-CURRENT ACTIVE NASDAQ-100 FUNDAMENTAL STATE (Continuously Maintained):
+SUPPLIED NASDAQ STATE (not a live monitor; interpret only this packet):
 - Market: CME E-mini Nasdaq-100 Futures (NQ)
 - Current Date & Server Time: ${new Date().toUTCString()}
 - Prompt NQ Live Price: ${t.nqPrice.toFixed(2)} (${t.nqChange >= 0 ? '+' : ''}${t.nqChange.toFixed(2)}, ${t.nqChangePct >= 0 ? '+' : ''}${t.nqChangePct.toFixed(2)}%)
@@ -54,17 +54,16 @@ CURRENT ACTIVE NASDAQ-100 FUNDAMENTAL STATE (Continuously Maintained):
 - Semiconductor Basket: ${t.semiBasketChangePct >= 0 ? '+' : ''}${t.semiBasketChangePct.toFixed(2)}%
 - Market Breadth: ${state.breadth.advancingCount} Advancing vs ${state.breadth.decliningCount} Declining (Ratio ${state.breadth.advanceDeclineRatio.toFixed(2)}:1) | Stance: ${state.breadth.marketParticipationStance}
 - AI / Semi Capex: Hyperscalers pacing ~$${state.semiCycle.hyperscalerCapexRunRateBillions}B/yr | Accelerator Trend: ${state.semiCycle.acceleratorDemandTrend}
-- Top Constituents: ${t.topConstituents.slice(0, 5).map((c) => `${c.symbol} (${c.weight}% wt: $${c.price} ${c.changePct >= 0 ? '+' : ''}${c.changePct}%)`).join(', ')}
+- Constituent weights below are supplied state, freshness=STALE_FOR_INTRADAY unless a live index feed replaced the baseline. If a weight is missing, say UNAVAILABLE. Do not substitute a memorized Nasdaq-100 weight.
+- Supplied constituents: ${t.topConstituents.slice(0, 5).map((c) => `${c.symbol} (${c.weight}% wt: $${c.price} ${c.changePct >= 0 ? '+' : ''}${c.changePct}%)`).join(', ') || 'UNAVAILABLE'}
 - Stance: Intraday=${state.today.intraday_bias} | Short-Term=${state.today.short_term_bias} | Medium-Term=${state.today.medium_term_bias}
 - Invalidation Criteria: ${state.today.what_would_invalidate_the_current_interpretation}
 
 ACTIVE 11 DRIVERS STATUS:
 ${driversSummary}
 
-CRUCIAL TRADING PRINCIPLE:
-The Nasdaq Agent provides context. The Volume Profile + Wyckoff + CVD execution system decides the trade.
-Look for confirmation OR rejection (e.g. bearish macro shock rejected with negative CVD absorption and spring reclaim = powerful long context).
-Never invent missing data. Never treat an earnings beat as automatically bullish. Never treat a rate cut as automatically bullish. Never infer institutional identity from price action alone.
+Use this as fundamental context only. Do not infer CVD, absorption, or a reclaim.
+Never invent missing data. Never treat an earnings beat as automatically bullish. Never treat a rate cut as automatically bullish. Do not issue a trade.
 `
 
     const anthropicKey = process.env.ANTHROPIC_API_KEY

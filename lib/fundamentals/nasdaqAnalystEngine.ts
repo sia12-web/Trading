@@ -22,12 +22,16 @@ import type {
   NasdaqAbnormalBehavior,
 } from '@/types/fundamentals'
 import {
-  NASDAQ_ANALYST_SYSTEM_PROMPT,
+  NASDAQ_ANALYST_EVENT_PROMPT,
   HISTORICAL_MACRO_SURPRISE_VOLATILITY,
-  DEFAULT_NDX_CONSTITUENTS,
 } from './nasdaqAnalystConfig'
 import { refreshNasdaqTelemetry, recordEvaluatedNasdaqEvent } from './nasdaqStateStore'
 import { logger } from '@/lib/utils/logger'
+import {
+  adaptLegacyFundamentalJson,
+  buildFundamentalEventUserPrompt,
+  datumLine,
+} from '@/lib/fundamentals/outputContract'
 
 interface AnalyzeNasdaqEventParams {
   rawText: string
@@ -520,74 +524,29 @@ async function runLlmNasdaqEvaluation(params: {
 }): Promise<StructuredNasdaqEventOutput | null> {
   const { rawText, sourceHint, timestampHint, telemetry, anthropicKey, openaiKey } = params
 
-  const prompt = `You are evaluating an incoming market event affecting CME E-mini Nasdaq-100 futures (NQ).
-
-CURRENT NASDAQ-100 TELEMETRY:
-- NQ Price: ${telemetry.nqPrice.toFixed(2)} (${telemetry.nqChange >= 0 ? '+' : ''}${telemetry.nqChange.toFixed(2)}, ${telemetry.nqChangePct >= 0 ? '+' : ''}${telemetry.nqChangePct.toFixed(2)}%)
-- S&P 500 (ES): ${telemetry.esPrice.toFixed(2)} (${telemetry.esChangePct >= 0 ? '+' : ''}${telemetry.esChangePct.toFixed(2)}%) | Dow (YM): ${telemetry.ymPrice.toFixed(0)} (${telemetry.ymChangePct >= 0 ? '+' : ''}${telemetry.ymChangePct.toFixed(2)}%)
-- US 2Y Yield: ${telemetry.us2yNominalYield.toFixed(2)}% | US 10Y Yield: ${telemetry.us10yNominalYield.toFixed(2)}% (2s10s Spread: +${telemetry.yieldCurve2s10sSpreadBps} bps)
-- 10Y Real TIPS Yield (DFII10): ${telemetry.us10yRealYield.toFixed(2)}%
-- CBOE Volatility: VXN (Nasdaq-100 Vol) ${telemetry.vxnIndex.toFixed(1)} | VIX ${telemetry.vixIndex.toFixed(1)}
-- Semiconductor Basket: ${telemetry.semiBasketChangePct >= 0 ? '+' : ''}${telemetry.semiBasketChangePct.toFixed(2)}%
-- Top Constituents: ${DEFAULT_NDX_CONSTITUENTS.slice(0, 5).map((c) => `${c.symbol} (${c.weight}%)`).join(', ')}
-
-RAW EVENT TEXT:
-"""
-${rawText}
-"""
-Source hint: ${sourceHint || 'Institutional Wire'}
-Timestamp hint: ${timestampHint || new Date().toISOString()}
-
-INSTRUCTIONS:
-Evaluate this event using the 14-step Nasdaq-100 Macro, Earnings and Market-Flow framework:
-- Map transmission: fed_expectations (MORE_HAWKISH/MORE_DOVISH/UNCHANGED), us2y (UP/DOWN/FLAT), us10y (UP/DOWN/FLAT), usd (UP/DOWN/FLAT).
-- Identify abnormal behavior: if bad news occurred but NQ absorbed selling and reclaimed levels, flag abnormal_behavior { detected: true, type: "BULLISH_RELATIVE_STRENGTH", description: "..." }.
-- Never treat an earnings beat as automatically bullish (guidance & capex matter).
-- Never treat a rate cut as automatically bullish (relative expectations matter).
-- Do not write essays.
-
-Return ONLY a valid JSON object matching this EXACT schema:
-{
-  "timestamp": "${new Date().toISOString()}",
-  "market": "NQ",
-  "event": "EVENT_NAME_IN_CAPS",
-  "importance": "HIGH" | "MEDIUM" | "LOW",
-  "event_analysis": {
-    "category": "MONETARY_POLICY" | "RATES" | "INFLATION" | "LABOR" | "GROWTH" | "LIQUIDITY" | "EARNINGS" | "GUIDANCE" | "AI_CAPEX" | "SEMICONDUCTORS" | "REGULATION" | "GEOPOLITICS" | "VOLATILITY" | "OPTIONS" | "POSITIONING" | "BREADTH",
-    "expected_direction": "BULLISH" | "BEARISH" | "MIXED" | "NEUTRAL" | "UNCERTAIN",
-    "magnitude": "HIGH" | "MEDIUM" | "LOW",
-    "surprise": string,
-    "raw_surprise": null | number,
-    "standardized_surprise": null | number,
-    "index_relevance_pct": null | number
-  },
-  "transmission": {
-    "fed_expectations": "MORE_HAWKISH" | "MORE_DOVISH" | "UNCHANGED" | "UNCERTAIN",
-    "us2y": "UP" | "DOWN" | "FLAT",
-    "us10y": "UP" | "DOWN" | "FLAT",
-    "usd": "UP" | "DOWN" | "FLAT"
-  },
-  "fundamental_state": {
-    "intraday": "BULLISH" | "BEARISH" | "MIXED" | "NEUTRAL" | "UNCERTAIN",
-    "short_term": "BULLISH" | "BEARISH" | "MIXED" | "NEUTRAL" | "UNCERTAIN",
-    "medium_term": "BULLISH" | "BEARISH" | "MIXED" | "NEUTRAL" | "UNCERTAIN"
-  },
-  "market_response": {
-    "nq_initial": "UP" | "DOWN" | "FLAT",
-    "nq_5m": "UP" | "DOWN" | "FLAT",
-    "nq_15m": "CONTINUING" | "REVERSING" | "RECLAIMING" | "ACCEPTING" | "STALLED",
-    "rates_confirmation": "YES" | "NO" | "MIXED",
-    "volatility_confirmation": "YES" | "NO" | "DIVERGENT",
-    "nq_response_quality": "CONFIRMED" | "PARTIAL_CONFIRMATION" | "PARTIAL_REJECTION" | "COMPLETE_REJECTION" | "INCONCLUSIVE"
-  },
-  "abnormal_behavior": {
-    "detected": boolean,
-    "type": "BULLISH_RELATIVE_STRENGTH" | "BEARISH_RELATIVE_WEAKNESS" | "RATES_DIVERGENCE" | "BREADTH_DIVERGENCE" | "VOLATILITY_EXPANSION_ON_RALLY" | "NONE",
-    "description": string
-  },
-  "confidence": 0.86,
-  "summary": "1-2 sentence institutional summary"
-}`
+  const prompt = buildFundamentalEventUserPrompt({
+    roleLine: 'You are evaluating a supplied event for CME E-mini Nasdaq-100 futures (NQ).',
+    telemetryLines: [
+      datumLine('NQ', telemetry.nqPrice.toFixed(2), 'TICK', 'LIVE'),
+      datumLine('ES', telemetry.esPrice.toFixed(2), 'TICK', 'LIVE'),
+      datumLine('YM', telemetry.ymPrice.toFixed(0), 'TICK', 'LIVE'),
+      datumLine('US 2Y', `${telemetry.us2yNominalYield.toFixed(2)}%`, 'INTRADAY', 'RECENT'),
+      datumLine('US 10Y', `${telemetry.us10yNominalYield.toFixed(2)}%`, 'INTRADAY', 'RECENT'),
+      datumLine('10Y real', `${telemetry.us10yRealYield.toFixed(2)}%`, 'DAILY', 'RECENT'),
+      datumLine('VXN', telemetry.vxnIndex.toFixed(1), 'INTRADAY', 'RECENT'),
+      datumLine('VIX', telemetry.vixIndex.toFixed(1), 'INTRADAY', 'RECENT'),
+      'CURRENT NDX WEIGHTS: UNAVAILABLE. Do not use default or memorized constituent weights.',
+      'CVD and profile: not supplied.',
+    ],
+    rawText,
+    source: sourceHint,
+    timestamp: timestampHint,
+    specialistNotes: `market is NQ.
+us2y, us10y, and usd may be null. Do not force UP, DOWN, or FLAT.
+standardized_surprise and index_relevance_pct stay null unless this packet already states them.
+An earnings beat is not automatically bullish. A rate cut is not automatically bullish.
+Do not infer absorption or reclaim.`,
+  })
 
   let rawJsonText = ''
 
@@ -602,7 +561,7 @@ Return ONLY a valid JSON object matching this EXACT schema:
       body: JSON.stringify({
         model: 'claude-3-5-sonnet-20241022',
         max_tokens: 1500,
-        system: NASDAQ_ANALYST_SYSTEM_PROMPT,
+        system: NASDAQ_ANALYST_EVENT_PROMPT,
         messages: [{ role: 'user', content: prompt }],
       }),
     })
@@ -622,7 +581,7 @@ Return ONLY a valid JSON object matching this EXACT schema:
       body: JSON.stringify({
         model: 'gpt-4o',
         messages: [
-          { role: 'system', content: NASDAQ_ANALYST_SYSTEM_PROMPT },
+          { role: 'system', content: NASDAQ_ANALYST_EVENT_PROMPT },
           { role: 'user', content: prompt },
         ],
         temperature: 0.1,
@@ -642,7 +601,7 @@ Return ONLY a valid JSON object matching this EXACT schema:
       .replace(/^```json\s*/, '')
       .replace(/\s*```$/, '')
       .trim()
-    const parsed = JSON.parse(cleanJson) as any
+    const parsed = adaptLegacyFundamentalJson(JSON.parse(cleanJson))
 
     if (!parsed.fundamental_effect && parsed.fundamental_state) {
       parsed.fundamental_effect = parsed.fundamental_state

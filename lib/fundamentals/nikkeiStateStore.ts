@@ -33,6 +33,7 @@ import {
 import { getFinnhubClient } from '@/lib/services/finnhubClient'
 import { fetchYahooFinanceHeadlines } from '@/lib/trading/liveEconomicResults'
 import { logger } from '@/lib/utils/logger'
+import { candidateIsMaterial } from '@/lib/fundamentals/outputContract'
 
 // In-memory state singleton for Nikkei
 let currentNikkeiState: NikkeiFundamentalDashboardState = {
@@ -103,7 +104,7 @@ export function recordEvaluatedNikkeiEvent(event: NikkeiEventEvaluation) {
   currentNikkeiState.recentEvents = [event, ...currentNikkeiState.recentEvents.slice(0, 19)]
 
   // Adapt overall bias if event is material
-  if (event.structuredOutput.importance === 'CRITICAL' || event.structuredOutput.importance === 'HIGH') {
+  if (candidateIsMaterial(event.structuredOutput.importance, event.structuredOutput.confidence)) {
     currentNikkeiState.overallBias = event.structuredOutput.market_stance.intraday
     currentNikkeiState.today.intraday_bias = event.structuredOutput.market_stance.intraday
     currentNikkeiState.biasSummary = event.structuredOutput.summary
