@@ -1581,9 +1581,6 @@ export function TradingChart({
   // News Catalyst Anchored VWAP (News AVWAP) state
   const [showNewsAvwap, setShowNewsAvwap] = useState(false)
   const [newsAvwapBandCount, setNewsAvwapBandCount] = useState<2 | 3>(3)
-  const [newsAvwapDetailsOpen, setNewsAvwapDetailsOpen] = useState(false)
-  const [selectedCatalystId, setSelectedCatalystId] = useState<string | null>(null)
-  const [latestNewsCatalystResult, setLatestNewsCatalystResult] = useState<NewsCatalystVwapResult | null>(null)
 
   useEffect(() => {
     try {
