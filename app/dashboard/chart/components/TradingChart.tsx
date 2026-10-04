@@ -957,7 +957,21 @@ function generateCandles(basePrice: number, tfSeconds: number): OHLCV[] {
 // ─── OHLCV tooltip component ──────────────────────────────────────────────────
 
 function OHLCVTooltip({ data, color }: { data: TooltipData | null; color: string }) {
-  if (!data) return null
+  if (!data) {
+    return (
+      <div className="flex items-center flex-nowrap whitespace-nowrap gap-x-3.5 text-xs price-mono select-none pointer-events-none opacity-0 invisible" aria-hidden="true">
+        <span className="text-gray-600">00:00:00</span>
+        <span className="text-gray-500">O <span className="text-gray-300">00,000.00</span></span>
+        <span className="text-gray-500">H <span className="text-green-400">00,000.00</span></span>
+        <span className="text-gray-500">L <span className="text-red-400">00,000.00</span></span>
+        <span className="text-gray-500">C <span style={{ color }}>00,000.00</span></span>
+        <span className="text-gray-500">V <span className="text-cyan-400 font-semibold">0.0k</span></span>
+        <span className="text-gray-500">CVD <span className="font-semibold text-cyan-400">+0.0k</span></span>
+        <span className="text-green-400">▲ 0.00%</span>
+      </div>
+    )
+  }
+
   const isUp = data.change >= 0
 
   return (
@@ -7902,8 +7916,9 @@ export function TradingChart({
     })
     ro.observe(containerRef.current)
 
-    // Intercept wheel events on the toolbar & OHLC header to prevent page bounce/shaking and zoom chart seamlessly
-    const onHeaderWheel = (e: WheelEvent) => {
+    // Intercept wheel events across the entire chart wrapper (toolbar, main chart, volume bars at bottom, time scale, sub-panes)
+    // to prevent browser page bounce/shaking and zoom the chart time scale seamlessly
+    const onChartWheel = (e: WheelEvent) => {
       e.preventDefault()
       e.stopPropagation()
       if (!chartRef.current) return
@@ -7921,24 +7936,27 @@ export function TradingChart({
           if (newTo - newFrom > 2) {
             ts.setVisibleLogicalRange({ from: newFrom, to: newTo })
             pokeOverlayLayoutRef.current()
+            relinkCvdToPriceRef.current()
+            paintFrvpHistogramRef.current?.()
+            paintExcessesAndRoundedRef.current?.()
+            paintUserDrawingsRef.current?.()
+            paintNewsMarkersRef.current?.()
+            updateCvdUnderCursor()
           }
         }
       } catch {
         /* ignore */
       }
     }
-    const headerEl = chartHeaderRef.current
-    headerEl?.addEventListener('wheel', onHeaderWheel, { passive: false })
 
-    const onWheelLayout = () => {
-      pokeOverlayLayoutRef.current()
-      relinkCvdToPriceRef.current()
-      paintFrvpHistogramRef.current?.()
-      paintExcessesAndRoundedRef.current?.()
-      paintUserDrawingsRef.current?.()
-      paintNewsMarkersRef.current?.()
-      updateCvdUnderCursor()
-    }
+    const wrapperEl = outerWrapperRef.current
+    const headerEl = chartHeaderRef.current
+    const frameEl = chartFrameRef.current
+
+    wrapperEl?.addEventListener('wheel', onChartWheel, { passive: false })
+    headerEl?.addEventListener('wheel', onChartWheel, { passive: false })
+    frameEl?.addEventListener('wheel', onChartWheel, { passive: false })
+
     const onPricePointer = () => {
       relinkCvdToPriceRef.current()
       pokeOverlayLayoutRef.current()
@@ -7951,15 +7969,15 @@ export function TradingChart({
     }
     containerRef.current.addEventListener('mousemove', onPointerMove, { passive: true })
     containerRef.current.addEventListener('mouseleave', onPointerLeave)
-    containerRef.current.addEventListener('wheel', onWheelLayout, { passive: true })
     containerRef.current.addEventListener('mousedown', onPricePointer)
 
     return () => {
       ro.disconnect()
-      headerEl?.removeEventListener('wheel', onHeaderWheel)
+      wrapperEl?.removeEventListener('wheel', onChartWheel)
+      headerEl?.removeEventListener('wheel', onChartWheel)
+      frameEl?.removeEventListener('wheel', onChartWheel)
       containerRef.current?.removeEventListener('mousemove', onPointerMove)
       containerRef.current?.removeEventListener('mouseleave', onPointerLeave)
-      containerRef.current?.removeEventListener('wheel', onWheelLayout)
       containerRef.current?.removeEventListener('mousedown', onPricePointer)
       try {
         chart.timeScale().unsubscribeVisibleLogicalRangeChange(onScroll)
@@ -12697,8 +12715,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </div>
 
           {/* ── Compact Evaluators & OHLCV Tooltip Row ─────────────────────────── */}
-          <div className="flex flex-wrap items-center justify-between gap-x-2.5 gap-y-1 px-1 py-0.5 text-[10.5px] text-gray-400 min-h-[22px] shrink-0">
-            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+          <div className="flex flex-nowrap items-center justify-between gap-x-2 px-1 py-0.5 text-[10.5px] text-gray-400 h-[24px] min-h-[24px] max-h-[24px] shrink-0 overflow-hidden select-none">
+            <div className="flex flex-nowrap items-center gap-x-2 overflow-x-auto scrollbar-none min-w-0 flex-1">
               {/* Structural Evaluators: Day Type, Opening, and Overnight Inventory */}
               {(() => {
                 const invText = overnightInventory

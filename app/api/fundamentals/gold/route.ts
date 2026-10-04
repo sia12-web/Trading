@@ -1,0 +1,88 @@
+import { NextResponse } from 'next/server'
+import { getOrCreateUser } from '@/lib/utils/devAuth'
+import {
+  getGoldFundamentalState,
+  resetGoldFundamentalState,
+  refreshGoldTelemetry,
+  formatTodaysGoldFundamentalStateText,
+} from '@/lib/fundamentals/goldStateStore'
+import { logger } from '@/lib/utils/logger'
+
+export const dynamic = 'force-dynamic'
+
+export async function GET(request: Request) {
+  try {
+    const user = await getOrCreateUser(request)
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { searchParams } = new URL(request.url)
+    const format = searchParams.get('format')
+
+    const state = await getGoldFundamentalState()
+    const todayText = formatTodaysGoldFundamentalStateText(state.today)
+
+    if (format === 'text') {
+      return new Response(todayText, {
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      })
+    }
+
+    return NextResponse.json({
+      ok: true,
+      today: state.today,
+      todayText,
+      feeds: state.feeds,
+      goldTelemetry: state.goldTelemetry,
+      drivers: state.drivers,
+      etfFlows: state.etfFlows,
+      cftcPositioning: state.cftcPositioning,
+      comexInventory: state.comexInventory,
+      centralBankDemand: state.centralBankDemand,
+      state,
+    })
+  } catch (err) {
+    logger.error('[Gold Fundamentals API] Failed to fetch state', err)
+    return NextResponse.json({ ok: false, error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const user = await getOrCreateUser(request)
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const body = (await request.json().catch(() => ({}))) as {
+      action?: 'reset' | 'refresh_telemetry'
+    }
+
+    if (body.action === 'reset') {
+      const state = resetGoldFundamentalState()
+      const todayText = formatTodaysGoldFundamentalStateText(state.today)
+      return NextResponse.json({
+        ok: true,
+        state,
+        today: state.today,
+        todayText,
+        message: 'Gold fundamental state reset to baseline.',
+      })
+    }
+
+    if (body.action === 'refresh_telemetry') {
+      const telemetry = await refreshGoldTelemetry()
+      const state = await getGoldFundamentalState()
+      const todayText = formatTodaysGoldFundamentalStateText(state.today)
+      return NextResponse.json({ ok: true, telemetry, today: state.today, todayText, state })
+    }
+
+    const state = await getGoldFundamentalState()
+    const todayText = formatTodaysGoldFundamentalStateText(state.today)
+    return NextResponse.json({ ok: true, state, today: state.today, todayText })
+  } catch (err) {
+    logger.error('[Gold Fundamentals API] Failed to process POST', err)
+    return NextResponse.json({ ok: false, error: 'Internal server error' }, { status: 500 })
+  }
+}
