@@ -17,6 +17,7 @@ import {
 } from '../trading/rangeVolumeComparison'
 import type { CrossMarketVolatilityState } from '../trading/crossMarketVolatility'
 import type { CrossMarketRadarReport } from '../trading/crossMarketRadar'
+import { formatDeskBriefForInstrument } from '@/lib/ai/marketIntelligenceBus'
 
 export interface LeoDataPoint {
   id: string
@@ -261,6 +262,11 @@ export interface LeoChatContext {
     sigma2Upper?: number | null
     sigma2Lower?: number | null
   } | null
+  /**
+   * Optional override of the compact specialist desk brief.
+   * When omitted, Leo reads the market intelligence bus for this instrument.
+   */
+  deskBriefText?: string | null
 }
 
 export interface LeoMessage {
@@ -778,26 +784,6 @@ export function buildLeoSystemPrompt(ctx: LeoChatContext): string {
       : 29500
   const activeBasePrice =
     ctx.currentPrice != null && Number.isFinite(ctx.currentPrice) ? ctx.currentPrice : defaultBasePrice
-  const defaultSlDist =
-    ctx.instrument === 'DOW'
-      ? 60
-      : ctx.instrument === 'GOLD'
-      ? 5
-      : ctx.instrument === 'CRUDE'
-      ? 0.5
-      : ctx.instrument === 'NIKKEI'
-      ? 100
-      : 25
-  const defaultTpDist =
-    ctx.instrument === 'DOW'
-      ? 120
-      : ctx.instrument === 'GOLD'
-      ? 10
-      : ctx.instrument === 'CRUDE'
-      ? 1.0
-      : ctx.instrument === 'NIKKEI'
-      ? 200
-      : 50
   const defaultTargetPrice = (ctx.shortTermMoney?.yval ?? activeBasePrice).toFixed(2)
   const currentPriceStr = ctx.currentPrice != null ? ctx.currentPrice.toFixed(2) : 'Awaiting quote'
 
@@ -837,8 +823,15 @@ export function buildLeoSystemPrompt(ctx: LeoChatContext): string {
 - Unrealized P&L: ${pos.unrealizedPnlPoints >= 0 ? '+' : ''}${pos.unrealizedPnlPoints.toFixed(1)} points (${pos.unrealizedPnlCad >= 0 ? '+' : ''}${pos.unrealizedPnlCad.toFixed(2)} CAD) — Status: ${pos.isInProfit ? '🟢 IN PROFIT' : '🔴 NOT IN PROFIT / UNPROFITABLE'}`
     : 'STATE: FLAT (No open position currently on the desk).'
 
+  const deskBriefBlock =
+    ctx.deskBriefText && ctx.deskBriefText.trim().length > 0
+      ? ctx.deskBriefText.trim()
+      : formatDeskBriefForInstrument(ctx.instrument)
+
   return `You are Leo, an elite, disciplined, razor-sharp institutional day trading execution desk assistant.
 You specialize in Dalton Auction Market Theory, Multi-Timeframe Money mechanics, Volume Profiling, strict asymmetric risk execution, and direct desk trade management.
+
+${deskBriefBlock}
 
 THE TRADER'S SYSTEM ARCHITECTURE:
 1. LONG-TERM MONEY (5-Month Anchored VWAP):

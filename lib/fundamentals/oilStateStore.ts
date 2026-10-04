@@ -387,3 +387,8 @@ export function resetOilFundamentalState(): OilFundamentalDashboardState {
   }
   return currentState
 }
+
+/** In-memory specialist state. Does not refresh network feeds. */
+export function peekOilFundamentalState(): OilFundamentalDashboardState {
+  return currentState
+}

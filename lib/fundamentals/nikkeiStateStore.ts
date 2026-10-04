@@ -275,3 +275,8 @@ export async function getNikkeiFundamentalState(): Promise<NikkeiFundamentalDash
   currentNikkeiState.updatedAt = new Date().toISOString()
   return currentNikkeiState
 }
+
+/** In-memory specialist state. Does not refresh network feeds. */
+export function peekNikkeiFundamentalState(): NikkeiFundamentalDashboardState {
+  return currentNikkeiState
+}

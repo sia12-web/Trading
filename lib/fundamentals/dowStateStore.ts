@@ -506,3 +506,8 @@ export function resetDowFundamentalState(): DowFundamentalDashboardState {
   }
   return currentDowState
 }
+
+/** In-memory specialist state. Does not refresh network feeds. */
+export function peekDowFundamentalState(): DowFundamentalDashboardState {
+  return currentDowState
+}

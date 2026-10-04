@@ -155,8 +155,7 @@ describe('Leo AI Desk Assistant Unit Tests', () => {
       activeExcesses: [],
     })
     assert.ok(goldPrompt.includes('4350.00'))
-    assert.ok(goldPrompt.includes('4345.00')) // stopLoss = 4350 - 5
-    assert.ok(goldPrompt.includes('4360.00')) // profitTarget = 4350 + 10
+    assert.ok(goldPrompt.includes('DESK BRIEF — GOLD / GC'))
     assert.ok(!goldPrompt.includes('NaN'))
 
     const crudePrompt = buildLeoSystemPrompt({
@@ -171,8 +170,7 @@ describe('Leo AI Desk Assistant Unit Tests', () => {
       activeExcesses: [],
     })
     assert.ok(crudePrompt.includes('104.00'))
-    assert.ok(crudePrompt.includes('103.50')) // stopLoss = 104 - 0.5
-    assert.ok(crudePrompt.includes('105.00')) // profitTarget = 104 + 1.0
+    assert.ok(crudePrompt.includes('DESK BRIEF — CRUDE / CL'))
     assert.ok(!crudePrompt.includes('NaN'))
   })
 })

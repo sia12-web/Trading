@@ -12,6 +12,7 @@
 | Chart Leo AI (+ Situations / Notes) | [`docs/AI_PROMPTS_CHART_LEO.md`](./AI_PROMPTS_CHART_LEO.md) |
 | Fundamentals (5 market agents) | [`docs/AI_PROMPTS_FUNDAMENTALS.md`](./AI_PROMPTS_FUNDAMENTALS.md) |
 | Desk News / Leo Macro News AI | [`docs/AI_PROMPTS_DESK_NEWS.md`](./AI_PROMPTS_DESK_NEWS.md) |
+| Target architecture (bus, desk brief, what stays) | [`docs/AI_ARCHITECTURE_TARGET.md`](./AI_ARCHITECTURE_TARGET.md) |
 
 ---
 

@@ -14,6 +14,7 @@ import {
 } from '@/lib/trading/rangeVolumeComparison'
 import { getCrossMarketVolatility } from '@/lib/trading/crossMarketVolatility'
 import { buildCrossMarketRadarReport } from '@/lib/trading/crossMarketRadar'
+import { syncFundamentalBusFromStores } from '@/lib/ai/fundamentalBusSync'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -120,6 +121,13 @@ export async function POST(req: NextRequest) {
       model ||
       process.env.LLM_PROPOSER_MODEL ||
       'claude-3-7-sonnet-20250219'
+
+    // Specialists publish state. Leo only reads the compact brief for this instrument.
+    try {
+      syncFundamentalBusFromStores()
+    } catch {
+      // A fundamentals-store failure must not block the execution copilot.
+    }
 
     const systemPrompt = buildLeoSystemPrompt(chartContext)
 

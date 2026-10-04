@@ -411,3 +411,8 @@ export function resetNasdaqFundamentalState(): NasdaqFundamentalDashboardState {
   }
   return currentNasdaqState
 }
+
+/** In-memory specialist state. Does not refresh network feeds. */
+export function peekNasdaqFundamentalState(): NasdaqFundamentalDashboardState {
+  return currentNasdaqState
+}

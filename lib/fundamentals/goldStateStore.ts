@@ -356,3 +356,8 @@ export function resetGoldFundamentalState(): GoldFundamentalDashboardState {
   }
   return currentGoldState
 }
+
+/** In-memory specialist state. Does not refresh network feeds. */
+export function peekGoldFundamentalState(): GoldFundamentalDashboardState {
+  return currentGoldState
+}
