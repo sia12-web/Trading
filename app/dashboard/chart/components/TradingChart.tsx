@@ -13086,207 +13086,23 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   </span>
                 )}
               </button>
-              {/* News Catalyst Anchored VWAP (News AVWAP) Button & Details Popover */}
-              <div className="relative inline-flex items-center">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowNewsAvwap((prev) => {
-                      const next = !prev
-                      if (next) setNewsAvwapDetailsOpen(true)
-                      return next
-                    })
-                  }}
-                  className={`transition flex items-center gap-1.5 select-none px-1.5 py-0.5 rounded cursor-pointer ${
-                    showNewsAvwap
-                      ? 'bg-amber-500/25 text-amber-200 border border-amber-400/60 shadow-sm font-semibold'
-                      : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
-                  }`}
-                  title={
-                    latestNewsCatalystResult
-                      ? `News AVWAP: ${latestNewsCatalystResult.catalyst.title} (${latestNewsCatalystResult.catalyst.eventTimeFormatted}). ATR: ${latestNewsCatalystResult.catalyst.atrAtRelease} pts. Click to toggle.`
-                      : 'Toggle News Catalyst Anchored VWAP & standard deviation bands on chart'
-                  }
-                >
-                  <span className="text-[11px]">⚡</span>
-                  <span className="text-gray-400 font-semibold">News AVWAP:</span>
-                  <span className={`font-mono font-bold ${showNewsAvwap ? 'text-amber-300' : 'text-zinc-400'}`}>
-                    {showNewsAvwap ? 'ON' : 'OFF'}
-                  </span>
-                  {showNewsAvwap && (
-                    <span
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setNewsAvwapDetailsOpen((prev) => !prev)
-                      }}
-                      className="ml-0.5 px-1 py-0.2 rounded text-[10px] bg-amber-500/20 text-amber-300 hover:bg-amber-500/40 cursor-pointer"
-                      title="View News Catalyst & ATR details"
-                    >
-                      ℹ️
-                    </span>
-                  )}
-                </button>
-
-                {/* News Catalyst Details Popover */}
-                {newsAvwapDetailsOpen && (
-                  <div
-                    className="absolute top-full left-0 mt-1.5 z-50 w-84 bg-zinc-900/98 backdrop-blur-md border border-amber-500/50 rounded-lg shadow-2xl p-3 text-xs text-zinc-200 min-w-[320px]"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="flex items-center justify-between pb-2 border-b border-zinc-700/60 mb-2.5">
-                      <div className="flex items-center gap-1.5 font-bold text-amber-400 text-[12px]">
-                        <span>⚡</span>
-                        <span>Latest News Catalyst AVWAP</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setNewsAvwapDetailsOpen(false)}
-                        className="text-zinc-400 hover:text-white px-1 rounded hover:bg-zinc-800"
-                        title="Close popover"
-                      >
-                        ✕
-                      </button>
-                    </div>
-
-                    {latestNewsCatalystResult ? (
-                      <div className="space-y-2.5">
-                        {/* Event details */}
-                        <div className="bg-zinc-800/70 p-2 rounded border border-zinc-700/50 space-y-1">
-                          <div className="flex items-start justify-between gap-2">
-                            <span className="font-semibold text-white leading-tight">
-                              {latestNewsCatalystResult.catalyst.title}
-                            </span>
-                            <span className="text-[9.5px] uppercase font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0">
-                              {latestNewsCatalystResult.catalyst.impact}
-                            </span>
-                          </div>
-                          <div className="text-[10px] text-zinc-400 flex items-center justify-between">
-                            <span>Release: <strong className="text-zinc-200">{latestNewsCatalystResult.catalyst.eventTimeFormatted}</strong></span>
-                            {latestNewsCatalystResult.catalyst.actual && (
-                              <span>Actual: <strong className="text-emerald-400">{latestNewsCatalystResult.catalyst.actual}</strong></span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Volatility & ATR Impact */}
-                        <div className="grid grid-cols-2 gap-1.5 text-[10.5px]">
-                          <div className="bg-zinc-800/50 p-1.5 rounded border border-zinc-700/40">
-                            <span className="text-zinc-400 block text-[9.5px]">Release ATR:</span>
-                            <span className="font-mono font-bold text-red-300">
-                              {latestNewsCatalystResult.catalyst.atrAtRelease} pts
-                            </span>
-                          </div>
-                          <div className="bg-zinc-800/50 p-1.5 rounded border border-zinc-700/40">
-                            <span className="text-zinc-400 block text-[9.5px]">ATR Surge:</span>
-                            <span className="font-mono font-bold text-amber-300">
-                              {latestNewsCatalystResult.catalyst.atrSurgeRatio}x baseline
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* AVWAP Price Benchmark & Delta */}
-                        <div className="bg-zinc-800/50 p-2 rounded border border-zinc-700/40 flex items-center justify-between">
-                          <div>
-                            <span className="text-zinc-400 block text-[9.5px]">News AVWAP Level:</span>
-                            <span className="font-mono font-bold text-amber-400 text-[13px]">
-                              {latestNewsCatalystResult.latestVwap.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                            </span>
-                          </div>
-                          {(() => {
-                            const cur = livePrice ?? (candlesRef.current.length ? candlesRef.current[candlesRef.current.length - 1]!.close : null)
-                            if (!cur) return null
-                            const diff = cur - latestNewsCatalystResult.latestVwap
-                            const diffPct = (diff / latestNewsCatalystResult.latestVwap) * 100
-                            return (
-                              <div className="text-right">
-                                <span className="text-zinc-400 block text-[9.5px]">Current Delta:</span>
-                                <span className={`font-mono font-bold ${diff >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                  {diff >= 0 ? '+' : ''}{diff.toFixed(2)} pts ({diffPct >= 0 ? '+' : ''}{diffPct.toFixed(2)}%)
-                                </span>
-                              </div>
-                            )
-                          })()}
-                        </div>
-
-                        {/* Standard Deviation Bands info & toggle */}
-                        <div className="bg-zinc-800/40 p-2 rounded border border-zinc-700/40 space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] text-zinc-400 font-semibold uppercase">SD Dispersion Bands:</span>
-                            <div className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => setNewsAvwapBandCount(2)}
-                                className={`px-1.5 py-0.5 text-[9.5px] rounded transition ${
-                                  newsAvwapBandCount === 2
-                                    ? 'bg-amber-500/30 text-amber-200 border border-amber-400 font-bold'
-                                    : 'bg-zinc-800 text-zinc-400 hover:text-white'
-                                }`}
-                              >
-                                2 Bands
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setNewsAvwapBandCount(3)}
-                                className={`px-1.5 py-0.5 text-[9.5px] rounded transition ${
-                                  newsAvwapBandCount === 3
-                                    ? 'bg-amber-500/30 text-amber-200 border border-amber-400 font-bold'
-                                    : 'bg-zinc-800 text-zinc-400 hover:text-white'
-                                }`}
-                              >
-                                3 Bands
-                              </button>
-                            </div>
-                          </div>
-                          <div className="font-mono text-[10px] space-y-0.5 pt-0.5 border-t border-zinc-700/30">
-                            <div className="flex justify-between text-yellow-300">
-                              <span>±1σ (68.2%):</span>
-                              <span>+{latestNewsCatalystResult.latestSigma1Upper.toFixed(1)} / -{latestNewsCatalystResult.latestSigma1Lower.toFixed(1)}</span>
-                            </div>
-                            <div className="flex justify-between text-orange-400">
-                              <span>±2σ (95.4%):</span>
-                              <span>+{latestNewsCatalystResult.latestSigma2Upper.toFixed(1)} / -{latestNewsCatalystResult.latestSigma2Lower.toFixed(1)}</span>
-                            </div>
-                            {newsAvwapBandCount === 3 && (
-                              <div className="flex justify-between text-rose-400">
-                                <span>±3σ (99.7%):</span>
-                                <span>+{latestNewsCatalystResult.latestSigma3Upper.toFixed(1)} / -{latestNewsCatalystResult.latestSigma3Lower.toFixed(1)}</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Recent Catalysts selector if multiple detected */}
-                        {latestNewsCatalystResult.availableCatalysts.length > 1 && (
-                          <div className="space-y-1">
-                            <span className="text-[10px] text-zinc-400 block font-semibold">Other Recent Major Catalysts:</span>
-                            <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto pr-0.5">
-                              {latestNewsCatalystResult.availableCatalysts.slice(0, 4).map((cat) => (
-                                <button
-                                  key={cat.id}
-                                  type="button"
-                                  onClick={() => setSelectedCatalystId(cat.id)}
-                                  className={`text-left text-[9.5px] px-1.5 py-1 rounded transition border w-full flex items-center justify-between ${
-                                    latestNewsCatalystResult.catalyst.id === cat.id
-                                      ? 'bg-amber-500/25 border-amber-400/80 text-amber-200 font-bold'
-                                      : 'bg-zinc-800/70 border-zinc-700/50 text-zinc-300 hover:bg-zinc-700'
-                                  }`}
-                                >
-                                  <span className="truncate max-w-[200px]">{cat.title}</span>
-                                  <span className="font-mono text-zinc-400 shrink-0 text-[9px]">{cat.eventTimeFormatted}</span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="py-3 text-center text-zinc-400 text-[11px]">
-                        Scanning recent candles for volatility & ATR catalysts...
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+              {/* News Catalyst Anchored VWAP (News AVWAP) Button */}
+              <button
+                type="button"
+                onClick={() => setShowNewsAvwap((prev) => !prev)}
+                className={`transition flex items-center gap-1.5 select-none px-1.5 py-0.5 rounded cursor-pointer ${
+                  showNewsAvwap
+                    ? 'bg-amber-500/25 text-amber-200 border border-amber-400/60 shadow-sm font-semibold'
+                    : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
+                }`}
+                title="Toggle News Catalyst Anchored VWAP & standard deviation bands on chart"
+              >
+                <span className="text-[11px]">⚡</span>
+                <span className="text-gray-400 font-semibold">News AVWAP:</span>
+                <span className={`font-mono font-bold ${showNewsAvwap ? 'text-amber-300' : 'text-zinc-400'}`}>
+                  {showNewsAvwap ? 'ON' : 'OFF'}
+                </span>
+              </button>
               {/* ATR (Average True Range) Sub-Pane Button */}
               <button
                 type="button"
