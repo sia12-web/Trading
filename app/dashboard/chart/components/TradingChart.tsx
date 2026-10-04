@@ -1829,6 +1829,26 @@ export function TradingChart({
     }
   })
 
+  const [chartThemeMode, setChartThemeMode] = useState<'dark' | 'light'>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem('desk_chart_theme_mode')
+        if (saved === 'light' || saved === 'dark') return saved
+      }
+    } catch {}
+    return 'dark'
+  })
+
+  useEffect(() => {
+    const opts = getDeskChartThemeOptions(chartThemeMode)
+    if (chartRef.current) {
+      chartRef.current.applyOptions(opts)
+    }
+    if (cvdChartRef.current) {
+      cvdChartRef.current.applyOptions(opts)
+    }
+  }, [chartThemeMode])
+
   const [candles, setCandles] = useState<OHLCV[]>([])
   const [armedSituations, setArmedSituations] = useState<ArmedRule[]>([])
 
@@ -7551,8 +7571,10 @@ export function TradingChart({
   useEffect(() => {
     if (!containerRef.current) return
 
+    const themeOpts = getDeskChartThemeOptions(chartThemeMode)
     const chart = createChart(containerRef.current, {
       ...CHART_THEME,
+      ...themeOpts,
       width: containerRef.current.clientWidth,
       height: containerRef.current.clientHeight,
       localization: {
@@ -8126,8 +8148,10 @@ export function TradingChart({
 
     const cvdContainer = cvdContainerRef.current
     if (!cvdChartRef.current) {
+      const themeOpts = getDeskChartThemeOptions(chartThemeMode)
       const cvdChart = createChart(cvdContainer, {
         ...CHART_THEME,
+        ...themeOpts,
         width: cvdContainer.clientWidth || 800,
         height: cvdSubPaneHeight,
         layout: {
@@ -12882,6 +12906,27 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 }
               >
                 <span>{hideTrendlineBadges ? '🙈 Labels: OFF' : '🏷️ Labels: ON'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setChartThemeMode((prev) => {
+                    const next = prev === 'dark' ? 'light' : 'dark'
+                    try {
+                      localStorage.setItem('desk_chart_theme_mode', next)
+                    } catch {}
+                    return next
+                  })
+                }}
+                className={`flex items-center gap-1 px-2 py-1 rounded font-bold transition shadow-sm active:scale-95 cursor-pointer ${
+                  chartThemeMode === 'light'
+                    ? 'bg-sky-500/25 hover:bg-sky-500/40 border border-sky-400 text-sky-200'
+                    : 'bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 text-neutral-300 hover:text-white'
+                }`}
+                title="Switch between Light theme (white background) and Dark theme (black background)"
+              >
+                <span>{chartThemeMode === 'light' ? '☀️ Light Mode' : '🌙 Dark Mode'}</span>
               </button>
             </div>
 
