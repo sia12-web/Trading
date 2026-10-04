@@ -145,7 +145,7 @@ export default function NotesPage() {
             </span>
           </div>
           <p className="mt-1 text-sm text-gray-400 max-w-xl leading-relaxed">
-            Live price visit alarms, HTF memory notes, and level alerts created when asking Leo for an alert across markets.
+            Live price visit alarms, HTF memory notes, and level alerts created when asking Leo for an alert across markets. Notes store price level alerts and static reminders (without multi-condition hypothesis setups).
           </p>
         </div>
 

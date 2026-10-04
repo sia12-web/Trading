@@ -108,7 +108,7 @@ export default function SituationsPage() {
         <div className="space-y-1">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-              <span>Market Situations & Leo Rules</span>
+              <span>Market Situations &amp; Hypotheses</span>
             </h1>
             <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-0.5 text-xs font-mono font-semibold text-emerald-300 border border-emerald-500/30">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -116,8 +116,8 @@ export default function SituationsPage() {
             </span>
           </div>
           <p className="text-sm text-gray-400 max-w-2xl leading-relaxed">
-            Active conditional strategies, level monitors, and stagnation rules evaluated per market by Leo.
-            Every situation is recorded, dated, and strictly conditioned.
+            Active user hypotheses, conditional market monitoring, and level rules evaluated per market by Leo.
+            Situations track your hypothesis to observe how the market reacts (the platform is strictly read-only and incapable of placing orders).
           </p>
         </div>
 
@@ -127,7 +127,7 @@ export default function SituationsPage() {
             onClick={() => setIsModalOpen(true)}
             className="flex items-center gap-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition border border-brand-400/30"
           >
-            <span>+</span> Arm Situation Note
+            <span>+</span> Arm Situation Hypothesis
           </button>
           <Link
             href={selectedMarket === 'ALL' ? '/dashboard/chart' : `/dashboard/chart?instrument=${selectedMarket}`}
@@ -150,7 +150,7 @@ export default function SituationsPage() {
         </div>
 
         <div className="rounded-xl border border-surface-600/80 bg-surface-800/60 p-3.5 space-y-1">
-          <div className="text-[11px] font-medium uppercase tracking-wider text-gray-400">Trade Entries</div>
+          <div className="text-[11px] font-medium uppercase tracking-wider text-gray-400">Hypothesis Setups</div>
           <div className="text-xl font-bold font-mono text-brand-300">
             {stats.conditionalEntries}
           </div>

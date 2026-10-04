@@ -14,6 +14,7 @@ import type { DayTypeEvaluation, MarketDayType } from '@/lib/chart/context55'
 import { detectCandlestickPatterns, type Candle } from '@/lib/trading/candlestickPatterns'
 import { isArmedRuleExpired, isNycSessionActive } from '@/lib/trading/sessionGate'
 import { saveLongTermMemory, type LeoLongTermMemory } from '@/lib/trading/leoLongTermMemory'
+import { isAsiaDeskInstrument } from '@/lib/trading/asiaDesk'
 import {
   formatRuleDate,
   listenToRuleUpdates,
@@ -498,7 +499,7 @@ export function LeoAssistantPanel({
     }
   }
 
-  // Situation notification handler for Leo — system is strictly read-only and never places orders
+  // Situation notification handler for Leo — platform is strictly read-only and incapable of placing orders
   const notifySituation = (situation: {
     instrument: string
     direction: 'LONG' | 'SHORT'
@@ -508,8 +509,9 @@ export function LeoAssistantPanel({
     reason: string
   }) => {
     playTradingViewChime()
+    const dirLabel = situation.direction === 'LONG' ? 'Bullish' : 'Bearish'
     warningToast(
-      `🎯 [SITUATION ALERT]: ${situation.direction} setup on ${situation.instrument} @ ${situation.price.toLocaleString()}`,
+      `🎯 [HYPOTHESIS SITUATION ALERT]: ${dirLabel} reaction monitored on ${situation.instrument} @ ${situation.price.toLocaleString()}`,
       10000
     )
     setMessages((prev) => [
@@ -517,12 +519,12 @@ export function LeoAssistantPanel({
       {
         id: `sit-alert-${Date.now()}`,
         role: 'assistant',
-        content: `### 🎯 **[SITUATION ALERT] (${situation.instrument})**\n\n**${situation.direction}** situation detected at **${situation.price.toLocaleString()}**.\n\n- **Context / Reason:** ${situation.reason}${situation.stopLoss ? `\n- **Reference Stop Loss:** ${situation.stopLoss.toLocaleString()}` : ''}${situation.profitTarget ? `\n- **Reference Target:** ${situation.profitTarget.toLocaleString()}` : ''}\n\n*(The system is always in Read-Only Market Monitoring Mode and never places orders. This notification informs you of the developing market setup).*`,
+        content: `### 🎯 **[HYPOTHESIS SITUATION ALERT] (${situation.instrument})**\n\n**${dirLabel}** hypothesis condition detected at **${situation.price.toLocaleString()}**.\n\n- **Context / Reason:** ${situation.reason}${situation.stopLoss ? `\n- **Reference Stop Loss:** ${situation.stopLoss.toLocaleString()}` : ''}${situation.profitTarget ? `\n- **Reference Target:** ${situation.profitTarget.toLocaleString()}` : ''}\n\n*(This platform is incapable of placing orders and neither the trader nor Leo places orders. This notification tracks your hypothesis to observe how the market reacts).*`,
         timestamp: Date.now(),
       },
     ])
     speakText(
-      `Situation alert: ${situation.direction} setup on ${situation.instrument} at ${situation.price.toFixed(0)}`
+      `Hypothesis situation alert: ${dirLabel} reaction setup on ${situation.instrument} at ${situation.price.toFixed(0)}`
     )
   }
 
@@ -884,13 +886,13 @@ export function LeoAssistantPanel({
         setArmedRules((prev) => [...prev.filter((r) => r.type !== 'STAGNATION_TIMEOUT'), newRule])
       } else if (d.action === 'ARM_DESK_ALERT' || d.action === 'ARM_TELEGRAM_ALERT') {
         const isLongTerm = Boolean(d.isLongTerm || (d as any).longTermMemory)
-        const ruleInst = canonicalizeInstrument(d.instrument || context.instrument)
+        const ruleInst = canonicalizeInstrument((d as any).instrument || context.instrument)
         const defaultSess = isAsiaDeskInstrument(ruleInst) ? 'ASIA' : 'NYC'
         const sessVal = d.session ?? (isLongTerm ? '24H' : defaultSess)
 
         let resolvedPx = Number(d.targetPrice)
-        const rawLow = d.priceLow ?? (d as any).targetPriceLow
-        const rawHigh = d.priceHigh ?? (d as any).targetPriceHigh
+        const rawLow = (d as any).priceLow ?? (d as any).targetPriceLow
+        const rawHigh = (d as any).priceHigh ?? (d as any).targetPriceHigh
         let targetLow: number | undefined
         let targetHigh: number | undefined
 
@@ -2479,8 +2481,8 @@ export function LeoAssistantPanel({
                             instrument: inst,
                             type: 'TRENDLINE_BREAKOUT_SYSTEMATIC',
                             direction: 'LONG',
-                            description: `Long 1 ${inst} on 5m Candle Close above ${t.label || 'Bearish Trendline'} (Trend-Borning Zone)`,
-                            userPrompt: `Monitor ${t.label || 'Bearish Trendline'}. Enter Long 1 ${inst} when 5m candle closes above trendline. SL below breakout candle low, TP +50 pts (or 1:2 R:R), exit on 5m candle close below dynamic responsive trendline.`,
+                            description: `Hypothesis: Track bullish reaction on 5m Candle Close above ${t.label || 'Bearish Trendline'} (Trend-Borning Zone)`,
+                            userPrompt: `Monitor ${t.label || 'Bearish Trendline'}. Track hypothesis for bullish market reaction on ${inst} when 5m candle closes above trendline. SL below breakout candle low, TP +50 pts (or 1:2 R:R), exit on 5m candle close below dynamic responsive trendline.`,
                             targetReference: t.label || 'Bearish Trendline',
                             targetPrice: t.projectedPrice || t.endPrice,
                             pattern: 'TRENDLINE_BREAKOUT_5M',
