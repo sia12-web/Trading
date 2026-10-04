@@ -778,26 +778,6 @@ export function buildLeoSystemPrompt(ctx: LeoChatContext): string {
       : 29500
   const activeBasePrice =
     ctx.currentPrice != null && Number.isFinite(ctx.currentPrice) ? ctx.currentPrice : defaultBasePrice
-  const defaultSlDist =
-    ctx.instrument === 'DOW'
-      ? 60
-      : ctx.instrument === 'GOLD'
-      ? 5
-      : ctx.instrument === 'CRUDE'
-      ? 0.5
-      : ctx.instrument === 'NIKKEI'
-      ? 100
-      : 25
-  const defaultTpDist =
-    ctx.instrument === 'DOW'
-      ? 120
-      : ctx.instrument === 'GOLD'
-      ? 10
-      : ctx.instrument === 'CRUDE'
-      ? 1.0
-      : ctx.instrument === 'NIKKEI'
-      ? 200
-      : 50
   const defaultTargetPrice = (ctx.shortTermMoney?.yval ?? activeBasePrice).toFixed(2)
   const currentPriceStr = ctx.currentPrice != null ? ctx.currentPrice.toFixed(2) : 'Awaiting quote'
 
