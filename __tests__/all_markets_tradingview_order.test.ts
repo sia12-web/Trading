@@ -1,4 +1,4 @@
-﻿import test from 'node:test'
+import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   ALL_MARKETS,
@@ -8,7 +8,7 @@ import {
 } from '../lib/trading/leoRules'
 
 test('All 4 Markets 1:1 Situations - Seed and Parity across DOW, NASDAQ, GOLD, CRUDE', () => {
-  assert.deepEqual(ALL_MARKETS, ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'])
+  assert.deepEqual(ALL_MARKETS, ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'NIKKEI'])
 
   for (const market of ALL_MARKETS) {
     const meta = MARKET_DEFAULT_PARAMS[market]

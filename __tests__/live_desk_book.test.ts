@@ -117,7 +117,7 @@ const freeSwitch = resolveSessionGate({
 })
 assert.equal(freeSwitch.glanceOnly, false)
 assert.equal(freeSwitch.lockedInstrument, 'NASDAQ')
-assert.deepEqual(freeSwitch.allowedInstruments, ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'])
+assert.deepEqual(freeSwitch.allowedInstruments, ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'NIKKEI'])
 assert.ok(freeSwitch.allowedInstruments.includes('GOLD'))
 
 const allowedGold = assertCanOpenPosition('GOLD', {
@@ -170,7 +170,7 @@ const tokyoGate = resolveSessionGate({
   attendedToday: false,
 })
 assert.equal(tokyoGate.market, 'NY')
-assert.ok(!tokyoGate.allowedInstruments.includes('NIKKEI'))
+assert.ok(tokyoGate.allowedInstruments.includes('NIKKEI'))
 
 const tight = buildTradovateMirrorTicket({
   instrument: 'NASDAQ',

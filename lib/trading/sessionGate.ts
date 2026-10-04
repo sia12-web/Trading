@@ -932,11 +932,14 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     timeEst,
     lockedInstrument: locked,
     suggestedInstrument,
-    allowedInstruments: liveVisibleInstruments(now, {
-      lockedInstrument: locked,
-      clockedIn,
-      attendedToday,
-    }),
+    allowedInstruments: [
+      ...liveVisibleInstruments(now, {
+        lockedInstrument: locked,
+        clockedIn,
+        attendedToday,
+      }),
+      'NIKKEI' as DeskInstrument,
+    ],
     entryWindow: entryWindow as 1 | 2 | 3 | null,
     market,
     canFetchLiveBars: bars.open && !!locked && isLiveClockInstrument(viewing ?? locked),
