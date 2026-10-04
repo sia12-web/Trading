@@ -20,6 +20,27 @@
       radial-gradient(ellipse at 80% 100%, rgba(99,102,241,0.06) 0%, transparent 60%);
     min-height: 100vh;
     overscroll-behavior: none;
+    color-scheme: dark;
+  }
+
+  /* Remove unstyled browser spin buttons on number inputs */
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type='number'] {
+    -moz-appearance: textfield;
+  }
+
+  select {
+    color-scheme: dark;
+    background-color: #0d1117;
+    color: #f3f4f6;
+  }
+  select option {
+    background-color: #161b22;
+    color: #f3f4f6;
   }
 }
 

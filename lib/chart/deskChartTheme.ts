@@ -5,11 +5,11 @@
 
 import { ColorType, CrosshairMode, LineStyle } from 'lightweight-charts'
 
-/** TradingView light-chart neutrals: pure pane, cool grid, high-contrast axes. */
-export const DESK_CHART_BG = '#ffffff'
-export const DESK_CHART_GRID = '#f0f3fa'
-export const DESK_CHART_TEXT = '#434651'
-export const DESK_CHART_BORDER = '#d1d4dc'
+/** TradingView dark-chart neutrals: sleek dark pane, subtle grid, high-contrast axes. */
+export const DESK_CHART_BG = '#0e1117'
+export const DESK_CHART_GRID = '#161b22'
+export const DESK_CHART_TEXT = '#8b949e'
+export const DESK_CHART_BORDER = '#21262d'
 export const DESK_CANDLE_UP = '#089981'
 export const DESK_CANDLE_DOWN = '#f23645'
 
@@ -37,16 +37,16 @@ export const DESK_CHART_THEME = {
   crosshair: {
     mode: CrosshairMode.Normal,
     vertLine: {
-      color: '#758696',
+      color: '#484f58',
       width: 1 as const,
       style: LineStyle.Dashed,
-      labelBackgroundColor: '#2962ff',
+      labelBackgroundColor: '#1f6beb',
     },
     horzLine: {
-      color: '#758696',
+      color: '#484f58',
       width: 1 as const,
       style: LineStyle.Dashed,
-      labelBackgroundColor: '#2962ff',
+      labelBackgroundColor: '#1f6beb',
     },
   },
   rightPriceScale: {

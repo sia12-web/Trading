@@ -486,7 +486,7 @@ function AtrSubPaneImpl({ mainChart, mainSeries, onClose }: AtrSubPaneProps) {
 
   return (
     <div
-      className="relative w-full flex-shrink-0 border-t border-[#e0e3eb] bg-white select-none"
+      className="relative w-full flex-shrink-0 border-t border-zinc-800 bg-[#0e1117] select-none text-zinc-200"
       style={{ height }}
       onClick={(e) => e.stopPropagation()}
       onMouseMove={(e) => e.stopPropagation()}
@@ -498,21 +498,21 @@ function AtrSubPaneImpl({ mainChart, mainSeries, onClose }: AtrSubPaneProps) {
         className="group absolute -top-[5px] left-0 right-0 z-30 h-[9px] cursor-ns-resize"
         title="Drag to resize ATR pane · double-click to reset"
       >
-        <div className="mx-auto mt-[4px] h-px w-full bg-transparent transition-colors group-hover:bg-[#2962ff] group-active:bg-[#2962ff]" />
+        <div className="mx-auto mt-[4px] h-px w-full bg-transparent transition-colors group-hover:bg-cyan-500 group-active:bg-cyan-400" />
       </div>
 
       {/* Legend (TradingView indicator status line) */}
-      <div className="group/legend absolute left-2 top-1.5 z-20 flex items-center gap-1.5 rounded px-1 py-0.5 text-[12px] leading-none hover:bg-white/90">
+      <div className="group/legend absolute left-2 top-1.5 z-20 flex items-center gap-1.5 rounded-md border border-zinc-800/80 bg-zinc-950/90 px-2 py-0.5 text-[12px] leading-none hover:bg-zinc-900 shadow-md">
         <span
-          className={`cursor-pointer font-normal ${settings.visible ? 'text-[#131722]' : 'text-[#b2b5be]'}`}
+          className={`cursor-pointer font-semibold ${settings.visible ? 'text-zinc-200' : 'text-zinc-500'}`}
           onDoubleClick={() => setSettingsOpen(true)}
           title="Double-click to open settings"
         >
-          ATR <span className={settings.visible ? 'text-[#787b86]' : 'text-[#b2b5be]'}>{settings.length} {settings.smoothing}</span>
+          ATR <span className={settings.visible ? 'text-zinc-400' : 'text-zinc-600'}>{settings.length} {settings.smoothing}</span>
         </span>
         <span
-          className="font-mono tabular-nums"
-          style={{ color: settings.visible ? settings.color : '#b2b5be' }}
+          className="font-mono tabular-nums font-bold"
+          style={{ color: settings.visible ? settings.color : '#6b7280' }}
         >
           {valueText}
         </span>
@@ -593,28 +593,28 @@ function AtrSettingsDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/20"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) cancel()
       }}
       onWheel={(e) => e.stopPropagation()}
     >
-      <div className="w-[380px] rounded-md bg-white text-[#131722] shadow-[0_2px_24px_rgba(0,0,0,0.25)]">
+      <div className="w-[380px] rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-100 shadow-2xl overflow-hidden">
         <div className="flex items-center justify-between px-5 pt-4 pb-2">
-          <span className="text-[18px] font-semibold">ATR</span>
-          <button type="button" onClick={cancel} className="rounded p-1 text-[#787b86] hover:bg-[#f0f3fa] hover:text-[#131722]" title="Close">
+          <span className="text-[16px] font-bold text-white">ATR Settings</span>
+          <button type="button" onClick={cancel} className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-800 hover:text-white transition" title="Close">
             <CloseIcon size={16} />
           </button>
         </div>
 
-        <div className="flex gap-5 border-b border-[#e0e3eb] px-5 text-[14px]">
+        <div className="flex gap-5 border-b border-zinc-800 px-5 text-[13px] font-semibold">
           {(['inputs', 'style'] as const).map((t) => (
             <button
               key={t}
               type="button"
               onClick={() => setTab(t)}
               className={`-mb-px border-b-2 pb-2 capitalize transition-colors ${
-                tab === t ? 'border-[#131722] text-[#131722]' : 'border-transparent text-[#787b86] hover:text-[#131722]'
+                tab === t ? 'border-blue-500 text-blue-400 font-bold' : 'border-transparent text-zinc-400 hover:text-zinc-200'
               }`}
             >
               {t}
@@ -622,7 +622,7 @@ function AtrSettingsDialog({
           ))}
         </div>
 
-        <div className="space-y-4 px-5 py-5 text-[14px]">
+        <div className="space-y-4 px-5 py-5 text-[13px]">
           {tab === 'inputs' ? (
             <>
               <Row label="Length">
@@ -633,7 +633,7 @@ function AtrSettingsDialog({
                   value={lengthDraft}
                   onChange={(e) => commitLength(e.target.value)}
                   onBlur={() => setLengthDraft(String(settings.length))}
-                  className="h-[34px] w-[150px] rounded border border-[#d1d4dc] px-2 outline-none focus:border-[#2962ff]"
+                  className="h-[34px] w-[150px] rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-white outline-none focus:border-blue-500 font-mono text-sm"
                   autoFocus
                 />
               </Row>
@@ -641,10 +641,10 @@ function AtrSettingsDialog({
                 <select
                   value={settings.smoothing}
                   onChange={(e) => patch({ smoothing: e.target.value as AtrSmoothing })}
-                  className="h-[34px] w-[150px] rounded border border-[#d1d4dc] bg-white px-2 outline-none focus:border-[#2962ff]"
+                  className="h-[34px] w-[150px] rounded-lg border border-zinc-700 bg-zinc-950 text-white px-3 outline-none focus:border-blue-500 cursor-pointer font-mono text-sm"
                 >
                   {ATR_SMOOTHING_OPTIONS.map((o) => (
-                    <option key={o} value={o}>
+                    <option key={o} value={o} className="bg-zinc-900 text-white">
                       {o}
                     </option>
                   ))}
@@ -654,18 +654,18 @@ function AtrSettingsDialog({
           ) : (
             <>
               <div className="flex items-center justify-between">
-                <label className="flex cursor-pointer items-center gap-2">
+                <label className="flex cursor-pointer items-center gap-2 text-zinc-200 font-medium">
                   <input
                     type="checkbox"
                     checked={settings.visible}
                     onChange={(e) => patch({ visible: e.target.checked })}
-                    className="h-4 w-4 accent-[#2962ff]"
+                    className="h-4 w-4 rounded border-zinc-700 bg-zinc-950 accent-blue-600"
                   />
-                  ATR
+                  ATR Line
                 </label>
                 <div className="flex items-center gap-2">
                   <label
-                    className="relative h-[30px] w-[30px] cursor-pointer overflow-hidden rounded border border-[#d1d4dc]"
+                    className="relative h-[30px] w-[30px] cursor-pointer overflow-hidden rounded-md border border-zinc-700 shadow-sm"
                     title="Colour"
                     style={{ backgroundColor: settings.color }}
                   >
@@ -679,35 +679,35 @@ function AtrSettingsDialog({
                   <select
                     value={settings.lineWidth}
                     onChange={(e) => patch({ lineWidth: Number(e.target.value) as AtrSettings['lineWidth'] })}
-                    className="h-[30px] rounded border border-[#d1d4dc] bg-white px-1 text-[13px] outline-none focus:border-[#2962ff]"
+                    className="h-[30px] rounded-md border border-zinc-700 bg-zinc-950 text-white px-2 text-[12px] outline-none focus:border-blue-500 cursor-pointer font-mono"
                     title="Line thickness"
                   >
                     {[1, 2, 3, 4].map((w) => (
-                      <option key={w} value={w}>
+                      <option key={w} value={w} className="bg-zinc-900 text-white">
                         {w}px
                       </option>
                     ))}
                   </select>
                 </div>
               </div>
-              <div className="border-t border-[#e0e3eb] pt-4 text-[11px] font-semibold uppercase tracking-wide text-[#787b86]">
+              <div className="border-t border-zinc-800 pt-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                 Outputs
               </div>
-              <label className="flex cursor-pointer items-center gap-2">
+              <label className="flex cursor-pointer items-center gap-2 text-zinc-300 text-xs">
                 <input
                   type="checkbox"
                   checked={settings.showLastValueLabel}
                   onChange={(e) => patch({ showLastValueLabel: e.target.checked })}
-                  className="h-4 w-4 accent-[#2962ff]"
+                  className="h-4 w-4 rounded border-zinc-700 bg-zinc-950 accent-blue-600"
                 />
                 Labels on price scale
               </label>
-              <label className="flex cursor-pointer items-center gap-2">
+              <label className="flex cursor-pointer items-center gap-2 text-zinc-300 text-xs">
                 <input
                   type="checkbox"
                   checked={settings.showPriceLine}
                   onChange={(e) => patch({ showPriceLine: e.target.checked })}
-                  className="h-4 w-4 accent-[#2962ff]"
+                  className="h-4 w-4 rounded border-zinc-700 bg-zinc-950 accent-blue-600"
                 />
                 Price line
               </label>
@@ -715,17 +715,17 @@ function AtrSettingsDialog({
           )}
         </div>
 
-        <div className="flex items-center justify-between border-t border-[#e0e3eb] px-5 py-3">
+        <div className="flex items-center justify-between border-t border-zinc-800 px-5 py-3 bg-zinc-950/50">
           <div className="relative">
             <button
               type="button"
               onClick={() => setDefaultsOpen((o) => !o)}
-              className="flex h-[34px] items-center gap-1 rounded border border-[#d1d4dc] px-3 text-[14px] hover:bg-[#f0f3fa]"
+              className="flex h-[32px] items-center gap-1 rounded-lg border border-zinc-700 bg-zinc-800/60 px-3 text-[12px] font-medium text-zinc-300 hover:bg-zinc-800 hover:text-white transition"
             >
               Defaults <span className="text-[10px]">▾</span>
             </button>
             {defaultsOpen && (
-              <div className="absolute bottom-[38px] left-0 w-[160px] rounded border border-[#e0e3eb] bg-white py-1 text-[14px] shadow-lg">
+              <div className="absolute bottom-[38px] left-0 w-[160px] rounded-lg border border-zinc-800 bg-zinc-900 py-1 text-[13px] shadow-xl z-10 text-zinc-200">
                 <button
                   type="button"
                   onClick={() => {
@@ -733,7 +733,7 @@ function AtrSettingsDialog({
                     setLengthDraft(String(DEFAULT_ATR_SETTINGS.length))
                     setDefaultsOpen(false)
                   }}
-                  className="block w-full px-3 py-1.5 text-left hover:bg-[#f0f3fa]"
+                  className="block w-full px-3 py-1.5 text-left hover:bg-zinc-800 text-zinc-300 hover:text-white transition"
                 >
                   Reset settings
                 </button>
@@ -744,14 +744,14 @@ function AtrSettingsDialog({
             <button
               type="button"
               onClick={cancel}
-              className="h-[34px] rounded border border-[#d1d4dc] px-4 text-[14px] hover:bg-[#f0f3fa]"
+              className="h-[32px] rounded-lg border border-zinc-700 px-4 text-[12px] font-medium text-zinc-300 hover:bg-zinc-800 hover:text-white transition"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="h-[34px] rounded bg-[#131722] px-5 text-[14px] font-medium text-white hover:bg-[#2a2e39]"
+              className="h-[32px] rounded-lg bg-blue-600 px-5 text-[12px] font-semibold text-white hover:bg-blue-500 transition shadow-sm"
             >
               Ok
             </button>
@@ -788,7 +788,7 @@ function LegendButton({
         e.stopPropagation()
         onClick()
       }}
-      className="flex h-[22px] w-[22px] items-center justify-center rounded text-[#131722] hover:bg-[#f0f3fa]"
+      className="flex h-[22px] w-[22px] items-center justify-center rounded-md text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
     >
       {children}
     </button>
