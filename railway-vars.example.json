@@ -1,4 +1,8 @@
 {
+  "RAILWAY_TOKEN": "replace-with-day-trading-project-token",
+  "RAILWAY_PROJECT_ID": "673bbfd3-ad02-4293-a6b6-7910d11d102d",
+  "RAILWAY_SERVICE": "Trading",
+  "RAILWAY_ENVIRONMENT": "production",
   "NODE_ENV": "production",
   "LOG_LEVEL": "info",
   "DESK_MODE": "single",
