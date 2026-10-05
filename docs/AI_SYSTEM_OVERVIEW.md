@@ -11,7 +11,7 @@
 |----------|-------------|
 | Chart Leo AI (+ Situations / Notes) | [`docs/AI_PROMPTS_CHART_LEO.md`](./AI_PROMPTS_CHART_LEO.md) |
 | Fundamentals (5 market agents) | [`docs/AI_PROMPTS_FUNDAMENTALS.md`](./AI_PROMPTS_FUNDAMENTALS.md) |
-| Desk News / Leo Macro News AI | [`docs/AI_PROMPTS_DESK_NEWS.md`](./AI_PROMPTS_DESK_NEWS.md) |
+| Desk News Agent | [`docs/AI_PROMPTS_DESK_NEWS.md`](./AI_PROMPTS_DESK_NEWS.md) |
 | Target architecture (bus, desk brief, what stays) | [`docs/AI_ARCHITECTURE_TARGET.md`](./AI_ARCHITECTURE_TARGET.md) |
 
 ---
@@ -24,7 +24,7 @@ TradePulse does **not** run one unified multi-agent brain. It runs **three AI pr
 |-------|------------|-------------------------|
 | **Chart Leo AI + Situations + Notes** | One execution / desk copilot with two rule ledgers | **Yes — one system** |
 | **Fundamentals** | Five specialist macro agents (Oil, Gold, NQ, Dow, Nikkei) | **No — parallel stack** |
-| **Desk News + News AI (“Leo Macro”)** | News wire + separate macro chat | **No — mostly isolated** |
+| **Desk News Agent** | News wire + event-desk chat | **No — mostly isolated** |
 
 What they share today:
 
@@ -66,7 +66,7 @@ What they do **not** share:
 ┌──────────────────────────────────────────────────────────────────────────┐
 │  STACK C — Desk News + News AI                                           │
 │                                                                          │
-│   /dashboard/news  →  cards/hazards + “Leo Macro & News AI” chat         │
+│   /dashboard/news  →  cards/hazards + Desk News Agent (event desk)      │
 │   APIs: GET /api/trading/desk-news , POST /api/trading/news-ai           │
 │   Core: lib/trading/deskNews.ts , deskNewsHazard.ts , newsCatalystVwap   │
 │                                                                          │
@@ -297,15 +297,15 @@ Same desks, different codes — another sign these stacks were built in parallel
 
 Builds tagged headline cards + high-impact calendar hazards from Finnhub (and fallbacks). Soft-fails to empty/fallback calendars when providers are down.
 
-### 5.2 News AI (“Leo Macro & News AI”)
+### 5.2 Desk News Agent
 
 | Piece | Location |
 |-------|----------|
 | UI | `DeskNewsAiAssistant.tsx` on the news page |
 | API | `POST /api/trading/news-ai` |
-| Prompt | Separate macro/news persona in the news-ai route |
+| Prompt | `lib/trading/deskNewsPrompt.ts` — event identification, verification, and specialist routing |
 
-This is a **third chat agent**. It reuses the “Leo” brand and the same stream helpers, but it does **not** call `/api/trading/leo/chat`, does not read Situations/Notes storage, and does not load Fundamentals state.
+This is a **third chat agent**. It answers what happened and which specialist should own the event. It does not create technical levels or a standing market regime. It does **not** call `/api/trading/leo/chat`, does not read Situations/Notes storage, and does not write Fundamentals state.
 
 ### 5.3 The only real bridge into Chart Leo
 
@@ -336,7 +336,7 @@ Chart Leo AI  ←→  Situations  ←→  Notes
 |-----------------------|-------------|
 | Fundamentals agents brief Leo before trades | Formatters exist; **Leo never loads them** |
 | Desk News feeds Leo and Fundamentals | Only calendar → News AVWAP reaches Leo; Fundamentals isolated |
-| “Leo Macro” on News is Chart Leo | **Separate** prompt + route |
+| Desk News Agent is Chart Leo | **Separate** prompt + route. News identifies the event; Chart Leo reads price location |
 | One market ID scheme everywhere | `DOW` vs `YM`, `CRUDE` vs `CL`, etc. |
 | Shared long-term AI memory | Leo = browser localStorage; Fundamentals = RAM; News = none |
 
@@ -345,7 +345,7 @@ Chart Leo AI  ←→  Situations  ←→  Notes
 | Name | Actual meaning |
 |------|----------------|
 | Chart **Leo AI** | Stack A execution copilot |
-| News **“Leo Macro”** | Stack C news chat (different agent) |
+| **Desk News Agent** | Stack C event desk (different agent from Chart Leo) |
 | Dalton `deskSituation` / CALL | Desk advisory math — **not** Leo Situations |
 | `deskSessionNotes` | Telegram session copy — **not** Notes dashboard |
 
@@ -433,6 +433,6 @@ Chart Leo AI  ←→  Situations  ←→  Notes
 1. **Chart Leo AI** is the desk execution copilot on the chart.  
 2. **Situations** and **Notes** are ledgers of rules that **same Leo** arms and evaluates — not separate AIs.  
 3. **Fundamentals** is five specialist macro agents with their own UIs, prompts, and in-memory state — intended to brief the desk, but **not wired into Leo**.  
-4. **Desk News** is a news/calendar product; its chat is a separate “Leo Macro” agent. The only automatic bridge into Chart Leo is **News AVWAP from high-impact calendar events**.  
+4. **Desk News** is a news/calendar product. Its chat is the Desk News Agent (what happened, and which specialist to route to). The only automatic bridge into Chart Leo is **News AVWAP from high-impact calendar events**.  
 5. Shared LLM streaming makes the products *feel* unified; the runtime architecture is still **three stacks**, with Stack A (Leo + Situations + Notes) being the only truly integrated AI subsystem.
 `)
