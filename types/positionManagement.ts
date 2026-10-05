@@ -53,7 +53,7 @@ export interface PositionStatusResponse {
   message: string
 }
 
-/** Unfilled working limit — visible on Live Positions + chart until fill or cancel. */
+/** Unfilled working limit — visible on the chart until fill or cancel. */
 export interface WorkingLimitStatus {
   id: string
   instrument: Instrument
