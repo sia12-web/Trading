@@ -504,7 +504,7 @@ function JournalPageInner() {
                 <span>·</span>
                 <span>Capital: $2,000.00</span>
                 <span>·</span>
-                <span>Markets: NASDAQ · DOW · GOLD · CRUDE</span>
+                <span>Markets: NASDAQ · DOW · GOLD · CRUDE · NIKKEI</span>
               </div>
               <div className="text-gray-400 text-[11px]">
                 Status: <span className="text-emerald-300 font-semibold">Ready for live order updates</span>
