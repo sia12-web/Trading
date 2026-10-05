@@ -17,9 +17,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const supabase = createAdminClient() ?? (await createClient())
-  const book = await loadQuestradeBook(supabase)
-  if (!book.ok) {
-    return NextResponse.json(book, { status: 200 })
+  try {
+    const book = await loadQuestradeBook(supabase)
+    return NextResponse.json(book)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Questrade read failed'
+    return NextResponse.json({ ok: false, error: message })
   }
-  return NextResponse.json(book)
 }

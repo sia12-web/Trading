@@ -4,6 +4,7 @@
  * Never places or cancels.
  */
 
+import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   parseQuestradeAccountSize,
@@ -11,6 +12,75 @@ import {
   questradeLoginRefresh,
   type QuestradeAccountSnapshot,
 } from '@/lib/trading/questradeReadOnly'
+
+const REFRESH_BACKOFF_MS = 10 * 60 * 1000
+
+type RefreshOutcome =
+  | { ok: true; accessToken: string; apiServer: string }
+  | { ok: false; error: string }
+
+let refreshFailure: { hash: string; until: number; error: string } | null = null
+let refreshInflight: { hash: string; promise: Promise<RefreshOutcome> } | null = null
+
+function tokenHash(refresh: string): string {
+  return createHash('sha256').update(refresh).digest('hex')
+}
+
+function usableRefresh(value: string | null | undefined): string {
+  const token = String(value || '').trim()
+  if (!token || token === 'watcher') return ''
+  return token
+}
+
+/** Refresh once and write the rotated refresh token back to the watcher row. */
+async function refreshAndPersist(refresh: string): Promise<RefreshOutcome> {
+  const hash = tokenHash(refresh)
+  if (refreshFailure && refreshFailure.hash === hash && refreshFailure.until > Date.now()) {
+    return { ok: false, error: refreshFailure.error }
+  }
+  if (refreshInflight?.hash === hash) return refreshInflight.promise
+
+  const promise = (async (): Promise<RefreshOutcome> => {
+    try {
+      const next = await questradeLoginRefresh(refresh)
+      const { persistWatcherSession } = await import('@/lib/trading/questradeWatcherSync')
+      let saved = await persistWatcherSession({
+        accessToken: next.access_token,
+        refreshToken: next.refresh_token,
+        apiServer: next.api_server,
+        expiresInSec: next.expires_in || 1800,
+      })
+      if (!saved) {
+        saved = await persistWatcherSession({
+          accessToken: next.access_token,
+          refreshToken: next.refresh_token,
+          apiServer: next.api_server,
+          expiresInSec: next.expires_in || 1800,
+        })
+      }
+      if (!saved) {
+        console.error('Questrade refresh token rotated but the watcher row was not saved')
+      }
+      refreshFailure = null
+      return {
+        ok: true,
+        accessToken: next.access_token,
+        apiServer: next.api_server.replace(/\/$/, ''),
+      }
+    } catch (err) {
+      const error = err instanceof Error ? err.message : 'Questrade login failed'
+      refreshFailure = { hash, until: Date.now() + REFRESH_BACKOFF_MS, error }
+      return { ok: false, error }
+    }
+  })()
+
+  refreshInflight = { hash, promise }
+  try {
+    return await promise
+  } finally {
+    if (refreshInflight?.promise === promise) refreshInflight = null
+  }
+}
 
 type StoredSession = {
   refresh_token: string
@@ -66,27 +136,39 @@ export async function getQuestradeApiCreds(
     return { ok: false, error: 'QUESTRADE_ACCOUNT_NUMBER is not set' }
   }
 
-  // 1. If watcher database is configured, load live token directly
+  // Watcher Postgres owns the live session. Refresh only when that access token
+  // is missing or expired, and persist the rotated refresh token immediately.
   if (process.env.QUESTRADE_WATCHER_DATABASE_URL?.trim()) {
     try {
-      const { fetchLiveWatcherSession, syncQuestradeSessionFromWatcher } = await import(
+      const { fetchWatcherAuthRow, syncQuestradeSessionFromWatcher } = await import(
         '@/lib/trading/questradeWatcherSync'
       )
-      const watcherSession = await fetchLiveWatcherSession()
-      if (watcherSession) {
-        if (watcherSession.tokenExpiryMs - Date.now() > 30_000) {
-          // Fire background sync to Supabase (best-effort, non-blocking)
-          void syncQuestradeSessionFromWatcher(supabase).catch(() => {})
-          return {
-            ok: true,
-            account,
-            accessToken: watcherSession.accessToken,
-            apiServer: watcherSession.apiServer,
-          }
-        }
+      const watcherSession = await fetchWatcherAuthRow()
+      if (
+        watcherSession?.accessToken &&
+        watcherSession.apiServer &&
+        watcherSession.tokenExpiryMs - Date.now() > 30_000
+      ) {
+        void syncQuestradeSessionFromWatcher(supabase).catch(() => {})
         return {
-          ok: false,
-          error: `Questrade token in watcher database is expired. Watcher is rotating.`,
+          ok: true,
+          account,
+          accessToken: watcherSession.accessToken,
+          apiServer: watcherSession.apiServer,
+        }
+      }
+      const refresh =
+        usableRefresh(watcherSession?.refreshToken) ||
+        usableRefresh(process.env.QUESTRADE_INITIAL_REFRESH_TOKEN)
+      if (refresh) {
+        const next = await refreshAndPersist(refresh)
+        if (!next.ok) return { ok: false, error: next.error }
+        void syncQuestradeSessionFromWatcher(supabase).catch(() => {})
+        return {
+          ok: true,
+          account,
+          accessToken: next.accessToken,
+          apiServer: next.apiServer,
         }
       }
     } catch {
@@ -134,6 +216,35 @@ export async function getQuestradeApiCreds(
   }
 
   return { ok: true, account, accessToken: access, apiServer }
+}
+
+/** Used when a stored access token is rejected. Does not reuse that access token. */
+export async function refreshStoredQuestradeSession(
+  supabase: SupabaseClient
+): Promise<
+  | { ok: true; account: string; accessToken: string; apiServer: string }
+  | { ok: false; error: string }
+> {
+  const account = process.env.QUESTRADE_ACCOUNT_NUMBER?.trim()
+  if (!account) return { ok: false, error: 'QUESTRADE_ACCOUNT_NUMBER is not set' }
+  let refresh = usableRefresh(process.env.QUESTRADE_INITIAL_REFRESH_TOKEN)
+  if (process.env.QUESTRADE_WATCHER_DATABASE_URL?.trim()) {
+    try {
+      const { fetchWatcherAuthRow } = await import('@/lib/trading/questradeWatcherSync')
+      const row = await fetchWatcherAuthRow({ fresh: true })
+      refresh = usableRefresh(row?.refreshToken) || refresh
+    } catch {
+      /* use env token */
+    }
+  }
+  if (!refresh) {
+    return { ok: false, error: 'Questrade refresh token missing' }
+  }
+  const next = await refreshAndPersist(refresh)
+  if (!next.ok) return next
+  const { syncQuestradeSessionFromWatcher } = await import('@/lib/trading/questradeWatcherSync')
+  void syncQuestradeSessionFromWatcher(supabase).catch(() => {})
+  return { ok: true, account, accessToken: next.accessToken, apiServer: next.apiServer }
 }
 
 export async function loadQuestradeAccountSnapshot(

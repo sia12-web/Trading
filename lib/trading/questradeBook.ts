@@ -10,7 +10,11 @@ import { resolveTradeifyPlace } from '@/lib/trading/tradeifyGrowth50k'
 import { buildTeamCopyAdvice } from '@/lib/trading/teamTape'
 import { tradeifyAccountName } from '@/lib/trading/tradeifyEnv'
 import { questradeGet, type QuestradeAccountSnapshot } from '@/lib/trading/questradeReadOnly'
-import { getQuestradeApiCreds, loadQuestradeAccountSnapshot } from '@/lib/trading/questradeSession'
+import {
+  getQuestradeApiCreds,
+  loadQuestradeAccountSnapshot,
+  refreshStoredQuestradeSession,
+} from '@/lib/trading/questradeSession'
 import {
   pairQuestradeBook,
   type QuestradeBookRow,
@@ -68,11 +72,30 @@ async function recordEquityPoint(
 
 export async function loadQuestradeBook(
   supabase: SupabaseClient,
-  now = new Date()
+  now = new Date(),
+  allowAuthRetry = true
 ): Promise<QuestradeBookPayload | { ok: false; error: string }> {
   const creds = await getQuestradeApiCreds(supabase)
   if (!creds.ok) return creds
 
+  try {
+    return await assembleQuestradeBook(supabase, creds, now)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Questrade read failed'
+    if (allowAuthRetry && /failed \(401\)/.test(msg)) {
+      const refreshed = await refreshStoredQuestradeSession(supabase)
+      if (refreshed.ok) return loadQuestradeBook(supabase, now, false)
+      return refreshed
+    }
+    return { ok: false, error: msg }
+  }
+}
+
+async function assembleQuestradeBook(
+  supabase: SupabaseClient,
+  creds: { account: string; accessToken: string; apiServer: string },
+  now: Date
+): Promise<QuestradeBookPayload> {
   const startTime = ordersStartIso()
   const deskId = process.env.DESK_USER_ID?.trim() || DEV_USER_ID
   const [account, ordersRes, positionsRes, snap, attendance, dow, nasdaq] =
