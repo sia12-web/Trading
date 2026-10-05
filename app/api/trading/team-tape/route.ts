@@ -171,7 +171,7 @@ export async function GET(request: Request) {
       }
     }
 
-    // Merge history
+    // Merge closed round-trips (realized exit + P&L only — never invent from TP)
     for (const h of questradeBook.history) {
       if (!open.some((o) => o.symbol === h.symbol && o.sourceId === h.sourceId)) {
         const stop = h.stop
@@ -188,11 +188,14 @@ export async function GET(request: Request) {
           entry: h.entry,
           stop,
           target,
-          status: h.status,
+          status: h.status === 'closed' ? 'closed' : h.status,
           filledAt: h.filledAt,
+          exitAt: h.exitAt ?? null,
           mark: h.mark,
           livePnl: h.livePnl,
           multiplier: h.multiplier,
+          exit: h.exit ?? null,
+          pnl: typeof h.pnl === 'number' ? h.pnl : null,
         })
       }
     }
@@ -219,8 +222,10 @@ export async function GET(request: Request) {
     }
   }
 
-  // 3. Fallback to default team positions and history if no live broker or database signals exist
-  if (open.length === 0) {
+  // 3. Sample defaults ONLY when live Questrade is unavailable AND DB has nothing.
+  // Never mask a connected flat book with fake NVDA/TSLA trades.
+  const brokerLive = questradeBook.ok
+  if (!brokerLive && open.length === 0) {
     for (const p of DEFAULT_TEAM_POSITIONS) {
       open.push({
         sourceId: p.sourceId,
@@ -259,7 +264,7 @@ export async function GET(request: Request) {
     }
   }
 
-  if (history.length === 0) {
+  if (!brokerLive && history.length === 0) {
     for (const t of DEFAULT_TEAM_TRADES) {
       history.push({
         sourceId: t.id,
@@ -272,7 +277,8 @@ export async function GET(request: Request) {
         stop: t.stop ?? null,
         target: t.target ?? null,
         status: 'closed',
-        filledAt: t.exitTime || t.entryTime,
+        filledAt: t.entryTime,
+        exitAt: t.exitTime || null,
         pnl: t.pnl ?? null,
         exit: t.exit ?? null,
       })

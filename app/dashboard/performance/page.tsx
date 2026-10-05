@@ -81,7 +81,8 @@ export default function PerformancePage() {
           }
         }
 
-        // Fetch Team Tape trades
+        // Team Tape: closed round-trips with realized P&L + open positions with live mark P&L.
+        // Never invent closed-trade P&L from take-profit targets.
         const tRes = await fetch('/api/trading/team-tape', { cache: 'no-store' })
         if (tRes.ok) {
           const tData = await tRes.json()
@@ -89,64 +90,80 @@ export default function PerformancePage() {
             ? tData.open.filter((s: any) => s.status === 'filled')
             : []
           const historyTrades = Array.isArray(tData.history)
-            ? tData.history.filter((s: any) => s.status !== 'cancelled')
+            ? tData.history.filter(
+                (s: any) =>
+                  s.status !== 'cancelled' &&
+                  (s.status === 'closed' || (typeof s.pnl === 'number' && s.exit != null))
+              )
             : []
 
-          const combined = [
-            ...openPositions.map((s: any) => ({ ...s, _isOpen: true })),
-            ...historyTrades.map((s: any) => ({ ...s, _isOpen: false })),
-          ]
+          const mappedTeam: TradeRecord[] = []
 
-          if (combined.length > 0) {
-            const mappedTeam: TradeRecord[] = combined.map((s: any) => {
-              const sym = String(s.symbol || 'NVDA')
-              const mult =
-                typeof s.multiplier === 'number' && s.multiplier > 0
-                  ? s.multiplier
-                  : getSymbolMultiplier(sym)
-              const qty = Number(s.quantity || 1)
-              const isBuy = s.side === 'BUY' || s.side === 'LONG'
-
-              let calcPnl = 0
-              if (s._isOpen) {
-                // For active ongoing positions, prioritize livePnl or mark calculation
-                if (typeof s.livePnl === 'number') {
-                  calcPnl = s.livePnl
-                } else if (s.mark != null && s.entry != null) {
-                  calcPnl = (isBuy ? s.mark - s.entry : s.entry - s.mark) * qty * mult
-                } else if (typeof s.pnl === 'number') {
-                  calcPnl = s.pnl
-                }
-              } else {
-                // For closed historical trades
-                if (typeof s.pnl === 'number') {
-                  calcPnl = s.pnl
-                } else if (s.exit != null && s.entry != null) {
-                  calcPnl = (isBuy ? s.exit - s.entry : s.entry - s.exit) * qty * mult
-                } else if (typeof s.livePnl === 'number') {
-                  calcPnl = s.livePnl
-                } else if (s.target != null && s.entry != null) {
-                  calcPnl = (isBuy ? s.target - s.entry : s.entry - s.target) * qty * mult
-                }
-              }
-
-              return {
-                id: String(s.sourceId || s.id || Math.random()),
-                symbol: sym,
-                direction: (s.side === 'SELL' || s.side === 'SHORT' ? 'SELL' : 'BUY') as 'BUY' | 'SELL',
-                entry: Number(s.entry || 0),
-                exit: s._isOpen ? null : (s.exit ?? s.target ?? null),
-                stop: s.stop || null,
-                target: s.target || null,
-                pnl: Math.round(calcPnl * 100) / 100,
-                quantity: qty,
-                status: s._isOpen ? 'open' : 'closed',
-                entryTime: s.filledAt || new Date().toISOString(),
-                exitTime: s._isOpen ? null : (s.filledAt || null),
-                exchange: getExchangeTag(sym),
-              }
+          for (const s of openPositions) {
+            const sym = String(s.symbol || '')
+            const mult =
+              typeof s.multiplier === 'number' && s.multiplier > 0
+                ? s.multiplier
+                : getSymbolMultiplier(sym)
+            const qty = Number(s.quantity || 1)
+            const isBuy = s.side === 'BUY' || s.side === 'LONG'
+            let calcPnl: number | null = null
+            if (typeof s.livePnl === 'number' && Number.isFinite(s.livePnl)) {
+              calcPnl = s.livePnl
+            } else if (s.mark != null && s.entry != null) {
+              calcPnl = (isBuy ? s.mark - s.entry : s.entry - s.mark) * qty * mult
+            }
+            mappedTeam.push({
+              id: String(s.sourceId || s.id || Math.random()),
+              symbol: sym,
+              direction: (s.side === 'SELL' || s.side === 'SHORT' ? 'SELL' : 'BUY') as 'BUY' | 'SELL',
+              entry: Number(s.entry || 0),
+              exit: null,
+              stop: s.stop || null,
+              target: s.target || null,
+              pnl: calcPnl != null ? Math.round(calcPnl * 100) / 100 : null,
+              quantity: qty,
+              status: 'open',
+              entryTime: s.filledAt || new Date().toISOString(),
+              exitTime: null,
+              exchange: getExchangeTag(sym),
             })
-            if (!cancelled) setTeamTrades(mappedTeam)
+          }
+
+          for (const s of historyTrades) {
+            const sym = String(s.symbol || '')
+            const mult =
+              typeof s.multiplier === 'number' && s.multiplier > 0
+                ? s.multiplier
+                : getSymbolMultiplier(sym)
+            const qty = Number(s.quantity || 1)
+            const isBuy = s.side === 'BUY' || s.side === 'LONG'
+            let calcPnl: number | null = null
+            if (typeof s.pnl === 'number' && Number.isFinite(s.pnl)) {
+              calcPnl = s.pnl
+            } else if (s.exit != null && s.entry != null) {
+              calcPnl = (isBuy ? s.exit - s.entry : s.entry - s.exit) * qty * mult
+            }
+            if (calcPnl == null) continue
+            mappedTeam.push({
+              id: String(s.sourceId || s.id || Math.random()),
+              symbol: sym,
+              direction: (s.side === 'SELL' || s.side === 'SHORT' ? 'SELL' : 'BUY') as 'BUY' | 'SELL',
+              entry: Number(s.entry || 0),
+              exit: s.exit ?? null,
+              stop: s.stop || null,
+              target: s.target || null,
+              pnl: Math.round(calcPnl * 100) / 100,
+              quantity: qty,
+              status: 'closed',
+              entryTime: s.filledAt || new Date().toISOString(),
+              exitTime: s.exitAt || s.filledAt || null,
+              exchange: getExchangeTag(sym),
+            })
+          }
+
+          if (!cancelled && (mappedTeam.length > 0 || tData.questrade?.ok)) {
+            setTeamTrades(mappedTeam)
           }
         }
       } catch (err) {
@@ -161,7 +178,14 @@ export default function PerformancePage() {
   }, [])
 
   const activeTrades = isCmc ? cmcTrades : teamTrades
-  const metrics = useMemo(() => calculatePerformanceMetrics(activeTrades), [activeTrades])
+  // KPIs from closed / realized outcomes only — open mark-to-market stays in the ledger
+  const metrics = useMemo(
+    () =>
+      calculatePerformanceMetrics(
+        activeTrades.filter((t) => t.status === 'closed' && typeof t.pnl === 'number')
+      ),
+    [activeTrades]
+  )
 
   const handleCopyLink = () => {
     try {

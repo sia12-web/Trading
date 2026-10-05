@@ -33,8 +33,12 @@ export type TeamTapeSignal = {
   mark?: number | null
   livePnl?: number | null
   multiplier?: number
+  /** Realized P&L only — never a projected take-profit. */
   pnl?: number | null
+  /** Realized exit price for closed trades. */
   exit?: number | null
+  /** Exit fill timestamp for closed trades. */
+  exitAt?: string | null
 }
 
 export type TeamCopyAdvice = {

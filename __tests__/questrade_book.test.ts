@@ -5,6 +5,7 @@
 
 import assert from 'node:assert/strict'
 import {
+  buildClosedTradeHistory,
   pairQuestradeBook,
   parseQuestradeSymbol,
   suggestTradeifyIndex,
@@ -82,8 +83,7 @@ const book = pairQuestradeBook({
 assert.equal(book.workingLimits.length, 1)
 const msft = book.workingLimits[0]
 const aapl = book.openPositions[0]
-const hist = book.history[0]
-assert.ok(msft && aapl && hist)
+assert.ok(msft && aapl)
 assert.equal(msft.symbol, 'MSFT')
 assert.equal(msft.kind, 'entry_limit')
 assert.equal(aapl.symbol, 'AAPL')
@@ -91,7 +91,84 @@ assert.equal(aapl.stop, 300)
 assert.equal(aapl.target, 320)
 assert.equal(aapl.livePnl, -0.78)
 assert.equal(aapl.mark, 305.93)
-assert.equal(hist.symbol, 'AAPL')
+// Open entry fills must NOT appear as closed history / fake wins
+assert.equal(book.history.length, 0)
+
+// Closed round-trip: entry + stop fill → realized LOSS (not projected TP win)
+const closedBook = pairQuestradeBook({
+  orders: [
+    {
+      id: 40,
+      symbol: 'NVDA',
+      side: 'Buy',
+      orderType: 'Limit',
+      state: 'Executed',
+      totalQuantity: 10,
+      avgExecPrice: 100,
+      updateTime: '2026-09-01T14:00:00Z',
+    },
+    {
+      id: 41,
+      symbol: 'NVDA',
+      side: 'Sell',
+      orderType: 'Stop',
+      state: 'Executed',
+      totalQuantity: 10,
+      avgExecPrice: 95,
+      stopPrice: 95,
+      parentId: 40,
+      updateTime: '2026-09-01T15:00:00Z',
+    },
+    {
+      id: 42,
+      symbol: 'NVDA',
+      side: 'Sell',
+      orderType: 'Limit',
+      state: 'Cancelled',
+      totalQuantity: 10,
+      limitPrice: 110,
+      parentId: 40,
+      updateTime: '2026-09-01T15:00:00Z',
+    },
+  ],
+  positions: [],
+})
+assert.equal(closedBook.openPositions.length, 0)
+assert.equal(closedBook.history.length, 1)
+const nvdaClose = closedBook.history[0]!
+assert.equal(nvdaClose.symbol, 'NVDA')
+assert.equal(nvdaClose.status, 'closed')
+assert.equal(nvdaClose.entry, 100)
+assert.equal(nvdaClose.exit, 95)
+assert.equal(nvdaClose.pnl, -50)
+assert.equal(nvdaClose.quantity, 10)
+assert.equal(nvdaClose.side, 'BUY')
+
+const fifoClosed = buildClosedTradeHistory([
+  {
+    id: 50,
+    symbol: 'TSLA',
+    side: 'Buy',
+    orderType: 'Limit',
+    state: 'Executed',
+    totalQuantity: 2,
+    avgExecPrice: 200,
+    updateTime: '2026-09-02T14:00:00Z',
+  },
+  {
+    id: 51,
+    symbol: 'TSLA',
+    side: 'Sell',
+    orderType: 'Limit',
+    state: 'Executed',
+    totalQuantity: 2,
+    avgExecPrice: 220,
+    updateTime: '2026-09-02T16:00:00Z',
+  },
+])
+assert.equal(fifoClosed.length, 1)
+assert.equal(fifoClosed[0]!.pnl, 40)
+assert.equal(fifoClosed[0]!.exit, 220)
 
 const optionBook = pairQuestradeBook({
   orders: [
@@ -347,14 +424,27 @@ const flattened = pairQuestradeBook({
       parentId: 50,
       updateTime: '2026-08-15T15:40:00Z',
     },
+    // Manual flatten exit — required for realized closed history
+    {
+      id: 53,
+      symbol: 'AMD',
+      side: 'Sell',
+      orderType: 'Market',
+      state: 'Executed',
+      totalQuantity: 10,
+      avgExecPrice: 158,
+      updateTime: '2026-08-15T15:45:00Z',
+    },
   ],
 })
 const amd = flattened.history[0]
 assert.ok(amd)
+assert.equal(amd.status, 'closed')
+assert.equal(amd.entry, 160)
+assert.equal(amd.exit, 158)
+assert.equal(amd.pnl, -20)
 assert.equal(amd.stop, 154)
 assert.equal(amd.target, 172)
-assert.equal(amd.stopStatus, 'cancelled')
-assert.equal(amd.targetStatus, 'cancelled')
 assert.ok(flattened.levels.some((l) => l.kind === 'sl' && l.price === 154 && l.status === 'cancelled'))
 assert.ok(flattened.levels.some((l) => l.kind === 'tp' && l.price === 172 && l.status === 'cancelled'))
 
