@@ -93,7 +93,7 @@ Answer in prose. Describe what to watch. Do not give a trade instruction. Do not
 
 #### 4. Active Fundamental Bias
 - **Intraday Bias**: **${state.today.intraday_bias}** | **Short-Term**: **${state.today.short_term_bias}**
-- **Tokyo Session Focus**: 09:00-10:00 JST first-hour Initial Balance. Watch for absorption on large overnight US gap opens.`
+- **Tokyo Session Focus**: 09:00-10:00 JST cash open. Watch for absorption on large overnight US gap opens. Do not use Initial Balance.`
 
       return new Response(`data: ${JSON.stringify({ text: fallbackText })}\n\ndata: [DONE]\n\n`, {
         headers: {

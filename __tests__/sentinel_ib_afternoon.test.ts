@@ -214,8 +214,8 @@ test('Live gate: lunch-range unlock; prior probes still allow lunch after clocks
     attemptsUsed: 0,
     stopLossHitCount: 0,
   })
-  assert(unlocked.canPlaceEntry === true, 'lunch-range place when 0 fills')
-  assert(unlocked.rangeStrategy === 'ib', 'lunch_range strategy')
+  assert(unlocked.canPlaceEntry === false, 'afternoon does not open Initial Balance')
+  assert(unlocked.rangeStrategy == null, 'no IB strategy')
   assert(isAfternoonWatchWindow(etDate(2026, 7, 15, 14, 0), 'DOW'), 'still afternoon clock')
 
   const oneMorning = resolveSessionGate({
@@ -227,8 +227,8 @@ test('Live gate: lunch-range unlock; prior probes still allow lunch after clocks
     attemptsUsed: 1,
     stopLossHitCount: 0,
   })
-  assert(oneMorning.canPlaceEntry === true, '1 morning → lunch still open after clocks')
-  assert(oneMorning.rangeStrategy === 'ib', 'lunch after morning probe')
+  assert(oneMorning.canPlaceEntry === false, '1 morning does not open Initial Balance')
+  assert(oneMorning.rangeStrategy == null, 'no IB after morning probe')
 
   const afterIb = resolveSessionGate({
     now: etDate(2026, 7, 15, 14, 0),
@@ -242,8 +242,8 @@ test('Live gate: lunch-range unlock; prior probes still allow lunch after clocks
       instrument: 'DOW',
     }),
   })
-  assert(afterIb.canPlaceEntry === true, 'IB probe → lunch still open after clocks')
-  assert(afterIb.rangeStrategy === 'ib', 'lunch after IB probe')
+  assert(afterIb.canPlaceEntry === false, 'no further entries in the afternoon')
+  assert(afterIb.rangeStrategy == null, 'no IB strategy')
 })
 
 test('Sim gate: full-day ladder — lunch-range entries when morning+IB skipped', () => {
@@ -255,9 +255,8 @@ test('Sim gate: full-day ladder — lunch-range entries when morning+IB skipped'
     lunchAttempts: 0,
     stopHits: 0,
   })
-  assert(simPm.canPlaceEntry === true, 'sim lunch-range entries when skipped forward')
-  assert(simPm.phase === 'ENTRY', 'sim lunch-range ENTRY phase')
-  assert(simPm.rangeStrategy === 'ib', 'lunch_range unlocked')
+  assert(simPm.canPlaceEntry === false, 'sim does not open Initial Balance')
+  assert(simPm.rangeStrategy == null, 'no IB strategy')
 })
 
 test('Sim gate: morning probe still allows afternoon entries after clocks (Option B)', () => {
@@ -269,9 +268,8 @@ test('Sim gate: morning probe still allows afternoon entries after clocks (Optio
     lunchAttempts: 0,
     stopHits: 0,
   })
-  assert(simPm.canPlaceEntry === true, 'morning probe → lunch still open after clocks')
-  assert(simPm.phase === 'ENTRY', 'sim afternoon ENTRY')
-  assert(simPm.rangeStrategy === 'ib', 'lunch_range after morning probe')
+  assert(simPm.canPlaceEntry === false, 'morning probe does not open Initial Balance')
+  assert(simPm.rangeStrategy == null, 'no IB strategy after morning probe')
 })
 
 // ── Afternoon playbook merge (reaction + IB + AI) ────────────────────────────

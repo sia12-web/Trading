@@ -1606,10 +1606,8 @@ export function TradingChart({
   const [ibShaped, setIbShaped] = useState(false)
   /** Mirrored IB H/L for ±10 band effect deps (refs alone do not re-render). */
   const [ibLevels, setIbLevels] = useState<{ high: number; low: number } | null>(null)
-  /** IB H/L + BRK/REJ markers + ±10 bands — remembered across refresh. */
-  const [showIbBreakouts] = useState(() =>
-    SYSTEMATIC_LIVE_DESK ? true : loadDeskOverlayToggles().ib
-  )
+  /** Initial Balance overlay is off. */
+  const showIbBreakouts = false
   /** Open range (first 15m) H/L + volume BRK/REJ */
   const or15SeriesRef = useRef<{
     high: ISeriesApi<'Line'>
@@ -1876,7 +1874,7 @@ export function TradingChart({
   const sessionExitKeyRef = useRef('')
   const [ibExtendBadge, setIbExtendBadge] = useState('—')
   const [, setIbExtendHover] = useState(
-    'IB extend vs revert — advice only after IB locks. First tag is not the entry.'
+    'Range advice only. First tag is not the entry.'
   )
   const ibExtendRef = useRef<IbExtendAdvice | null>(null)
   const ibLiqLinesRef = useRef<IPriceLine[]>([])
@@ -5294,8 +5292,8 @@ export function TradingChart({
       sessionName = 'NYC Cash Session (RTH)'
       sessionElapsedMinutes = Math.floor((nyDec - 9.5) * 60)
       if (nyDec < 10.5) {
-        sessionPhase = 'Initial Balance (IB)'
-        nextCheckpoint = `${Math.floor((10.5 - nyDec) * 60)}m to IB Close (10:30 ET)`
+        sessionPhase = 'Cash open'
+        nextCheckpoint = `${Math.floor((10.5 - nyDec) * 60)}m to 10:30 ET`
       } else if (nyDec < 12) {
         sessionPhase = 'Morning Trend / Extension'
         nextCheckpoint = `${Math.floor((12 - nyDec) * 60)}m to NY Lunch (12:00 ET)`
@@ -13025,37 +13023,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           low: r.low,
           atrLine: atrSnap ? formatRangeAtrAdviceLine(atrSnap) : null,
           nextHint:
-            'Optional morning probe (±10 H / L). If unused when IB locks → hand off to IB.',
+            'Optional morning probe (±10 H / L). OR30 is the next entry window.',
         })
         onDeskAlert({
           ...note,
           instrument,
           dedupeKey: deskNoteClaimKey('range_or30', instrument),
-        })
-      }
-    }
-    if (next.ib && !prev.ib) {
-      const r = ibRangeRef.current
-      if (r && claimDeskNoteOnce('range_ib', instrument)) {
-        const label = 'IB'
-        const atrSnap = buildRangeAtrSnapshot({
-          rangeLabel: label,
-          high: r.high,
-          low: r.low,
-          bars: candlesRef.current,
-        })
-        const note = formatRangeShapedNote({
-          instrument,
-          rangeLabel: label,
-          high: r.high,
-          low: r.low,
-          atrLine: atrSnap ? formatRangeAtrAdviceLine(atrSnap) : null,
-          nextHint: 'IB entry window is open (±10 of locked H / L).',
-        })
-        onDeskAlert({
-          ...note,
-          instrument,
-          dedupeKey: deskNoteClaimKey('range_ib', instrument),
         })
       }
     }

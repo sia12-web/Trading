@@ -119,8 +119,8 @@ const stillLunch = resolveSessionGate({
   attemptsUsed: 1,
   stopLossHitCount: 0,
 })
-assert(stillLunch.canPlaceEntry === true, '1 morning fill → lunch-range still open after clocks')
-assert(stillLunch.rangeStrategy === 'ib', 'lunch-range after morning probe')
+assert(stillLunch.canPlaceEntry === false, 'afternoon has no Initial Balance entries')
+assert(stillLunch.rangeStrategy == null, 'no IB range strategy after morning')
 
 // Morning + IB skipped → lunch-range open
 const lunchOpen = resolveSessionGate({
@@ -132,8 +132,8 @@ const lunchOpen = resolveSessionGate({
   attemptsUsed: 0,
   stopLossHitCount: 0,
 })
-assert(lunchOpen.canPlaceEntry === true, '0 fills → lunch-range open')
-assert(lunchOpen.rangeStrategy === 'ib', 'lunch_range when skipped')
+assert(lunchOpen.canPlaceEntry === false, '0 fills does not open an IB window')
+assert(lunchOpen.rangeStrategy == null, 'no IB range when morning was skipped')
 
 // IB probe → lunch still open after clocks (Option B)
 const afterIb = resolveSessionGate({
@@ -148,9 +148,9 @@ const afterIb = resolveSessionGate({
     instrument: 'DOW',
   }),
 })
-assert(afterIb.canPlaceEntry === true, 'IB probe → lunch still open after clocks')
-assert(afterIb.rangeStrategy === 'ib', 'lunch strategy after IB probe')
-assert(/IB playbook unlocked/i.test(afterIb.message), `after IB msg: ${afterIb.message}`)
+assert(afterIb.canPlaceEntry === false, 'no further entries after OR30')
+assert(afterIb.rangeStrategy == null, 'no IB strategy in the afternoon')
+assert(!/IB playbook unlocked/i.test(afterIb.message), `after OR30 msg: ${afterIb.message}`)
 
 // Never clocked in → afternoon chart locked until late clock-in (or cash close)
 for (const [inst, now] of [
@@ -206,7 +206,7 @@ const gateNikkeiBrowse = resolveSessionGate({
   stopLossHitCount: 0,
 })
 assert(gateNikkeiBrowse.market === 'NY', 'live NIKKEI tab snaps to NY')
-assert(!gateNikkeiBrowse.allowedInstruments.includes('NIKKEI'), 'no live NIKKEI')
+assert(gateNikkeiBrowse.allowedInstruments.includes('NIKKEI'), 'NIKKEI stays on the desk list')
 assert(/NY desk|Cash closed|9:15 Montreal/i.test(gateNikkeiBrowse.message), `NY copy: ${gateNikkeiBrowse.message}`)
 assert(!/Next Tokyo desk|clock in then to trade NIKKEI/i.test(gateNikkeiBrowse.message), 'no Tokyo next-desk')
 

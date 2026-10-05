@@ -64,9 +64,9 @@ describe('Leo Time, Session & Position Telemetry in System Prompt', () => {
       openingType: 'Open Auction',
       sessionDetails: {
         sessionName: 'NYC Cash Session (RTH)',
-        sessionPhase: 'Initial Balance (IB)',
+        sessionPhase: 'Cash open',
         sessionElapsedMinutes: 17,
-        timeToNextCheckpoint: '43m to IB Close (10:30 ET)',
+        timeToNextCheckpoint: '43m to 10:30 ET',
         candleTimeframe: '5m',
         barCountdown: '02:45 remaining on current 5m candle',
         calendarDate: 'Mon, Sep 7, 2026',
@@ -147,9 +147,11 @@ describe('Leo Time, Session & Position Telemetry in System Prompt', () => {
 
     // Assert session and time details present
     assert.match(prompt, /Active Session: NYC Cash Session \(RTH\)/)
-    assert.match(prompt, /Initial Balance \(IB\)/)
+    assert.match(prompt, /Phase: Cash open/)
+    assert.match(prompt, /Initial Balance is not a level/)
+    assert.doesNotMatch(prompt, /Phase: Initial Balance/)
     assert.match(prompt, /17 minutes into session/)
-    assert.match(prompt, /43m to IB Close/)
+    assert.match(prompt, /43m to 10:30 ET/)
     assert.match(prompt, /US Labor Day Holiday/)
 
     // Assert active position details present
