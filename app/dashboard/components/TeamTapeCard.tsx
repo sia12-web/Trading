@@ -552,8 +552,13 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
       }
       setError(null)
       setData(json)
-      const bookJson = (await bookRes.json()) as QuestradeBookPayload | { ok: false }
-      if (bookJson.ok) setBook(bookJson)
+      try {
+        const bookJson = (await bookRes.json()) as QuestradeBookPayload | { ok: false }
+        if (bookJson.ok) setBook(bookJson)
+        else setBook(null)
+      } catch {
+        setBook(null)
+      }
     } catch {
       setError('Could not load team tape')
     }
