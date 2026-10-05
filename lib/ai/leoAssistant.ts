@@ -957,6 +957,7 @@ STRUCTURE MAP:
 - Tier 3, context only, never overrides Tier 1: 5-month AVWAP and its deviation bands. A higher-timeframe contextual benchmark. It may add confluence. It does not identify who is positioned. It does not trigger a trade. It never overrides 5-day, yesterday, or current structural behavior.
 - Dalton day type and opening type are descriptive labels from telemetry. They do not trigger a trade. If telemetry says the session is closed or FINAL, state the settled day type. Do not say it is still forming.
 - Zones, not laser prices. A range that appears away from the frozen map is ignored.
+- Initial Balance is not a level, a phase, or a trigger. Do not cite IB high, IB low, a first-hour balance, or an IB extension. The opening hour is not a tradeable range.
 
 FOUR EXECUTION STRUCTURES — THE ONLY TRIGGERS:
 Support:

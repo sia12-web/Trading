@@ -51,7 +51,7 @@ assert(!ladderNoNow.lunchEligible, 'without now: lunchEligible false after morni
 const ladder = buildAttemptLadder(fills, 'NIKKEI', ibPrep)
 assert(ladder.dayAttempts === 2, '2 session fills')
 assert(ladder.ibEligible, 'US Range still eligible (1/2)')
-assert(ladder.lunchEligible, 'Tokyo IB still eligible (0/2)')
+assert(!ladder.lunchEligible, 'Initial Balance is not an entry window')
 assert(
   shouldRetainClockInAtLunch(ladder),
   'retain clock-in while session slots remain (2/3)'
@@ -72,12 +72,13 @@ const gate = resolveSimMorningGate({
   lunchAttempts: 0,
   stopHits: 0,
 })
-assert(gate.phase === 'ENTRY', `IB still open at 12:30 JST got ${gate.phase}`)
-assert(gate.canPlaceEntry === true, 'Tokyo IB entries still open on sim')
+assert(gate.canPlaceEntry === false, 'no Initial Balance entries at 12:30 JST')
+assert(gate.phase !== 'ENTRY', `no IB entry phase at 12:30 JST got ${gate.phase}`)
 assert(
   !gate.message?.toLowerCase().includes('clocked out'),
-  'message must not say clocked out while sim IB is open'
+  'message must not say clocked out'
 )
+assert(!/IB playbook/i.test(gate.message ?? ''), gate.message)
 
 // Session cap 3/3 on same desk day → auto clock-out allowed
 const capped = buildAttemptLadder(

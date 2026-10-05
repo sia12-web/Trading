@@ -35,7 +35,7 @@ TradePulse structures the trading day into four distinct market regimes based on
 - Key reference markers formed:
   - **15-Minute Opening Range (`OR15`)**: 09:30 - 09:45 EDT. High/Low established during maximum opening auction volume.
   - **30-Minute Opening Range (`OR30`)**: 09:30 - 10:00 EDT. Confirms morning trend continuation or mean-reversion absorption.
-  - **Excess Reference Range (Excess Selling High / Excess Buying Low)**: The sole canonical reference boundaries replacing legacy Initial Balance models (`excessLevelsFromCandles()` in `lib/trading/deskLevels.ts`). Identifies responsive seller entry at session highs and responsive buyer entry at session lows.
+  - **Excess Reference Range (Excess Selling High / Excess Buying Low)**: Session extreme boundaries (`excessLevelsFromCandles()` in `lib/trading/deskLevels.ts`). Identifies responsive seller entry at session highs and responsive buyer entry at session lows. Initial Balance is not used.
   - **Standardized Dalton Day Type (30-Min TPO Periods)**: Session day types (`TREND`, `NORMAL_VARIATION`, `NEUTRAL`, `NON_TREND`) are calculated by bucketing session price action into canonical 30-minute TPO periods starting from 09:30 AM cash open (`classifyMarketDayType` in `lib/chart/context55.ts`), ensuring identical classification across all chart timeframes (`1m`, `5m`, `30m`).
 
 ### 1.4 Afternoon Continuation Session (12:00 - 16:00 EDT)

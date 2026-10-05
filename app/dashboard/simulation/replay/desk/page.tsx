@@ -47,7 +47,6 @@ import { breakEvenShouldOffer } from '@/lib/trading/breakEvenStop'
 import {
   MAX_DAY_ATTEMPTS,
   MAX_IB_ATTEMPTS,
-  MAX_LUNCH_RANGE_ATTEMPTS,
   MAX_MORNING_ATTEMPTS,
   attemptLadderFromCounts,
   deskMarketFor,
@@ -193,9 +192,7 @@ import {
 } from '@/lib/trading/deskCallMode'
 const applyIbLiquiditySwingToRange = (r?: any, ..._args: any[]) => r
 const applyIbLiquiditySwingToRanges = (r?: any, ..._args: any[]) => r
-const computeIbExtendAdvice = (..._args: any[]): any => null
 const findIbLiquiditySwing = (..._args: any[]): any => null
-type IbExtendAdvice = any
 
 import { DeskCallModePrompt } from '@/app/dashboard/chart/components/DeskCallModePrompt'
 
@@ -603,9 +600,6 @@ function SimulationDeskInner() {
       } else if (key === 'p') {
         e.preventDefault()
         setPlaybookOpen((prev) => !prev)
-      } else if (key === 'b') {
-        e.preventDefault()
-        setShowIbBreakouts((prev) => !prev)
       } else if (key === 'y') {
         e.preventDefault()
         setShowYesterdayProfile((prev) => !prev)
@@ -696,10 +690,8 @@ function SimulationDeskInner() {
   const [, setOr15Shaped] = useState(false)
   const [, setOr15Locked] = useState(false)
   const [, setUsRangeShaped] = useState(false)
-  /** Script overlays — same toggles as live (B / N / U / R). */
-  const [showIbBreakouts, setShowIbBreakouts] = useState(
-    () => loadDeskOverlayToggles().ib
-  )
+  /** Initial Balance overlay is off. */
+  const showIbBreakouts = false
   const [showOr15, setShowOr15] = useState(() => loadDeskOverlayToggles().or15)
   const [showUsRange, setShowUsRange] = useState(() => loadDeskOverlayToggles().us)
   const [showOr30, setShowOr30] = useState(() => loadDeskOverlayToggles().or30)
@@ -730,11 +722,7 @@ function SimulationDeskInner() {
   const [callHover, setCallHover] = useState(
     'CALL WAIT — no ticket\n\nLeo and Level Finder advise only. No line.'
   )
-  const [ibExtendBadge, setIbExtendBadge] = useState('—')
-  const [ibExtendHover, setIbExtendHover] = useState(
-    'IB extend vs revert — advice only after IB locks. First tag is not the entry.'
-  )
-  const ibExtendRef = useRef<IbExtendAdvice | null>(null)
+  const ibExtendRef = useRef<{ swing?: unknown } | null>(null)
   const ibLiqLinesRef = useRef<IPriceLine[]>([])
   const [useCall, setUseCall] = useState<boolean | null>(() =>
     readSimCallMode(instrument, replayDate)
@@ -2154,20 +2142,7 @@ function SimulationDeskInner() {
         const hover = `${deskCallModeHoverPrefix(useCallRef.current)}${deskCallHoverText(deskCall)}`
         setCallHover((prev) => (prev === hover ? prev : hover))
 
-        const lastBar = bars.length ? bars[bars.length - 1] : null
-        const ibAdvice = computeIbExtendAdvice({
-          instrument,
-          ib: ibRangeRef.current,
-          candles: bars,
-          nowUnix: simT,
-          useCall: useCallRef.current,
-          callSide: deskCall.side,
-          lastPrice: lastBar?.close ?? null,
-        })
-        ibExtendRef.current = ibAdvice
-        setIbExtendBadge((prev) => (prev === ibAdvice.chip ? prev : ibAdvice.chip))
-        const ibHover = ibAdvice.message
-        setIbExtendHover((prev) => (prev === ibHover ? prev : ibHover))
+        ibExtendRef.current = null
         for (const line of ibLiqLinesRef.current) {
           try {
             host?.removePriceLine(line)
@@ -2176,22 +2151,6 @@ function SimulationDeskInner() {
           }
         }
         ibLiqLinesRef.current = []
-        if (host && ibAdvice.swing) {
-          try {
-            ibLiqLinesRef.current.push(
-              host.createPriceLine({
-                price: ibAdvice.swing.price,
-                color: '#eab308',
-                title: ibAdvice.swing.kind === 'high' ? 'Liq H' : 'Liq L',
-                lineWidth: 2,
-                lineStyle: LineStyle.Dashed,
-                axisLabelVisible: true,
-              })
-            )
-          } catch {
-            /* ignore */
-          }
-        }
 
         // Refresh advise book when CALL playbook / locked ±10 changes.
         // Do not open P/L — trader opts in. Structure only (no Level Finder spend).
@@ -2205,7 +2164,7 @@ function SimulationDeskInner() {
           morningAttempts: morningAttemptsRef.current,
         })
         const preferred = preferredRaw
-          ? applyIbLiquiditySwingToRange(preferredRaw, ibAdvice.swing)
+          ? applyIbLiquiditySwingToRange(preferredRaw, null)
           : null
         const bookKey = `${playbookMode}:${preferred?.label ?? ''}:${preferred?.high ?? ''}:${preferred?.low ?? ''}`
         if (openUnix && bookKey !== adviseBookKeyRef.current) {
@@ -2475,7 +2434,7 @@ function SimulationDeskInner() {
         if (snapRanges.length === 0) {
           return {
             deny:
-              'No locked playbook ±10 yet — wait for Open range / OR30 / IB / US Range to lock.',
+              'No locked playbook ±10 yet — wait for Open range / OR30 / US Range to lock.',
           }
         }
         if (hit) {
@@ -2489,16 +2448,16 @@ function SimulationDeskInner() {
             return {
               deny:
                 instrument === 'NIKKEI'
-                  ? 'Open range morning ±10 window is closed — enter on the live US Range / Tokyo IB playbook when unlocked.'
-                  : 'Open range morning ±10 window is closed — enter on the live OR30 / IB playbook when unlocked.',
+                  ? 'Open range morning ±10 window is closed — enter on the live US Range playbook when unlocked.'
+                  : 'Open range morning ±10 window is closed — enter on the live OR30 playbook when unlocked.',
             }
           }
           if (hit.range.label === 'OR30') {
             return {
               deny:
                 instrument === 'NIKKEI'
-                  ? 'OR30 overlay ±10 window is closed — enter on the live US Range / Tokyo IB playbook when unlocked.'
-                  : 'OR30 ±10 window is closed — enter on the live IB playbook when unlocked.',
+                  ? 'OR30 overlay ±10 window is closed — enter on the live US Range playbook when unlocked.'
+                  : 'OR30 ±10 window is closed — no further entry window.',
             }
           }
           const bucketOk = assertBucketEntryEligible({
@@ -3792,8 +3751,7 @@ function SimulationDeskInner() {
     attemptsUsed < MAX_DAY_ATTEMPTS &&
     gate?.canPlaceEntry === true &&
     tradeifyDayLock.allowed
-  const midChip = instrument === 'NIKKEI' ? 'US' : 'IB'
-  const lateChip = 'IB'
+  const midChip = instrument === 'NIKKEI' ? 'US' : '30'
   const simPlaybookNow = simNow > 0 ? new Date(simNow * 1000) : new Date()
   const simPlaybookMode = resolveDeskPlaybookMode({
     instrument,
@@ -4032,12 +3990,11 @@ function SimulationDeskInner() {
             }`}
             title={
               gate?.attemptLadderLabel ||
-              `Up to 2/2/2 per window · Session ≤ ${MAX_DAY_ATTEMPTS} fills total. Next window unlocks when prior clock ends or probes are exhausted, but the session cap always wins.`
+              `Up to 2 probes per window · Session ≤ ${MAX_DAY_ATTEMPTS} fills total. Next window unlocks when prior clock ends or probes are exhausted, but the session cap always wins.`
             }
           >
             Session {attemptsUsed}/{MAX_DAY_ATTEMPTS} · AM {morningAttempts}/{MAX_MORNING_ATTEMPTS} ·{' '}
-            {midChip} {ibAttempts}/{MAX_IB_ATTEMPTS} · {lateChip}{' '}
-            {lunchAttempts}/{MAX_LUNCH_RANGE_ATTEMPTS}
+            {midChip} {ibAttempts}/{MAX_IB_ATTEMPTS}
             {attemptsUsed >= MAX_DAY_ATTEMPTS ? ' · LOCKED' : ''}
           </span>
           {overnightBias && (
@@ -4215,25 +4172,6 @@ function SimulationDeskInner() {
           <button
             type="button"
             title={
-              showIbBreakouts
-                ? 'IB BRK (RVOL) + REJ markers visible (Press B)'
-                : 'Show IB breakout (volume) & rejection markers (Press B)'
-            }
-            onClick={() => setShowIbBreakouts((v) => !v)}
-            className={`flex items-center gap-1 rounded border px-2 py-1 text-[10px] font-semibold uppercase ${
-              showIbBreakouts
-                ? 'border-blue-500/50 bg-blue-600/30 text-blue-100'
-                : 'border-white/15 text-gray-500 hover:border-blue-500/40 hover:text-blue-200'
-            }`}
-          >
-            <span
-              className={`inline-block h-1.5 w-1.5 rounded-full ${showIbBreakouts ? 'bg-blue-400' : 'bg-gray-600'}`}
-            />
-            IB Breakout (B)
-          </button>
-          <button
-            type="button"
-            title={
               showYesterdayProfile
                 ? 'Yesterday YH/YL/VA/POC + day type + superimposed range on (Press Y)'
                 : 'Show yesterday cash profile (Press Y)'
@@ -4335,15 +4273,6 @@ function SimulationDeskInner() {
               className="pointer-events-none invisible absolute left-0 top-full z-50 mt-1 w-[22rem] whitespace-pre-wrap rounded-lg border border-zinc-500/40 bg-[#0d1117] px-2.5 py-2 text-left text-[10px] font-normal normal-case leading-snug tracking-normal text-zinc-200 shadow-xl group-hover:visible"
             >
               {callHover}
-            </span>
-          </span>
-          <span
-            title={ibExtendHover}
-            className="flex items-center gap-1 rounded border border-amber-700/40 px-2 py-1 text-[10px] font-semibold uppercase text-amber-200/90"
-          >
-            IB
-            <span className="normal-case tracking-normal text-[10px] font-normal text-amber-100/80">
-              {ibExtendBadge}
             </span>
           </span>
           {useCall === true && (

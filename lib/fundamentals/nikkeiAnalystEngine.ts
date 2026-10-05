@@ -312,7 +312,7 @@ export function evaluateNikkeiEventDeterministic(params: {
         'Sudden Ministry of Finance Yen buying triggered a violent 450-pip USD/JPY collapse, igniting systematic carry-trade unwinding and rapid long-liquidation across Nikkei index futures.',
     }
     summary =
-      'Large-scale MoF currency market intervention sparked violent Yen appreciation, breaking first-hour Initial Balance lows on heavy market sell delta.'
+      'Large-scale MoF currency market intervention sparked violent Yen appreciation, breaking the session low on heavy market sell delta.'
     actionableTakeaway =
       'Respect the automated liquidation cascade; stand aside from long fades until USD/JPY volatility mean-reverts and CVD stabilizes.'
   }
@@ -371,7 +371,7 @@ export function evaluateNikkeiEventDeterministic(params: {
     shortTermStance = 'BULLISH'
     mediumTermStance = 'BULLISH'
     summary = 'General macroeconomic and corporate earnings flow evaluated across Tokyo Stock Exchange Prime Market.'
-    actionableTakeaway = 'Maintain discipline with Tokyo session Initial Balance levels and USD/JPY currency trends.'
+    actionableTakeaway = 'Maintain discipline with Tokyo session structure and USD/JPY currency trends.'
   }
 
   return {
