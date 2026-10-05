@@ -169,7 +169,7 @@ Never store a single global `headline.sentiment = BEARISH`.
 
 Desk News should stop owning a private news universe. Target: one `EVENT_INGESTION_SERVICE` (timestamp, dedup, entities, market tags, importance, source reliability, event id). Oil Agent, Desk News, and Leo’s brief all consume that event. Fundamentals must stop refetching Finnhub on their own once this exists.
 
-Tables for this split are created. The ingestion service is not built yet. News AI remains a separate prompt until it is demoted to a display over the same event bus.
+Tables for this split are created. The ingestion service is not built yet. Desk News Agent is the event desk (what happened, and which specialist to route to). It still does not write the shared event bus.
 
 ---
 

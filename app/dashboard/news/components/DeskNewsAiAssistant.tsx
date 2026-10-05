@@ -2,8 +2,7 @@
 
 /**
  * Desk News AI Assistant Component.
- * Provides breaking news synthesis, 4 CME futures market reactions (DOW, NASDAQ, GOLD, CRUDE),
- * upcoming economic calendar events, and core market drivers.
+ * Event desk: what happened, which markets it touches, and which specialist owns it.
  */
 
 import { useState, useRef, useEffect } from 'react'
@@ -16,28 +15,28 @@ type Message = {
 const PRESET_PROMPTS = [
   {
     id: 'briefing',
-    label: '⚡ Full Executive Briefing',
-    prompt: 'Give me a complete Executive News & Market Reaction Briefing across our 5 futures markets (DOW, NASDAQ, NIKKEI 225, GOLD, CRUDE).',
+    label: 'What happened',
+    prompt: 'What material events are on the desk? For each one, say what happened, which of YM, NQ, NKD, GC, and CL it affects, and which specialist should own it.',
   },
   {
     id: 'reactions',
-    label: '📊 Market Reactions (DOW, NQ, Nikkei, Gold, Crude)',
-    prompt: 'Break down how the market reacted across DOW, NASDAQ, NIKKEI 225, GOLD, and CRUDE to published news.',
+    label: 'Supplied reaction',
+    prompt: 'Using only the supplied quotes and reaction block, what initial price change is actually visible? If the reaction engine is not supplied, say so.',
   },
   {
     id: 'nikkei',
-    label: '🗾 Nikkei & Asia Session Briefing',
-    prompt: 'Give me a detailed Asia/Tokyo session briefing for Nikkei 225 (NKD), including BoJ policy stance, USD/JPY rate dynamics, and Tokyo open reaction.',
+    label: 'Japan sessions',
+    prompt: 'Which verified events touch NKD? Keep TSE cash hours and OSE futures hours separate. If JPY intervention risk is not supplied, mark it UNKNOWN.',
   },
   {
     id: 'upcoming',
-    label: '📅 Upcoming Tier-1 Catalysts',
-    prompt: 'List upcoming high-impact economic calendar events and expected volatility levels for futures.',
+    label: 'Verified calendar',
+    prompt: 'List only verified calendar events in the supplied window. If none are Tier-1, say so. Do not invent a catalyst or an exact volatility number.',
   },
   {
     id: 'drivers',
-    label: '💡 Core Fundamental Drivers',
-    prompt: 'What are the main macro drivers currently moving DOW, NASDAQ, NIKKEI, GOLD, and CRUDE Oil?',
+    label: 'Route the event',
+    prompt: 'For the main event on the desk, name the transmission channels and route it to OIL_AGENT, GOLD_AGENT, NQ_AGENT, DOW_AGENT, or NIKKEI_AGENT. Do not assign a standing market regime.',
   },
 ]
 
@@ -133,13 +132,13 @@ export function DeskNewsAiAssistant({ tab = 'ALL' }: { tab?: string }) {
           </div>
           <div>
             <h2 className="text-sm font-bold text-violet-100 flex items-center gap-2">
-              Desk News & Market Reaction AI
+              Desk News Agent
               <span className="rounded bg-violet-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-violet-300 border border-violet-500/40 uppercase">
-                4 CME Futures
+                Event desk
               </span>
             </h2>
             <p className="text-[11px] text-slate-400">
-              Published news briefing, 4 CME market reactions (DOW, NQ, Gold, Crude), upcoming catalysts & macro drivers
+              What happened, which of YM, NQ, NKD, GC, and CL it affects, and which specialist owns it
             </p>
           </div>
         </div>
@@ -183,7 +182,7 @@ export function DeskNewsAiAssistant({ tab = 'ALL' }: { tab?: string }) {
                   }`}
                 >
                   <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                    {m.role === 'user' ? 'Trader Question' : 'Leo News AI Analysis'}
+                    {m.role === 'user' ? 'Trader Question' : 'Desk News Agent'}
                   </div>
                   <div className="whitespace-pre-wrap font-sans">{m.content}</div>
                 </div>
@@ -193,7 +192,7 @@ export function DeskNewsAiAssistant({ tab = 'ALL' }: { tab?: string }) {
                 <div className="rounded-lg bg-slate-900/90 border border-slate-800 p-3 mr-2 space-y-2">
                   <div className="text-[10px] font-bold uppercase tracking-wider text-violet-400 mb-1 flex items-center gap-1.5">
                     <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-pulse" />
-                    Leo News AI Streaming Analysis…
+                    Desk News Agent…
                   </div>
                   <div className="whitespace-pre-wrap font-sans text-slate-200">{streamingText}</div>
                 </div>
@@ -221,7 +220,7 @@ export function DeskNewsAiAssistant({ tab = 'ALL' }: { tab?: string }) {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask News AI about breaking headlines, upcoming CPI/FOMC events, or market reactions for DOW, NQ, Gold, Crude..."
+              placeholder="Ask what happened, which markets it affects, and which specialist should own it..."
               disabled={loading}
               className="flex-1 rounded-lg border border-slate-700 bg-slate-950/80 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500 disabled:opacity-50"
             />

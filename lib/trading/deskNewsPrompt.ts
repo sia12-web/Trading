@@ -1,74 +1,10 @@
-# Desk News Agent — Prompts & Agent Spec
+/**
+ * Desk News Agent — event desk only.
+ * Identifies, verifies, deduplicates, and routes events.
+ * Does not create technical levels or market regimes.
+ */
 
-> Event desk: what happened, which markets it affects, and which specialist owns it.  
-> Source of truth: `lib/trading/deskNewsPrompt.ts`, assembled in `app/api/trading/news-ai/route.ts`.  
-> Updated 2026-10-05.
-
----
-
-## 1. What this agent is
-
-| Item | Value |
-|------|-------|
-| Name | **DESK_NEWS_AGENT** (Desk News Agent) |
-| Page | `/dashboard/news` → `DeskNewsAiAssistant.tsx` |
-| Chat API | `POST /api/trading/news-ai` |
-| News wire API | `GET /api/trading/desk-news` (no LLM — card builder, already deduped) |
-| Models | Claude 3.5 Sonnet → OpenAI `gpt-4o` |
-| Analysis markets | YM, NQ, NKD, GC, CL |
-| Execution aliases | MYM, MNQ, MGC, MCL (size only) |
-
-This agent does not create support or resistance, does not call absorption, and does not keep a standing bullish or bearish regime. Those belong to Chart Leo and the five specialist agents.
-
-Hierarchy:
-
-```text
-DESK_NEWS_AGENT     What happened?
-        ↓
-OIL / GOLD / NQ / DOW / NIKKEI agents
-                    What does it mean for this market?
-        ↓
-CHART LEO           What is price doing at our level?
-```
-
----
-
-## 2. How the prompt is assembled
-
-```text
-POST /api/trading/news-ai
-  - Finnhub headlines, deduped by headline key in buildDeskNewsCards
-  - Finnhub calendar for the next 7 days (no invented fallback events)
-  - Yahoo last prints labeled LATEST AVAILABLE QUOTE, with timestamp and freshness
-        │
-        ▼
-systemPrompt = DESK_NEWS_AGENT_PROMPT + news context
-        │
-        ▼
-streamClaudeResponse / streamOpenAIResponse
-  or a data-only fallback if no API keys
-```
-
-Context rules the route enforces before the model sees the text:
-
-| Feed | If missing |
-|------|------------|
-| Calendar request failed | `UPCOMING CALENDAR DATA UNAVAILABLE.` |
-| Calendar returned, no high-impact row | `NO VERIFIED TIER-1 EVENT IN CURRENT CALENDAR WINDOW.` |
-| Reaction series | Always `MARKET REACTION ENGINE: NOT SUPPLIED` until a reaction engine exists |
-| JPY intervention score | `UNKNOWN (not supplied)` |
-| Options implied move | `NOT SUPPLIED` |
-
-Quotes are never labeled live or real-time. Yahoo CME prints are delayed.
-
----
-
-## 3. Exact system prompt
-
-Verbatim from `DESK_NEWS_AGENT_PROMPT`. The route appends the news context after this block.
-
-```text
-You are the Desk News & Event Intelligence Agent (DESK_NEWS_AGENT).
+export const DESK_NEWS_AGENT_PROMPT = `You are the Desk News & Event Intelligence Agent (DESK_NEWS_AGENT).
 
 You cover five analysis markets:
 YM, NQ, NKD, GC, and CL.
@@ -157,35 +93,12 @@ When the user asks for the machine event record, emit this JSON and no extra lev
   "route_to": []
 }
 
-Same event_id on later updates. Do not create a new event for the same fact.
-```
+Same event_id on later updates. Do not create a new event for the same fact.`
 
-The route then appends server time, tab, `JPY_INTERVENTION_RISK: UNKNOWN`, `options_implied_event_move: NOT SUPPLIED`, `MARKET REACTION ENGINE: NOT SUPPLIED`, the quote block, deduplicated events (with `event_id`, source, reliability, `published_at`), and the verified calendar block.
+export function buildDeskNewsSystemPrompt(newsContext: string): string {
+  return `${DESK_NEWS_AGENT_PROMPT}
 
----
+${newsContext}
 
-## 4. Fallback (no API keys)
-
-If neither `ANTHROPIC_API_KEY` nor `OPENAI_API_KEY` is set, the route returns the supplied quotes, deduplicated headlines, and calendar status. It does not invent support, resistance, a bias badge, or a calendar event.
-
----
-
-## 5. Relationship to the other agents
-
-| Path | Connected? |
-|------|------------|
-| Desk News chat → Chart Leo chat | **No** |
-| Desk News cards → Fundamentals state | **No** — routing is named in the answer, not executed |
-| High-impact calendar → News AVWAP on chart | **Yes (narrow)** |
-| One shared `event_id` consumed by all five specialists | **Not built** — the prompt requires one id per deduped headline; specialists still ingest on their own |
-
----
-
-## 6. Source anchors
-
-| File | Role |
-|------|------|
-| `lib/trading/deskNewsPrompt.ts` | System prompt |
-| `app/api/trading/news-ai/route.ts` | Context assembly + fallback |
-| `app/dashboard/news/components/DeskNewsAiAssistant.tsx` | Chat UI |
-| `lib/trading/deskNews.ts` | Headline-key dedup before the model |
+Write in GitHub-flavored Markdown. Address the user as a professional trader. Do not add support, resistance, or a standing bias badge.`
+}
