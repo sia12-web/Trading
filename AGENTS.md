@@ -1,5 +1,14 @@
 # Agent notes — Trading (Day Trading Railway)
 
+## Cloud Agent bootstrap
+
+```bash
+bash scripts/cloud-agent-install.sh   # npm ci + railway-vars.local.json from RAILWAY_TOKEN
+bash scripts/cloud-agent-start.sh     # .env.local defaults + next dev :3000
+```
+
+Default desk password when `DESK_GATE_PASSWORD` secret is unset: `desk-cloud-agent` (ALLOW_DEV_AUTH).
+
 ## Railway deploy
 
 - **Project:** Day Trading (`673bbfd3-ad02-4293-a6b6-7910d11d102d`)
