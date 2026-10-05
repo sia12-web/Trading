@@ -16,7 +16,7 @@ import type { TopstepXChallengeState } from '@/lib/trading/topstepXChallenge'
 import { SYSTEMATIC_LIVE_DESK } from '@/lib/trading/systematicDesk'
 
 type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | 'RUSSELL' | 'ALL'
-type HistoryTab = 'live' | 'sim' | 'voice'
+type HistoryTab = 'live' | 'sim'
 
 interface JournalEntry {
   id: string
@@ -218,9 +218,7 @@ function JournalPageInner() {
     ? 'live'
     : rawTab === 'sim'
       ? 'sim'
-      : rawTab === 'voice'
-        ? 'voice'
-        : 'live'
+      : 'live'
 
   const [instrument, setInstrument] = useState<Instrument>('ALL')
   const [days, setDays] = useState(30)
@@ -252,18 +250,6 @@ function JournalPageInner() {
     return `${side} ${qty} ${contract} @ ${entry}${sl}${tp}`
   }
 
-  const [voiceSessions, setVoiceSessions] = useState<
-    Array<{
-      id: string
-      instrument: string
-      market: string
-      trade_date: string
-      status: string
-      turns: Array<{ role: 'user' | 'assistant'; text: string; created_at: string }>
-      pins: Array<{ price: number; side: string | null; reason: string | null }>
-    }>
-  >([])
-
   const setTab = useCallback(
     (next: HistoryTab) => {
       const q = new URLSearchParams(searchParams.toString())
@@ -280,19 +266,6 @@ function JournalPageInner() {
     setError(null)
     setExpanded(null)
     try {
-      if (tab === 'voice') {
-        const q = new URLSearchParams({ days: String(days) })
-        if (instrument !== 'ALL') q.set('instrument', instrument)
-        const res = await fetch(`/api/trading/live-voice/transcript?${q}`)
-        const json = await res.json()
-        if (res.ok && json.success) {
-          setVoiceSessions(json.sessions || [])
-        } else {
-          setError(json.error || 'Failed to load voice transcripts')
-        }
-        return
-      }
-
       const q = new URLSearchParams({
         days: String(days),
         limit: tab === 'sim' ? '80' : '120',
@@ -375,7 +348,7 @@ function JournalPageInner() {
   const isSim = tab === 'sim'
 
   useEffect(() => {
-    if (!isSim && instrument === 'NIKKEI') setInstrument('ALL')
+    if (!isSim && instrument === 'RUSSELL') setInstrument('ALL')
     if (isSim && (instrument === 'GOLD' || instrument === 'CRUDE' || instrument === 'RUSSELL')) {
       setInstrument('ALL')
     }
@@ -413,19 +386,10 @@ function JournalPageInner() {
             >
               Live Trades
             </button>
-            <button
-              type="button"
-              onClick={() => setTab('voice')}
-              className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
-                tab === 'voice' ? 'bg-emerald-600/30 text-emerald-200' : 'text-gray-500 hover:text-gray-300'
-              }`}
-            >
-              🎙️ Voice Chat Journal
-            </button>
           </div>
           {(isSim
             ? (['ALL', 'DOW', 'NASDAQ', 'NIKKEI'] as Instrument[])
-            : (['ALL', 'NASDAQ', 'DOW', 'GOLD', 'CRUDE', 'RUSSELL'] as Instrument[])
+            : (['ALL', 'NASDAQ', 'DOW', 'GOLD', 'CRUDE', 'NIKKEI'] as Instrument[])
           ).map((inst) => (
             <button
               key={inst}
@@ -650,71 +614,14 @@ function JournalPageInner() {
           </div>
         )}
 
-        {tab === 'voice' && !loading && !error && (
-          <div className="space-y-4">
-            {voiceSessions.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-[#30363d] px-6 py-12 text-center text-sm text-gray-500">
-                No voice sessions recorded yet for {instrument === 'ALL' ? 'any instrument' : instrument}. Clock in and hold the mic on Live Trading to record audio exchanges with Leo.
-              </div>
-            ) : (
-              voiceSessions.map((sess) => (
-                <div key={sess.id} className="rounded-xl border border-[#30363d] bg-[#161b22] p-4 space-y-3">
-                  <div className="flex items-center justify-between border-b border-[#30363d] pb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="rounded bg-emerald-950/60 border border-emerald-500/40 px-2 py-0.5 font-mono text-xs font-bold text-emerald-300">
-                        {sess.instrument} ({sess.market})
-                      </span>
-                      <span className="text-xs text-gray-400 font-mono">{sess.trade_date}</span>
-                    </div>
-                    <span className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">
-                      {sess.turns.length} Spoken Turns · {sess.pins.length} Spoken Pins
-                    </span>
-                  </div>
-
-                  {sess.pins.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      <span className="text-[10px] uppercase font-semibold text-gray-500">Spoken Pins:</span>
-                      {sess.pins.map((p, i) => (
-                        <span key={i} className="rounded bg-black/40 border border-emerald-500/30 px-1.5 py-0.5 font-mono text-[10px] text-emerald-200">
-                          {p.side ? `${p.side} ` : ''}{p.price.toLocaleString()} {p.reason ? `(${p.reason})` : ''}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="space-y-2 pt-1 max-h-60 overflow-y-auto pr-1">
-                    {sess.turns.map((t, i) => (
-                      <div
-                        key={i}
-                        className={`rounded p-2 text-xs leading-relaxed ${
-                          t.role === 'user'
-                            ? 'border border-violet-800/40 bg-violet-950/20 text-violet-200'
-                            : 'border border-emerald-800/40 bg-emerald-950/20 text-emerald-100'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between text-[10px] text-gray-500 mb-1 font-semibold uppercase tracking-wider">
-                          <span>{t.role === 'user' ? 'You' : 'Leo (Desk Partner)'}</span>
-                          <span>{new Date(t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                        </div>
-                        <p className="italic">&ldquo;{t.text}&rdquo;</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-
-        {tab !== 'voice' && !loading && !error && entries.length === 0 && (
+        {!loading && !error && entries.length === 0 && (
           <div className="rounded-xl border border-dashed border-[#30363d] px-6 py-12 text-center text-sm text-gray-500">
             No live orders yet. Clock in, place a limit on Live Trading — fills land here with
             entry and exit reasons.
           </div>
         )}
 
-        {tab !== 'voice' && (
-          <div className="space-y-8">
+        <div className="space-y-8">
           {dayHeaders.map((date) => {
             const dayGroups = groups.filter((g) => g.date === date)
             const dayPnl = Math.round(
@@ -1075,8 +982,7 @@ function JournalPageInner() {
               </section>
             )
           })}
-          </div>
-        )}
+        </div>
 
         <p className="text-[11px] text-gray-600 leading-relaxed">
           Live desk only. After the entry window, levels leave the chart; open books stay in MANAGE until stop, target, trader manual close, or lunch confirm. Cash close auto-liquidates leftovers. Equity above is reconstructed from ticket size and closed-trade P&amp;L.

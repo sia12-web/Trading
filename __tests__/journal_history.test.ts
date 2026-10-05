@@ -115,8 +115,16 @@ assert.ok(
   'journal API must not fetch OANDA equity'
 )
 assert.ok(
-  /GOLD/.test(journalPage) && /CRUDE/.test(journalPage) && /RUSSELL/.test(journalPage),
-  'live order history can filter GOLD, CRUDE, and RUSSELL'
+  /\['ALL', 'NASDAQ', 'DOW', 'GOLD', 'CRUDE', 'NIKKEI'\]/.test(journalPage),
+  'live order history filters are ALL / NASDAQ / DOW / GOLD / CRUDE / NIKKEI'
+)
+assert.ok(
+  !/\['ALL', 'NASDAQ', 'DOW', 'GOLD', 'CRUDE', 'RUSSELL'\]/.test(journalPage),
+  'live order history must not offer a RUSSELL filter chip'
+)
+assert.ok(
+  !/Voice Chat Journal/.test(journalPage),
+  'order history must not include Voice Chat Journal'
 )
 
 console.log('journal_history.test.ts: all assertions passed')
