@@ -4,7 +4,6 @@
  */
 
 import { getDayPreviousClose, refreshDayPreviousClose, getYahooQuote } from '@/lib/yahoo/quote'
-import { activeDeskSessionsAt } from '@/lib/chart/sessionVwap'
 import {
   getLastStreamedPrice,
   subscribeOandaPriceStream,
@@ -90,8 +89,7 @@ export async function GET(request: Request) {
   }
 
   const streamGate = isChartStreamAllowed(instrument)
-  const active = activeDeskSessionsAt(Math.floor(Date.now() / 1000))
-  if (!streamGate.open && active.length === 0) {
+  if (!streamGate.open) {
     return new Response(
       JSON.stringify({ error: streamGate.reason, stream: false, frozen: true }),
       {

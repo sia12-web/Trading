@@ -39,7 +39,6 @@ import {
 } from 'lightweight-charts'
 import {
   AVWAP_CANDLE_FETCH_CALENDAR_DAYS,
-  activeDeskSessionsAt,
   computeSessionHighlightSpans,
   projectSessionHighlightRects,
   paintSessionHighlightOverlay,
@@ -92,6 +91,7 @@ import {
   type OvernightInventoryEvaluation,
   type ContextBar,
 } from '@/lib/chart/context55'
+import { fixedRangeFreezeAsOf, fixedRangePhase } from '@/lib/chart/structureClock'
 import {
   formatChartClock,
   formatChartDate,
@@ -1559,6 +1559,9 @@ export function TradingChart({
   const [openingBadge, setOpeningBadge] = useState('WAIT')
   const [frvp5d, setFrvp5d] = useState<FixedRangeVolumeProfile5D | null>(null)
   const frvpLinesRef = useRef<IPriceLine[]>([])
+  /** Sticky snapshot so fixed maps do not chase the tape outside 08:30–cash open. */
+  const frvpSnapRef = useRef('')
+  const ydaySnapRef = useRef('')
   const paintFrvp5dRef = useRef<(overrideBars?: OHLCV[]) => void>(() => { })
   const [avwap5mBenchmark, setAvwap5mBenchmark] = useState<AnchoredVwapBenchmark5M | null>(null)
   const [show5mAvwapOnChart, setShow5mAvwapOnChart] = useState(false)
@@ -2654,6 +2657,15 @@ export function TradingChart({
     }
     const list = overrideBars || candlesRef.current
     if (!list || list.length === 0) return
+    const phase = fixedRangePhase(instrument)
+    const snap =
+      phase === 'holding'
+        ? `${instrument}:${timeframe}:held`
+        : phase === 'frozen'
+          ? `${instrument}:${timeframe}:frozen`
+          : ''
+    if (snap && frvpSnapRef.current === snap) return
+    const asOf = phase === 'frozen' ? fixedRangeFreezeAsOf(instrument).fiveDayUnix : undefined
     const profile = compute5DayFixedRangeVolumeProfile(
       list.map((c) => ({
         time: c.time as number,
@@ -2663,8 +2675,10 @@ export function TradingChart({
         close: c.close,
         volume: c.volume,
       })),
-      instrument
+      instrument,
+      asOf
     )
+    frvpSnapRef.current = snap
     setFrvp5d(profile)
     for (const line of frvpLinesRef.current) {
       try {
@@ -2693,6 +2707,14 @@ export function TradingChart({
     }
     const list = overrideBars || candlesRef.current
     if (!list || list.length === 0) return
+    const phase = fixedRangePhase(instrument)
+    const snap =
+      phase === 'holding'
+        ? `${instrument}:${timeframe}:held`
+        : phase === 'frozen'
+          ? `${instrument}:${timeframe}:frozen`
+          : ''
+    if (snap && ydaySnapRef.current === snap) return
     const bars: ContextBar[] = list.map((c) => ({
       time: c.time as number,
       open: c.open,
@@ -2703,14 +2725,17 @@ export function TradingChart({
     }))
     const lastBarTime = bars[bars.length - 1]?.time
     const clock = deskClockFor(instrument)
-    const yday = computeYesterdayNycSession(bars, lastBarTime, clock)
+    const asOf =
+      phase === 'frozen' ? fixedRangeFreezeAsOf(instrument).inventoryUnix : lastBarTime
+    const yday = computeYesterdayNycSession(bars, asOf, clock)
+    ydaySnapRef.current = snap
     setYesterdayNyc(yday)
 
     if (yday) {
       const inv = computeOvernightInventoryAndSessions({
         bars,
         yesterday: yday,
-        asOfUnix: lastBarTime,
+        asOfUnix: asOf,
         clock,
       })
       setOvernightInventory(inv)
@@ -9807,11 +9832,8 @@ export function TradingChart({
     let lastSseMessageAt = 0
     const SSE_STALE_MS = 3_000
 
-    /** Live quote stream active during cash/focus hours and active sessions (Asia, London, NY) */
-    const tipOpen = () =>
-      tipStreamActive &&
-      (isChartStreamAllowed(instrument).open ||
-        activeDeskSessionsAt(Math.floor(Date.now() / 1000)).length > 0)
+    /** Live quote stream: NY from the commodity open, Nikkei for the Tokyo session. */
+    const tipOpen = () => tipStreamActive && isChartStreamAllowed(instrument).open
 
     const toChartCandle = (bar: OHLCV) => ({
       time: toSeriesTime(bar.time as number, timeframe, chartTzRef.current),

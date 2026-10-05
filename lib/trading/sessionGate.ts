@@ -43,11 +43,7 @@ import {
   LIVE_CLOCK_REFUSE,
   isLiveClockInstrument,
 } from '@/lib/trading/liveDeskBook'
-import {
-  isAsiaDeskChartWindow,
-  isAsiaDeskInstrument,
-  isAsiaDeskStreamWindow,
-} from '@/lib/trading/asiaDesk'
+import { isAsiaDeskChartWindow } from '@/lib/trading/asiaDesk'
 
 export {
   MAX_DAY_ATTEMPTS,
@@ -530,9 +526,11 @@ export function isLiveBarsAllowed(
 }
 
 /**
- * Live tip / quote stream window = focus lead only (cash open − 30m → cash close).
- * No midnight→open or overnight printing — saves Railway/OANDA when desk is idle.
- * History candles still load on demand; trading permissions stay separate (isLiveBarsAllowed).
+ * Live tip window.
+ * NY book (oil, gold, Dow, Nasdaq): commodity day open 08:20 ET → cash close.
+ * Overnight Asia/London stays off the tape. History candles still load on demand.
+ * Nikkei: Tokyo focus (08:30 JST → 15:00 JST) because that session is traded.
+ * Trading permissions stay separate (isLiveBarsAllowed).
  */
 export function isChartStreamAllowed(
   instrument: string | null | undefined,
@@ -542,39 +540,43 @@ export function isChartStreamAllowed(
     return { open: false, reason: 'Unknown instrument' }
   }
   const s = sessionFor(instrument)
+  const market = deskMarketFor(instrument)
   if (!isWeekdayInTz(now, s.tz)) {
-    return { open: false, reason: `Weekend — ${deskMarketFor(instrument)} session closed` }
+    return { open: false, reason: `Weekend — ${market} session closed` }
   }
-  if (isAsiaDeskInstrument(instrument) && isAsiaDeskStreamWindow(now)) {
-    return { open: true, reason: 'Asia desk — GOLD/DOW overnight range' }
+  const t = parseTimeToSeconds(timeInTz(now, s.tz))
+  const open = parseTimeToSeconds(s.marketOpen)
+  const close = parseTimeToSeconds(s.marketClose)
+  const streamStart =
+    market === 'TOKYO'
+      ? open - LIVE_FOCUS_LEAD_MINUTES * 60
+      : parseTimeToSeconds('08:20:00')
+  if (t >= close) {
+    return {
+      open: false,
+      reason:
+        market === 'TOKYO'
+          ? 'Cash close — chart frozen until next Tokyo focus (open − 30m).'
+          : 'Cash close — chart frozen until the next commodity open (08:20 ET).',
+    }
   }
-  if (!isLiveFocusWindowActive(instrument, now)) {
-    const t = parseTimeToSeconds(timeInTz(now, s.tz))
-    const open = parseTimeToSeconds(s.marketOpen)
-    const close = parseTimeToSeconds(s.marketClose)
-    const focusStart = open - LIVE_FOCUS_LEAD_MINUTES * 60
-    if (t >= close) {
-      return {
-        open: false,
-        reason:
-          deskMarketFor(instrument) === 'TOKYO'
-            ? 'Cash close — chart frozen until next Tokyo focus (open − 30m).'
-            : 'Cash close — chart frozen until next NY focus (open − 30m).',
-      }
+  if (t < streamStart) {
+    return {
+      open: false,
+      reason:
+        market === 'TOKYO'
+          ? `Pre-focus — NIKKEI tip starts ${deskLocalHmsAsTraderDisplay('08:30:00', s.tz, now)} ${TRADER_DISPLAY_LABEL}`
+          : `Pre-open — live tape returns at commodity open ${deskLocalHmsAsTraderDisplay('08:20:00', s.tz, now)} ${TRADER_DISPLAY_LABEL}`,
     }
-    if (t < focusStart) {
-      return {
-        open: false,
-        reason:
-          deskMarketFor(instrument) === 'TOKYO'
-            ? `Pre-focus — NIKKEI tip starts ${deskLocalHmsAsTraderDisplay('08:30:00', s.tz, now)} ${TRADER_DISPLAY_LABEL}`
-            : `Pre-focus — NY tip starts ${deskLocalHmsAsTraderDisplay('09:00:00', s.tz, now)} ${TRADER_DISPLAY_LABEL}`,
-      }
-    }
-    return { open: false, reason: 'Outside focus window — tip frozen' }
   }
   if (isAfternoonWatchWindow(now, instrument)) {
     return { open: true, reason: 'Chart streaming (afternoon — trading locked)' }
+  }
+  if (market === 'TOKYO') {
+    return { open: true, reason: 'Chart streaming (Tokyo session)' }
+  }
+  if (t < open) {
+    return { open: true, reason: 'Chart streaming (commodity open)' }
   }
   return { open: true, reason: 'Chart streaming (focus window)' }
 }

@@ -95,10 +95,8 @@ export function asiaMontrealMins(now: Date = new Date()): { ymd: string; mins: n
 }
 
 /**
- * GOLD / DOW live chart page 02:00–10:25 Montreal weekdays.
- * NOTE: The primary streaming gate is now in sessionGate.isChartStreamAllowed,
- * which uses activeDeskSessionsAt to cover the full Asian session (18:00–03:00 ET).
- * This function is retained for backward compatibility and overlay logic.
+ * GOLD / DOW Asia desk page 02:00–10:25 Montreal weekdays.
+ * The live quote tape does not follow this window.
  */
 export function isAsiaDeskChartWindow(now: Date = new Date()): boolean {
   if (!isAsiaMontrealWeekday(now)) return false
@@ -107,11 +105,9 @@ export function isAsiaDeskChartWindow(now: Date = new Date()): boolean {
 }
 
 /**
- * GOLD / DOW live chart tip stream: full CME overnight 20:00–03:40 Montreal time.
- * - 20:00–02:00 = Asia building window (range forms, no orders yet)
- * - 02:00–03:40 = Asia execution window (OCO stops placed)
- * This crosses midnight, so we check: mins >= ASIA_OPEN_MINS OR mins < ASIA_STREAM_END_MINS.
- * Previously only covered 02:00–03:40; expanded to fix the frozen chart during the building phase.
+ * Legacy Asia overnight window (20:00–03:40 Montreal).
+ * The chart tape no longer opens here. Oil, gold, Dow, and Nasdaq
+ * return to the live tape at the commodity open (08:20 ET).
  */
 export function isAsiaDeskStreamWindow(now: Date = new Date()): boolean {
   if (!isAsiaMontrealWeekday(now)) return false
