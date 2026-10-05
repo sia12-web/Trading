@@ -5,11 +5,13 @@
  *   08:20 ET  commodity day-session open — live tape returns (history already holds the maps)
  *   08:30–09:30 ET  yesterday, 5-day FRVP, and overnight inventory keep updating
  *   09:30 ET  those three are fixed. Anchored VWAP, 5-month VWAP, and news VWAP keep moving.
+ *   The session anchored VWAP follows every live print from 08:30 ET through the cash close.
  *
  * Nikkei is the Asia exception. The trader may be in that session, so the tape
  * stays live from 08:30 JST through the Tokyo cash close. The fixed maps update
  * only until the Tokyo open (09:00 JST), which is when the preceding inventory
- * is finished. After that, only the three VWAPs move.
+ * is finished. After that, only the three VWAPs move. The session anchored VWAP
+ * follows every live print from 08:30 JST through 15:00 JST.
  */
 
 import { deskClockFor, zonedCivilToUnix } from '@/lib/chart/sessionVwap'
@@ -99,4 +101,22 @@ export function fixedRangeFreezeAsOf(
   const freezeHour = isNikkei(instrument) ? 9 : 9.5
   const inventoryUnix = zonedCivilToUnix(ymd, freezeHour, clock.timeZone)
   return { fiveDayUnix: inventoryUnix - 1, inventoryUnix }
+}
+
+/**
+ * Session anchored VWAP (the 5-day cash-open anchor) follows live prints from
+ * 08:30 local through the cash close. NY book: 08:30–16:00 ET. Nikkei: 08:30–15:00 JST.
+ * Before 08:30 the line still paints from history; it does not tick-chase the overnight.
+ * After the cash open the fixed maps are frozen and this line keeps moving.
+ */
+export function anchoredVwapFollowsTape(
+  instrument: string | null | undefined,
+  now: Date = new Date()
+): boolean {
+  const clock = deskClockFor(instrument)
+  if (!isWeekday(now, clock.timeZone)) return false
+  const t = parseTimeToSeconds(hmsInTz(now, clock.timeZone))
+  const start = parseTimeToSeconds(STRUCTURE_UPDATE_START_HMS)
+  const close = clock.overnightStartHour * 3600
+  return t >= start && t < close
 }
