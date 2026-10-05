@@ -18,7 +18,7 @@ import {
   warmCmeBasis,
   CME_BASIS_REFRESH_MS,
 } from '@/lib/trading/cmeBasis'
-import { getOrCreateUser } from '@/lib/utils/devAuth'
+import { getOrCreateUser, type DeskUser } from '@/lib/utils/devAuth'
 import {
   subscribeDatabentoLive,
   isDatabentoLiveActive,
@@ -41,6 +41,47 @@ export const maxDuration = 800
 
 /** Both Yahoo paths time out well inside this, so reaching it means a real outage. */
 const UNSHIFTED_AFTER_MS = 10_000
+
+/**
+ * EventSource reconnects re-enter this route. The desk otherwise pays a
+ * Supabase auth.getUser() round trip on every open. Keyed on the credential
+ * itself (Supabase auth cookies + desk secret headers) so a different,
+ * missing or forged token can never hit another session's entry; only
+ * verified users are cached, and only long enough to cover one poll cycle.
+ */
+const AUTH_TTL_MS = 5_000
+const AUTH_CACHE_MAX = 64
+const authCache = new Map<string, { at: number; user: DeskUser }>()
+
+function authKey(request: Request): string {
+  const supabaseCookies = (request.headers.get('cookie') ?? '')
+    .split(';')
+    .map((part) => part.trim())
+    .filter((part) => part.startsWith('sb-'))
+    .sort()
+    .join(';')
+  return [
+    supabaseCookies,
+    request.headers.get('authorization') ?? '',
+    request.headers.get('x-desk-secret') ?? '',
+  ].join('|')
+}
+
+async function resolveDeskUserCached(request: Request): Promise<DeskUser | null> {
+  const key = authKey(request)
+  const hit = authCache.get(key)
+  if (hit && Date.now() - hit.at < AUTH_TTL_MS) return hit.user
+
+  const user = await getOrCreateUser(request)
+  if (!user) {
+    // Rejections are never cached — an unauthorized request always re-verifies.
+    authCache.delete(key)
+    return null
+  }
+  if (authCache.size >= AUTH_CACHE_MAX) authCache.clear()
+  authCache.set(key, { at: Date.now(), user })
+  return user
+}
 
 function payloadFor(
   instrument: Instrument,
@@ -71,7 +112,7 @@ function payloadFor(
 }
 
 export async function GET(request: Request) {
-  const user = await getOrCreateUser(request)
+  const user = await resolveDeskUserCached(request)
   if (!user) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
@@ -112,6 +153,7 @@ export async function GET(request: Request) {
   let bookTimer: ReturnType<typeof setInterval> | null = null
   let closed = false
   let pendingFrame: unknown = null
+  let stashFlushScheduled = false
 
   const stream = new ReadableStream({
     start(controller) {
@@ -126,13 +168,69 @@ export async function GET(request: Request) {
       let dbOnBook = true
       const openedAt = Date.now()
 
-      const send = (obj: unknown) => {
+      const cleanup = () => {
+        if (closed) return
+        closed = true
+        if (heartbeat) clearInterval(heartbeat)
+        heartbeat = null
+        if (basisTimer) clearInterval(basisTimer)
+        basisTimer = null
+        if (cmePoller) clearInterval(cmePoller)
+        cmePoller = null
+        if (bookTimer) clearInterval(bookTimer)
+        bookTimer = null
+        unsubscribeDb?.()
+        unsubscribeDb = null
+        unsubscribeOanda?.()
+        unsubscribeOanda = null
+        try {
+          controller.close()
+        } catch {
+          /* already closed */
+        }
+      }
+
+      /**
+       * pull() is not guaranteed to run when the HTTP queue drains. After a
+       * full queue, retry until desiredSize recovers and enqueue only the
+       * newest stashed frame.
+       */
+      const flushStashedFrame = () => {
+        if (closed || pendingFrame == null) {
+          stashFlushScheduled = false
+          return
+        }
+        if ((controller.desiredSize ?? 1) <= 0) {
+          setTimeout(flushStashedFrame, 0)
+          return
+        }
+        stashFlushScheduled = false
+        const frame = pendingFrame
+        pendingFrame = null
+        try {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify(frame)}\n\n`)
+          )
+        } catch {
+          cleanup()
+        }
+      }
+
+      const scheduleStashFlush = () => {
+        if (stashFlushScheduled) return
+        stashFlushScheduled = true
+        queueMicrotask(() => {
+          flushStashedFrame()
+        })
+      }
+
+      const send = (obj: unknown, force = false) => {
         if (closed) return
         // Bound queue growth. During a volatility burst a slow browser needs
         // the newest exchange state, not thousands of stale prints. Databento
         // frames include exact forming-bar OHLCV, so coalescing preserves the
         // candle high/low while preventing seconds of replay lag.
-        if ((controller.desiredSize ?? 1) <= 0) {
+        if (!force && (controller.desiredSize ?? 1) <= 0) {
           const incomingTs = Number(
             (obj as { timestamp?: unknown } | null)?.timestamp
           )
@@ -149,6 +247,7 @@ export async function GET(request: Request) {
             return
           }
           pendingFrame = obj
+          scheduleStashFlush()
           return
         }
         try {
@@ -231,10 +330,6 @@ export async function GET(request: Request) {
           /* keep */
         }
       }
-      void refreshBook()
-      bookTimer = setInterval(() => {
-        void refreshBook()
-      }, 8_000)
 
       const databentoAgreesWithBook = (price: number, timestamp: number) =>
         !(
@@ -248,26 +343,21 @@ export async function GET(request: Request) {
           )
         )
 
-      const cleanup = () => {
-        if (closed) return
-        closed = true
-        if (heartbeat) clearInterval(heartbeat)
-        heartbeat = null
-        if (basisTimer) clearInterval(basisTimer)
-        basisTimer = null
-        if (cmePoller) clearInterval(cmePoller)
-        cmePoller = null
-        if (bookTimer) clearInterval(bookTimer)
-        bookTimer = null
-        unsubscribeDb?.()
-        unsubscribeDb = null
-        unsubscribeOanda?.()
-        unsubscribeOanda = null
-        try {
-          controller.close()
-        } catch {
-          /* already closed */
-        }
+      // Last streamed OANDA print plus a last-known CME basis: enqueue a
+      // shifted frame inside start() before any Yahoo quote or basis warm-up.
+      if (pending && basis != null) {
+        pendingSent = true
+        send(
+          payloadFor(
+            instrument,
+            applyCmeBasis(pending.price, basis),
+            applyCmeBasis(pending.bid, basis),
+            applyCmeBasis(pending.ask, basis),
+            pending.timestamp,
+            'cme'
+          ),
+          true
+        )
       }
 
       // Tier 1: Real-time CME Globex exchange feed directly from Databento Live
@@ -349,7 +439,15 @@ export async function GET(request: Request) {
         cmePoller = setInterval(pollCme, 1500)
       }
 
-      // Keep proxies / browsers from treating the connection as idle
+      // Book refresh stays in the background. Tick callbacks read bookPx / bookTs
+      // and must not wait on Yahoo.
+      void refreshBook()
+      bookTimer = setInterval(() => {
+        void refreshBook()
+      }, 8_000)
+
+      // Keep proxies / browsers from treating the connection as idle.
+      // Comments (not data events) more often than 5s avoid idle buffering.
       heartbeat = setInterval(() => {
         if (closed) return
         if ((controller.desiredSize ?? 1) <= 0) return
@@ -358,7 +456,7 @@ export async function GET(request: Request) {
         } catch {
           cleanup()
         }
-      }, 15_000)
+      }, 5_000)
 
       request.signal.addEventListener('abort', cleanup)
     },

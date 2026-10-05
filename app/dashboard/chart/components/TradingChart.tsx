@@ -403,10 +403,10 @@ const CANDLE_CACHE_FRESH_MS = 300_000
  */
 const CACHED_PRICE_FRESH_MS = 15_000
 
-/** Header ticker repaint cadence — the readout subtree only. */
-const PRICE_TICKER_MS = 50
-/** Cadence for the React state that feeds badges / proximity / alert effects. */
-const PRICE_STATE_MS = 500
+/** Header ticker repaint cadence — the readout subtree only. ~32ms, not every raw tick. */
+const PRICE_TICKER_MS = 32
+/** Cadence for the React state that feeds badges / proximity / alert effects. 10 Hz while ticks flow. */
+const PRICE_STATE_MS = 100
 /** REST reconcile spacing while the SSE push stream is still delivering ticks.
  * Kept at 2 s so the chart keeps updating during low-volatility Asian/overnight
  * sessions even when OANDA emits no price ticks for several seconds. */
@@ -9803,6 +9803,8 @@ export function TradingChart({
     const fetchGen = ++candleFetchGenRef.current
     let sseHealthy = false
     let lastSseMessageAt = 0
+    /** Unix seconds of the last SSE quote accepted into applyQuote. */
+    let lastSseQuoteTs = 0
     const SSE_STALE_MS = 3_000
 
     /** Live quote stream active during cash/focus hours and active sessions (Asia, London, NY) */
@@ -9957,7 +9959,7 @@ export function TradingChart({
           publishPriceTick(price, changePct)
           onQuoteTick?.(Math.floor(now / 1000))
         }
-        // Badges / proximity / alert effects read state — they do not need 20 Hz
+        // Badges / proximity / alert effects read state — 10 Hz, not every raw tick
         if (now - lastPriceStateAt >= PRICE_STATE_MS) {
           lastPriceStateAt = now
           setLivePrice(price)
@@ -10193,6 +10195,28 @@ export function TradingChart({
         }))
         if (nextBars.length === 0) return
 
+        // Healthy SSE owns the forming bucket. Older REST bars still land;
+        // the same timestamp must not roll the live close backward.
+        const liveTip = lastCandleRef.current
+        if (
+          sseHealthy &&
+          Date.now() - lastSseMessageAt < 3000 &&
+          lastSseQuoteTs > 0 &&
+          liveTip
+        ) {
+          const mergedLast = nextBars[nextBars.length - 1]!
+          if ((mergedLast.time as number) === (liveTip.time as number)) {
+            const close = liveTip.close
+            nextBars[nextBars.length - 1] = {
+              ...mergedLast,
+              open: liveTip.open > 0 ? liveTip.open : mergedLast.open,
+              high: Math.max(mergedLast.high, liveTip.high, close),
+              low: Math.min(mergedLast.low, liveTip.low, close),
+              close,
+            }
+          }
+        }
+
         if (fetchGen !== candleFetchGenRef.current) return
 
         const prev = candlesRef.current
@@ -10311,6 +10335,7 @@ export function TradingChart({
             typeof json.timestamp === 'number' && json.timestamp > 0
               ? json.timestamp
               : Math.floor(Date.now() / 1000)
+          lastSseQuoteTs = ts
           applyQuote(
             json.price,
             json.change_pct ?? 0,

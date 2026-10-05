@@ -112,9 +112,11 @@ export function PositionStatusCard({
     )
   )
 
-  // Reliable quote poll (same path as live chart)
+  // REST quote is a fallback while the shared SSE stream is down.
+  // Poll once immediately (price before the socket opens), then every 2s
+  // only until isConnected. Connecting clears this interval.
   useEffect(() => {
-    if (!position || closedMsg) return
+    if (!position || closedMsg || isConnected) return
     let cancelled = false
     const poll = async () => {
       try {
@@ -130,12 +132,12 @@ export function PositionStatusCard({
       }
     }
     void poll()
-    const id = setInterval(poll, 2000)
+    const id = setInterval(poll, 2_000)
     return () => {
       cancelled = true
       clearInterval(id)
     }
-  }, [position, closedMsg, applyPrice])
+  }, [position, closedMsg, applyPrice, isConnected])
 
   const pollAi = useCallback(async () => {
     const positionId = positionIdRef.current

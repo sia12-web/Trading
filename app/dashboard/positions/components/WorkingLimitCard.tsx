@@ -36,9 +36,12 @@ export function WorkingLimitCard({ working, viewingInstrument, onCancelled }: Pr
     setCurrentPrice(price)
   }, [])
 
-  usePositionPriceSubscription(working.instrument, applyPrice)
+  const { isConnected } = usePositionPriceSubscription(working.instrument, applyPrice)
 
+  // REST quote is a fallback while the shared SSE stream is down.
+  // Poll once immediately, then every 2s only until isConnected.
   useEffect(() => {
+    if (isConnected) return
     let cancelled = false
     const poll = async () => {
       try {
@@ -55,12 +58,12 @@ export function WorkingLimitCard({ working, viewingInstrument, onCancelled }: Pr
       }
     }
     void poll()
-    const id = window.setInterval(poll, 5_000)
+    const id = window.setInterval(poll, 2_000)
     return () => {
       cancelled = true
       window.clearInterval(id)
     }
-  }, [working.instrument, applyPrice])
+  }, [working.instrument, applyPrice, isConnected])
 
   const cancelWorking = async () => {
     if (busy) return
