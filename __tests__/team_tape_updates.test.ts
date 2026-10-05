@@ -62,6 +62,16 @@ assert.equal(optNvda?.underlying, 'NVDA')
 assert.equal(optNvda?.companyName, 'NVIDIA Corporation')
 assert.equal(optNvda?.fullName, 'NVIDIA Corporation · 22Aug26 $180 Call')
 
+const optCompact = formatOptionRealName('META23Oct26P680.00')
+assert.ok(optCompact)
+assert.equal(optCompact?.underlying, 'META')
+assert.equal(optCompact?.companyName, 'Meta Platforms Inc.')
+assert.equal(optCompact?.fullName, 'Meta Platforms Inc. · 23Oct26 $680 Put')
+
+const optShortDay = formatOptionRealName('QQQ6Aug26C670.00')
+assert.equal(optShortDay?.underlying, 'QQQ')
+assert.equal(optShortDay?.fullName, 'Invesco QQQ Trust (Nasdaq 100) · 06Aug26 $670 Call')
+
 const optPltr = formatOptionRealName('PLTR  18Sep26P35.50')
 assert.ok(optPltr)
 assert.equal(optPltr?.underlying, 'PLTR')

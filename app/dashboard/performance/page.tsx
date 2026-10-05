@@ -12,7 +12,6 @@ import Link from 'next/link'
 import {
   calculatePerformanceMetrics,
   DEFAULT_CMC_TRADES,
-  DEFAULT_TEAM_TRADES,
   DURATION_BUCKETS,
   formatCmeExchangePrice,
   getExchangeTag,
@@ -22,14 +21,53 @@ import {
 } from '@/lib/trading/performanceMetrics'
 
 type AccountMode = 'cmc' | 'team'
-type DateFilter = 'today' | 'last_week' | 'last_month' | 'custom'
+type DateFilter = 'all' | 'today' | 'last_week' | 'last_month'
 
-function formatSec(sec: number): string {
-  if (!sec || sec <= 0) return '0 sec'
+function formatSec(sec: number | null): string {
+  if (sec == null || sec <= 0) return '—'
   if (sec < 60) return `${sec} sec`
   const m = Math.floor(sec / 60)
   const s = sec % 60
-  return s > 0 ? `${m}m ${s}s` : `${m}m`
+  if (m < 60) return s > 0 ? `${m}m ${s}s` : `${m}m`
+  const h = Math.floor(m / 60)
+  const rem = m % 60
+  if (h < 48) return rem > 0 ? `${h}h ${rem}m` : `${h}h`
+  const days = Math.floor(h / 24)
+  const remH = h % 24
+  return remH > 0 ? `${days}d ${remH}h` : `${days}d`
+}
+
+function etStartOfToday(now = new Date()): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now)
+  const y = Number(parts.find((p) => p.type === 'year')?.value)
+  const m = Number(parts.find((p) => p.type === 'month')?.value)
+  const d = Number(parts.find((p) => p.type === 'day')?.value)
+  // 04:00 UTC is midnight EDT; EST is 05:00 UTC. Probe both via the formatter.
+  const guess = Date.UTC(y, m - 1, d, 4, 0, 0)
+  const hour = Number(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      hour: '2-digit',
+      hourCycle: 'h23',
+    }).format(new Date(guess))
+  )
+  return guess - hour * 60 * 60 * 1000
+}
+
+function tradeInFilter(t: TradeRecord, filter: DateFilter, now = new Date()): boolean {
+  if (filter === 'all') return true
+  const iso = t.status === 'closed' ? t.exitTime || t.entryTime : t.entryTime
+  const ms = new Date(iso).getTime()
+  if (!Number.isFinite(ms)) return false
+  if (filter === 'today') return ms >= etStartOfToday(now)
+  const start = new Date(now)
+  start.setUTCDate(start.getUTCDate() - (filter === 'last_week' ? 7 : 30))
+  return ms >= start.getTime()
 }
 
 function pnlClass(val: number): string {
@@ -39,12 +77,14 @@ function pnlClass(val: number): string {
 }
 
 export default function PerformancePage() {
-  const [accountMode, setAccountMode] = useState<AccountMode>('cmc')
-  const [dateFilter, setDateFilter] = useState<DateFilter>('custom')
+  const [accountMode, setAccountMode] = useState<AccountMode>('team')
+  const [dateFilter, setDateFilter] = useState<DateFilter>('all')
   const [copiedLink, setCopiedLink] = useState(false)
 
   const [cmcTrades, setCmcTrades] = useState<TradeRecord[]>(DEFAULT_CMC_TRADES)
-  const [teamTrades, setTeamTrades] = useState<TradeRecord[]>(DEFAULT_TEAM_TRADES)
+  const [teamTrades, setTeamTrades] = useState<TradeRecord[]>([])
+  const [teamEquity, setTeamEquity] = useState<{ equity: number; currency: string } | null>(null)
+  const [teamNote, setTeamNote] = useState<string | null>(null)
 
   const isCmc = accountMode === 'cmc'
   const accountId = isCmc ? 'CMC-CFD-LIVE-2000' : '1.5KCHCR-LABS004-V2-675081-67067724'
@@ -113,9 +153,10 @@ export default function PerformancePage() {
             } else if (s.mark != null && s.entry != null) {
               calcPnl = (isBuy ? s.mark - s.entry : s.entry - s.mark) * qty * mult
             }
+            const readable = typeof s.realName === 'string' && /\$/.test(s.realName) ? s.realName : sym
             mappedTeam.push({
               id: String(s.sourceId || s.id || Math.random()),
-              symbol: sym,
+              symbol: readable,
               direction: (s.side === 'SELL' || s.side === 'SHORT' ? 'SELL' : 'BUY') as 'BUY' | 'SELL',
               entry: Number(s.entry || 0),
               exit: null,
@@ -123,6 +164,7 @@ export default function PerformancePage() {
               target: s.target || null,
               pnl: calcPnl != null ? Math.round(calcPnl * 100) / 100 : null,
               quantity: qty,
+              multiplier: mult,
               status: 'open',
               entryTime: s.filledAt || new Date().toISOString(),
               exitTime: null,
@@ -145,9 +187,10 @@ export default function PerformancePage() {
               calcPnl = (isBuy ? s.exit - s.entry : s.entry - s.exit) * qty * mult
             }
             if (calcPnl == null) continue
+            const readable = typeof s.realName === 'string' && /\$/.test(s.realName) ? s.realName : sym
             mappedTeam.push({
               id: String(s.sourceId || s.id || Math.random()),
-              symbol: sym,
+              symbol: readable,
               direction: (s.side === 'SELL' || s.side === 'SHORT' ? 'SELL' : 'BUY') as 'BUY' | 'SELL',
               entry: Number(s.entry || 0),
               exit: s.exit ?? null,
@@ -155,6 +198,7 @@ export default function PerformancePage() {
               target: s.target || null,
               pnl: Math.round(calcPnl * 100) / 100,
               quantity: qty,
+              multiplier: mult,
               status: 'closed',
               entryTime: s.filledAt || new Date().toISOString(),
               exitTime: s.exitAt || s.filledAt || null,
@@ -164,6 +208,15 @@ export default function PerformancePage() {
 
           if (!cancelled && (mappedTeam.length > 0 || tData.questrade?.ok)) {
             setTeamTrades(mappedTeam)
+            if (tData.questrade?.ok) {
+              setTeamEquity({
+                equity: Number(tData.questrade.equity) || 0,
+                currency: String(tData.questrade.currency || 'CAD'),
+              })
+              setTeamNote(null)
+            }
+          } else if (!cancelled && tData.questrade && tData.questrade.ok === false) {
+            setTeamNote(String(tData.questrade.error || 'Questrade book unavailable'))
           }
         }
       } catch (err) {
@@ -178,13 +231,24 @@ export default function PerformancePage() {
   }, [])
 
   const activeTrades = isCmc ? cmcTrades : teamTrades
+  const filteredTrades = useMemo(
+    () => activeTrades.filter((t) => tradeInFilter(t, dateFilter)),
+    [activeTrades, dateFilter]
+  )
   // KPIs from closed / realized outcomes only — open mark-to-market stays in the ledger
   const metrics = useMemo(
     () =>
       calculatePerformanceMetrics(
-        activeTrades.filter((t) => t.status === 'closed' && typeof t.pnl === 'number')
+        filteredTrades.filter((t) => t.status === 'closed' && typeof t.pnl === 'number')
       ),
-    [activeTrades]
+    [filteredTrades]
+  )
+  const openPnl = useMemo(
+    () =>
+      filteredTrades
+        .filter((t) => t.status === 'open' && typeof t.pnl === 'number')
+        .reduce((sum, t) => sum + (t.pnl || 0), 0),
+    [filteredTrades]
   )
 
   const handleCopyLink = () => {
@@ -267,7 +331,7 @@ export default function PerformancePage() {
             <div className="flex items-center rounded-lg bg-black/50 p-1 border border-white/10 text-xs">
               {(
                 [
-                  { id: 'custom', label: '09/30/2026 – 10/01/2026' },
+                  { id: 'all', label: 'ALL' },
                   { id: 'today', label: 'TODAY' },
                   { id: 'last_week', label: 'LAST WEEK' },
                   { id: 'last_month', label: 'LAST MONTH' },
@@ -302,11 +366,13 @@ export default function PerformancePage() {
         {/* Primary KPI Metrics Row 1 */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <div className="rounded-lg border border-white/10 bg-[#0d1117] p-3">
-            <div className="text-[10px] uppercase font-semibold text-gray-400">Total P&amp;L</div>
+            <div className="text-[10px] uppercase font-semibold text-gray-400">
+              {isCmc ? 'Total P&L' : 'Realized P&L (USD)'}
+            </div>
             <div className={`mt-1 text-xl font-bold price-mono ${pnlClass(metrics.totalPnl)}`}>
               {metrics.totalPnl >= 0 ? '+' : '-'}${Math.abs(metrics.totalPnl).toFixed(2)}
             </div>
-            <div className="text-[10px] text-gray-500 mt-0.5">{metrics.totalTrades} total trades</div>
+            <div className="text-[10px] text-gray-500 mt-0.5">{metrics.totalTrades} closed trades</div>
           </div>
 
           <div className="rounded-lg border border-white/10 bg-[#0d1117] p-3">
@@ -366,22 +432,43 @@ export default function PerformancePage() {
           </div>
           <div className="h-28 w-full rounded border border-white/5 bg-black/40 flex items-center justify-between px-6 text-xs text-gray-300 font-mono">
             <div className="space-y-1">
-              <span className="text-[10px] text-gray-500 uppercase block">Starting Capital</span>
-              <span className="text-sm font-bold text-white">${isCmc ? '2,000.00' : '1,500.00'}</span>
+              <span className="text-[10px] text-gray-500 uppercase block">
+                {isCmc ? 'Starting Capital' : 'Account Equity'}
+              </span>
+              <span className="text-sm font-bold text-white">
+                {isCmc
+                  ? '$2,000.00'
+                  : teamEquity
+                    ? `${teamEquity.currency} ${teamEquity.equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    : '—'}
+              </span>
             </div>
             <div className="h-8 w-px bg-white/10" />
             <div className="space-y-1">
-              <span className="text-[10px] text-gray-500 uppercase block">Gross Profit</span>
-              <span className="text-sm font-bold text-emerald-400">+${metrics.grossProfit.toFixed(2)}</span>
+              <span className="text-[10px] text-gray-500 uppercase block">
+                {isCmc ? 'Gross Profit' : 'Open P&L (USD)'}
+              </span>
+              <span className={`text-sm font-bold ${isCmc || openPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {isCmc
+                  ? `+$${metrics.grossProfit.toFixed(2)}`
+                  : `${openPnl >= 0 ? '+' : '-'}$${Math.abs(openPnl).toFixed(2)}`}
+              </span>
             </div>
             <div className="h-8 w-px bg-white/10" />
             <div className="space-y-1">
-              <span className="text-[10px] text-gray-500 uppercase block">Current Ending Balance</span>
+              <span className="text-[10px] text-gray-500 uppercase block">
+                {isCmc ? 'Current Ending Balance' : 'Realized + Open (USD)'}
+              </span>
               <span className="text-sm font-bold text-sky-300">
-                ${( (isCmc ? 2000 : 1500) + metrics.totalPnl ).toFixed(2)}
+                {isCmc
+                  ? `$${(2000 + metrics.totalPnl).toFixed(2)}`
+                  : `${metrics.totalPnl + openPnl >= 0 ? '+' : '-'}$${Math.abs(metrics.totalPnl + openPnl).toFixed(2)}`}
               </span>
             </div>
           </div>
+          {!isCmc && teamNote && (
+            <p className="text-[11px] text-amber-300">{teamNote}</p>
+          )}
         </div>
 
         {/* Detailed Trade Statistics Grid */}
@@ -396,7 +483,7 @@ export default function PerformancePage() {
           </div>
           <div className="p-2.5 rounded bg-[#0d1117] border border-white/10">
             <span className="text-[10px] uppercase text-gray-500 block">Avg Duration</span>
-            <span className="text-gray-300 text-sm">{formatSec(metrics.avgDurationSec)}</span>
+            <span className="text-gray-300 text-sm">{metrics.timedTrades > 0 ? formatSec(metrics.avgDurationSec) : '—'}</span>
           </div>
           <div className="p-2.5 rounded bg-[#0d1117] border border-white/10">
             <span className="text-[10px] uppercase text-gray-500 block">Win Duration</span>
@@ -465,7 +552,7 @@ export default function PerformancePage() {
         <div className="rounded-lg border border-white/10 bg-[#0d1117] p-4 space-y-3">
           <div className="flex items-center justify-between">
             <h4 className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
-              <span>📅</span> Monthly P/L Calendar (October 2026)
+              <span>📅</span> P/L by week ({metrics.calendarLabel})
             </h4>
             <span className={`text-xs font-extrabold px-2.5 py-1 rounded border ${metrics.totalPnl >= 0 ? 'bg-emerald-950/60 text-emerald-300 border-emerald-700/50' : 'bg-red-950/60 text-red-300 border-red-700/50'}`}>
               Monthly P/L: {metrics.totalPnl >= 0 ? '+' : '-'}${Math.abs(metrics.totalPnl).toFixed(2)}
@@ -477,6 +564,9 @@ export default function PerformancePage() {
           </div>
 
           <div className="space-y-1.5 font-mono text-xs">
+            {metrics.monthlyCalendar.length === 0 && (
+              <p className="text-xs text-gray-500 italic py-2">No closed trades in this range.</p>
+            )}
             {metrics.monthlyCalendar.map((w) => (
               <div key={w.week} className="flex items-center justify-between p-2.5 rounded bg-black/40 border border-white/5">
                 <span className="text-gray-300 font-bold">{w.week}</span>
@@ -498,7 +588,7 @@ export default function PerformancePage() {
               <span>📋</span> Executed Trades Ledger &amp; CME Real Exchange Prices
             </h4>
             <span className="text-[10px] font-mono text-sky-300 bg-sky-950/50 px-2 py-0.5 rounded border border-sky-800/40">
-              CME GLOBEX DIRECT DATA
+              {isCmc ? 'CME GLOBEX' : 'QUESTRADE USD'}
             </span>
           </div>
 
@@ -520,13 +610,16 @@ export default function PerformancePage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5 text-gray-300">
-                {activeTrades.map((t) => {
+                {filteredTrades.map((t) => {
                   const pnl = t.pnl ?? 0
                   const exTag = t.exchange || getExchangeTag(t.symbol)
                   const isCme = exTag === 'CME Globex'
                   const isOpen = t.status === 'open'
                   const isBuy = t.direction === 'BUY' || t.direction === 'LONG'
-                  const mult = getSymbolMultiplier(t.symbol)
+                  const mult =
+                    typeof t.multiplier === 'number' && t.multiplier > 0
+                      ? t.multiplier
+                      : getSymbolMultiplier(t.symbol)
 
                   const projectedLoss =
                     t.stop != null && t.entry != null

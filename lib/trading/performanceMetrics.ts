@@ -17,6 +17,8 @@ export interface TradeRecord {
   target?: number | null
   pnl?: number | null
   quantity: number
+  /** Contract multiplier. Options are 100; stocks are 1. */
+  multiplier?: number
   status: 'open' | 'closed' | 'working' | 'filled'
   entryTime: string
   exitTime?: string | null
@@ -100,13 +102,95 @@ export function getSymbolMultiplier(symbol: string, asset: 'stock' | 'option' = 
   return 1
 }
 
-/** Determine trade duration in seconds */
-export function getTradeDurationSec(t: TradeRecord): number {
-  if (!t.entryTime || !t.exitTime) return 45 // Default 45s estimate if active
+/** Hold time in seconds. Null when the fill timestamps do not show a span. */
+export function getTradeDurationSec(t: TradeRecord): number | null {
+  if (!t.entryTime || !t.exitTime) return null
   const start = new Date(t.entryTime).getTime()
   const end = new Date(t.exitTime).getTime()
-  if (isNaN(start) || isNaN(end) || end <= start) return 45
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null
   return Math.round((end - start) / 1000)
+}
+
+type EtParts = { y: number; m: number; d: number; weekStart: string }
+
+function etParts(iso: string): EtParts | null {
+  const t = new Date(iso).getTime()
+  if (!Number.isFinite(t)) return null
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date(t))
+  const y = Number(parts.find((p) => p.type === 'year')?.value)
+  const m = Number(parts.find((p) => p.type === 'month')?.value)
+  const d = Number(parts.find((p) => p.type === 'day')?.value)
+  if (!y || !m || !d) return null
+  const utc = new Date(Date.UTC(y, m - 1, d))
+  const dow = utc.getUTCDay()
+  const delta = dow === 0 ? 6 : dow - 1
+  utc.setUTCDate(utc.getUTCDate() - delta)
+  const weekStart = utc.toISOString().slice(0, 10)
+  return { y, m, d, weekStart }
+}
+
+function weekLabel(weekStart: string): string {
+  const [y, m, d] = weekStart.split('-').map((n) => Number(n))
+  if (!y || !m || !d) return weekStart
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  const label = new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  }).format(dt)
+  return `Week of ${label}`
+}
+
+function calendarFromTrades(trades: TradeRecord[]): {
+  calendarLabel: string
+  monthlyCalendar: CalculatedPerformanceMetrics['monthlyCalendar']
+} {
+  const buckets = new Map<string, { pnl: number; trades: number; days: number[] }>()
+  const months = new Set<string>()
+  for (const t of trades) {
+    const parts = etParts(t.exitTime || t.entryTime)
+    if (!parts) continue
+    months.add(`${parts.y}-${String(parts.m).padStart(2, '0')}`)
+    const row = buckets.get(parts.weekStart) || { pnl: 0, trades: 0, days: [] }
+    row.pnl += t.pnl ?? 0
+    row.trades += 1
+    if (!row.days.includes(parts.d)) row.days.push(parts.d)
+    buckets.set(parts.weekStart, row)
+  }
+  const monthlyCalendar = [...buckets.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([weekStart, row]) => ({
+      week: weekLabel(weekStart),
+      days: row.days.sort((a, b) => a - b),
+      pnl: Math.round(row.pnl * 100) / 100,
+      trades: row.trades,
+    }))
+  const monthNames = [...months].sort()
+  let calendarLabel = 'Closed trades'
+  if (monthNames.length === 1) {
+    const [y, m] = monthNames[0]!.split('-').map((n) => Number(n))
+    calendarLabel = new Intl.DateTimeFormat('en-US', {
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'UTC',
+    }).format(new Date(Date.UTC(y || 2026, (m || 1) - 1, 1)))
+  } else if (monthNames.length > 1) {
+    const fmt = (key: string) => {
+      const [y, m] = key.split('-').map((n) => Number(n))
+      return new Intl.DateTimeFormat('en-US', {
+        month: 'short',
+        year: 'numeric',
+        timeZone: 'UTC',
+      }).format(new Date(Date.UTC(y || 2026, (m || 1) - 1, 1)))
+    }
+    calendarLabel = `${fmt(monthNames[0]!)} – ${fmt(monthNames[monthNames.length - 1]!)}`
+  }
+  return { calendarLabel, monthlyCalendar }
 }
 
 /** Classify duration into standard duration buckets */
@@ -445,6 +529,9 @@ export interface CalculatedPerformanceMetrics {
   avgLossDurationSec: number
   durationCounts: Record<DurationBucket, number>
   durationWinRates: Record<DurationBucket, number>
+  /** Trades that had a real entry-to-exit time span. */
+  timedTrades: number
+  calendarLabel: string
   monthlyCalendar: Array<{
     week: string
     days: number[]
@@ -480,13 +567,9 @@ export function calculatePerformanceMetrics(
       avgLossDurationSec: 0,
       durationCounts: Object.fromEntries(DURATION_BUCKETS.map((b) => [b, 0])) as Record<DurationBucket, number>,
       durationWinRates: Object.fromEntries(DURATION_BUCKETS.map((b) => [b, 0])) as Record<DurationBucket, number>,
-      monthlyCalendar: [
-        { week: 'Week 1', days: [28, 29, 30, 1, 2, 3, 4], pnl: 0, trades: 0 },
-        { week: 'Week 2', days: [5, 6, 7, 8, 9, 10, 11], pnl: 0, trades: 0 },
-        { week: 'Week 3', days: [12, 13, 14, 15, 16, 17, 18], pnl: 0, trades: 0 },
-        { week: 'Week 4', days: [19, 20, 21, 22, 23, 24, 25], pnl: 0, trades: 0 },
-        { week: 'Week 5', days: [26, 27, 28, 29, 30, 31, 1], pnl: 0, trades: 0 },
-      ],
+      timedTrades: 0,
+      calendarLabel: 'Closed trades',
+      monthlyCalendar: [],
     }
   }
 
@@ -504,6 +587,9 @@ export function calculatePerformanceMetrics(
   let totalDuration = 0
   let winDuration = 0
   let lossDuration = 0
+  let timedTrades = 0
+  let timedWins = 0
+  let timedLosses = 0
 
   const durationTotals: Record<DurationBucket, number> = Object.fromEntries(DURATION_BUCKETS.map((b) => [b, 0])) as any
   const durationWins: Record<DurationBucket, number> = Object.fromEntries(DURATION_BUCKETS.map((b) => [b, 0])) as any
@@ -520,19 +606,27 @@ export function calculatePerformanceMetrics(
     if (pnl < worstTrade) worstTrade = pnl
 
     const durationSec = getTradeDurationSec(t)
-    totalDuration += durationSec
-    const bucket = classifyDurationBucket(durationSec)
-    durationTotals[bucket] = (durationTotals[bucket] || 0) + 1
+    if (durationSec != null) {
+      timedTrades++
+      totalDuration += durationSec
+      const bucket = classifyDurationBucket(durationSec)
+      durationTotals[bucket] = (durationTotals[bucket] || 0) + 1
+      if (pnl > 0) {
+        timedWins++
+        winDuration += durationSec
+        durationWins[bucket] = (durationWins[bucket] || 0) + 1
+      } else if (pnl < 0) {
+        timedLosses++
+        lossDuration += durationSec
+      }
+    }
 
     if (pnl > 0) {
       winningTrades++
       grossProfit += pnl
-      winDuration += durationSec
-      durationWins[bucket] = (durationWins[bucket] || 0) + 1
     } else if (pnl < 0) {
       losingTrades++
       grossLoss += Math.abs(pnl)
-      lossDuration += durationSec
     }
   }
 
@@ -549,9 +643,9 @@ export function calculatePerformanceMetrics(
   const longPct = totalTrades > 0 ? (longCount / totalTrades) * 100 : 0
   const shortPct = totalTrades > 0 ? (shortCount / totalTrades) * 100 : 0
 
-  const avgDurationSec = totalTrades > 0 ? Math.round(totalDuration / totalTrades) : 0
-  const avgWinDurationSec = winningTrades > 0 ? Math.round(winDuration / winningTrades) : 0
-  const avgLossDurationSec = losingTrades > 0 ? Math.round(lossDuration / losingTrades) : 0
+  const avgDurationSec = timedTrades > 0 ? Math.round(totalDuration / timedTrades) : 0
+  const avgWinDurationSec = timedWins > 0 ? Math.round(winDuration / timedWins) : 0
+  const avgLossDurationSec = timedLosses > 0 ? Math.round(lossDuration / timedLosses) : 0
 
   const durationWinRates: Record<DurationBucket, number> = Object.fromEntries(
     DURATION_BUCKETS.map((b) => {
@@ -561,13 +655,7 @@ export function calculatePerformanceMetrics(
     })
   ) as any
 
-  const monthlyCalendar = [
-    { week: 'Week 1', days: [28, 29, 30, 1, 2, 3, 4], pnl: Math.round(totalPnl * 100) / 100, trades: totalTrades },
-    { week: 'Week 2', days: [5, 6, 7, 8, 9, 10, 11], pnl: 0, trades: 0 },
-    { week: 'Week 3', days: [12, 13, 14, 15, 16, 17, 18], pnl: 0, trades: 0 },
-    { week: 'Week 4', days: [19, 20, 21, 22, 23, 24, 25], pnl: 0, trades: 0 },
-    { week: 'Week 5', days: [26, 27, 28, 29, 30, 31, 1], pnl: 0, trades: 0 },
-  ]
+  const { calendarLabel, monthlyCalendar } = calendarFromTrades(trades)
 
   return {
     totalPnl: Math.round(totalPnl * 100) / 100,
@@ -591,6 +679,8 @@ export function calculatePerformanceMetrics(
     avgLossDurationSec,
     durationCounts: durationTotals,
     durationWinRates,
+    timedTrades,
+    calendarLabel,
     monthlyCalendar,
   }
 }

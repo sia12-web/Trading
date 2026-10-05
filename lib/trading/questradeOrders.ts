@@ -18,6 +18,7 @@ export type QuestradeRawOrder = {
   state?: string
   totalQuantity?: number
   openQuantity?: number
+  filledQuantity?: number | null
   limitPrice?: number | null
   stopPrice?: number | null
   triggerStopPrice?: number | null
@@ -40,6 +41,22 @@ export type QuestradeRawPosition = {
   openPnl?: number
   closedPnl?: number
   totalCost?: number
+}
+
+/** Account activity row. Trade netAmount is cash including commissions. */
+export type QuestradeRawActivity = {
+  tradeDate?: string
+  transactionDate?: string
+  settlementDate?: string
+  action?: string
+  symbol?: string
+  quantity?: number
+  price?: number
+  grossAmount?: number
+  commission?: number
+  netAmount?: number
+  type?: string
+  currency?: string
 }
 
 export type QuestradeBookRow = {
@@ -126,8 +143,23 @@ const DEAD = new Set([
   'FAILED',
   'REPLACED',
 ])
-const OPTION_RE = /^([A-Z0-9.\-]+)\s+(\d{2}[A-Za-z]{3}\d{2})([CPcp])(\d+(?:\.\d+)?)$/
-const OPTION_OCC = /^([A-Z0-9.\-]+)\s+(\d{2})(\d{2})(\d{2})([CPcp])(\d{8})$/
+/** Questrade compact: META23Oct26P680.00, QQQ6Aug26C670.00, or "QQQ  06Aug26C670.00". Day may be 1 digit. */
+const OPTION_COMPACT = /^([A-Z][A-Z0-9.\-]*?)\s*(\d{1,2})([A-Z]{3})(\d{2})([CP])(\d+(?:\.\d+)?)$/
+const OPTION_OCC = /^([A-Z0-9.\-]+)\s+(\d{2})(\d{2})(\d{2})([CP])(\d{8})$/
+const OPTION_MONTHS = new Set([
+  'JAN',
+  'FEB',
+  'MAR',
+  'APR',
+  'MAY',
+  'JUN',
+  'JUL',
+  'AUG',
+  'SEP',
+  'OCT',
+  'NOV',
+  'DEC',
+])
 const LEVEL_LOOKBACK_MS = 21 * 24 * 60 * 60 * 1000
 
 export function questradeOrderType(raw: QuestradeRawOrder): string {
@@ -199,6 +231,12 @@ export function normalizeQuestradeSymbol(raw?: string | null): string {
     .toUpperCase()
 }
 
+function optionStrikeLabel(strikeRaw: string): string {
+  const strikeNum = Number(strikeRaw)
+  if (!Number.isFinite(strikeNum)) return strikeRaw
+  return strikeNum % 1 === 0 ? String(strikeNum) : strikeNum.toFixed(2)
+}
+
 export function parseQuestradeSymbol(raw?: string | null): {
   raw: string
   key: string
@@ -209,19 +247,12 @@ export function parseQuestradeSymbol(raw?: string | null): {
 } | null {
   const key = normalizeQuestradeSymbol(raw)
   if (!key) return null
-  const opt = key.match(OPTION_RE)
-  if (opt && opt[1] && opt[2] && opt[3] && opt[4]) {
+  const opt = key.match(OPTION_COMPACT)
+  if (opt && opt[1] && opt[2] && opt[3] && opt[4] && opt[5] && opt[6] && OPTION_MONTHS.has(opt[3])) {
     const underlying = opt[1]
-    const expiry = opt[2]
-    const right = opt[3].toUpperCase() === 'P' ? 'Put' : 'Call'
-    const strikeRaw = opt[4]
-    const kind = right
-    const strikeNum = Number(strikeRaw)
-    const strike = Number.isFinite(strikeNum)
-      ? strikeNum % 1 === 0
-        ? String(strikeNum)
-        : strikeNum.toFixed(2)
-      : strikeRaw
+    const expiry = `${opt[2].padStart(2, '0')}${opt[3]}${opt[4]}`
+    const kind = opt[5] === 'P' ? 'Put' : 'Call'
+    const strike = optionStrikeLabel(opt[6])
     return {
       raw: key,
       key,
@@ -238,12 +269,7 @@ export function parseQuestradeSymbol(raw?: string | null): {
     const mm = optOcc[3]
     const dd = optOcc[4]
     const right = optOcc[5].toUpperCase() === 'P' ? 'Put' : 'Call'
-    const strikeNum = Number(optOcc[6]) / 1000
-    const strike = Number.isFinite(strikeNum)
-      ? strikeNum % 1 === 0
-        ? String(strikeNum)
-        : strikeNum.toFixed(2)
-      : String(strikeNum)
+    const strike = optionStrikeLabel(String(Number(optOcc[6]) / 1000))
     return {
       raw: key,
       key,
@@ -326,7 +352,7 @@ function toProtectiveLevel(
   const status = questradeLevelStatus(raw)
   const qty = Number(raw.totalQuantity || raw.openQuantity || 0)
   if (!parsed || !side || price == null || !status || !(qty > 0)) return null
-  const realMeta = getSymbolRealName(parsed.key)
+  const realMeta = getSymbolRealName(parsed.asset === 'option' ? parsed.underlying : parsed.key)
   const companyName = realMeta.name
   const realName = parsed.asset === 'option' ? parsed.label : realMeta.name
   return {
@@ -433,6 +459,12 @@ function pickLevel(
 export function pairQuestradeBook(args: {
   orders: QuestradeRawOrder[]
   positions?: QuestradeRawPosition[]
+  /**
+   * Broker cash activities. When provided, closed history is FIFO-paired from
+   * trade net amounts (option multiplier + commissions included). Questrade
+   * order history does not retain older option round-trips that activities still list.
+   */
+  activities?: QuestradeRawActivity[]
   now?: Date
 }): {
   workingLimits: QuestradeBookRow[]
@@ -555,10 +587,8 @@ export function pairQuestradeBook(args: {
       mark != null
         ? signedNum((mark - entryPx) * qty * (side === 'BUY' ? 1 : -1) * parsed.multiplier)
         : null
-    const livePnl =
-      pos?.openPnl != null && pos.openPnl !== 0
-        ? signedNum(pos.openPnl)
-        : calculatedPnl
+    const brokerOpen = Number(pos?.openPnl)
+    const livePnl = Number.isFinite(brokerOpen) ? signedNum(brokerOpen) : calculatedPnl
     const stockRisk =
       stop != null
         ? Math.round(Math.abs(entryPx - stop) * qty * parsed.multiplier * 100) / 100
@@ -568,7 +598,7 @@ export function pairQuestradeBook(args: {
         ? Math.round(mark * qty * parsed.multiplier * 100) / 100
         : Math.round(entryPx * qty * parsed.multiplier * 100) / 100
 
-    const realMeta = getSymbolRealName(parsed.key)
+    const realMeta = getSymbolRealName(parsed.asset === 'option' ? parsed.underlying : parsed.key)
     const companyName = realMeta.name
     const realName = parsed.asset === 'option' ? parsed.label : realMeta.name
 
@@ -658,8 +688,13 @@ export function pairQuestradeBook(args: {
     }
   }
 
-  // 3. Closed history = FIFO-paired entry/exit fills with realized P&L only
-  history.push(...buildClosedTradeHistory(orders, levels))
+  // 3. Closed history. Activities are the cash record (commissions + older option
+  // round-trips the orders endpoint no longer returns). Orders remain the fallback.
+  if (args.activities) {
+    history.push(...buildClosedTradeHistoryFromActivities(args.activities))
+  } else {
+    history.push(...buildClosedTradeHistory(orders, levels))
+  }
 
   const visibleLevels = levels
     .filter((l) => {
@@ -724,7 +759,11 @@ export function buildClosedTradeHistory(
     const parsed = parseQuestradeSymbol(o.symbol)
     const side = parseQuestradeSide(o.side)
     const price = orderPrice(o)
-    const qty = Number(o.totalQuantity || o.openQuantity || 0)
+    const filled = Number(o.filledQuantity)
+    const qty =
+      Number.isFinite(filled) && filled > 0
+        ? filled
+        : Number(o.totalQuantity || o.openQuantity || 0)
     if (!parsed || !side || !price || !(qty > 0)) continue
     fills.push({
       id: String(o.id ?? `${parsed.key}-${orderStamp(o) || 'fill'}`),
@@ -800,7 +839,7 @@ export function buildClosedTradeHistory(
           ? (fill.price - lot.price) * matched * lot.parsed.multiplier
           : (lot.price - fill.price) * matched * lot.parsed.multiplier
       const pnl = Math.round(pnlRaw * 100) / 100
-      const realMeta = getSymbolRealName(lot.parsed.key)
+      const realMeta = getSymbolRealName(lot.parsed.asset === 'option' ? lot.parsed.underlying : lot.parsed.key)
       const companyName = realMeta.name
       const realName = lot.parsed.asset === 'option' ? lot.parsed.label : realMeta.name
       closeSeq += 1
@@ -858,6 +897,117 @@ export function buildClosedTradeHistory(
             : null),
         orderType: fill.orderType,
         parsed: fill.parsed,
+      })
+    }
+  }
+
+  return closed
+}
+
+type ActivityLot = {
+  side: TeamTapeSide
+  qty: number
+  price: number
+  cash: number
+  time: string | null
+  parsed: NonNullable<ReturnType<typeof parseQuestradeSymbol>>
+}
+
+/**
+ * FIFO round-trips from account activities. P&L is the allocated net cash
+ * (premium × 100 for options, plus commissions), not a price difference alone.
+ */
+export function buildClosedTradeHistoryFromActivities(
+  activities: QuestradeRawActivity[]
+): QuestradeBookRow[] {
+  const trades = activities
+    .filter((a) => String(a.type || '').toLowerCase() === 'trades')
+    .filter((a) => parseQuestradeSymbol(a.symbol) && Math.abs(Number(a.quantity)) > 0)
+    .slice()
+    .sort((a, b) => {
+      const ta = String(a.tradeDate || a.transactionDate || '')
+      const tb = String(b.tradeDate || b.transactionDate || '')
+      if (ta !== tb) return ta.localeCompare(tb)
+      return String(a.symbol || '').localeCompare(String(b.symbol || ''))
+    })
+
+  const lotsBySym = new Map<string, ActivityLot[]>()
+  const closed: QuestradeBookRow[] = []
+  let closeSeq = 0
+
+  for (const activity of trades) {
+    const parsed = parseQuestradeSymbol(activity.symbol)
+    if (!parsed) continue
+    const qty = Math.abs(Number(activity.quantity))
+    const price = Number(activity.price)
+    const cash = Number(activity.netAmount)
+    if (!(qty > 0) || !Number.isFinite(price) || !Number.isFinite(cash)) continue
+    const side: TeamTapeSide = String(activity.action || '').toUpperCase() === 'SELL' ? 'SELL' : 'BUY'
+    const time = activity.tradeDate || activity.transactionDate || null
+    const lots = lotsBySym.get(parsed.key) || []
+    lotsBySym.set(parsed.key, lots)
+    const inventorySide = lots[0]?.side ?? null
+
+    if (!inventorySide || inventorySide === side) {
+      lots.push({ side, qty, price, cash, time, parsed })
+      continue
+    }
+
+    let remaining = qty
+    let cashLeft = cash
+    while (remaining > 1e-9 && lots.length > 0) {
+      const lot = lots[0]!
+      const matched = Math.min(remaining, lot.qty)
+      const entryCash = lot.cash * (matched / lot.qty)
+      const exitCash = cashLeft * (matched / remaining)
+      const pnl = Math.round((entryCash + exitCash) * 100) / 100
+      const realMeta = getSymbolRealName(
+        lot.parsed.asset === 'option' ? lot.parsed.underlying : lot.parsed.key
+      )
+      closeSeq += 1
+      closed.push({
+        sourceId: `act-${lot.parsed.key}-${closeSeq}`,
+        symbol: lot.parsed.key,
+        label: lot.parsed.label,
+        companyName: realMeta.name,
+        realName: lot.parsed.asset === 'option' ? lot.parsed.label : realMeta.name,
+        underlying: lot.parsed.underlying,
+        asset: lot.parsed.asset,
+        side: lot.side,
+        quantity: matched,
+        entry: lot.price,
+        stop: null,
+        target: null,
+        stopStatus: null,
+        targetStatus: null,
+        mark: price,
+        livePnl: null,
+        exit: price,
+        pnl,
+        exitAt: time,
+        status: 'closed',
+        orderType: 'MARKET',
+        kind: 'history',
+        notional: Math.round(Math.abs(exitCash) * 100) / 100,
+        stockRiskDollars: null,
+        multiplier: lot.parsed.multiplier,
+        filledAt: lot.time,
+      })
+      lot.qty -= matched
+      lot.cash -= entryCash
+      remaining -= matched
+      cashLeft -= exitCash
+      if (lot.qty <= 1e-9) lots.shift()
+    }
+
+    if (remaining > 1e-9) {
+      lots.push({
+        side,
+        qty: remaining,
+        price,
+        cash: cashLeft,
+        time,
+        parsed,
       })
     }
   }
