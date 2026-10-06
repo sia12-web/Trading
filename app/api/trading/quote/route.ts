@@ -6,7 +6,6 @@
 
 import { NextResponse } from 'next/server'
 import { getDayPreviousClose, getYahooQuote } from '@/lib/yahoo/quote'
-import { activeDeskSessionsAt } from '@/lib/chart/sessionVwap'
 import { getOandaPrice } from '@/lib/oanda/pricing'
 import {
   applyCmeBasis,
@@ -90,10 +89,9 @@ export async function GET(request: Request) {
       'Cache-Control': 'no-store, no-cache, must-revalidate',
     }
 
-    // Focus window OR active desk session (Asia, London, NY) — live CME futures quotes
+    // Live tape: NY from the commodity open, Nikkei for the Tokyo session.
     const stream = isChartStreamAllowed(instrument)
-    const active = activeDeskSessionsAt(Math.floor(Date.now() / 1000))
-    if (!stream.open && active.length === 0) {
+    if (!stream.open) {
       return NextResponse.json(
         { error: stream.reason, instrument, price: null, frozen: true },
         { status: 200, headers }

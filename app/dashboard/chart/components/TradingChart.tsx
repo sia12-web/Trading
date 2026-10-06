@@ -39,7 +39,6 @@ import {
 } from 'lightweight-charts'
 import {
   AVWAP_CANDLE_FETCH_CALENDAR_DAYS,
-  activeDeskSessionsAt,
   computeSessionHighlightSpans,
   projectSessionHighlightRects,
   paintSessionHighlightOverlay,
@@ -51,8 +50,11 @@ import {
   nyDeskSessionAt,
   isWeekdayYmd,
   zonedCivilToUnix,
+  advanceAnchoredVwap,
   computeAnchoredVwap,
   lastNTradingSessions as trimDeskCandles,
+  seedAnchoredVwapFold,
+  type AvwapFold,
   type SessionBar,
 } from '@/lib/chart/sessionVwap'
 import { parseCalendarEventMs } from '@/lib/trading/deskNewsHazard'
@@ -92,6 +94,7 @@ import {
   type OvernightInventoryEvaluation,
   type ContextBar,
 } from '@/lib/chart/context55'
+import { anchoredVwapFollowsTape, fixedRangeFreezeAsOf, fixedRangePhase } from '@/lib/chart/structureClock'
 import {
   formatChartClock,
   formatChartDate,
@@ -1559,6 +1562,9 @@ export function TradingChart({
   const [openingBadge, setOpeningBadge] = useState('WAIT')
   const [frvp5d, setFrvp5d] = useState<FixedRangeVolumeProfile5D | null>(null)
   const frvpLinesRef = useRef<IPriceLine[]>([])
+  /** Sticky snapshot so fixed maps do not chase the tape outside 08:30–cash open. */
+  const frvpSnapRef = useRef('')
+  const ydaySnapRef = useRef('')
   const paintFrvp5dRef = useRef<(overrideBars?: OHLCV[]) => void>(() => { })
   const [avwap5mBenchmark, setAvwap5mBenchmark] = useState<AnchoredVwapBenchmark5M | null>(null)
   const [show5mAvwapOnChart, setShow5mAvwapOnChart] = useState(false)
@@ -1574,6 +1580,8 @@ export function TradingChart({
   const paint5mAvwapBenchmarkRef = useRef<() => void>(() => { })
   const [_currentVwap, setCurrentVwap] = useState<{ vwap: number; upper1: number; lower1: number } | null>(null)
   const latestVwapBandsRef = useRef<any>(null)
+  /** Closed-bar AVWAP sums. The forming bar is applied on each live print. */
+  const avwapFoldRef = useRef<AvwapFold | null>(null)
 
   // News Catalyst Anchored VWAP (News AVWAP) state
   const [showNewsAvwap, setShowNewsAvwap] = useState(false)
@@ -2654,6 +2662,15 @@ export function TradingChart({
     }
     const list = overrideBars || candlesRef.current
     if (!list || list.length === 0) return
+    const phase = fixedRangePhase(instrument)
+    const snap =
+      phase === 'holding'
+        ? `${instrument}:${timeframe}:held`
+        : phase === 'frozen'
+          ? `${instrument}:${timeframe}:frozen`
+          : ''
+    if (snap && frvpSnapRef.current === snap) return
+    const asOf = phase === 'frozen' ? fixedRangeFreezeAsOf(instrument).fiveDayUnix : undefined
     const profile = compute5DayFixedRangeVolumeProfile(
       list.map((c) => ({
         time: c.time as number,
@@ -2663,8 +2680,10 @@ export function TradingChart({
         close: c.close,
         volume: c.volume,
       })),
-      instrument
+      instrument,
+      asOf
     )
+    frvpSnapRef.current = snap
     setFrvp5d(profile)
     for (const line of frvpLinesRef.current) {
       try {
@@ -2693,6 +2712,14 @@ export function TradingChart({
     }
     const list = overrideBars || candlesRef.current
     if (!list || list.length === 0) return
+    const phase = fixedRangePhase(instrument)
+    const snap =
+      phase === 'holding'
+        ? `${instrument}:${timeframe}:held`
+        : phase === 'frozen'
+          ? `${instrument}:${timeframe}:frozen`
+          : ''
+    if (snap && ydaySnapRef.current === snap) return
     const bars: ContextBar[] = list.map((c) => ({
       time: c.time as number,
       open: c.open,
@@ -2703,14 +2730,17 @@ export function TradingChart({
     }))
     const lastBarTime = bars[bars.length - 1]?.time
     const clock = deskClockFor(instrument)
-    const yday = computeYesterdayNycSession(bars, lastBarTime, clock)
+    const asOf =
+      phase === 'frozen' ? fixedRangeFreezeAsOf(instrument).inventoryUnix : lastBarTime
+    const yday = computeYesterdayNycSession(bars, asOf, clock)
+    ydaySnapRef.current = snap
     setYesterdayNyc(yday)
 
     if (yday) {
       const inv = computeOvernightInventoryAndSessions({
         bars,
         yesterday: yday,
-        asOfUnix: lastBarTime,
+        asOfUnix: asOf,
         clock,
       })
       setOvernightInventory(inv)
@@ -9030,6 +9060,7 @@ export function TradingChart({
     // updates only its final element in place; cloning here prevents mutating
     // the state array while avoiding an O(history) copy on every exchange tick.
     candlesRef.current = candles.slice()
+    avwapFoldRef.current = null
     requestAnimationFrame(() => {
       refreshSessionHighlightsRef.current?.()
     })
@@ -9157,6 +9188,8 @@ export function TradingChart({
           })
         : computeAnchoredVwap(mappedBars, clock)
     latestVwapBandsRef.current = bands
+    avwapFoldRef.current =
+      timeframe === '1D' ? null : seedAnchoredVwapFold(mappedBars, clock)
     if (bands?.vwap?.length) {
       const last = bands.vwap[bands.vwap.length - 1]
       avwapLastRef.current =
@@ -9177,8 +9210,9 @@ export function TradingChart({
 
     const vs = vwapSeriesRef.current
     if (vs) {
-      const shouldRenderBands = show5mAvwapOnChart
-      if (shouldRenderBands && bands) {
+      // Intraday session AVWAP is always on. The 5M toggle only gates the daily curve.
+      const showSessionAvwap = timeframe !== '1D' || show5mAvwapOnChart
+      if (showSessionAvwap && bands) {
         const shift = (rows: Array<{ time: number; value: number }>) =>
           timeframe === '1D'
             ? toDailyLinePoints(rows)
@@ -9344,6 +9378,56 @@ export function TradingChart({
       lastCandleRef.current = serverTip
     }
 
+    // The candle refresh just painted the server AVWAP. Put the live print back on
+    // the tip so the line does not sit still until the next quote.
+    const shownTip = lastCandleRef.current
+    const foldNow = avwapFoldRef.current
+    if (
+      timeframe !== '1D' &&
+      shownTip &&
+      serverTip &&
+      foldNow &&
+      anchoredVwapFollowsTape(instrument)
+    ) {
+      const shownT = shownTip.time as number
+      const serverT = serverTip.time as number
+      const ohlcMoved =
+        shownTip.close !== serverTip.close ||
+        shownTip.high !== serverTip.high ||
+        shownTip.low !== serverTip.low
+      if (shownT > serverT || (shownT === serverT && ohlcMoved)) {
+        const liveBar: SessionBar = {
+          time: shownT,
+          open: shownTip.open,
+          high: shownTip.high,
+          low: shownTip.low,
+          close: shownTip.close,
+          volume: shownTip.volume ?? 0,
+        }
+        const seriesBars =
+          shownT > serverT ? [...mappedBars, liveBar] : [...mappedBars.slice(0, -1), liveBar]
+        const stepped = advanceAnchoredVwap(foldNow, seriesBars)
+        if (stepped.tip) {
+          avwapFoldRef.current = stepped.fold
+          const vsLive = vwapSeriesRef.current
+          if (vsLive) {
+            const t = toChartTime(stepped.tip.time, tz) as UTCTimestamp
+            const point = (value: number) => ({ time: t, value })
+            try { vsLive.vwap.update(point(stepped.tip.vwap)) } catch { /* series not ready */ }
+            if (showSdBands) {
+              try { vsLive.upper1.update(point(stepped.tip.upper1)) } catch { /* series not ready */ }
+              try { vsLive.lower1.update(point(stepped.tip.lower1)) } catch { /* series not ready */ }
+              try { vsLive.upper2.update(point(stepped.tip.upper2)) } catch { /* series not ready */ }
+              try { vsLive.lower2.update(point(stepped.tip.lower2)) } catch { /* series not ready */ }
+              try { vsLive.upper3.update(point(stepped.tip.upper3)) } catch { /* series not ready */ }
+              try { vsLive.lower3.update(point(stepped.tip.lower3)) } catch { /* series not ready */ }
+            }
+            avwapLastRef.current = stepped.tip.vwap
+          }
+        }
+      }
+    }
+
     // Only paint levels after refs synced — empty after instrument switch until loadLevels
     levelsRef.current = levels
     paintLevelLines()
@@ -9421,6 +9505,8 @@ export function TradingChart({
           })
         : computeAnchoredVwap(mappedBars, clock)
     latestVwapBandsRef.current = bands
+    avwapFoldRef.current =
+      timeframe === '1D' ? null : seedAnchoredVwapFold(mappedBars, clock)
     if (bands?.vwap?.length) {
       const last = bands.vwap[bands.vwap.length - 1]
       avwapLastRef.current = last && last.value > 0 ? last.value : null
@@ -9435,8 +9521,8 @@ export function TradingChart({
       }
     }
 
-    const shouldRenderBands = show5mAvwapOnChart
-    if (bands && bands.vwap && shouldRenderBands) {
+    const showSessionAvwap = timeframe !== '1D' || show5mAvwapOnChart
+    if (bands && bands.vwap && showSessionAvwap) {
       const tz = chartTzRef.current
       const shift = <T extends { time: number | UTCTimestamp; value: number }>(rows: T[]) =>
         timeframe === '1D'
@@ -9807,11 +9893,8 @@ export function TradingChart({
     let lastSseMessageAt = 0
     const SSE_STALE_MS = 3_000
 
-    /** Live quote stream active during cash/focus hours and active sessions (Asia, London, NY) */
-    const tipOpen = () =>
-      tipStreamActive &&
-      (isChartStreamAllowed(instrument).open ||
-        activeDeskSessionsAt(Math.floor(Date.now() / 1000)).length > 0)
+    /** Live quote stream: NY from the commodity open, Nikkei for the Tokyo session. */
+    const tipOpen = () => tipStreamActive && isChartStreamAllowed(instrument).open
 
     const toChartCandle = (bar: OHLCV) => ({
       time: toSeriesTime(bar.time as number, timeframe, chartTzRef.current),
@@ -9896,6 +9979,36 @@ export function TradingChart({
       }
       candlesRef.current = next
       paintTipBar(bar)
+      if (timeframe !== '1D' && anchoredVwapFollowsTape(instrument)) {
+        const clock = deskClockFor(instrument)
+        const asBars = next as SessionBar[]
+        let fold = avwapFoldRef.current
+        if (!fold) fold = seedAnchoredVwapFold(asBars, clock)
+        if (fold) {
+          let stepped = advanceAnchoredVwap(fold, asBars)
+          if (!stepped.tip) {
+            const reseeded = seedAnchoredVwapFold(asBars, clock)
+            if (reseeded) stepped = advanceAnchoredVwap(reseeded, asBars)
+          }
+          avwapFoldRef.current = stepped.fold
+          const tip = stepped.tip
+          const vs = vwapSeriesRef.current
+          if (tip && vs) {
+            const t = toChartTime(tip.time, chartTzRef.current) as UTCTimestamp
+            const point = (value: number) => ({ time: t, value })
+            try { vs.vwap.update(point(tip.vwap)) } catch { /* series not ready */ }
+            if (showSdBands) {
+              try { vs.upper1.update(point(tip.upper1)) } catch { /* series not ready */ }
+              try { vs.lower1.update(point(tip.lower1)) } catch { /* series not ready */ }
+              try { vs.upper2.update(point(tip.upper2)) } catch { /* series not ready */ }
+              try { vs.lower2.update(point(tip.lower2)) } catch { /* series not ready */ }
+              try { vs.upper3.update(point(tip.upper3)) } catch { /* series not ready */ }
+              try { vs.lower3.update(point(tip.lower3)) } catch { /* series not ready */ }
+            }
+            avwapLastRef.current = tip.vwap > 0 ? tip.vwap : avwapLastRef.current
+          }
+        }
+      }
       if (fills.length > 0) {
         const now = Date.now()
         if (now - lastMarkerPaintAt >= 1000) {

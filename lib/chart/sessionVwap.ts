@@ -1305,6 +1305,146 @@ export function computeAnchoredVwap(
     : null
 }
 
+/** Running AVWAP sums. The forming bar is not inside the sums — it is the tip. */
+export interface AvwapFold {
+  anchorUnix: number
+  sumPV: number
+  sumV: number
+  sumP2V: number
+  /** Last closed bar already inside the sums. */
+  foldedThrough: number
+}
+
+export interface AvwapTipPoint {
+  time: number
+  vwap: number
+  upper1: number
+  lower1: number
+  upper2: number
+  lower2: number
+  upper3: number
+  lower3: number
+}
+
+function vwapBarContribution(c: SessionBar): { price: number; vol: number } {
+  return {
+    price: (c.high + c.low + c.close) / 3,
+    vol: c.volume > 0 ? c.volume : 1,
+  }
+}
+
+function anchorUnixForBars(candles: SessionBar[], clock: DeskClock): number | null {
+  const dayBounds = new Map<string, { openU: number; closeU: number } | null>()
+  for (const c of candles) {
+    const day = dayKeyInTz(c.time, clock.timeZone)
+    let bounds = dayBounds.get(day)
+    if (bounds === undefined) {
+      if (!isWeekdayYmd(day, clock.timeZone)) {
+        dayBounds.set(day, null)
+        continue
+      }
+      bounds = {
+        openU: cashOpenUnixForYmd(day, clock),
+        closeU: zonedCivilToUnix(day, clock.overnightStartHour, clock.timeZone),
+      }
+      dayBounds.set(day, bounds)
+    }
+    if (!bounds) continue
+    if (c.time >= bounds.openU && c.time < bounds.closeU) return bounds.openU
+  }
+  return null
+}
+
+function tipFromSums(
+  time: number,
+  sumPV: number,
+  sumV: number,
+  sumP2V: number,
+  bar: SessionBar
+): AvwapTipPoint | null {
+  const { price, vol } = vwapBarContribution(bar)
+  const tipV = sumV + vol
+  if (tipV <= 0) return null
+  const tipPV = sumPV + price * vol
+  const tipP2 = sumP2V + price * price * vol
+  const v = tipPV / tipV
+  const variance = Math.max(0, tipP2 / tipV - v * v)
+  const std = Math.sqrt(variance)
+  return {
+    time,
+    vwap: v,
+    upper1: v + std,
+    lower1: v - std,
+    upper2: v + 2 * std,
+    lower2: v - 2 * std,
+    upper3: v + 3 * std,
+    lower3: v - 3 * std,
+  }
+}
+
+/**
+ * Fold every bar after the cash-open anchor except the last.
+ * The last bar is the forming print and is applied by {@link advanceAnchoredVwap}.
+ */
+export function seedAnchoredVwapFold(
+  candles: SessionBar[],
+  clock: DeskClock = NY_DESK_CLOCK
+): AvwapFold | null {
+  if (candles.length === 0) return null
+  const anchorUnix = anchorUnixForBars(candles, clock)
+  if (anchorUnix == null) return null
+  let sumPV = 0
+  let sumV = 0
+  let sumP2V = 0
+  let foldedThrough = anchorUnix - 1
+  const lastIdx = candles.length - 1
+  for (let i = 0; i < lastIdx; i++) {
+    const c = candles[i]!
+    if (c.time < anchorUnix) continue
+    const { price, vol } = vwapBarContribution(c)
+    sumPV += price * vol
+    sumP2V += price * price * vol
+    sumV += vol
+    foldedThrough = c.time
+  }
+  return { anchorUnix, sumPV, sumV, sumP2V, foldedThrough }
+}
+
+/**
+ * Fold any newly closed bars, then price the forming bar on top of the sums.
+ * Does not put the forming bar into the fold, so the next tick replaces the tip.
+ * Returns a null tip when the fold is ahead of the series — the caller reseeds.
+ */
+export function advanceAnchoredVwap(
+  fold: AvwapFold,
+  candles: SessionBar[]
+): { fold: AvwapFold; tip: AvwapTipPoint | null } {
+  if (candles.length === 0) return { fold, tip: null }
+  const last = candles[candles.length - 1]!
+  if (fold.foldedThrough > last.time) return { fold, tip: null }
+
+  let { sumPV, sumV, sumP2V, foldedThrough } = fold
+  for (let i = 0; i < candles.length - 1; i++) {
+    const c = candles[i]!
+    if (c.time <= foldedThrough) continue
+    if (c.time < fold.anchorUnix || c.time >= last.time) continue
+    const { price, vol } = vwapBarContribution(c)
+    sumPV += price * vol
+    sumP2V += price * price * vol
+    sumV += vol
+    foldedThrough = c.time
+  }
+  const next: AvwapFold = {
+    anchorUnix: fold.anchorUnix,
+    sumPV,
+    sumV,
+    sumP2V,
+    foldedThrough,
+  }
+  if (last.time < fold.anchorUnix) return { fold: next, tip: null }
+  return { fold: next, tip: tipFromSums(last.time, sumPV, sumV, sumP2V, last) }
+}
+
 /**
  * Compute Anchored VWAP starting from an explicit anchor timestamp (e.g. major news event catalyst).
  * Calculates VWAP line plus ±1σ and ±2σ standard deviation expansion bands.
