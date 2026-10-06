@@ -50,7 +50,9 @@ Thumbs.db
 *.log
 coverage/
 dist/
-.cursor/
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
 railway-vars.local.json
 *.tsbuildinfo
 2026-07-14-command-messageauditorcommand-message.txt
