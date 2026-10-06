@@ -3,6 +3,7 @@
 import React, { useState } from 'react'
 import type { OilEventEvaluation, WtiTelemetry, LiveOilHeadline } from '@/types/fundamentals'
 import { PRESET_EVENTS_FOR_EVALUATION } from '@/lib/fundamentals/oilAnalystConfig'
+import { displaySampleTitle } from '@/lib/fundamentals/honesty'
 
 interface EventEvaluatorCardProps {
   onEvaluate: (params: {
@@ -132,7 +133,7 @@ export function EventEvaluatorCard({
                 onClick={() => handleLoadPreset(p.id)}
                 className="px-2.5 py-1 text-xs rounded-lg bg-surface-700/80 hover:bg-surface-700 text-gray-300 hover:text-white border border-surface-600 transition"
               >
-                {p.title}
+                {displaySampleTitle(p.title)}
               </button>
             ))}
           </div>

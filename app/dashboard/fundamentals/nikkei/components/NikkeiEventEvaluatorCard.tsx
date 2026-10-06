@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import type { NikkeiEventEvaluation, NikkeiFundamentalDashboardState, StructuredNikkeiEventOutput } from '@/types/fundamentals'
 import { NIKKEI_EVALUATION_PRESETS } from '@/lib/fundamentals/nikkeiAnalystConfig'
-import { confidencePercent } from '@/lib/fundamentals/honesty'
+import { confidencePercent, displaySampleTitle } from '@/lib/fundamentals/honesty'
 
 interface NikkeiEventEvaluatorCardProps {
   onEventEvaluated: (evaluation: NikkeiEventEvaluation, nextState?: NikkeiFundamentalDashboardState) => void
@@ -98,7 +98,7 @@ export function NikkeiEventEvaluatorCard({ onEventEvaluated, prefillText, prefil
                 {preset.category}
               </div>
               <div className="font-semibold text-slate-200 group-hover:text-white line-clamp-2 mt-0.5">
-                {preset.title}
+                {displaySampleTitle(preset.title)}
               </div>
             </button>
           ))}

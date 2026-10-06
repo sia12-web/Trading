@@ -15,6 +15,7 @@ import type {
   LiveNasdaqHeadline,
 } from '@/types/fundamentals'
 import { NASDAQ_EVALUATION_PRESETS } from '@/lib/fundamentals/nasdaqAnalystConfig'
+import { displaySampleTitle } from '@/lib/fundamentals/honesty'
 
 interface NasdaqEventEvaluatorCardProps {
   onEventEvaluated: (evaluation: NasdaqEventEvaluation) => void
@@ -182,10 +183,7 @@ export function NasdaqEventEvaluatorCard({
                   : 'bg-slate-950/60 border-slate-800/80 hover:border-slate-700 text-slate-300'
               }`}
             >
-              <div className="font-semibold text-slate-200 line-clamp-1">{p.title}</div>
-              <div className="text-[11px] text-slate-400 line-clamp-2 mt-0.5">
-                {p.description}
-              </div>
+              <div className="font-semibold text-slate-200 line-clamp-2">{displaySampleTitle(p.title)}</div>
             </button>
           ))}
         </div>

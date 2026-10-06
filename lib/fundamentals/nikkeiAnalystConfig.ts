@@ -289,13 +289,13 @@ export const NIKKEI_DRIVERS_INITIAL: Record<NikkeiDriverId, NikkeiDriverState> =
   fast_retailing_retail: {
     id: 'fast_retailing_retail',
     name: 'Fast Retailing (9983.T) Price-Weight Leverage',
-    subtitle: 'Uniqlo parent company accounting for ~10.4% of total index value',
+    subtitle: 'Uniqlo parent. Its index weight stays unavailable until price and the official divisor are both on the feed.',
     category: 'PRICE_WEIGHTED',
     intradayStars: 4,
     longTermStars: 4,
     stance: 'BULLISH',
     transmissionRole:
-      'Because Nikkei is price-weighted, a ¥1,000 move in Fast Retailing moves the Nikkei ~33.2 index points alone.',
+      'Because the Nikkei is price-weighted, a move in Fast Retailing changes the index by that price change divided by the official divisor. The divisor is unavailable.',
     summary:
       'Robust international same-store sales in North America and Europe offsetting domestic weather swings.',
     metrics: [

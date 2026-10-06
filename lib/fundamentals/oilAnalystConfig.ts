@@ -191,7 +191,7 @@ export const DEFAULT_PILLARS_STATE: Record<FundamentalPillarId, FundamentalPilla
   opec_policy: {
     id: 'opec_policy',
     name: 'OPEC+ Production Policy',
-    subtitle: 'Quotas, Compliance & Voluntary 2.2M bpd Cuts',
+    subtitle: 'Quotas, compliance, and voluntary production cuts',
     bias: 'BULLISH',
     statusSummary: 'OPEC+ alliance maintains 2.2M bpd voluntary cuts, delaying planned unwinds to defend a $70-$75 WTI price floor.',
     metrics: [

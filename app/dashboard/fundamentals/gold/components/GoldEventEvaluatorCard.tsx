@@ -14,6 +14,7 @@ import type {
   LiveGoldHeadline,
 } from '@/types/fundamentals'
 import { GOLD_EVALUATION_PRESETS } from '@/lib/fundamentals/goldAnalystConfig'
+import { displaySampleTitle } from '@/lib/fundamentals/honesty'
 
 interface GoldEventEvaluatorCardProps {
   onEventEvaluated: (evaluation: GoldEventEvaluation) => void
@@ -146,7 +147,7 @@ export function GoldEventEvaluatorCard({
                   : 'bg-slate-950/70 text-slate-400 hover:text-slate-200 border-slate-800 hover:border-slate-700'
               }`}
             >
-              {p.title.split(':')[0]}
+              {displaySampleTitle(p.title)}
             </button>
           ))}
           {selectedHeadline && (

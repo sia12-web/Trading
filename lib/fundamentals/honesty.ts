@@ -124,6 +124,17 @@ export function whenSourced(live: boolean | undefined, text: string): string {
   return live ? text : UNAVAILABLE
 }
 
+/** Sample buttons keep the scenario name and drop prompt numbers and invented prints. */
+export function displaySampleTitle(title: string): string {
+  const stripped = title.replace(/\s*\((?:Prompts?|Items?)\s[^)]*\)/gi, '').trim()
+  const colon = stripped.indexOf(':')
+  const head = colon > 0 ? stripped.slice(0, colon).trim() : stripped
+  const beforeDigit = (head.split(/\d/)[0] ?? head).replace(/[\s:+\-–—]+$/, '').trim()
+  if (beforeDigit.length >= 12 && beforeDigit !== head) return beforeDigit
+  if (colon > 0 && /\d/.test(stripped.slice(colon + 1))) return head
+  return stripped
+}
+
 export function blankMetricValues<
   T extends {
     metrics: Array<{ label: string; value: string | number; change?: string; stance?: string }>

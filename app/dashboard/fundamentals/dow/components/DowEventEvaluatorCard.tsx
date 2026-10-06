@@ -15,6 +15,7 @@ import type {
   LiveDowHeadline,
 } from '@/types/fundamentals'
 import { DOW_EVALUATION_PRESETS } from '@/lib/fundamentals/dowAnalystConfig'
+import { displaySampleTitle } from '@/lib/fundamentals/honesty'
 
 interface DowEventEvaluatorCardProps {
   onEventEvaluated: (evaluation: DowEventEvaluation) => void
@@ -201,11 +202,8 @@ export function DowEventEvaluatorCard({
                   : 'bg-slate-950/50 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-300'
               }`}
             >
-              <div className="font-semibold text-slate-200 truncate mb-0.5">
-                {preset.title}
-              </div>
-              <div className="text-[11px] text-slate-400 line-clamp-2">
-                {preset.description}
+              <div className="font-semibold text-slate-200 truncate">
+                {displaySampleTitle(preset.title)}
               </div>
             </button>
           ))}

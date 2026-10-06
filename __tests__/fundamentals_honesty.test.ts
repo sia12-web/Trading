@@ -4,6 +4,7 @@ import {
   connectedFeedCount,
   scrubSummary,
   showNumber,
+  displaySampleTitle,
   sourcedImpact,
   tokyoCashPhase,
 } from '../lib/fundamentals/honesty'
@@ -18,5 +19,17 @@ assert.equal(sourcedImpact('bank of japan hiked', -350), null)
 assert.match(scrubSummary('no figures here', 'Cushing drew 4.15 million'), /does not include a sourced print/)
 assert.equal(connectedFeedCount([{ status: 'ONLINE' }, { status: 'UNAVAILABLE' }]).connected, 1)
 assert.ok(['PREP', 'MORNING_CASH', 'LUNCH_BREAK', 'AFTERNOON_CASH', 'CLOSED'].includes(tokyoCashPhase()))
+assert.equal(
+  displaySampleTitle('Credit Spreads Widening & Bank Deterioration Warning (Prompt 10)'),
+  'Credit Spreads Widening & Bank Deterioration Warning',
+)
+assert.equal(
+  displaySampleTitle('Hawkish Fed Rate Cut Disappointment: Delivered -25 bps vs -50 bps Expected (Prompt 6)'),
+  'Hawkish Fed Rate Cut Disappointment',
+)
+assert.equal(
+  displaySampleTitle('Bank of Japan Hikes Rates +25 bps: Yen Surges, Banks Rally, Exporters Drop'),
+  'Bank of Japan Hikes Rates',
+)
 
 console.log('fundamentals honesty ok')

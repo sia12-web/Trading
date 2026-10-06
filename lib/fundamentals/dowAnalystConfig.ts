@@ -147,7 +147,7 @@ export const DEFAULT_DOW_DRIVERS: Record<DowDriverId, DowDriverState> = {
     intradayStars: 5,
     longTermStars: 5,
     stance: 'BULLISH',
-    transmissionRole: 'Price-weighted constituent earnings move index points directly: Delta Share Price / Divisor (0.1517).',
+    transmissionRole: 'Price-weighted constituent earnings move index points by the change in share price divided by the official divisor. That divisor is unavailable.',
     summary: '78% of DJIA components beating EPS consensus. Forward corporate operating margin guidance raised across Financials and Industrials.',
     metrics: [
       { label: 'DJIA Blended EPS Growth', value: '+9.4% YoY', change: '+0.8%', trend: 'UP', stance: 'BULLISH' },
@@ -410,7 +410,7 @@ export const DEFAULT_DOW_FEEDS: DowFeedStatus[] = [
   {
     id: 'djia_weights_divisor_engine',
     name: 'DJIA 30 Price Weights & Divisor Engine',
-    subtitle: 'Official Share Prices, Divisor (0.1517), & Dow-Point Contributions',
+    subtitle: 'Official share prices and Dow-point contributions. The official divisor is unavailable.',
     category: 'PRICE_WEIGHTS_DIVISOR',
     status: 'ONLINE',
     latency: '30ms',
