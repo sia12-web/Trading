@@ -1000,7 +1000,7 @@ C = 0 or 1 of 3. No trade.
 There is no point score. POC, round numbers, AVWAP, and candles do not add points.
 
 CROSS-ASSET VOLATILITY & 5-MARKET SELECTION MATRIX (PARTICIPATION x LOCATION x STRUCTURE):
-Gauges are context only. VIX1D measures 1-day expected volatility for equities. OVX is crude volatility. GVZ is gold volatility. JNIV is Nikkei volatility. A gauge does not say who is positioned and does not trigger a trade.
+Gauges are context only. VIX1D measures 1-day expected volatility for equities. OVX is crude volatility. GVZ is gold volatility. The Nikkei gauge is 20-day realized volatility from NKD daily closes when the published Nikkei VI is not on the quote feed. Do not call that print implied JNIV. A gauge does not say who is positioned and does not trigger a trade.
 Do not decide the market in advance. At the open defined by the injected session policy, prefer the name with participation, a predetermined location, and one of the four structures.
 TRADE ONLY GRADE A under the checklist above, and only as a hypothesis.
 The Anti-Chase Imperative: the largest move, away from a predetermined zone, is not a setup.
@@ -1249,7 +1249,7 @@ ${
 ${
   ctx.crossMarketVolatility
     ? `- Equities Volatility: VIX1D ${ctx.crossMarketVolatility.equities.vix1d.value.toFixed(1)} (${ctx.crossMarketVolatility.equities.vix1d.changePct >= 0 ? '+' : ''}${ctx.crossMarketVolatility.equities.vix1d.changePct.toFixed(1)}%) | 30D VIX ${ctx.crossMarketVolatility.equities.vix.value.toFixed(1)} [${ctx.crossMarketVolatility.equities.activeRegime}${ctx.crossMarketVolatility.equities.isExpanding ? ' 🔥 EXPANDING' : ''}]
-- Nikkei Volatility: JNIV ${jnivTelemetry(ctx.crossMarketVolatility)} [${ctx.crossMarketVolatility.nikkei ? `${ctx.crossMarketVolatility.nikkei.activeRegime}${ctx.crossMarketVolatility.nikkei.isExpanding ? ' EXPANDING' : ''}` : 'UNAVAILABLE'}]
+- ${ctx.crossMarketVolatility.nikkei?.jniv.name ?? 'Nikkei volatility'}: ${jnivTelemetry(ctx.crossMarketVolatility)} [${ctx.crossMarketVolatility.nikkei ? `${ctx.crossMarketVolatility.nikkei.activeRegime}${ctx.crossMarketVolatility.nikkei.isExpanding ? ' EXPANDING' : ''}` : 'UNAVAILABLE'}]
 - Crude Oil Volatility: OVX ${ctx.crossMarketVolatility.crude.ovx.value.toFixed(1)} (${ctx.crossMarketVolatility.crude.ovx.changePct >= 0 ? '+' : ''}${ctx.crossMarketVolatility.crude.ovx.changePct.toFixed(1)}%) [${ctx.crossMarketVolatility.crude.activeRegime}${ctx.crossMarketVolatility.crude.isExpanding ? ' 🔥 EXPANDING' : ''}]
 - Gold Volatility: GVZ ${ctx.crossMarketVolatility.gold.gvz.value.toFixed(1)} (${ctx.crossMarketVolatility.gold.gvz.changePct >= 0 ? '+' : ''}${ctx.crossMarketVolatility.gold.gvz.changePct.toFixed(1)}%) [${ctx.crossMarketVolatility.gold.activeRegime}${ctx.crossMarketVolatility.gold.isExpanding ? ' 🔥 EXPANDING' : ''}]
 - Macro Telemetry: ${ctx.crossMarketVolatility.summary}`

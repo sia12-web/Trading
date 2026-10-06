@@ -12,8 +12,7 @@ import {
   compareMultipleRanges,
   formatRangeVolumeComparisonReport,
 } from '@/lib/trading/rangeVolumeComparison'
-import { getCrossMarketVolatility } from '@/lib/trading/crossMarketVolatility'
-import { buildCrossMarketRadarReport } from '@/lib/trading/crossMarketRadar'
+import { getLiveCrossMarketSnapshot } from '@/lib/trading/crossMarketFeed'
 import { syncFundamentalBusFromStores } from '@/lib/ai/fundamentalBusSync'
 
 export const runtime = 'nodejs'
@@ -102,13 +101,11 @@ export async function POST(req: NextRequest) {
       }
 
       // 4. Cross-Asset Volatility & 5-Market Radar Telemetry injection
-      if (!chartContext.crossMarketVolatility) {
+      if (!chartContext.crossMarketVolatility || !chartContext.marketRadar) {
         try {
-          const vol = await getCrossMarketVolatility()
-          chartContext.crossMarketVolatility = vol
-          if (!chartContext.marketRadar) {
-            chartContext.marketRadar = buildCrossMarketRadarReport(vol, {})
-          }
+          const snap = await getLiveCrossMarketSnapshot()
+          if (!chartContext.crossMarketVolatility) chartContext.crossMarketVolatility = snap.volatility
+          if (!chartContext.marketRadar) chartContext.marketRadar = snap.radar
         } catch {
           // ignore volatility radar computation errors
         }
@@ -273,12 +270,16 @@ export function buildDeskFallbackResponse(
   ) {
     const vol = ctx.crossMarketVolatility
     const radar = ctx.marketRadar
-    const vix1d = vol?.equities.vix1d.value.toFixed(1) ?? '15.2'
-    const vix = vol?.equities.vix.value.toFixed(1) ?? '16.8'
-    const ovx = vol?.crude.ovx.value.toFixed(1) ?? '36.4'
-    const gvz = vol?.gold.gvz.value.toFixed(1) ?? '15.1'
+    const vix1d = vol ? vol.equities.vix1d.value.toFixed(1) : 'UNAVAILABLE'
+    const vix = vol ? vol.equities.vix.value.toFixed(1) : 'UNAVAILABLE'
+    const ovx = vol ? vol.crude.ovx.value.toFixed(1) : 'UNAVAILABLE'
+    const gvz = vol ? vol.gold.gvz.value.toFixed(1) : 'UNAVAILABLE'
+    const nikkei = vol?.nikkei?.jniv
+    const nikkeiLine = nikkei
+      ? `${nikkei.name} **${nikkei.value.toFixed(1)}** (${nikkei.changePct >= 0 ? '+' : ''}${nikkei.changePct.toFixed(1)}%)`
+      : 'UNAVAILABLE'
 
-    const directive = radar?.deskDirective ?? 'CL (Crude Oil) is the sole Grade A candidate today. Ignore Grade B/C chop on peer markets.'
+    const directive = radar?.deskDirective ?? 'Live radar is unavailable. Do not invent a Grade A market.'
 
     const marketsList = radar?.markets
       ? Object.values(radar.markets)
@@ -287,14 +288,15 @@ export function buildDeskFallbackResponse(
               `- **${m.market} (${m.contractLabel}):** **Grade ${m.grade}** (${m.verdict.replace(/_/g, ' ')})\n  * *Participation:* ${m.participation.headline} [${m.volatilityGauge}: ${m.volatilityValue.toFixed(1)}]\n  * *Location:* ${m.location.headline}\n  * *Structure:* ${m.structure.headline}\n  * *Summary:* ${m.summaryLine}`
           )
           .join('\n\n')
-      : `- **CRUDE (CL):** **Grade A** (FOCUS TRADE) — OVX surging + price at 5D LVN + Bullish CVD absorption.\n- **NASDAQ (MNQ):** **Grade C** (CHOP) — VIX1D flat, compressing inside yesterday value area.\n- **DOW (MYM):** **Grade B** (ARMED) — Range expanding but suspended 120 pts from support.\n- **SP500 (MES):** **Grade B** (ARMED) — Awaiting location touch at Y-VAL.\n- **GOLD (MGC):** **Grade C** (IGNORE) — GVZ compressed, volume light.`
+      : '- Live radar is unavailable. No sample grades are shown.'
 
     return `### 🎯 **Cross-Asset Volatility & 5-Market Selection Matrix**
 
 **Cboe Implied Volatility Gauges (Asset-Specific):**
-- **Equities (ES / NQ / YM):** VIX1D **${vix1d}** | 30D VIX **${vix}** (${vol?.equities.activeRegime ?? 'NORMAL'})
-- **Crude Oil (CL / MCL):** OVX (USO options) **${ovx}** (${vol?.crude.activeRegime ?? 'EXPANDING'} 🔥)
-- **Gold (GC / MGC):** GVZ (GLD options) **${gvz}** (${vol?.gold.activeRegime ?? 'NORMAL'})
+- **Equities (ES / NQ / YM):** VIX1D **${vix1d}** | 30D VIX **${vix}** (${vol?.equities.activeRegime ?? 'UNAVAILABLE'})
+- **Nikkei (NKD):** ${nikkeiLine}
+- **Crude Oil (CL / MCL):** OVX **${ovx}** (${vol?.crude.activeRegime ?? 'UNAVAILABLE'})
+- **Gold (GC / MGC):** GVZ **${gvz}** (${vol?.gold.activeRegime ?? 'UNAVAILABLE'})
 
 ---
 

@@ -213,6 +213,31 @@ export function getDayPreviousClose(instrument: Instrument): number | null {
   return null
 }
 
+/** Last print for any Yahoo symbol (index or future), without the desk instrument cache. */
+export async function getYahooSymbolQuote(symbol: string): Promise<YahooQuote | null> {
+  const url =
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}` +
+    `?interval=1d&range=5d&includePrePost=true`
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': YAHOO_UA,
+        Accept: 'application/json',
+      },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(3_500),
+    })
+    if (!response.ok) return null
+    const json = await response.json()
+    const meta = json?.chart?.result?.[0]?.meta
+    if (!meta) return null
+    return buildQuote(symbol, meta)
+  } catch {
+    return null
+  }
+}
+
 async function getYahooQuoteFromChart(
   instrument: Instrument,
   symbol: string,
