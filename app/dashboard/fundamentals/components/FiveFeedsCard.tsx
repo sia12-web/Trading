@@ -20,8 +20,8 @@ export function FiveFeedsCard({ feeds }: FiveFeedsCardProps) {
             Targeted data feeds powering oil supply, inventories, positioning, consensus, and CME market data.
           </p>
         </div>
-        <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30 self-start sm:self-auto">
-          5 / 5 Feeds Connected
+        <span className="text-[10px] font-mono text-gray-300 bg-surface-900 px-2 py-0.5 rounded border border-surface-600 self-start sm:self-auto">
+          {feeds.filter((feed) => feed.status === 'ONLINE' || feed.status === 'ACTIVE').length} / {feeds.length} feeds connected
         </span>
       </div>
 
@@ -34,8 +34,16 @@ export function FiveFeedsCard({ feeds }: FiveFeedsCardProps) {
             <div>
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-mono font-bold text-gray-400">FEED 0{idx + 1}</span>
-                <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-400">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span
+                  className={`inline-flex items-center gap-1 text-[9px] font-bold ${
+                    feed.status === 'FALLBACK' ? 'text-amber-300' : 'text-emerald-400'
+                  }`}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      feed.status === 'FALLBACK' ? 'bg-amber-400' : 'bg-emerald-500 animate-pulse'
+                    }`}
+                  />
                   {feed.status}
                 </span>
               </div>

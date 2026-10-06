@@ -140,7 +140,9 @@ export function DowFundamentalsHeader({
             <span className="text-[10px] font-mono text-blue-400">$5 / pt</span>
           </div>
           <div className="text-lg font-bold font-mono text-slate-100">
-            {t.ymPrice.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            {t.ymPrice > 0
+              ? t.ymPrice.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+              : '—'}
           </div>
           <div className="flex items-center gap-1.5 mt-0.5 text-xs">
             <span
@@ -213,7 +215,7 @@ export function DowFundamentalsHeader({
             <span className="text-[10px] font-mono text-slate-400">HY OAS</span>
           </div>
           <div className="flex items-baseline gap-1 text-sm font-mono font-bold text-slate-200">
-            <span>{cred.highYieldSpreadBps} bps</span>
+            <span>{cred.highYieldSpreadBps > 0 ? `${cred.highYieldSpreadBps} bps` : '—'}</span>
             <span className="text-[10px] text-slate-400 font-normal">(HYG ${cred.hygPrice.toFixed(1)})</span>
           </div>
           <div className="mt-1">

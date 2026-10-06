@@ -97,11 +97,10 @@ function formatDeskClock(_market?: 'NY' | 'TOKYO' | null): { time: string; label
 function phaseLabel(
   phase: string,
   rangeStrategy?: 'or30' | 'ib' | 'us_range' | null,
-  instrument?: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | null
+  _instrument?: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | null
 ): string {
   if (rangeStrategy === 'us_range') return 'US-RANGE'
   if (rangeStrategy === 'or30') return 'OR30'
-  if (rangeStrategy === 'ib') return instrument === 'NIKKEI' ? 'TOKYO-IB' : 'IB'
   switch (phase) {
     case 'FLAT':
       return 'MORNING'
@@ -763,6 +762,13 @@ export function SessionBanner({
           >
             Refresh
           </button>
+          <Link
+            href="/dashboard"
+            className="text-[10px] uppercase tracking-wider text-gray-500 hover:text-white"
+            title="Open desk home"
+          >
+            Dashboard
+          </Link>
         </div>
       </div>
     </>

@@ -23,6 +23,7 @@
  * A market moving +0.5% at a 5-day LVN with a clean spring is Grade A. Trade only Grade A.
  */
 
+import { computeOrderFlowCvd } from './orderFlowDelta'
 import {
   type CrossMarketVolatilityState,
   type VolatilitySymbol,
@@ -76,7 +77,7 @@ export interface CrossMarketRadarReport {
   gradeACount: number
   gradeBCount: number
   gradeCCount: number
-  markets: Record<RadarMarket, MarketOpportunityCard>
+  markets: Partial<Record<RadarMarket, MarketOpportunityCard>>
   deskDirective: string
 }
 
@@ -197,7 +198,7 @@ export function evaluateMarket(
       input.candlestickPattern.includes('Excess'))
   )
   const hasTrendline = Boolean(input.actionTrendlineBreak)
-  const hasRunway = (input.runwayRatio ?? 2.0) >= 1.5
+  const hasRunway = input.runwayRatio != null && input.runwayRatio >= 1.5
 
   const structurePresent = (hasWyckoff || hasCandleConfirmation || hasTrendline) && hasRunway
   const structureScore = Math.min(
@@ -291,68 +292,289 @@ export function evaluateMarket(
   }
 }
 
+export interface RadarBar {
+  time: number
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+}
+
+export function radarLocationThresholdPts(market: RadarMarket): number {
+  return MARKET_TICKER_CONFIG[market].locationThresholdPts
+}
+
+function sessionDateKey(timeSec: number, timeZone: string): string {
+  const sec = timeSec > 1e12 ? Math.floor(timeSec / 1000) : timeSec
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(sec * 1000))
+}
+
+function groupSessions(bars: RadarBar[], timeZone: string): RadarBar[][] {
+  const groups: RadarBar[][] = []
+  let key = ''
+  for (const bar of bars) {
+    const day = sessionDateKey(bar.time, timeZone)
+    if (day !== key) {
+      key = day
+      groups.push([])
+    }
+    groups[groups.length - 1]!.push(bar)
+  }
+  return groups
+}
+
+function sumVolume(bars: RadarBar[], count?: number): number {
+  const slice = count == null ? bars : bars.slice(0, count)
+  return slice.reduce((sum, bar) => sum + (Number.isFinite(bar.volume) ? bar.volume : 0), 0)
+}
+
+function relativeVolume(sessions: RadarBar[][]): number | undefined {
+  if (sessions.length < 2) return undefined
+  const current = sessions[sessions.length - 1]!
+  if (current.length === 0) return undefined
+  const elapsed = current.length
+  const currentVol = sumVolume(current)
+  const samples = sessions
+    .slice(0, -1)
+    .slice(-5)
+    .map((session) => sumVolume(session, elapsed))
+    .filter((vol) => vol > 0)
+  if (samples.length === 0 || !(currentVol > 0)) return undefined
+  const average = samples.reduce((sum, vol) => sum + vol, 0) / samples.length
+  return average > 0 ? currentVol / average : undefined
+}
+
+function profileLevels(bars: RadarBar[], bin: number): {
+  high: number
+  low: number
+  poc: number | null
+  vah: number | null
+  val: number | null
+} | null {
+  if (bars.length === 0 || !(bin > 0)) return null
+  let high = -Infinity
+  let low = Infinity
+  const buckets = new Map<number, number>()
+  let total = 0
+  for (const bar of bars) {
+    high = Math.max(high, bar.high)
+    low = Math.min(low, bar.low)
+    const vol = Number.isFinite(bar.volume) ? bar.volume : 0
+    const px = Math.round(((bar.high + bar.low) / 2) / bin) * bin
+    buckets.set(px, (buckets.get(px) || 0) + vol)
+    total += vol
+  }
+  if (!Number.isFinite(high) || !Number.isFinite(low)) return null
+  if (!(total > 0)) return { high, low, poc: null, vah: null, val: null }
+
+  let poc = bars[0]!.close
+  let best = -1
+  for (const [px, vol] of buckets) {
+    if (vol > best) {
+      best = vol
+      poc = px
+    }
+  }
+  const prices = [...buckets.keys()].sort((a, b) => a - b)
+  let idx = 0
+  let nearest = Infinity
+  for (let i = 0; i < prices.length; i++) {
+    const dist = Math.abs(prices[i]! - poc)
+    if (dist < nearest) {
+      nearest = dist
+      idx = i
+    }
+  }
+  let acc = buckets.get(prices[idx]!) || 0
+  let lo = idx
+  let hi = idx
+  while (acc < total * 0.7 && (lo > 0 || hi < prices.length - 1)) {
+    const up = hi < prices.length - 1 ? buckets.get(prices[hi + 1]!) || 0 : -1
+    const down = lo > 0 ? buckets.get(prices[lo - 1]!) || 0 : -1
+    if (up >= down) {
+      hi += 1
+      acc += Math.max(up, 0)
+    } else {
+      lo -= 1
+      acc += Math.max(down, 0)
+    }
+  }
+  return { high, low, poc, vah: prices[hi]!, val: prices[lo]! }
+}
+
+function averageTrueRange(bars: RadarBar[]): number {
+  if (bars.length < 2) return 0
+  let sum = 0
+  let count = 0
+  for (let i = 1; i < bars.length; i++) {
+    const prev = bars[i - 1]!
+    const bar = bars[i]!
+    const tr = Math.max(
+      bar.high - bar.low,
+      Math.abs(bar.high - prev.close),
+      Math.abs(bar.low - prev.close)
+    )
+    sum += tr
+    count += 1
+  }
+  return count > 0 ? sum / count : 0
+}
+
+function readStructure(bars: RadarBar[], priorHigh: number | null, priorLow: number | null): {
+  candlestickPattern: string | null
+  wyckoffPattern: MarketInputData['wyckoffPattern']
+  runwayRatio?: number
+} {
+  if (bars.length < 2) {
+    return { candlestickPattern: null, wyckoffPattern: 'NONE' }
+  }
+  const last = bars[bars.length - 1]!
+  const prev = bars[bars.length - 2]!
+  const prevBodyTop = Math.max(prev.open, prev.close)
+  const prevBodyBot = Math.min(prev.open, prev.close)
+  const lastBodyTop = Math.max(last.open, last.close)
+  const lastBodyBot = Math.min(last.open, last.close)
+  const bullishEngulf =
+    prev.close < prev.open &&
+    last.close > last.open &&
+    lastBodyBot <= prevBodyBot &&
+    lastBodyTop >= prevBodyTop
+  const bearishEngulf =
+    prev.close > prev.open &&
+    last.close < last.open &&
+    lastBodyBot <= prevBodyBot &&
+    lastBodyTop >= prevBodyTop
+  const body = Math.abs(last.close - last.open)
+  const lowerWick = Math.min(last.open, last.close) - last.low
+  const upperWick = last.high - Math.max(last.open, last.close)
+  const hammer = body > 0 && lowerWick >= body * 2 && upperWick <= body
+  const upperExcess = body > 0 && upperWick >= body * 2 && lowerWick <= body
+  const candlestickPattern = bullishEngulf
+    ? 'Bullish Engulfing'
+    : bearishEngulf
+      ? 'Bearish Engulfing'
+      : hammer
+        ? 'Hammer'
+        : upperExcess
+          ? 'Upper Excess'
+          : null
+
+  let wyckoffPattern: MarketInputData['wyckoffPattern'] = 'NONE'
+  if (bars.length >= 8) {
+    const window = bars.slice(-8)
+    const base = window.slice(0, 5)
+    const tail = window.slice(5)
+    const baseLow = Math.min(...base.map((bar) => bar.low))
+    const baseHigh = Math.max(...base.map((bar) => bar.high))
+    const probedBelow = tail.some((bar) => bar.low < baseLow)
+    const probedAbove = tail.some((bar) => bar.high > baseHigh)
+    if (probedBelow && last.close > baseLow && last.close < baseHigh) wyckoffPattern = 'SPRING'
+    else if (probedAbove && last.close < baseHigh && last.close > baseLow) wyckoffPattern = 'UPTHRUST'
+  }
+
+  const bullish = wyckoffPattern === 'SPRING' || bullishEngulf || hammer
+  const bearish = wyckoffPattern === 'UPTHRUST' || bearishEngulf || upperExcess
+  const atr = averageTrueRange(bars.slice(-14))
+  let runwayRatio: number | undefined
+  if (bullish || bearish) {
+    const room = bullish
+      ? priorHigh != null
+        ? Math.max(0, priorHigh - last.close)
+        : 0
+      : priorLow != null
+        ? Math.max(0, last.close - priorLow)
+        : 0
+    const risk = Math.max(
+      bullish ? last.close - last.low : last.high - last.close,
+      atr * 0.25
+    )
+    if (risk > 0) runwayRatio = room / risk
+  }
+
+  return { candlestickPattern, wyckoffPattern, runwayRatio }
+}
+
 /**
- * Builds the full 5-market cross-asset radar report and ranks the top pick.
+ * Scores one market from a live print and its own candles.
+ * Missing history stays missing. Nothing here is a sample book.
+ */
+export function deriveRadarMarketInput(args: {
+  market: RadarMarket
+  price: number
+  previousClose: number
+  candles: RadarBar[]
+  timeZone: string
+  bin: number
+}): MarketInputData | null {
+  if (!(args.price > 0)) return null
+  const sessions = groupSessions(args.candles, args.timeZone)
+  const current = sessions[sessions.length - 1] ?? []
+  const prior = sessions.length >= 2 ? sessions[sessions.length - 2]! : null
+  const threshold = radarLocationThresholdPts(args.market)
+  const profile = prior ? profileLevels(prior, args.bin) : null
+
+  let nearestLevel: MarketInputData['nearestLevel'] = {
+    type: 'NONE',
+    price: 0,
+    distancePts: threshold * 100,
+    thresholdPts: threshold,
+  }
+  if (profile) {
+    const shelves: Array<{ type: NonNullable<MarketInputData['nearestLevel']>['type']; price: number }> = []
+    if (profile.poc != null) shelves.push({ type: 'Y_POC', price: profile.poc })
+    if (profile.vah != null) shelves.push({ type: 'Y_VAH', price: profile.vah })
+    if (profile.val != null) shelves.push({ type: 'Y_VAL', price: profile.val })
+    shelves.push({ type: 'ON_HIGH', price: profile.high }, { type: 'ON_LOW', price: profile.low })
+    let best = shelves[0]!
+    let bestDist = Math.abs(args.price - best.price)
+    for (const shelf of shelves.slice(1)) {
+      const dist = Math.abs(args.price - shelf.price)
+      if (dist < bestDist) {
+        best = shelf
+        bestDist = dist
+      }
+    }
+    nearestLevel = {
+      type: best.type,
+      price: best.price,
+      distancePts: bestDist,
+      thresholdPts: threshold,
+    }
+  }
+
+  const flow = current.length > 0 ? computeOrderFlowCvd(current) : null
+  const structure = readStructure(current, profile?.high ?? null, profile?.low ?? null)
+  const prev = args.previousClose > 0 ? args.previousClose : args.price
+  const rvol = relativeVolume(sessions)
+
+  return {
+    market: args.market,
+    currentPrice: args.price,
+    dayChangePct: prev > 0 ? ((args.price - prev) / prev) * 100 : 0,
+    recentVolumeRatio: rvol,
+    cvdTrend: flow?.trend ?? 'BALANCED',
+    cvdDivergence: flow?.divergence ?? 'NONE',
+    nearestLevel,
+    candlestickPattern: structure.candlestickPattern,
+    wyckoffPattern: structure.wyckoffPattern,
+    runwayRatio: structure.runwayRatio,
+  }
+}
+
+/**
+ * Builds the cross-market radar from the inputs that were actually supplied.
+ * A missing market is left off the report. Sample books are not filled in.
  */
 export function buildCrossMarketRadarReport(
   volState: CrossMarketVolatilityState,
   marketInputs: Partial<Record<RadarMarket, MarketInputData>>
 ): CrossMarketRadarReport {
-  const defaultInputs: Record<RadarMarket, MarketInputData> = {
-    NASDAQ: {
-      market: 'NASDAQ',
-      currentPrice: 20150,
-      dayChangePct: -0.2,
-      recentVolumeRatio: 0.9,
-      cvdTrend: 'BALANCED',
-      nearestLevel: { type: '5D_POC', price: 20140, distancePts: 10, thresholdPts: 15 },
-    },
-    DOW: {
-      market: 'DOW',
-      currentPrice: 42100,
-      dayChangePct: -0.7,
-      recentVolumeRatio: 1.1,
-      cvdTrend: 'SELLER_DOMINANT',
-      nearestLevel: { type: '5D_LVN', price: 41980, distancePts: 120, thresholdPts: 30 },
-    },
-    SP500: {
-      market: 'SP500',
-      currentPrice: 5740,
-      dayChangePct: -0.3,
-      recentVolumeRatio: 1.0,
-      cvdTrend: 'BALANCED',
-      nearestLevel: { type: 'Y_VAL', price: 5732, distancePts: 8, thresholdPts: 4 },
-    },
-    GOLD: {
-      market: 'GOLD',
-      currentPrice: 2680,
-      dayChangePct: 0.1,
-      recentVolumeRatio: 0.8,
-      cvdTrend: 'BALANCED',
-      nearestLevel: { type: 'NONE', price: 0, distancePts: 999, thresholdPts: 3.5 },
-    },
-    CRUDE: {
-      market: 'CRUDE',
-      currentPrice: 72.8,
-      dayChangePct: 2.4,
-      recentVolumeRatio: 1.85,
-      cvdTrend: 'BUYER_DOMINANT',
-      cvdDivergence: 'BULLISH_ABSORPTION',
-      nearestLevel: { type: '5D_LVN', price: 72.7, distancePts: 0.1, thresholdPts: 0.35 },
-      wyckoffPattern: 'SPRING',
-      candlestickPattern: 'Bullish Engulfing',
-      runwayRatio: 2.8,
-    },
-    NIKKEI: {
-      market: 'NIKKEI',
-      currentPrice: 38900,
-      dayChangePct: 0.6,
-      recentVolumeRatio: 1.25,
-      cvdTrend: 'BUYER_DOMINANT',
-      nearestLevel: { type: '5D_LVN', price: 38850, distancePts: 50, thresholdPts: 35 },
-    },
-  }
-
   const results: Partial<Record<RadarMarket, MarketOpportunityCard>> = {}
   let topPick: RadarMarket | null = null
   let maxScore = -1
@@ -361,7 +583,8 @@ export function buildCrossMarketRadarReport(
   let cCount = 0
 
   for (const market of ALL_RADAR_MARKETS) {
-    const input = marketInputs[market] || defaultInputs[market]
+    const input = marketInputs[market]
+    if (!input || !(input.currentPrice > 0)) continue
     const card = evaluateMarket(input, volState)
     results[market] = card
 
@@ -389,13 +612,15 @@ export function buildCrossMarketRadarReport(
   }
 
   let deskDirective = ''
-  if (aCount > 0 && topPick) {
+  if (Object.keys(results).length === 0) {
+    deskDirective = 'DESK DIRECTIVE: Live market radar has no priced contracts right now.'
+  } else if (aCount > 0 && topPick) {
     const pickCard = results[topPick]!
     deskDirective = `DESK FOCUS: ${topPick} (${pickCard.contractLabel}) is the sole Grade A candidate today. OVX/VIX and profile location align. Ignore Grade B/C chop on peer markets.`
   } else if (bCount > 0) {
-    deskDirective = `DESK DIRECTIVE: No Grade A setups active across the 5 markets. Stand aside or monitor Grade B candidates awaiting location/volume confirmation.`
+    deskDirective = `DESK DIRECTIVE: No Grade A setups active across the markets. Stand aside or monitor Grade B candidates awaiting location/volume confirmation.`
   } else {
-    deskDirective = `DESK DIRECTIVE: All markets in Grade C rotation / inside value. Maintain 0-probe discipline.`
+    deskDirective = `DESK DIRECTIVE: All priced markets are Grade C. Maintain 0-probe discipline.`
   }
 
   return {
@@ -404,7 +629,7 @@ export function buildCrossMarketRadarReport(
     gradeACount: aCount,
     gradeBCount: bCount,
     gradeCCount: cCount,
-    markets: results as Record<RadarMarket, MarketOpportunityCard>,
+    markets: results,
     deskDirective,
   }
 }

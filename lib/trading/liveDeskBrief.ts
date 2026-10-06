@@ -292,84 +292,10 @@ function midBookLine(
       state: 'forming',
       probesUsed: used,
       probesMax: max,
-      note: `${label} still forming — do not enter until first-hour lock`,
+      note: `${label} still forming — wait for lock`,
     }
   }
 
-  const edges = shaped(range, label)
-  return {
-    label,
-    state: 'open',
-    probesUsed: used,
-    probesMax: max,
-    note: edges
-      ? `Open · ${used}/${max} probes · ±10 ${rangeEdgeBandLegend(edges)}`
-      : `Open · ${used}/${max} probes`,
-  }
-}
-
-function lateBookLine(
-  instrument: DeskInstrument,
-  now: Date,
-  ladder: AttemptLadder,
-  range: ShapedRangeInput,
-  label: string
-): DeskBookLine {
-  const market = deskMarketFor(instrument)
-  const s = sessionFor(instrument)
-  const t = parseTimeToSeconds(timeInTz(now, s.tz))
-  const used = ladder.lunchAttempts
-  const max = ladder.maxLunchAttempts
-  const open = isBucketWindowOpen(market, 'lunch_range', t)
-
-  if (!ladder.lunchEligible && used >= max) {
-    return {
-      label,
-      state: 'dead',
-      probesUsed: used,
-      probesMax: max,
-      note: `${label} closed — probes used (2/2). Do not enter.`,
-    }
-  }
-  if (!ladder.lunchEligible) {
-    return {
-      label,
-      state: 'upcoming',
-      probesUsed: used,
-      probesMax: max,
-      note: bucketWindowUnlockMessage(market, 'lunch_range', instrument, now),
-    }
-  }
-  if (!open) {
-    const win = bucketWindowSec(market, 'lunch_range')
-    if (win && t < win.start) {
-      return {
-        label,
-        state: 'upcoming',
-        probesUsed: used,
-        probesMax: max,
-        note: bucketWindowUnlockMessage(market, 'lunch_range', instrument, now),
-      }
-    }
-    return {
-      label,
-      state: 'dead',
-      probesUsed: used,
-      probesMax: max,
-      note: `${label} closed — window over. Do not enter.`,
-    }
-  }
-  if (!range || (label !== 'Tokyo IB' && range.complete !== true)) {
-    if (!range) {
-      return {
-        label,
-        state: 'forming',
-        probesUsed: used,
-        probesMax: max,
-        note: `${label} not shaped yet — wait for lock`,
-      }
-    }
-  }
   const edges = shaped(range, label)
   return {
     label,
@@ -416,14 +342,8 @@ export function buildInstrumentDeskCard(
     books.push(
       midBookLine(instrument, now, ladder, facts.usRange ?? null, 'US Range')
     )
-    books.push(
-      lateBookLine(instrument, now, ladder, facts.ib ?? null, 'Tokyo IB')
-    )
   } else {
     books.push(midBookLine(instrument, now, ladder, facts.or30 ?? null, 'OR30'))
-    books.push(
-      lateBookLine(instrument, now, ladder, facts.ib ?? null, 'IB')
-    )
   }
 
   const openBooks = books.filter((b) => b.state === 'open')
@@ -445,9 +365,6 @@ export function buildInstrumentDeskCard(
   let activeRange: RangeEdgeLevels | null = null
   if (openBook === 'Open range') activeRange = shaped(facts.or15 ?? null, 'OR15')
   else if (openBook === 'OR30') activeRange = shaped(facts.or30 ?? null, 'OR30')
-  else if (openBook === 'IB') activeRange = shaped(facts.ib ?? null, 'IB')
-  else if (openBook === 'Tokyo IB')
-    activeRange = shaped(facts.ib ?? null, 'Tokyo IB')
   else if (openBook === 'US Range')
     activeRange = shaped(facts.usRange ?? null, 'US Range')
 

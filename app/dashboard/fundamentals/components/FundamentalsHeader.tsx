@@ -107,25 +107,29 @@ export function FundamentalsHeader({
           <div className="flex items-center justify-between text-xs text-gray-400">
             <span>Prompt WTI ({telemetry.symbol})</span>
             <span className="inline-flex items-center gap-1 text-[10px] text-gray-400">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Live CME
+              <span className={`w-1.5 h-1.5 rounded-full ${telemetry.priceLive ? 'bg-emerald-500 animate-pulse' : 'bg-gray-500'}`} />
+              {telemetry.priceLive ? 'Yahoo CL' : 'No print'}
             </span>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-xl sm:text-2xl font-bold font-mono text-white tracking-tight">
-              ${telemetry.promptPrice.toFixed(2)}
+              {telemetry.priceLive ? `$${telemetry.promptPrice.toFixed(2)}` : '—'}
             </span>
-            <span
-              className={`text-xs font-semibold font-mono ${
-                isUp ? 'text-emerald-400' : 'text-red-400'
-              }`}
-            >
-              {isUp ? '+' : ''}${telemetry.change.toFixed(2)} ({isUp ? '+' : ''}
-              {telemetry.changePct.toFixed(2)}%)
-            </span>
+            {telemetry.priceLive && (
+              <span
+                className={`text-xs font-semibold font-mono ${
+                  isUp ? 'text-emerald-400' : 'text-red-400'
+                }`}
+              >
+                {isUp ? '+' : ''}${telemetry.change.toFixed(2)} ({isUp ? '+' : ''}
+                {telemetry.changePct.toFixed(2)}%)
+              </span>
+            )}
           </div>
           <div className="text-[11px] text-gray-500 mt-1 font-mono">
-            Day: ${telemetry.low.toFixed(2)} – ${telemetry.high.toFixed(2)}
+            {telemetry.priceLive
+              ? `Day: $${telemetry.low.toFixed(2)} – $${telemetry.high.toFixed(2)}`
+              : 'Day range unavailable'}
           </div>
         </div>
 
@@ -141,12 +145,15 @@ export function FundamentalsHeader({
             </span>
             {telemetry.brentWtiSpread !== undefined && (
               <span className="text-xs font-semibold font-mono text-brand-300">
-                +${telemetry.brentWtiSpread.toFixed(2)}
+                {telemetry.brentWtiSpread >= 0 ? '+' : ''}${telemetry.brentWtiSpread.toFixed(2)}
               </span>
             )}
           </div>
           <div className="text-[11px] text-gray-500 mt-1 font-mono">
-            Brent-WTI: {telemetry.brentWtiSpread !== undefined ? `+$${telemetry.brentWtiSpread.toFixed(2)}/bbl` : 'Calculating...'}
+            Brent-WTI:{' '}
+            {telemetry.brentWtiSpread !== undefined
+              ? `${telemetry.brentWtiSpread >= 0 ? '+' : ''}$${telemetry.brentWtiSpread.toFixed(2)}/bbl`
+              : 'unavailable'}
           </div>
         </div>
 
@@ -158,7 +165,7 @@ export function FundamentalsHeader({
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-xl sm:text-2xl font-bold font-mono text-white tracking-tight">
-              {telemetry.crackSpread321 !== undefined ? `$${telemetry.crackSpread321.toFixed(2)}` : '$22.40'}
+              {telemetry.crackSpread321 !== undefined ? `$${telemetry.crackSpread321.toFixed(2)}` : '—'}
             </span>
             <span className="text-xs text-gray-400">/ bbl</span>
           </div>
@@ -178,17 +185,23 @@ export function FundamentalsHeader({
                   : 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
               }`}
             >
-              {telemetry.spreadRegime}
+              {telemetry.curveLive ? telemetry.spreadRegime : 'NO CURVE'}
             </span>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-xl sm:text-2xl font-bold font-mono text-white tracking-tight">
-              {telemetry.promptSpread >= 0 ? '+' : ''}${telemetry.promptSpread.toFixed(2)}
+              {telemetry.curveLive
+                ? `${telemetry.promptSpread >= 0 ? '+' : ''}$${telemetry.promptSpread.toFixed(2)}`
+                : '—'}
             </span>
             <span className="text-xs text-gray-400">/ bbl prompt</span>
           </div>
           <div className="text-[11px] text-gray-500 mt-1">
-            {isBackwardation ? '🔥 Bullish spot physical tightness' : '❄️ Contango storage incentive'}
+            {!telemetry.curveLive
+              ? 'Next listed month did not print'
+              : isBackwardation
+                ? 'Front month above the next month'
+                : 'Front month below the next month'}
           </div>
         </div>
 

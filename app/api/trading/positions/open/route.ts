@@ -31,7 +31,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
         risk_amount: 0,
         entry_direction: body.entry_direction || 'LONG',
         entry_window: body.entry_window || 1,
-        message: 'The system is always in Read-Only Market Monitoring Mode and never places orders.',
+        message: 'The desk does not place positions or working limits.',
       },
       { status: 403 }
     )
@@ -48,7 +48,7 @@ export async function POST(request: Request): Promise<NextResponse<PositionOpenR
         risk_amount: 0,
         entry_direction: 'LONG',
         entry_window: 1,
-        message: 'The system is always in Read-Only Market Monitoring Mode and never places orders.',
+        message: 'The desk does not place positions or working limits.',
       },
       { status: 403 }
     )

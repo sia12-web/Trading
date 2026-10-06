@@ -42,7 +42,7 @@ export function NikkeiBojFxCard({ boj, fx }: NikkeiBojFxCardProps) {
                 Overnight Call Rate
               </div>
               <div className="text-lg font-bold text-white font-mono mt-1">
-                {boj.uncollateralizedCallRatePct}%
+                {boj.uncollateralizedCallRatePct > 0 ? `${boj.uncollateralizedCallRatePct}%` : '—'}
               </div>
               <div className="text-[10px] text-cyan-400 mt-0.5">
                 Targeted Range
@@ -54,7 +54,7 @@ export function NikkeiBojFxCard({ boj, fx }: NikkeiBojFxCardProps) {
                 10Y JGB Benchmark
               </div>
               <div className="text-lg font-bold text-white font-mono mt-1">
-                {boj.jgb10yYieldPct}%
+                {boj.jgb10yYieldPct > 0 ? `${boj.jgb10yYieldPct}%` : '—'}
               </div>
               <div className="text-[10px] text-emerald-400 mt-0.5">
                 Market Determined

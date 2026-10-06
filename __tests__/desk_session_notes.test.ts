@@ -24,14 +24,14 @@ assert.match(dow.telegram, /Session START/)
 assert.match(dow.telegram, /Session END/)
 assert.match(dow.telegram, /Open range/)
 assert.match(dow.telegram, /OR30/)
-assert.match(dow.telegram, /IB locks/)
+assert.doesNotMatch(dow.telegram, /IB locks/)
 
 const nikkei = formatSessionScheduleBlock(
   'NIKKEI',
   new Date('2026-07-28T00:00:00Z')
 )
 assert.match(nikkei, /US Range/)
-assert.match(nikkei, /Tokyo IB/)
+assert.doesNotMatch(nikkei, /Tokyo IB/)
 assert.match(nikkei, /Tradeify \$400/)
 assert.doesNotMatch(nikkei, /2% → 1% → 0.5%/)
 

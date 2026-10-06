@@ -281,6 +281,17 @@ export async function getYahooCandles(
   return { candles, symbol }
 }
 
+/** Candles for a raw Yahoo symbol (MES=F, ^VIX, NKD=F) outside the desk instrument map. */
+export async function getYahooSymbolCandles(
+  symbol: string,
+  interval: '5m' | '1d',
+  range: string
+): Promise<YahooCandle[] | null> {
+  const fetched = await fetchYahooChart(symbol, interval, `range=${range}`)
+  if (!fetched || fetched === UNREACHABLE || fetched.length === 0) return null
+  return interval === '1d' ? snapDailyCandles(fetched) : fetched
+}
+
 /**
  * Intraday candles for a pinned UTC range (simulation / historical desk).
  * period1/period2 are unix seconds.

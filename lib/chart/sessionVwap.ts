@@ -989,6 +989,13 @@ export const AVWAP_LOOKBACK_TRADING_DAYS = 5
  */
 export const AVWAP_CANDLE_FETCH_CALENDAR_DAYS = AVWAP_LOOKBACK_TRADING_DAYS + 7 // 12
 
+/**
+ * 1-minute history Yahoo will actually return. Eight calendar days still
+ * contains five RTH sessions across a normal weekend. Three calendar days
+ * does not — Monday then only shows Friday plus Monday.
+ */
+export const ONE_MINUTE_FETCH_CALENDAR_DAYS = 8
+
 function dayKeyInTz(unix: number, timeZone: string): string {
   return dayFormatter(timeZone).format(new Date(unix * 1000))
 }

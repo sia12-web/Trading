@@ -27,83 +27,109 @@ import {
   DEFAULT_GOLD_FEEDS,
 } from './goldAnalystConfig'
 import { getYahooQuote } from '@/lib/yahoo/quote'
+import { blankDriverCards, cloneState, fetchFredLatest, fetchYahooPrint, markFeed, markFeedsDisconnected } from '@/lib/fundamentals/liveQuotes'
 import { getFinnhubClient } from '@/lib/services/finnhubClient'
 import { fetchYahooFinanceHeadlines } from '@/lib/trading/liveEconomicResults'
 import { logger } from '@/lib/utils/logger'
 import { candidateIsMaterial } from '@/lib/fundamentals/outputContract'
 
-// In-memory state singleton for Gold
-let currentGoldState: GoldFundamentalDashboardState = {
-  market: 'COMEX_GC',
-  analystPersona: 'Gold Macro, Monetary and Physical Demand Analyst',
-  updatedAt: new Date().toISOString(),
-  overallBias: 'BULLISH',
-  overallConfidence: 85,
-  biasSummary:
-    'Long-term monetary debasement hedge and structural sovereign central-bank accumulation (>1,000 t/yr) offset elevated US 10Y real yields (2.88%). DXY consolidation and negative CVD absorption at key supports maintain a constructive regime.',
-  goldTelemetry: { ...DEFAULT_GOLD_TELEMETRY },
-  today: { ...DEFAULT_TODAY_GOLD_STATE },
-  drivers: { ...DEFAULT_GOLD_DRIVERS },
-  etfFlows: { ...DEFAULT_ETF_FLOW_STATE },
-  cftcPositioning: { ...DEFAULT_CFTC_POSITIONING_STATE },
-  comexInventory: { ...DEFAULT_COMEX_INVENTORY_STATE },
-  centralBankDemand: { ...DEFAULT_CENTRAL_BANK_STATE },
-  feeds: [...DEFAULT_GOLD_FEEDS],
-  recentEvents: [],
-  liveGoldHeadlines: [],
-}
+const NOT_ON_FEED = 'Not on this feed.'
 
-/**
- * Fetches price from Yahoo Finance v8 chart API
- */
-async function fetchYahooPrice(symbol: string): Promise<{ price: number; changePct: number } | null> {
-  try {
-    const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=2d`, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      signal: AbortSignal.timeout(4000),
-    })
-    if (!res.ok) return null
-    const json = await res.json()
-    const meta = json?.chart?.result?.[0]?.meta
-    const px = meta?.regularMarketPrice
-    const prev = meta?.chartPreviousClose
-    if (typeof px === 'number' && px > 0) {
-      const changePct = prev ? +(((px - prev) / prev) * 100).toFixed(2) : 0
-      return { price: px, changePct }
-    }
-    return null
-  } catch {
-    return null
+function freshGoldState(): GoldFundamentalDashboardState {
+  const telemetry = cloneState(DEFAULT_GOLD_TELEMETRY)
+  telemetry.goldPrice = 0
+  telemetry.goldChange = 0
+  telemetry.goldChangePct = 0
+  telemetry.silverPrice = 0
+  telemetry.silverChange = 0
+  telemetry.goldSilverRatio = 0
+  telemetry.us10yNominalYield = 0
+  telemetry.us5yNominalYield = 0
+  telemetry.us2yNominalYield = 0
+  telemetry.us30yNominalYield = 0
+  telemetry.us10yRealYield = 0
+  telemetry.us5yRealYield = 0
+  telemetry.us10yBreakeven = 0
+  telemetry.dxyIndex = 0
+  telemetry.dxyChangePct = 0
+  telemetry.eurUsd = 0
+  telemetry.usdJpy = 0
+  telemetry.goldCvol = 0
+  telemetry.goldRealizedVol30d = 0
+  telemetry.cvdAggressionStance = 'NEUTRAL'
+  telemetry.source = 'Quotes have not loaded'
+  const today = cloneState(DEFAULT_TODAY_GOLD_STATE)
+  for (const key of Object.keys(today) as (keyof typeof today)[]) {
+    const value = today[key]
+    if (typeof value !== 'string' || key === 'upcoming_catalysts') continue
+    if (value === 'BULLISH' || value === 'BEARISH' || value === 'MIXED') today[key] = 'NEUTRAL' as never
+    else if (/\d/.test(value)) today[key] = NOT_ON_FEED as never
+  }
+  today.real_rate_regime = '10Y real yield loads from FRED DFII10.'
+  today.usd_regime = 'DXY loads from Yahoo.'
+  today.intraday_bias = 'NEUTRAL'
+  today.short_term_bias = 'NEUTRAL'
+  today.medium_term_bias = 'NEUTRAL'
+  const drivers = cloneState(DEFAULT_GOLD_DRIVERS)
+  blankDriverCards(drivers)
+  const etfFlows = cloneState(DEFAULT_ETF_FLOW_STATE)
+  etfFlows.globalTonnes = 0
+  etfFlows.weeklyChangeTonnes = 0
+  etfFlows.monthlyChangeTonnes = 0
+  etfFlows.gldHoldingsTonnes = 0
+  etfFlows.iauHoldingsTonnes = 0
+  etfFlows.divergenceSignal = 'NEUTRAL'
+  etfFlows.notes = NOT_ON_FEED
+  const cftcPositioning = cloneState(DEFAULT_CFTC_POSITIONING_STATE)
+  cftcPositioning.reportDate = 'Not connected'
+  cftcPositioning.managedMoneyLong = 0
+  cftcPositioning.managedMoneyShort = 0
+  cftcPositioning.netManagedMoney = 0
+  cftcPositioning.weeklyChangeContracts = 0
+  cftcPositioning.longShortRatio = 0
+  cftcPositioning.fourWeekTrend = []
+  cftcPositioning.crowdingIndex = 0
+  cftcPositioning.liquidationRisk = 'LOW'
+  cftcPositioning.openInterest = 0
+  const comexInventory = cloneState(DEFAULT_COMEX_INVENTORY_STATE)
+  comexInventory.reportDate = 'Not connected'
+  comexInventory.registeredOz = 0
+  comexInventory.eligibleOz = 0
+  comexInventory.totalOz = 0
+  comexInventory.dailyReceivedOz = 0
+  comexInventory.dailyWithdrawnOz = 0
+  comexInventory.deliveryNotices = 0
+  comexInventory.change1dOz = 0
+  comexInventory.change5dOz = 0
+  comexInventory.change20dOz = 0
+  const centralBankDemand = cloneState(DEFAULT_CENTRAL_BANK_STATE)
+  centralBankDemand.annualNetPurchasesTonnes = 0
+  centralBankDemand.quarterlyRunRateTonnes = 0
+  centralBankDemand.pbocReportedOunces = 0
+  centralBankDemand.pbocPurchasesStatus = NOT_ON_FEED
+  centralBankDemand.reserveDiversificationPace = 'STEADY'
+  centralBankDemand.imfDataTimestamp = 'Not connected'
+  return {
+    market: 'COMEX_GC',
+    analystPersona: 'Gold Macro, Monetary and Physical Demand Analyst',
+    updatedAt: new Date().toISOString(),
+    overallBias: 'NEUTRAL',
+    overallConfidence: 0,
+    biasSummary: 'Waiting for the live gold, real-yield, and dollar prints.',
+    goldTelemetry: telemetry,
+    today,
+    drivers,
+    etfFlows,
+    cftcPositioning,
+    comexInventory,
+    centralBankDemand,
+    feeds: markFeedsDisconnected(cloneState(DEFAULT_GOLD_FEEDS)),
+    recentEvents: [],
+    liveGoldHeadlines: [],
   }
 }
 
-/**
- * Fetches latest series value from St. Louis Fed FRED public CSV
- */
-async function fetchFredSeries(seriesId: string): Promise<number | null> {
-  try {
-    const res = await fetch(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${encodeURIComponent(seriesId)}`, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      signal: AbortSignal.timeout(4500),
-    })
-    if (!res.ok) return null
-    const text = await res.text()
-    const lines = text.trim().split('\n')
-    for (let i = lines.length - 1; i >= 1; i--) {
-      const line = lines[i]
-      if (!line) continue
-      const parts = line.split(',')
-      const valStr = parts[1]
-      if (valStr) {
-        const val = parseFloat(valStr.trim())
-        if (!isNaN(val)) return val
-      }
-    }
-    return null
-  } catch {
-    return null
-  }
-}
+let currentGoldState: GoldFundamentalDashboardState = freshGoldState()
 
 /**
  * Refreshes live Gold market telemetry:
@@ -128,15 +154,15 @@ export async function refreshGoldTelemetry(): Promise<GoldTelemetry> {
       fred10yBreakeven,
     ] = await Promise.all([
       getYahooQuote('GOLD').catch(() => null),
-      fetchYahooPrice('SI=F'),
-      fetchYahooPrice('DX-Y.NYB'),
-      fetchYahooPrice('^TNX'),
-      fetchYahooPrice('^FVX'),
-      fetchYahooPrice('EURUSD=X'),
-      fetchYahooPrice('USDJPY=X'),
-      fetchFredSeries('DFII10'),
-      fetchFredSeries('DFII5'),
-      fetchFredSeries('T10YIE'),
+      fetchYahooPrint('SI=F'),
+      fetchYahooPrint('DX-Y.NYB'),
+      fetchYahooPrint('^TNX'),
+      fetchYahooPrint('^FVX'),
+      fetchYahooPrint('EURUSD=X'),
+      fetchYahooPrint('USDJPY=X'),
+      fetchFredLatest('DFII10'),
+      fetchFredLatest('DFII5'),
+      fetchFredLatest('T10YIE'),
     ])
 
     const t = currentGoldState.goldTelemetry
@@ -149,8 +175,14 @@ export async function refreshGoldTelemetry(): Promise<GoldTelemetry> {
 
     if (siQuote && siQuote.price > 0) {
       t.silverPrice = siQuote.price
-      t.silverChange = +(siQuote.price * (siQuote.changePct / 100)).toFixed(3)
-      t.goldSilverRatio = +(t.goldPrice / siQuote.price).toFixed(2)
+      t.silverChange = siQuote.previousClose
+        ? +(siQuote.price - siQuote.previousClose).toFixed(3)
+        : +(siQuote.price * (siQuote.changePct / 100)).toFixed(3)
+    }
+    if (gcYahoo && gcYahoo.price > 0 && siQuote && siQuote.price > 0) {
+      t.goldSilverRatio = +(gcYahoo.price / siQuote.price).toFixed(2)
+    } else {
+      t.goldSilverRatio = 0
     }
 
     if (dxyQuote && dxyQuote.price > 0) {
@@ -174,17 +206,11 @@ export async function refreshGoldTelemetry(): Promise<GoldTelemetry> {
       t.usdJpy = jpyQuote.price
     }
 
-    if (fred10yReal !== null) {
-      t.us10yRealYield = fred10yReal
-    }
-
-    if (fred5yReal !== null) {
-      t.us5yRealYield = fred5yReal
-    }
-
-    if (fred10yBreakeven !== null) {
-      t.us10yBreakeven = fred10yBreakeven
-    }
+    t.us10yRealYield = fred10yReal != null ? fred10yReal : 0
+    t.us5yRealYield = fred5yReal != null ? fred5yReal : 0
+    t.us10yBreakeven = fred10yBreakeven != null ? fred10yBreakeven : 0
+    if (!(tnxQuote && tnxQuote.price > 0)) t.us10yNominalYield = 0
+    if (!(fvxQuote && fvxQuote.price > 0)) t.us5yNominalYield = 0
 
     t.timestamp = Math.floor(Date.now() / 1000)
     t.updatedAt = new Date().toISOString()
@@ -192,21 +218,32 @@ export async function refreshGoldTelemetry(): Promise<GoldTelemetry> {
     // Sync metrics inside drivers
     if (currentGoldState.drivers.real_interest_rates) {
       const realDriver = currentGoldState.drivers.real_interest_rates
-      if (realDriver.metrics[0]) realDriver.metrics[0].value = `${t.us10yRealYield.toFixed(2)}%`
-      if (realDriver.metrics[1]) realDriver.metrics[1].value = `${t.us5yRealYield.toFixed(2)}%`
-      if (realDriver.metrics[2]) realDriver.metrics[2].value = `${t.us10yBreakeven.toFixed(2)}%`
+      if (realDriver.metrics[0]) realDriver.metrics[0].value = t.us10yRealYield !== 0 ? `${t.us10yRealYield.toFixed(2)}%` : '—'
+      if (realDriver.metrics[1]) realDriver.metrics[1].value = t.us5yRealYield !== 0 ? `${t.us5yRealYield.toFixed(2)}%` : '—'
+      if (realDriver.metrics[2]) realDriver.metrics[2].value = t.us10yBreakeven !== 0 ? `${t.us10yBreakeven.toFixed(2)}%` : '—'
+      realDriver.summary = `10Y real ${t.us10yRealYield !== 0 ? t.us10yRealYield.toFixed(2) + '%' : 'UNAVAILABLE'}. 5Y real ${t.us5yRealYield !== 0 ? t.us5yRealYield.toFixed(2) + '%' : 'UNAVAILABLE'}. 10Y breakeven ${t.us10yBreakeven !== 0 ? t.us10yBreakeven.toFixed(2) + '%' : 'UNAVAILABLE'}.`
     }
 
     if (currentGoldState.drivers.us_dollar) {
       const usdDriver = currentGoldState.drivers.us_dollar
-      if (usdDriver.metrics[0]) usdDriver.metrics[0].value = t.dxyIndex.toFixed(2)
-      if (usdDriver.metrics[1]) usdDriver.metrics[1].value = t.eurUsd.toFixed(4)
-      if (usdDriver.metrics[2]) usdDriver.metrics[2].value = t.usdJpy.toFixed(2)
+      if (usdDriver.metrics[0]) usdDriver.metrics[0].value = t.dxyIndex > 0 ? t.dxyIndex.toFixed(2) : '—'
+      if (usdDriver.metrics[1]) usdDriver.metrics[1].value = t.eurUsd > 0 ? t.eurUsd.toFixed(4) : '—'
+      if (usdDriver.metrics[2]) usdDriver.metrics[2].value = t.usdJpy > 0 ? t.usdJpy.toFixed(2) : '—'
+      usdDriver.summary = t.dxyIndex > 0
+        ? `DXY ${t.dxyIndex.toFixed(2)} (${t.dxyChangePct >= 0 ? '+' : ''}${t.dxyChangePct.toFixed(2)}%).`
+        : 'DXY did not print.'
     }
 
     // Update real rate regime in TODAY'S state
-    currentGoldState.today.real_rate_regime = `10Y TIPS real yield holding at ${t.us10yRealYield.toFixed(2)}% (DFII10), with 10Y Breakeven expectations at ${t.us10yBreakeven.toFixed(2)}%.`
-    currentGoldState.today.usd_regime = `DXY Index at ${t.dxyIndex.toFixed(2)} (${t.dxyChangePct >= 0 ? '+' : ''}${t.dxyChangePct.toFixed(2)}%). EUR/USD at ${t.eurUsd.toFixed(4)}.`
+    currentGoldState.today.real_rate_regime = `10Y TIPS real yield ${t.us10yRealYield !== 0 ? t.us10yRealYield.toFixed(2) + '% (DFII10)' : 'UNAVAILABLE'}. 10Y breakeven ${t.us10yBreakeven !== 0 ? t.us10yBreakeven.toFixed(2) + '%' : 'UNAVAILABLE'}.`
+    currentGoldState.today.usd_regime = t.dxyIndex > 0
+      ? `DXY ${t.dxyIndex.toFixed(2)} (${t.dxyChangePct >= 0 ? '+' : ''}${t.dxyChangePct.toFixed(2)}%). EUR/USD ${t.eurUsd > 0 ? t.eurUsd.toFixed(4) : '—'}.`
+      : 'DXY did not print.'
+    if (t.goldPrice > 0) {
+      currentGoldState.biasSummary = `Gold ${t.goldPrice.toFixed(2)} (${t.goldChangePct >= 0 ? '+' : ''}${t.goldChangePct.toFixed(2)}%). 10Y real ${t.us10yRealYield !== 0 ? t.us10yRealYield.toFixed(2) + '%' : '—'}. DXY ${t.dxyIndex > 0 ? t.dxyIndex.toFixed(2) : '—'}. Gold/silver ${t.goldSilverRatio > 0 ? t.goldSilverRatio.toFixed(2) : '—'}.`
+    }
+    markFeed(currentGoldState.feeds, 'cme_globex_gc', Boolean(gcYahoo && gcYahoo.price > 0))
+    markFeed(currentGoldState.feeds, 'fred_real_yields', fred10yReal != null || fred5yReal != null || fred10yBreakeven != null, 'FRED')
   } catch (err) {
     logger.warn('[GoldStateStore] Failed to update live Gold telemetry', err)
   }
@@ -257,9 +294,8 @@ export async function refreshLiveGoldHeadlines(): Promise<LiveGoldHeadline[]> {
       }
     }
 
-    if (headlines.length > 0) {
-      currentGoldState.liveGoldHeadlines = headlines.slice(0, 10)
-    }
+    currentGoldState.liveGoldHeadlines = headlines.slice(0, 10)
+    markFeed(currentGoldState.feeds, 'reuters_finnhub_metals_wire', true, 'Finnhub / Yahoo on load')
   } catch (err) {
     logger.warn('[GoldStateStore] Failed to fetch live gold headlines', err)
   }
@@ -336,25 +372,7 @@ export function formatTodaysGoldFundamentalStateText(today: TodaysGoldFundamenta
  * Resets state back to baseline
  */
 export function resetGoldFundamentalState(): GoldFundamentalDashboardState {
-  currentGoldState = {
-    market: 'COMEX_GC',
-    analystPersona: 'Gold Macro, Monetary and Physical Demand Analyst',
-    updatedAt: new Date().toISOString(),
-    overallBias: 'BULLISH',
-    overallConfidence: 85,
-    biasSummary:
-      'Long-term monetary debasement hedge and structural sovereign central-bank accumulation (>1,000 t/yr) offset elevated US 10Y real yields (2.88%). DXY consolidation and negative CVD absorption at key supports maintain a constructive regime.',
-    goldTelemetry: { ...DEFAULT_GOLD_TELEMETRY },
-    today: { ...DEFAULT_TODAY_GOLD_STATE },
-    drivers: { ...DEFAULT_GOLD_DRIVERS },
-    etfFlows: { ...DEFAULT_ETF_FLOW_STATE },
-    cftcPositioning: { ...DEFAULT_CFTC_POSITIONING_STATE },
-    comexInventory: { ...DEFAULT_COMEX_INVENTORY_STATE },
-    centralBankDemand: { ...DEFAULT_CENTRAL_BANK_STATE },
-    feeds: [...DEFAULT_GOLD_FEEDS],
-    recentEvents: [],
-    liveGoldHeadlines: [],
-  }
+  currentGoldState = freshGoldState()
   return currentGoldState
 }
 

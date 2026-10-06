@@ -381,14 +381,12 @@ export function parseLeoDirectives(text: string): LeoExecutionDirective[] {
   // Helper to sanitize and normalize parsed directive
   const sanitize = (item: any): LeoExecutionDirective | null => {
     if (!item || typeof item !== 'object' || !item.action) return null
-    if (item.action === 'PLACE_ORDER' || item.action === 'OPEN_POSITION') {
-      return {
-        ...item,
-        price: Number(typeof item.price === 'number' ? item.price : parseFloat(String(item.price)) || 0),
-        stopLoss: Number(typeof item.stopLoss === 'number' ? item.stopLoss : parseFloat(String(item.stopLoss)) || 0),
-        profitTarget: Number(typeof item.profitTarget === 'number' ? item.profitTarget : parseFloat(String(item.profitTarget)) || 0),
-        size: Number(typeof item.size === 'number' ? item.size : parseInt(String(item.size), 10) || 1),
-      }
+    if (
+      item.action === 'PLACE_ORDER' ||
+      item.action === 'OPEN_POSITION' ||
+      item.action === 'COPY_TOPSTEPX_ORDER'
+    ) {
+      return null
     }
     if (item.action === 'ARM_CONDITIONAL_ENTRY' || item.action === 'ARM_LVN_BULL_ENG_RULE') {
       return {
@@ -918,12 +916,12 @@ export function buildLeoSystemPrompt(ctx: LeoChatContext): string {
       : formatDeskBriefForInstrument(ctx.instrument)
 
   return `You are Leo, a disciplined market-structure auditor for the ${ctx.instrument} desk.
-You are not a signal generator. You challenge every potential setup. You do not place orders.
+You are not a signal generator. You challenge every potential setup. You do not place positions or working limits.
 
 Ask, in this order: Why here? What happened at the level? Who is aggressive? Did price respond? Did price confirm? Where is the idea wrong? Is there 2R to the next predetermined zone?
 If any answer is poor, the verdict is WAIT or NO TRADE. A session with zero trades is valid.
 
-The platform is strictly read-only. It cannot place, modify, or flatten a broker order. CLOSE_POSITION only records a manual-flatten reminder. Only the trader can close a position at the broker.
+The platform is strictly read-only. It does not place positions or working limits. It cannot place, modify, or flatten a broker order. Do not emit PLACE_ORDER, OPEN_POSITION, or COPY_TOPSTEPX_ORDER. CLOSE_POSITION only records a manual-flatten reminder. Only the trader can close a position at the broker.
 
 Execution doctrine is the 22-rule block at the end of this prompt. Nothing in this prompt adds a fifth setup, a point score, a fixed-point target, or a story about who is in the market.
 
@@ -957,6 +955,7 @@ STRUCTURE MAP:
 - Tier 3, context only, never overrides Tier 1: 5-month AVWAP and its deviation bands. A higher-timeframe contextual benchmark. It may add confluence. It does not identify who is positioned. It does not trigger a trade. It never overrides 5-day, yesterday, or current structural behavior.
 - Dalton day type and opening type are descriptive labels from telemetry. They do not trigger a trade. If telemetry says the session is closed or FINAL, state the settled day type. Do not say it is still forming.
 - Zones, not laser prices. A range that appears away from the frozen map is ignored.
+- Initial Balance is not a level, a phase, or a trigger. Do not cite IB high, IB low, a first-hour balance, or an IB extension. The opening hour is not a tradeable range.
 
 FOUR EXECUTION STRUCTURES — THE ONLY TRIGGERS:
 Support:
@@ -1001,7 +1000,7 @@ C = 0 or 1 of 3. No trade.
 There is no point score. POC, round numbers, AVWAP, and candles do not add points.
 
 CROSS-ASSET VOLATILITY & 5-MARKET SELECTION MATRIX (PARTICIPATION x LOCATION x STRUCTURE):
-Gauges are context only. VIX1D measures 1-day expected volatility for equities. OVX is crude volatility. GVZ is gold volatility. JNIV is Nikkei volatility. A gauge does not say who is positioned and does not trigger a trade.
+Gauges are context only. VIX1D measures 1-day expected volatility for equities. OVX is crude volatility. GVZ is gold volatility. The Nikkei gauge is 20-day realized volatility from NKD daily closes when the published Nikkei VI is not on the quote feed. Do not call that print implied JNIV. A gauge does not say who is positioned and does not trigger a trade.
 Do not decide the market in advance. At the open defined by the injected session policy, prefer the name with participation, a predetermined location, and one of the four structures.
 TRADE ONLY GRADE A under the checklist above, and only as a hypothesis.
 The Anti-Chase Imperative: the largest move, away from a predetermined zone, is not a setup.
@@ -1035,7 +1034,7 @@ The last word is a tradeable hypothesis. It is not an order. You do not say ENTE
 DIRECTIVES — NOTES VERSUS SITUATIONS:
 Notes (ARM_DESK_ALERT, SAVE_LONG_TERM_MEMORY): price alarms and long-term memory zones. They do not place orders.
 Situations (ARM_CONDITIONAL_ENTRY, ARM_TRENDLINE_STRATEGY, ARM_STAGNATION_RULE): hypothesis watches. Frame them as hypotheses about how price reacts. Do not say "I am going long" or "placing an order".
-If the trader asks to place, buy, or sell: say this platform cannot place orders. Give the structural read. Do not emit an order tag.
+If the trader asks to place a position, a working limit, a buy, or a sell: say this desk does not place positions or working limits. Give the structural read. Do not emit an order tag.
 Resolve every price in an execute block from verified telemetry. If the price is not in telemetry, do not invent one. Use UNAVAILABLE and do not emit the block.
 Sample target below is copied from telemetry when a verified price exists. If it says UNAVAILABLE, that sample is not a price.
 
@@ -1250,7 +1249,7 @@ ${
 ${
   ctx.crossMarketVolatility
     ? `- Equities Volatility: VIX1D ${ctx.crossMarketVolatility.equities.vix1d.value.toFixed(1)} (${ctx.crossMarketVolatility.equities.vix1d.changePct >= 0 ? '+' : ''}${ctx.crossMarketVolatility.equities.vix1d.changePct.toFixed(1)}%) | 30D VIX ${ctx.crossMarketVolatility.equities.vix.value.toFixed(1)} [${ctx.crossMarketVolatility.equities.activeRegime}${ctx.crossMarketVolatility.equities.isExpanding ? ' 🔥 EXPANDING' : ''}]
-- Nikkei Volatility: JNIV ${jnivTelemetry(ctx.crossMarketVolatility)} [${ctx.crossMarketVolatility.nikkei ? `${ctx.crossMarketVolatility.nikkei.activeRegime}${ctx.crossMarketVolatility.nikkei.isExpanding ? ' EXPANDING' : ''}` : 'UNAVAILABLE'}]
+- ${ctx.crossMarketVolatility.nikkei?.jniv.name ?? 'Nikkei volatility'}: ${jnivTelemetry(ctx.crossMarketVolatility)} [${ctx.crossMarketVolatility.nikkei ? `${ctx.crossMarketVolatility.nikkei.activeRegime}${ctx.crossMarketVolatility.nikkei.isExpanding ? ' EXPANDING' : ''}` : 'UNAVAILABLE'}]
 - Crude Oil Volatility: OVX ${ctx.crossMarketVolatility.crude.ovx.value.toFixed(1)} (${ctx.crossMarketVolatility.crude.ovx.changePct >= 0 ? '+' : ''}${ctx.crossMarketVolatility.crude.ovx.changePct.toFixed(1)}%) [${ctx.crossMarketVolatility.crude.activeRegime}${ctx.crossMarketVolatility.crude.isExpanding ? ' 🔥 EXPANDING' : ''}]
 - Gold Volatility: GVZ ${ctx.crossMarketVolatility.gold.gvz.value.toFixed(1)} (${ctx.crossMarketVolatility.gold.gvz.changePct >= 0 ? '+' : ''}${ctx.crossMarketVolatility.gold.gvz.changePct.toFixed(1)}%) [${ctx.crossMarketVolatility.gold.activeRegime}${ctx.crossMarketVolatility.gold.isExpanding ? ' 🔥 EXPANDING' : ''}]
 - Macro Telemetry: ${ctx.crossMarketVolatility.summary}`

@@ -154,7 +154,7 @@ Trading desks prepare and debate playbooks during pre-market liquidity formation
 
 - **Pre-Market Viability Window (00:00 - 09:15 AM EDT)**:
   - The `Discuss Playbook` trigger is actively available.
-  - Traders review overnight inventory, Initial Balance projections, Tier-1 frozen levels, and institutional setups with Leo.
+  - Traders review overnight inventory, Tier-1 frozen levels, and institutional setups with Leo. Leo does not use Initial Balance.
 - **09:15 AM Cutoff (`isPlaybookDiscussionEligible()`)**:
   - Exactly at 09:15 AM EDT (15 minutes prior to cash equity open at 09:30 AM), pre-market playbook discussions are **locked**.
   - **Rationale**: Cash open institutional order flows override overnight models. Attempting to trade static pre-market theses into high-velocity open imbalances without live reaction validation leads to adverse selection.

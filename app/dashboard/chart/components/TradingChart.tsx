@@ -39,6 +39,7 @@ import {
 } from 'lightweight-charts'
 import {
   AVWAP_CANDLE_FETCH_CALENDAR_DAYS,
+  ONE_MINUTE_FETCH_CALENDAR_DAYS,
   activeDeskSessionsAt,
   computeSessionHighlightSpans,
   projectSessionHighlightRects,
@@ -143,7 +144,6 @@ import {
   deskCallBadgeText,
   deskCallHoverText,
   resolveDeskCallAsOfUnix,
-  assertDeskTicketEntry,
   ticketAllowedEdges,
   type DeskCall,
 } from '@/lib/trading/deskCall'
@@ -193,7 +193,6 @@ import { isUsMarketHoliday } from '@/lib/chart/sessionVwap'
 import {
   loadRulesForMarket,
   saveRulesForMarket,
-  MARKET_DEFAULT_PARAMS,
   listenToRuleUpdates,
   isEntrySituationRule,
   type ArmedRule,
@@ -295,16 +294,13 @@ import {
   activeRangeForPlaybook,
   entryEligibleOverlayRanges,
   studyEntrySnapRanges,
-  strategyEntryRisk,
   type StrategyRangeEdges,
   type StrategyRiskMagnets,
 } from '@/lib/trading/strategyRiskGeometry'
 const snapEntryToNearestOpenBandCenter = (..._args: any[]): any => null
 const clampPriceToRangeEdgeEnvelope = (px: number, ..._args: any[]) => px
 const filterLevelsInRangeEdgeBand = (levels: any[], ..._args: any[]) => levels
-const attributePlaybookBandEntry = (..._args: any[]): any => null
 const NO_IN_BAND_LEVELS_MESSAGE = ''
-const RANGE_EDGE_OFF_BAND_MESSAGE = 'Entry restricted'
 
 const computeRangeEdgeTails = (..._args: any[]): any[] => []
 const latestQualityTail = (..._args: any[]): any => null
@@ -373,6 +369,7 @@ import {
   priceFromClientY,
   riskBoxDollarPreview,
 } from '@/lib/chart/chartPointerPrice'
+import { chartOwnsWheel, livePriceStateGapMs } from '@/lib/chart/chartWheel'
 import {
   OVERLAY_NODE_SELECTOR,
   OV_BOX_PRICE,
@@ -403,10 +400,10 @@ const CANDLE_CACHE_FRESH_MS = 300_000
  */
 const CACHED_PRICE_FRESH_MS = 15_000
 
-/** Header ticker repaint cadence — the readout subtree only. */
-const PRICE_TICKER_MS = 50
-/** Cadence for the React state that feeds badges / proximity / alert effects. */
-const PRICE_STATE_MS = 500
+/** Header ticker repaint cadence — the readout subtree only. ~32ms, not every raw tick. */
+const PRICE_TICKER_MS = 32
+/** Cadence for the React state that feeds badges / proximity / alert effects. 10 Hz while ticks flow. */
+const PRICE_STATE_MS = 100
 /** REST reconcile spacing while the SSE push stream is still delivering ticks.
  * Kept at 2 s so the chart keeps updating during low-volatility Asian/overnight
  * sessions even when OANDA emits no price ticks for several seconds. */
@@ -660,8 +657,10 @@ export function barSecondsForTimeframe(tf: DeskTimeframe): number {
 export const DESK_TIMEFRAME = '5m' as const
 export const DESK_BAR_SECONDS = 300
 
-/** Keep re-placing overlays this long after the last pan/zoom/resize event. */
-const OVERLAY_SETTLE_MS = 320
+/** One extra frame of overlay samples after the last pan/zoom/resize event. */
+const OVERLAY_SETTLE_MS = 64
+/** React badge cadence while prints arrive faster than a quiet tape. */
+const PRICE_STATE_BURST_MS = 400
 /** Plain useLayoutEffect warns during SSR; the chart pane is browser-only. */
 const useOverlayLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
 
@@ -1281,7 +1280,7 @@ export function TradingChart({
   initialInstrument,
   lockedInstrument,
   allowedInstruments = null,
-  onLevelSelect,
+  onLevelSelect: _onLevelSelect,
   canPlaceOrder = false,
   rangeStrategy = null,
   attemptsUsed = 0,
@@ -1494,10 +1493,8 @@ export function TradingChart({
   const [ibShaped, setIbShaped] = useState(false)
   /** Mirrored IB H/L for ±10 band effect deps (refs alone do not re-render). */
   const [ibLevels, setIbLevels] = useState<{ high: number; low: number } | null>(null)
-  /** IB H/L + BRK/REJ markers + ±10 bands — remembered across refresh. */
-  const [showIbBreakouts] = useState(() =>
-    SYSTEMATIC_LIVE_DESK ? true : loadDeskOverlayToggles().ib
-  )
+  /** Initial Balance overlay is off. */
+  const showIbBreakouts = false
   /** Open range (first 15m) H/L + volume BRK/REJ */
   const or15SeriesRef = useRef<{
     high: ISeriesApi<'Line'>
@@ -1760,7 +1757,7 @@ export function TradingChart({
   const sessionExitKeyRef = useRef('')
   const [ibExtendBadge, setIbExtendBadge] = useState('—')
   const [, setIbExtendHover] = useState(
-    'IB extend vs revert — advice only after IB locks. First tag is not the entry.'
+    'Range advice only. First tag is not the entry.'
   )
   const ibExtendRef = useRef<IbExtendAdvice | null>(null)
   const ibLiqLinesRef = useRef<IPriceLine[]>([])
@@ -5039,6 +5036,12 @@ export function TradingChart({
     return () => clearInterval(id)
   }, [critiqueStartOption])
 
+  const critiqueStep =
+    instrument === 'CRUDE' ? 0.02 : instrument === 'GOLD' ? 0.1 : instrument === 'NASDAQ' ? 1 : 2
+  const critiquePrice =
+    livePrice == null || !Number.isFinite(livePrice)
+      ? null
+      : Math.round(livePrice / critiqueStep) * critiqueStep
   const livePriceCritique = useMemo<PriceCritiqueEvaluation | null>(() => {
     if (!isCritiqueSessionActiveState) return null
     const list = candles || []
@@ -5128,7 +5131,7 @@ export function TradingChart({
         : null,
     })
   }, [
-    livePrice,
+    critiquePrice,
     candles,
     instrument,
     yesterdayNyc,
@@ -5140,7 +5143,13 @@ export function TradingChart({
     critiqueStartOption,
   ])
 
+  const leoIdleRef = useRef<LeoChatContext | null>(null)
   const leoContext: LeoChatContext = useMemo(() => {
+    // The cash-open price print must not rebuild Leo's pattern scan. The panel
+    // reads a fresh book when it is actually open.
+    if (!leoPanelOpen && leoIdleRef.current?.instrument === instrument) {
+      return leoIdleRef.current
+    }
     const list = candles || []
     const lastBar = list.length ? list[list.length - 1] : null
     const curPrice = livePrice ?? lastBar?.close ?? null
@@ -5178,8 +5187,8 @@ export function TradingChart({
       sessionName = 'NYC Cash Session (RTH)'
       sessionElapsedMinutes = Math.floor((nyDec - 9.5) * 60)
       if (nyDec < 10.5) {
-        sessionPhase = 'Initial Balance (IB)'
-        nextCheckpoint = `${Math.floor((10.5 - nyDec) * 60)}m to IB Close (10:30 ET)`
+        sessionPhase = 'Cash open'
+        nextCheckpoint = `${Math.floor((10.5 - nyDec) * 60)}m to 10:30 ET`
       } else if (nyDec < 12) {
         sessionPhase = 'Morning Trend / Extension'
         nextCheckpoint = `${Math.floor((12 - nyDec) * 60)}m to NY Lunch (12:00 ET)`
@@ -5288,7 +5297,7 @@ export function TradingChart({
       }
     })
 
-    return {
+    const built: LeoChatContext = {
       instrument,
       currentPrice: curPrice,
       currentTimeEt: nowEtStr,
@@ -5573,11 +5582,14 @@ export function TradingChart({
       priceQuestioning: livePriceCritique || undefined,
       rangeComparisons: compareMultipleRanges(computedRanges as any, curPrice),
     }
+    if (!leoPanelOpen) leoIdleRef.current = built
+    return built
   }, [
     instrument,
-    livePrice,
+    leoPanelOpen,
+    leoPanelOpen ? livePrice : null,
     candles,
-    livePriceCritique,
+    leoPanelOpen ? livePriceCritique : null,
     dayTypeEval,
     openingBadge,
     avwap5mBenchmark,
@@ -6810,22 +6822,14 @@ export function TradingChart({
   const overlayRafRef = useRef(0)
   const overlaySampleUntilRef = useRef(0)
 
-  /** Place now, then keep sampling each frame for a beat so kinetic scroll and
-   * autoscale animations stay glued to the candles without a perpetual loop. */
+  /** One overlay pass per frame while the user pans, zooms, or drags the axis.
+   * Painting the volume profile on the wheel event itself, and again inside
+   * this loop, was several full canvas clears per tick. */
   const pokeOverlayLayout = useCallback(() => {
-    paintOverlaysSinglePass()
-    paintFrvpHistogramRef.current?.()
-    paintExcessesAndRoundedRef.current?.()
-    paintUserDrawingsRef.current?.()
-    paintNewsMarkersRef.current?.()
     overlaySampleUntilRef.current = Date.now() + OVERLAY_SETTLE_MS
     if (overlayRafRef.current) return
     const loop = () => {
-      paintOverlaysSinglePass()
-      paintFrvpHistogramRef.current?.()
-      paintExcessesAndRoundedRef.current?.()
-      paintUserDrawingsRef.current?.()
-      paintNewsMarkersRef.current?.()
+      paintOverlaysSinglePassRef.current()
       if (Date.now() < overlaySampleUntilRef.current) {
         overlayRafRef.current = requestAnimationFrame(loop)
       } else {
@@ -6833,7 +6837,7 @@ export function TradingChart({
       }
     }
     overlayRafRef.current = requestAnimationFrame(loop)
-  }, [paintOverlaysSinglePass])
+  }, [])
 
   const pokeOverlayLayoutRef = useRef(pokeOverlayLayout)
   pokeOverlayLayoutRef.current = pokeOverlayLayout
@@ -7052,8 +7056,8 @@ export function TradingChart({
   /** Open Limit risk box with entry locked to a painted ±10 band center. */
   const openRiskBox = useCallback(
     (
-      preferredPrice?: number,
-      opts?: {
+      _preferredPrice?: number,
+      _opts?: {
         direction?: 'LONG' | 'SHORT'
         /**
          * Click-on-band: keep that painted edge center (H / L).
@@ -7067,181 +7071,14 @@ export function TradingChart({
         }
       }
     ) => {
-      const { strategyRange, snapRanges, ladder, call, strategyMagnets } = getStrategyRiskBundle()
-      const wait = assertDeskTicketEntry({
-        useCall: useCallRef.current,
-        call,
+      onDeskAlert?.({
+        kind: 'entry_band_deny',
+        title: 'No orders',
+        body: 'The desk does not place positions or working limits.',
+        telegram: '',
+        instrument,
       })
-      if (!wait.ok) {
-        onDeskAlert?.({
-          kind: 'entry_band_deny',
-          title: 'CALL WAIT',
-          body: wait.message,
-          telegram: '',
-          instrument,
-        })
-        return
-      }
-      const liveOk = (range: { label: string; high: number; low: number }) => {
-        if (range.label === 'OR30') {
-          return (
-            !!strategyRange &&
-            strategyRange.label === range.label &&
-            strategyRange.high === range.high &&
-            strategyRange.low === range.low
-          )
-        }
-        return assertBucketEntryEligible({
-          instrument,
-          market: deskMarketFor(instrument),
-          timeSec: deskClockSeconds(instrument),
-          ladder,
-          rangeLabel: range.label,
-        }).ok
-      }
-
-      if (opts?.lockHit) {
-        const { center, edge, range } = opts.lockHit
-        if (!liveOk(range)) {
-          const bucketCheck = assertBucketEntryEligible({
-            instrument,
-            market: deskMarketFor(instrument),
-            timeSec: deskClockSeconds(instrument),
-            ladder,
-            rangeLabel: range.label,
-          })
-          onDeskAlert?.({
-            kind: 'entry_band_deny',
-            title: `${range.label || 'range'} entry closed`,
-            body:
-              range.label === 'OR15' || range.label === 'OR30'
-                ? 'Open-range / OR30 ±10 window is closed — enter on the live next-range playbook when unlocked.'
-                : bucketCheck.ok
-                  ? RANGE_EDGE_OFF_BAND_MESSAGE
-                  : bucketCheck.message,
-            telegram: '',
-            instrument,
-          })
-          return
-        }
-        const gated = assertDeskTicketEntry({
-          useCall: useCallRef.current,
-          call,
-          edge,
-        })
-        if (!gated.ok) {
-          onDeskAlert?.({
-            kind: 'entry_band_deny',
-            title: 'CALL blocks this edge',
-            body: gated.message,
-            telegram: '',
-            instrument,
-          })
-          return
-        }
-        const entry = snapDeskPrice(instrument, center)
-        const dir = gated.side
-        const strat = strategyEntryRisk({
-          entry,
-          direction: dir,
-          activeRange: range,
-          magnets: strategyMagnets,
-        })
-        setRiskBox({
-          direction: dir,
-          orderType: 'LIMIT',
-          entryPrice: entry,
-          stopLoss: snapDeskPrice(instrument, strat.stop),
-          profitTarget: snapDeskPrice(instrument, strat.target),
-          preferRangeLabel: range.label ?? strategyRange?.label ?? null,
-        })
-        setRiskBoxActive(true)
-        return
-      }
-
-      const rawPx =
-        preferredPrice != null && Number.isFinite(preferredPrice) && preferredPrice > 0
-          ? preferredPrice
-          : livePrice || (candles.length > 0 ? candles[candles.length - 1]!.close : 67000)
-      // Limit / place-near: snap to nearest live band center (in-band → that center).
-      const snapped = snapEntryToNearestOpenBandCenter({
-        entry: Number(rawPx),
-        candidates: snapRanges,
-        preferLabel: strategyRange?.label ?? null,
-        liveOk,
-      })
-      if (!snapped) {
-        // Prefer bucket / unlock copy over generic off-band when bands exist but aren't live.
-        const hit = attributePlaybookBandEntry({
-          entry: Number(rawPx),
-          candidates: snapRanges,
-          preferLabel: strategyRange?.label ?? null,
-          liveOk,
-        })
-        let body = RANGE_EDGE_OFF_BAND_MESSAGE
-        let title = 'Off-band entry'
-        if (snapRanges.length === 0) {
-          title = 'No entry bands'
-          body = 'No live ±10 entry bands — wait for OR30 / IB to unlock.'
-        } else if (hit) {
-          if (hit.range.label === 'OR15' || hit.range.label === 'OR30') {
-            title = `${hit.range.label} entry closed`
-            body = 'Open-range / OR30 ±10 window is closed — enter on the live next-range playbook when unlocked.'
-          } else {
-            const bucketCheck = assertBucketEntryEligible({
-              instrument,
-              market: deskMarketFor(instrument),
-              timeSec: deskClockSeconds(instrument),
-              ladder,
-              rangeLabel: hit.range.label,
-            })
-            if (!bucketCheck.ok) {
-              title = `${hit.range.label} entry closed`
-              body = bucketCheck.message
-            }
-          }
-        }
-        onDeskAlert?.({
-          kind: 'entry_band_deny',
-          title,
-          body,
-          telegram: '',
-          instrument,
-        })
-        return
-      }
-      const gated = assertDeskTicketEntry({
-        useCall: useCallRef.current,
-        call,
-        edge: snapped.hit.edge,
-      })
-      if (!gated.ok) {
-        onDeskAlert?.({
-          kind: 'entry_band_deny',
-          title: 'CALL blocks this edge',
-          body: gated.message,
-          telegram: '',
-          instrument,
-        })
-        return
-      }
-      const entry = snapDeskPrice(instrument, snapped.price)
-      const dir = gated.side
-      const strat = strategyEntryRisk({
-        entry,
-        direction: dir,
-        activeRange: snapped.hit.range,
-        magnets: strategyMagnets,
-      })
-      setRiskBox({
-        direction: dir,
-        orderType: 'LIMIT',
-        entryPrice: entry,
-        stopLoss: snapDeskPrice(instrument, strat.stop),
-        profitTarget: snapDeskPrice(instrument, strat.target),
-        preferRangeLabel: snapped.hit.range.label ?? strategyRange?.label ?? null,
-      })
-      setRiskBoxActive(true)
+      return
     },
     [livePrice, candles, instrument, getStrategyRiskBundle, onDeskAlert]
   )
@@ -7716,6 +7553,8 @@ export function TradingChart({
     let scaleCacheList: OHLCV[] | null = null
     let scaleCacheKey = ''
     let scaleCacheBounds: { min: number; max: number } | null = null
+    let scaleCacheStart = -1
+    let scaleCacheEnd = -1
 
     const candleAutoscale = () => {
       const list = candlesRef.current
@@ -7736,6 +7575,19 @@ export function TradingChart({
       }
 
       const edge = list[endIndex]
+      // A tick inside the current window must not rescan every visible bar.
+      // A new high or low, or a pan that changes the window, still rescans.
+      if (
+        scaleCacheList === list &&
+        scaleCacheBounds &&
+        scaleCacheStart === startIndex &&
+        scaleCacheEnd === endIndex &&
+        edge &&
+        edge.high <= scaleCacheBounds.max &&
+        edge.low >= scaleCacheBounds.min
+      ) {
+        return paddedCandlePriceRange(scaleCacheBounds.min, scaleCacheBounds.max)
+      }
       const cacheKey =
         `${startIndex}|${endIndex}|${list.length}|${instrumentRef.current}` +
         `|${edge ? `${edge.time}:${edge.high}:${edge.low}` : ''}`
@@ -7766,6 +7618,8 @@ export function TradingChart({
       scaleCacheList = list
       scaleCacheKey = cacheKey
       scaleCacheBounds = { min, max }
+      scaleCacheStart = startIndex
+      scaleCacheEnd = endIndex
       return paddedCandlePriceRange(min, max)
     }
 
@@ -7991,41 +7845,46 @@ export function TradingChart({
       borderVisible: true,
     })
 
-    // ─── 2. Crosshair tooltip — skip entirely while panning (React setState kills FPS)
+    // ─── 2. Crosshair tooltip — one React commit per frame, none while panning
     let tipRaf = 0
     let tipPending: TooltipData | null | undefined
+    let syncPending: { x: number; timeStr: string } | null | undefined
+    let legendPending: { open: number; high: number; low: number; close: number } | null | undefined
+    const flushTip = () => {
+      tipRaf = 0
+      setTooltip(tipPending === undefined ? null : tipPending)
+      if (syncPending !== undefined) setSyncCrosshair(syncPending)
+      if (legendPending !== undefined) setCurrentCvdLegend(legendPending)
+      tipPending = undefined
+      syncPending = undefined
+      legendPending = undefined
+    }
     chart.subscribeCrosshairMove((param) => {
       if (interactingRef.current) {
-        if (tipPending !== null) {
-          tipPending = null
-          if (!tipRaf) {
-            tipRaf = requestAnimationFrame(() => {
-              tipRaf = 0
-              setTooltip(null)
-            })
-          }
-        }
+        tipPending = null
+        syncPending = null
+        if (!tipRaf) tipRaf = requestAnimationFrame(flushTip)
         return
       }
       if (!param?.seriesData?.size || param.point === undefined) {
         tipPending = null
-        setSyncCrosshair(null)
+        syncPending = null
         if (cachedCvdBarsRef.current.length > 0) {
           const lastCvd = cachedCvdBarsRef.current[cachedCvdBarsRef.current.length - 1]
           if (lastCvd) {
-            setCurrentCvdLegend({
+            legendPending = {
               open: Math.round(lastCvd.open),
               high: Math.round(lastCvd.high),
               low: Math.round(lastCvd.low),
               close: Math.round(lastCvd.close),
-            })
+            }
           }
         }
       } else {
         const candle = param.seriesData.get(candleSeries) as CandlestickData | undefined
         if (!candle) {
           tipPending = null
-          setSyncCrosshair(null)
+          syncPending = null
         } else {
           const open = (candle as any).open ?? 0
           const close = (candle as any).close ?? 0
@@ -8048,12 +7907,12 @@ export function TradingChart({
           const cvdDelta = cvdClose != null && cvdOpen != null ? cvdClose - cvdOpen : undefined
 
           if (matchingCvd) {
-            setCurrentCvdLegend({
+            legendPending = {
               open: cvdOpen!,
               high: Math.round(matchingCvd.high),
               low: Math.round(matchingCvd.low),
               close: cvdClose!,
-            })
+            }
           }
 
           const timeStr = param.time
@@ -8076,19 +7935,15 @@ export function TradingChart({
           }
 
           if (param.point) {
-            setSyncCrosshair({
+            syncPending = {
               x: param.point.x,
               timeStr,
-            })
+            }
           }
         }
       }
       if (tipRaf) return
-      tipRaf = requestAnimationFrame(() => {
-        tipRaf = 0
-        setTooltip(tipPending === undefined ? null : tipPending)
-        tipPending = undefined
-      })
+      tipRaf = requestAnimationFrame(flushTip)
     })
 
     chartRef.current = chart
@@ -8102,41 +7957,11 @@ export function TradingChart({
     or30SeriesRef.current = or30Series
     setChartReady(true)
 
-    const updateCvdUnderCursor = () => {
-      if (lastPointerPosRef.current && containerRef.current && chartRef.current && candleRef.current) {
-        const rect = containerRef.current.getBoundingClientRect()
-        const x = lastPointerPosRef.current.x - rect.left
-        if (x >= 0 && x <= rect.width) {
-          const logical = chartRef.current.timeScale().coordinateToLogical(x)
-          if (logical != null) {
-            const candle = candleRef.current.dataByIndex(Math.round(logical)) as CandlestickData | null
-            if (candle && candle.time) {
-              const matchingCvd = cachedCvdBarsRef.current.find((b) => isSameChartTime(b.time, candle.time))
-              if (matchingCvd) {
-                const cClose = Math.round((matchingCvd as any).close ?? 0)
-                const cOpen = Math.round((matchingCvd as any).open ?? 0)
-                setCurrentCvdLegend({
-                  open: cOpen,
-                  high: Math.round((matchingCvd as any).high ?? 0),
-                  low: Math.round((matchingCvd as any).low ?? 0),
-                  close: cClose,
-                })
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // Sync overlay coordinates on chart scroll/zoom — immediate execution for 0-lag 60fps tracking
+    // Pan/zoom: one overlay sample per frame. The CVD legend is not a scroll paint.
     const onScroll = () => {
+      interactingRef.current = true
       pokeOverlayLayoutRef.current()
       syncCvdFromMainRef.current()
-      paintFrvpHistogramRef.current?.()
-      paintExcessesAndRoundedRef.current?.()
-      paintUserDrawingsRef.current?.()
-      paintNewsMarkersRef.current?.()
-      updateCvdUnderCursor()
     }
     chart.timeScale().subscribeVisibleLogicalRangeChange(onScroll)
 
@@ -8161,18 +7986,23 @@ export function TradingChart({
         }
         chartRef.current.resize(w, h)
         pokeOverlayLayoutRef.current()
-        paintFrvpHistogramRef.current?.()
-        paintExcessesAndRoundedRef.current?.()
-        paintUserDrawingsRef.current?.()
-        paintNewsMarkersRef.current?.()
         refreshSessionHighlights()
       }
     })
     ro.observe(containerRef.current)
 
-    // Intercept wheel events across the entire chart wrapper (toolbar, main chart, volume bars at bottom, time scale, sub-panes)
-    // to prevent browser page bounce/shaking and zoom the chart time scale seamlessly
+    // Stop the page from scrolling under the desk. The plot, time scale, and
+    // price scale belong to Lightweight Charts — zooming them again here made
+    // each wheel tick jump, and a price-axis wheel also zoomed time.
     const onChartWheel = (e: WheelEvent) => {
+      const onPlot = chartOwnsWheel(
+        e.target instanceof Node ? e.target : null,
+        containerRef.current
+      )
+      if (onPlot) {
+        e.preventDefault()
+        return
+      }
       e.preventDefault()
       e.stopPropagation()
       if (!chartRef.current) return
@@ -8188,14 +8018,8 @@ export function TradingChart({
           const newFrom = range.from - change / 2
           const newTo = range.to + change / 2
           if (newTo - newFrom > 2) {
+            interactingRef.current = true
             ts.setVisibleLogicalRange({ from: newFrom, to: newTo })
-            pokeOverlayLayoutRef.current()
-            relinkCvdToPriceRef.current()
-            paintFrvpHistogramRef.current?.()
-            paintExcessesAndRoundedRef.current?.()
-            paintUserDrawingsRef.current?.()
-            paintNewsMarkersRef.current?.()
-            updateCvdUnderCursor()
           }
         }
       } catch {
@@ -8557,8 +8381,13 @@ export function TradingChart({
 
       // Full continuum including afternoon — clipAfternoonBars is a no-op while freeze is off
       try {
-        // Must cover cash open of 5 trading days prior (weekends truncate a plain 5d fetch; 1m is 3d — enough for 5 sessions Mon-Fri while keeping candle count low; 1D is 730d / 2 years)
-        const days = timeframe === '1D' ? 730 : timeframe === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
+        // Must cover cash open of 5 trading days prior. 1m uses Yahoo's 8-day window so a weekend still leaves five sessions. 1D is two years.
+        const days =
+          timeframe === '1D'
+            ? 730
+            : timeframe === '1m'
+              ? ONE_MINUTE_FETCH_CALENDAR_DAYS
+              : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
         const res = await fetch(
           `/api/trading/candles?instrument=${instrument}&timeframe=${timeframe}&days=${days}`
         )
@@ -9735,7 +9564,7 @@ export function TradingChart({
             /* ignore */
           }
         }
-      }, 16)
+      }, 120)
     }
 
     const beginInteract = () => {
@@ -9800,11 +9629,15 @@ export function TradingChart({
     const candleIntervalMs = tipStreamActive ? CANDLE_REFRESH_MS : 30_000
     let lastTickPublishAt = 0
     let lastPriceStateAt = 0
+    let burstTicks = 0
+    let burstWindowStart = 0
     let lastMarkerPaintAt = 0
     let tipPaintRaf = 0
     const fetchGen = ++candleFetchGenRef.current
     let sseHealthy = false
     let lastSseMessageAt = 0
+    /** Unix seconds of the last SSE quote accepted into applyQuote. */
+    let lastSseQuoteTs = 0
     const SSE_STALE_MS = 3_000
 
     /** Live quote stream active during cash/focus hours and active sessions (Asia, London, NY) */
@@ -9951,16 +9784,23 @@ export function TradingChart({
       }
 
       onPriceUpdate?.(price)
+      const now = Date.now()
+      // Header readout repaints on its own subscription — candle tip updates every tick below
+      if (now - lastTickPublishAt >= PRICE_TICKER_MS) {
+        lastTickPublishAt = now
+        publishPriceTick(price, changePct)
+        onQuoteTick?.(Math.floor(now / 1000))
+      }
+      // Badges stay on PRICE_STATE_MS while the tape is quiet. A cash-open burst
+      // stretches that commit so the chart component is not rebuilt 10 times a second.
       if (!interactingRef.current) {
-        const now = Date.now()
-        // Header readout repaints on its own subscription — candle tip updates every tick below
-        if (now - lastTickPublishAt >= PRICE_TICKER_MS) {
-          lastTickPublishAt = now
-          publishPriceTick(price, changePct)
-          onQuoteTick?.(Math.floor(now / 1000))
+        if (now - burstWindowStart >= 1000) {
+          burstWindowStart = now
+          burstTicks = 0
         }
-        // Badges / proximity / alert effects read state — they do not need 20 Hz
-        if (now - lastPriceStateAt >= PRICE_STATE_MS) {
+        burstTicks += 1
+        const stateGap = livePriceStateGapMs(burstTicks, PRICE_STATE_MS, PRICE_STATE_BURST_MS)
+        if (now - lastPriceStateAt >= stateGap) {
           lastPriceStateAt = now
           setLivePrice(price)
         }
@@ -10104,6 +9944,65 @@ export function TradingChart({
       commitTipBar(bar, fills)
     }
 
+    // One animation frame of prints becomes one forming-bar update. Walking the
+    // burst in order keeps the wick; paintTipBar already coalesces the series.
+    let queuedQuotes: Array<{
+      price: number
+      changePct: number
+      quoteTs: number
+      streamLive: boolean
+      trustedExchange: boolean
+      exchangeBar?: {
+        time: number
+        open: number
+        high: number
+        low: number
+        close: number
+        volume: number
+      }
+    }> = []
+    let quoteRaf = 0
+    const flushQueuedQuotes = () => {
+      quoteRaf = 0
+      const batch = queuedQuotes
+      queuedQuotes = []
+      for (let i = 0; i < batch.length; i++) {
+        const q = batch[i]!
+        applyQuote(
+          q.price,
+          q.changePct,
+          q.quoteTs,
+          q.streamLive,
+          q.trustedExchange,
+          q.exchangeBar
+        )
+      }
+    }
+    const enqueueQuote = (
+      price: number,
+      changePct: number,
+      quoteTs: number,
+      streamLive: boolean,
+      trustedExchange: boolean,
+      exchangeBar?: {
+        time: number
+        open: number
+        high: number
+        low: number
+        close: number
+        volume: number
+      }
+    ) => {
+      const prev = queuedQuotes[queuedQuotes.length - 1]
+      if (prev && prev.quoteTs === quoteTs && prev.price === price && prev.trustedExchange === trustedExchange) {
+        return
+      }
+      queuedQuotes.push({ price, changePct, quoteTs, streamLive, trustedExchange, exchangeBar })
+      if (queuedQuotes.length > 64) queuedQuotes.splice(0, queuedQuotes.length - 64)
+      if (quoteRaf) return
+      quoteRaf = requestAnimationFrame(flushQueuedQuotes)
+    }
+
     const pollQuote = async () => {
       if (!tipOpen()) return
       if (quoteInFlightRef.current) return
@@ -10139,7 +10038,12 @@ export function TradingChart({
 
     const refreshCandles = async () => {
       try {
-        const days = timeframe === '1D' ? 730 : timeframe === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
+        const days =
+          timeframe === '1D'
+            ? 730
+            : timeframe === '1m'
+              ? ONE_MINUTE_FETCH_CALENDAR_DAYS
+              : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
         const res = await fetch(
           `/api/trading/candles?instrument=${instrument}&timeframe=${timeframe}&days=${days}&quote=0&_=${Date.now()}`,
           { cache: 'no-store' }
@@ -10195,6 +10099,28 @@ export function TradingChart({
         }))
         if (nextBars.length === 0) return
 
+        // Healthy SSE owns the forming bucket. Older REST bars still land;
+        // the same timestamp must not roll the live close backward.
+        const liveTip = lastCandleRef.current
+        if (
+          sseHealthy &&
+          Date.now() - lastSseMessageAt < 3000 &&
+          lastSseQuoteTs > 0 &&
+          liveTip
+        ) {
+          const mergedLast = nextBars[nextBars.length - 1]!
+          if ((mergedLast.time as number) === (liveTip.time as number)) {
+            const close = liveTip.close
+            nextBars[nextBars.length - 1] = {
+              ...mergedLast,
+              open: liveTip.open > 0 ? liveTip.open : mergedLast.open,
+              high: Math.max(mergedLast.high, liveTip.high, close),
+              low: Math.min(mergedLast.low, liveTip.low, close),
+              close,
+            }
+          }
+        }
+
         if (fetchGen !== candleFetchGenRef.current) return
 
         const prev = candlesRef.current
@@ -10229,7 +10155,7 @@ export function TradingChart({
         )
 
         lastCandleRef.current = nextBars[nextBars.length - 1]!
-        // REST owns closed bars: replace gap-fill flats when Yahoo catches up.
+        // REST owns closed bars: replace carry-forward flats when the CME tape catches up.
         if (structureChanged || closedChanged) {
           setCandles(nextBars)
         } else {
@@ -10313,7 +10239,8 @@ export function TradingChart({
             typeof json.timestamp === 'number' && json.timestamp > 0
               ? json.timestamp
               : Math.floor(Date.now() / 1000)
-          applyQuote(
+          lastSseQuoteTs = ts
+          enqueueQuote(
             json.price,
             json.change_pct ?? 0,
             ts,
@@ -10376,6 +10303,8 @@ export function TradingChart({
       candleFetchGenRef.current += 1
       if (tipPaintRaf) cancelAnimationFrame(tipPaintRaf)
       tipPaintRaf = 0
+      if (quoteRaf) cancelAnimationFrame(quoteRaf)
+      quoteRaf = 0
       clearInterval(reconcile)
       window.removeEventListener('online', handleReconnect)
       document.removeEventListener('visibilitychange', handleVisibility)
@@ -12069,75 +11998,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     setPriceAlert({ price: priceAlert.price, armed: false, pendingAway: false })
   }, [livePrice, priceAlert, instrument, onDeskAlert])
 
-  const confirmRiskBoxOrder = useCallback(() => {
-    if (!riskBox) return
-    const { entryPrice: boxEntry, stopLoss, profitTarget, direction } = riskBox
-
-    const { strategyMagnets, snapRanges, strategyRange, ladder } = getStrategyRiskBundle()
-    const preferLabel =
-      riskBox.preferRangeLabel ?? strategyRange?.label ?? null
-    const liveOk = (range: { label: string; high: number; low: number }) => {
-      if (range.label === 'OR30') {
-        return (
-          !!strategyRange &&
-          strategyRange.label === range.label &&
-          strategyRange.high === range.high &&
-          strategyRange.low === range.low
-        )
-      }
-      return assertBucketEntryEligible({
-        instrument,
-        market: deskMarketFor(instrument),
-        timeSec: deskClockSeconds(instrument),
-        ladder,
-        rangeLabel: range.label,
-      }).ok
-    }
-    const snapped = snapEntryToNearestOpenBandCenter({
-      entry: boxEntry,
-      candidates: snapRanges,
-      preferLabel,
-      liveOk,
-    })
-    if (!snapped) {
-      onDeskAlert?.({
-        kind: 'entry_band_deny',
-        title: 'Off-band entry',
-        body: RANGE_EDGE_OFF_BAND_MESSAGE,
-        telegram: '',
-        instrument,
-      })
-      return
-    }
-    const hit = snapped.hit
-    // Lock to band center — never place mid-band interior from a drifted risk box.
-    const entryPrice = snapDeskPrice(instrument, hit.center)
-    const attributedRange = hit.range
-
-    // Check if Leo was consulted for this session / price
-    const discussedWithLeo = (levelsRef.current || []).some(
-      (l) => Math.abs(l.price - entryPrice) / entryPrice < 0.005
-    )
-
-    const autoReason = discussedWithLeo
-      ? `Manual ${direction} Limit Zone (Discussed with Leo): Level @ ${entryPrice.toLocaleString()}, SL @ ${stopLoss.toLocaleString()}, TP @ ${profitTarget.toLocaleString()}`
-      : `Manual ${direction} entry: Technical structure limit @ ${entryPrice.toLocaleString()} | SL/TP rationale: Protective SL @ ${stopLoss.toLocaleString()}, Target TP @ ${profitTarget.toLocaleString()}`
-
-    onLevelSelect?.(entryPrice, {
-      source: 'manual',
-      type: 'manual',
-      orderType: 'LIMIT',
-      side: direction === 'LONG' ? 'BUY' : 'SHORT',
-      preferredDirection: direction,
-      reasoning: autoReason,
-      stopLoss,
-      profitTarget,
-      strategyRange: attributedRange,
-      strategyMagnets,
-    })
-    cancelRiskBox()
-  }, [riskBox, onLevelSelect, cancelRiskBox, getStrategyRiskBundle, onDeskAlert, instrument])
-
   const toggleRiskBoxDirection = useCallback(() => {
     if (!riskBox) return
     const newDir: 'LONG' | 'SHORT' = riskBox.direction === 'LONG' ? 'SHORT' : 'LONG'
@@ -12741,37 +12601,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           low: r.low,
           atrLine: atrSnap ? formatRangeAtrAdviceLine(atrSnap) : null,
           nextHint:
-            'Optional morning probe (±10 H / L). If unused when IB locks → hand off to IB.',
+            'Optional morning probe (±10 H / L). OR30 is the next entry window.',
         })
         onDeskAlert({
           ...note,
           instrument,
           dedupeKey: deskNoteClaimKey('range_or30', instrument),
-        })
-      }
-    }
-    if (next.ib && !prev.ib) {
-      const r = ibRangeRef.current
-      if (r && claimDeskNoteOnce('range_ib', instrument)) {
-        const label = 'IB'
-        const atrSnap = buildRangeAtrSnapshot({
-          rangeLabel: label,
-          high: r.high,
-          low: r.low,
-          bars: candlesRef.current,
-        })
-        const note = formatRangeShapedNote({
-          instrument,
-          rangeLabel: label,
-          high: r.high,
-          low: r.low,
-          atrLine: atrSnap ? formatRangeAtrAdviceLine(atrSnap) : null,
-          nextHint: 'IB entry window is open (±10 of locked H / L).',
-        })
-        onDeskAlert({
-          ...note,
-          instrument,
-          dedupeKey: deskNoteClaimKey('range_ib', instrument),
         })
       }
     }
@@ -14828,22 +14663,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 }}
                 title="Drag Entry between painted ±10 band centers (H / L)"
               >
-                {/* Explicit Buy / Sell Placement Button — ONLY BUTTON THAT PLACES ORDER */}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    confirmRiskBoxOrder()
-                  }}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  className={`px-3 py-1 text-xs font-extrabold uppercase rounded-md shadow-md transition border ${riskBox.direction === 'LONG'
-                    ? 'bg-blue-600 border-blue-400 text-white hover:bg-blue-500 hover:scale-105'
-                    : 'bg-red-600 border-red-400 text-white hover:bg-red-500 hover:scale-105'
-                    }`}
-                  title={`Click to place ${riskBox.direction} Limit Order`}
-                >
-                  {riskBox.direction === 'LONG' ? 'BUY LIMIT' : 'SELL LIMIT'}
-                </button>
+                <span className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                  No orders
+                </span>
 
                 {/* Direction Switch Icon Toggle Button — Switch between LONG and SHORT */}
                 <button
@@ -15199,32 +15021,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#089981]' : 'bg-[#f23645]'}`}>
                     {isLong ? '+1' : '-1'}
                   </div>
-                  {/* Instant 1-Click Market Enter Button */}
-                  {onPlaceOrder && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        const cur = livePrice ?? sitTarget
-                        const meta = MARKET_DEFAULT_PARAMS[instrument as MarketInstrument] || { defaultPrice: cur, defaultPoints: 20 }
-                        const sl = sitSl ?? (isLong ? cur - meta.defaultPoints : cur + meta.defaultPoints)
-                        const tp = sitTp ?? (isLong ? cur + meta.defaultPoints : cur - meta.defaultPoints)
-                        void onPlaceOrder({
-                          instrument,
-                          direction: isLong ? 'LONG' : 'SHORT',
-                          price: cur,
-                          stopLoss: sl,
-                          profitTarget: tp,
-                          size: 1,
-                          reason: `Manual 1-Click Trigger of Armed Situation: ${sit.description}`,
-                        })
-                      }}
-                      className="px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white font-bold transition border-l border-[#363a45] flex items-center gap-0.5 cursor-pointer"
-                      title="Jump in immediately at market price"
-                    >
-                      <span>⚡ In</span>
-                    </button>
-                  )}
+                  {/* Positions and working limits are not placed from the chart. */}
                   {/* Disarm / Cancel button */}
                   <button
                     type="button"

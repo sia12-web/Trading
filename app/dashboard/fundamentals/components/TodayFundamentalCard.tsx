@@ -161,7 +161,10 @@ What would invalidate this view: ${today.what_would_invalidate_this_view}`
                 </div>
               </div>
               <div className="mt-3 pt-2 border-t border-surface-700/80 text-[11px] text-gray-400 font-mono">
-                CME WTI tip: ${telemetry.promptPrice.toFixed(2)} · Prompt spread: +${telemetry.promptSpread.toFixed(2)}/bbl ({telemetry.spreadRegime})
+                CME WTI tip: {telemetry.priceLive ? `$${telemetry.promptPrice.toFixed(2)}` : '—'} · Prompt spread:{' '}
+                {telemetry.curveLive
+                  ? `${telemetry.promptSpread >= 0 ? '+' : ''}$${telemetry.promptSpread.toFixed(2)}/bbl (${telemetry.spreadRegime})`
+                  : 'unavailable'}
               </div>
             </div>
 

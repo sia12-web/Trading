@@ -202,7 +202,7 @@ export function CrossMarketRadarStrip({
             title="VIX1D: 1-Day Intraday Expected Equity Volatility (SPX 0DTE/1DTE)"
           >
             <span className="text-[9px] text-gray-400">EQ (VIX1D):</span>
-            <span className="font-bold">{vol?.equities.vix1d.value.toFixed(1) ?? '15.2'}</span>
+            <span className="font-bold">{vol ? vol.equities.vix1d.value.toFixed(1) : '—'}</span>
             {vol?.equities.isExpanding && (
               <span className="text-[9px] text-red-400 font-extrabold animate-pulse">EXPANDING 🔥</span>
             )}
@@ -218,7 +218,7 @@ export function CrossMarketRadarStrip({
             title="OVX: Cboe Crude Oil Volatility Index (USO options)"
           >
             <span className="text-[9px] text-gray-400">OIL (OVX):</span>
-            <span className="font-bold">{vol?.crude.ovx.value.toFixed(1) ?? '36.4'}</span>
+            <span className="font-bold">{vol ? vol.crude.ovx.value.toFixed(1) : '—'}</span>
             {vol?.crude.isExpanding && (
               <span className="text-[9px] text-amber-400 font-extrabold animate-pulse">EXPANDING 🔥</span>
             )}
@@ -231,10 +231,12 @@ export function CrossMarketRadarStrip({
                 ? 'border-fuchsia-500/50 bg-fuchsia-950/40 text-fuchsia-200'
                 : 'border-surface-700 bg-surface-900/60 text-gray-300'
             }`}
-            title="JNIV: Nikkei 225 Volatility Index (Nikkei VI)"
+            title={vol?.nikkei?.jniv.description ?? 'Nikkei volatility'}
           >
-            <span className="text-[9px] text-gray-400">NIKKEI (JNIV):</span>
-            <span className="font-bold">{vol?.nikkei?.jniv.value.toFixed(1) ?? '18.5'}</span>
+            <span className="text-[9px] text-gray-400">
+              NIKKEI ({vol?.nikkei?.jniv.name.toLowerCase().includes('realized') ? 'RV' : 'JNIV'}):
+            </span>
+            <span className="font-bold">{vol?.nikkei ? vol.nikkei.jniv.value.toFixed(1) : '—'}</span>
             {vol?.nikkei?.isExpanding && (
               <span className="text-[9px] text-fuchsia-400 font-extrabold animate-pulse">EXPANDING 🔥</span>
             )}
@@ -250,7 +252,7 @@ export function CrossMarketRadarStrip({
             title="GVZ: Cboe Gold Volatility Index (GLD options)"
           >
             <span className="text-[9px] text-gray-400">GOLD (GVZ):</span>
-            <span className="font-bold">{vol?.gold.gvz.value.toFixed(1) ?? '15.1'}</span>
+            <span className="font-bold">{vol ? vol.gold.gvz.value.toFixed(1) : '—'}</span>
             {vol?.gold.isExpanding && (
               <span className="text-[9px] text-yellow-400 font-extrabold animate-pulse">EXPANDING 🔥</span>
             )}
@@ -332,6 +334,10 @@ export function CrossMarketRadarStrip({
                   <span className="text-[9px] text-amber-300 font-extrabold animate-bounce">★</span>
                 )}
                 <span className="font-bold text-white">{m.tickerRoot}</span>
+                <span className={m.dayChangePct >= 0 ? 'text-emerald-300' : 'text-red-300'}>
+                  {m.dayChangePct >= 0 ? '+' : ''}
+                  {m.dayChangePct.toFixed(1)}%
+                </span>
                 <span
                   className={`text-[9px] font-extrabold px-1 rounded ${
                     isGradeA
@@ -409,8 +415,10 @@ export function CrossMarketRadarStrip({
                 GRADE {selectedCard.grade} ({selectedCard.verdict.replace(/_/g, ' ')})
               </span>
               <span className="text-[10px] text-gray-400 font-mono">
-                {selectedCard.volatilityGauge}: {selectedCard.volatilityValue.toFixed(1)} (
-                {selectedCard.volatilityRegime})
+                {selectedCard.currentPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })} (
+                {selectedCard.dayChangePct >= 0 ? '+' : ''}
+                {selectedCard.dayChangePct.toFixed(2)}%) · {selectedCard.volatilityGauge}:{' '}
+                {selectedCard.volatilityValue.toFixed(1)} ({selectedCard.volatilityRegime})
               </span>
             </div>
             <p className="text-gray-300 text-[11px] leading-snug">

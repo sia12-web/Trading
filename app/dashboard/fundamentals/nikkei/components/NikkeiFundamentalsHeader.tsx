@@ -43,7 +43,7 @@ export function NikkeiFundamentalsHeader({
                   CME NKD ($5/pt)
                 </span>
                 <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono">
-                  JPX Cash 09:00 JST
+                  {t.tokyoSessionPhase.replace(/_/g, ' ')} JST
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -82,7 +82,7 @@ export function NikkeiFundamentalsHeader({
             CME NKD Price
           </div>
           <div className="text-sm font-bold text-white font-mono mt-0.5">
-            {t.nkdPrice.toLocaleString()}
+            {t.nkdPrice > 0 ? t.nkdPrice.toLocaleString() : '—'}
           </div>
           <div
             className={`text-[10px] font-mono ${
@@ -101,7 +101,7 @@ export function NikkeiFundamentalsHeader({
             USD/JPY Spot
           </div>
           <div className="text-sm font-bold text-white font-mono mt-0.5">
-            {fx.usdjpyRate.toFixed(2)}
+            {fx.usdjpyRate > 0 ? fx.usdjpyRate.toFixed(2) : '—'}
           </div>
           <div
             className={`text-[10px] font-mono ${
@@ -150,8 +150,14 @@ export function NikkeiFundamentalsHeader({
             TSE 225 Breadth
           </div>
           <div className="text-sm font-bold text-white font-mono mt-0.5">
-            {t.advancersCount} <span className="text-emerald-400 text-xs">▲</span> / {t.declinersCount}{' '}
-            <span className="text-rose-400 text-xs">▼</span>
+            {t.advancersCount + t.declinersCount + t.unchangedCount > 0 ? (
+              <>
+                {t.advancersCount} <span className="text-emerald-400 text-xs">▲</span> / {t.declinersCount}{' '}
+                <span className="text-rose-400 text-xs">▼</span>
+              </>
+            ) : (
+              <span className="text-slate-400">unavailable</span>
+            )}
           </div>
           <div className="text-[10px] font-mono text-slate-400">
             Divisor: {t.nikkeiDivisor.toFixed(2)}

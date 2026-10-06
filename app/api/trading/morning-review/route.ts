@@ -254,7 +254,7 @@ async function runMorningReview(request: NextRequest) {
           enabled: true,
           visible_on_live_chart: true,
           note:
-            'Levels refresh for IB playbook (FLIP/RETEST + IB). Open range → OR30 → IB; unused probes stay available until last-entry cutoff, then watch/manage until cash close.',
+            'Levels refresh for the afternoon watch. Open range → OR30; after those windows, watch and manage until cash close.',
           candidates: afternoonCandidates,
         },
       },

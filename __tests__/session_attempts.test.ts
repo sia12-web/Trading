@@ -97,9 +97,8 @@ assert(MAX_STOP_HITS === 2, 'max stops must be 2')
     morningAttempts: 1,
     stopHits: 0,
   })
-  assert(unlocked.phase === 'ENTRY', `expected IB ENTRY after IB lock, got ${unlocked.phase}`)
-  assert(unlocked.canPlaceEntry === true, 'IB open after morning probe + IB lock')
-  assert(unlocked.rangeStrategy === 'ib', 'IB strategy')
+  assert(unlocked.canPlaceEntry === false, 'no Initial Balance entries after OR30')
+  assert(unlocked.rangeStrategy == null, 'no IB strategy')
 }
 
 {
@@ -139,9 +138,8 @@ assert(MAX_STOP_HITS === 2, 'max stops must be 2')
     attemptsUsed: 0,
     stopHits: 0,
   })
-  assert(gate.phase === 'ENTRY', `expected IB ENTRY, got ${gate.phase}`)
-  assert(gate.canPlaceEntry === true, 'IB unlock on sim when morning skipped')
-  assert(gate.rangeStrategy === 'ib', 'IB range strategy')
+  assert(gate.canPlaceEntry === false, 'skipped morning does not open Initial Balance')
+  assert(gate.rangeStrategy == null, 'no IB range strategy')
 }
 
 {
@@ -201,9 +199,8 @@ assert(MAX_STOP_HITS === 2, 'max stops must be 2')
     lunchAttempts: 0,
     stopHits: 0,
   })
-  assert(gate.phase === 'ENTRY', `lunch-range ENTRY, got ${gate.phase}`)
-  assert(gate.canPlaceEntry === true, 'lunch-range unlock')
-  assert(gate.rangeStrategy === 'ib', 'lunch_range strategy')
+  assert(gate.canPlaceEntry === false, 'afternoon does not open Initial Balance')
+  assert(gate.rangeStrategy == null, 'no IB range strategy')
 }
 
 console.log('session_attempts: ok')

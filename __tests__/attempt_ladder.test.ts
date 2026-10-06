@@ -37,7 +37,7 @@ function etDate(h: number, m: number): Date {
     otherAttempts: 1,
   })
   assert(gap.ibEligible, 'other fill → IB still eligible when morning skipped')
-  assert(gap.lunchEligible, 'other fill → lunch still eligible when mid skipped')
+  assert(!gap.lunchEligible, 'Initial Balance slot stays closed')
 }
 
 assert(MAX_DAY_ATTEMPTS === 3, 'session cap 3')
@@ -66,7 +66,7 @@ assert(MAX_MORNING_ATTEMPTS === 2, 'morning cap 2')
   const skip = attemptLadderFromCounts({ morningAttempts: 0 })
   assert(!skip.revengeLocked, 'no revenge field')
   assert(skip.ibEligible, 'skip morning → IB ok')
-  assert(skip.lunchEligible, 'skip morning → lunch ok')
+  assert(!skip.lunchEligible, 'skip morning does not open Initial Balance')
   assert(skip.morningEligible, 'morning still open')
 }
 
@@ -100,7 +100,7 @@ assert(MAX_MORNING_ATTEMPTS === 2, 'morning cap 2')
     now: etDate(13, 30),
     instrument: 'DOW',
   })
-  assert(afterMid.lunchEligible, 'after IB clock → lunch ok with prior IB fill')
+  assert(!afterMid.lunchEligible, 'after OR30 the desk does not open Initial Balance')
 }
 
 {
@@ -111,7 +111,7 @@ assert(MAX_MORNING_ATTEMPTS === 2, 'morning cap 2')
     now: etDate(11, 30),
     instrument: 'DOW',
   })
-  assert(duringIb.lunchEligible, '11:30 IB (slot 3) eligible after OR30 clock')
+  assert(!duringIb.lunchEligible, '11:30 is not an Initial Balance entry window')
   assert(duringIb.ibEligible, 'OR30 probes still unused on the ladder')
 }
 
@@ -171,8 +171,8 @@ assert(MAX_MORNING_ATTEMPTS === 2, 'morning cap 2')
       market: 'NY',
       timeSec: pts('10:30:00'),
       ladder,
-    }) === 'ib',
-    'IB when morning skipped'
+    }) === null,
+    'no Initial Balance when morning skipped'
   )
   // With count-only ladder after 1 morning fill, ibEligible false → no IB
   assert(
@@ -192,8 +192,8 @@ assert(MAX_MORNING_ATTEMPTS === 2, 'morning cap 2')
         now: etDate(10, 30),
         instrument: 'DOW',
       }),
-    }) === 'ib',
-    'IB after morning clock with prior probe'
+    }) === null,
+    'no Initial Balance after the OR30 clock'
   )
 }
 
@@ -258,17 +258,16 @@ assert(MAX_MORNING_ATTEMPTS === 2, 'morning cap 2')
     ladder,
     rangeLabel: 'Tokyo IB',
   })
-  assert(!denied.ok, 'Tokyo IB blocked before first-hour lock')
+  assert(!denied.ok, 'Tokyo IB is not an entry range')
   if (!denied.ok) {
     assert(
       !/probes used \(0\/2\)/i.test(denied.message),
       `must not say probes used 0/2, got: ${denied.message}`
     )
     assert(
-      /21:00–02:00 Montreal/i.test(denied.message),
-      `must name Tokyo IB unlock in Montreal, got: ${denied.message}`
+      !/21:00–02:00 Montreal/i.test(denied.message),
+      `must not advertise a Tokyo IB window, got: ${denied.message}`
     )
-    assert(!/\bJST\b/.test(denied.message), `must not show JST to trader, got: ${denied.message}`)
   }
 }
 
@@ -282,7 +281,7 @@ assert(MAX_MORNING_ATTEMPTS === 2, 'morning cap 2')
     now: afterIbLock,
     instrument: 'NIKKEI',
   })
-  assert(ladder.lunchEligible, 'Tokyo IB unlocked at first-hour lock')
+  assert(!ladder.lunchEligible, 'Initial Balance stays closed after the first hour')
   const check = assertBucketEntryEligible({
     instrument: 'NIKKEI',
     market: 'TOKYO',
@@ -290,7 +289,7 @@ assert(MAX_MORNING_ATTEMPTS === 2, 'morning cap 2')
     ladder,
     rangeLabel: 'Tokyo IB',
   })
-  assert(check.ok, `Tokyo IB eligible after lock: ${!check.ok ? check.message : ''}`)
+  assert(!check.ok, 'Tokyo IB is not an entry range')
 }
 
 {
@@ -311,11 +310,11 @@ assert(MAX_MORNING_ATTEMPTS === 2, 'morning cap 2')
     ladder: exhausted,
     rangeLabel: 'Tokyo IB',
   })
-  assert(!denied.ok, 'exhausted Tokyo IB blocked')
+  assert(!denied.ok, 'Tokyo IB is not an entry range')
   if (!denied.ok) {
     assert(
-      /probes used \(2\/2\)/i.test(denied.message),
-      `exhaustion copy, got: ${denied.message}`
+      !/playbook unlocked/i.test(denied.message),
+      `must not unlock Tokyo IB, got: ${denied.message}`
     )
   }
 }

@@ -63,19 +63,19 @@ export function GoldEtfCftcComexCard({
           <div className="grid grid-cols-2 gap-2 my-2 text-xs font-mono">
             <div className="p-2 rounded bg-slate-900 border border-slate-800">
               <span className="text-slate-400 text-[10px] block">Global Holdings:</span>
-              <span className="text-base font-bold text-slate-100">{etfFlows.globalTonnes} t</span>
+              <span className="text-base font-bold text-slate-100">{etfFlows.globalTonnes > 0 ? `${etfFlows.globalTonnes} t` : '—'}</span>
             </div>
             <div className="p-2 rounded bg-slate-900 border border-slate-800">
               <span className="text-slate-400 text-[10px] block">Monthly Flow:</span>
-              <span className={`text-base font-bold ${etfFlows.monthlyChangeTonnes >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {etfFlows.monthlyChangeTonnes >= 0 ? '+' : ''}{etfFlows.monthlyChangeTonnes} t
+              <span className={`text-base font-bold ${etfFlows.globalTonnes > 0 && etfFlows.monthlyChangeTonnes >= 0 ? 'text-emerald-400' : 'text-slate-100'}`}>
+                {etfFlows.globalTonnes > 0 ? `${etfFlows.monthlyChangeTonnes >= 0 ? '+' : ''}${etfFlows.monthlyChangeTonnes} t` : '—'}
               </span>
             </div>
           </div>
 
           <div className="text-[11px] text-slate-300 space-y-1 mb-2">
-            <div>SPDR GLD: <span className="font-mono text-slate-100">{etfFlows.gldHoldingsTonnes} t</span> · iShares IAU: <span className="font-mono text-slate-100">{etfFlows.iauHoldingsTonnes} t</span></div>
-            <div className="text-emerald-400 font-medium">Flow Signal: {etfFlows.divergenceSignal}</div>
+            <div>SPDR GLD: <span className="font-mono text-slate-100">{etfFlows.gldHoldingsTonnes > 0 ? `${etfFlows.gldHoldingsTonnes} t` : '—'}</span> · iShares IAU: <span className="font-mono text-slate-100">{etfFlows.iauHoldingsTonnes > 0 ? `${etfFlows.iauHoldingsTonnes} t` : '—'}</span></div>
+            <div className="text-slate-400 font-medium">{etfFlows.globalTonnes > 0 ? `Flow Signal: ${etfFlows.divergenceSignal}` : 'ETF holdings are not on this feed.'}</div>
           </div>
 
           <div className="p-2 rounded bg-slate-900/60 border border-slate-800/80 text-[10px] text-slate-400 italic">
@@ -99,20 +99,22 @@ export function GoldEtfCftcComexCard({
             <div className="p-2 rounded bg-slate-900 border border-slate-800">
               <span className="text-slate-400 text-[10px] block">Net Managed Money:</span>
               <span className="text-base font-bold text-slate-100">
-                {cftc.netManagedMoney.toLocaleString()}
+                {cftc.managedMoneyLong > 0 || cftc.managedMoneyShort > 0 ? cftc.netManagedMoney.toLocaleString() : '—'}
               </span>
             </div>
             <div className="p-2 rounded bg-slate-900 border border-slate-800">
               <span className="text-slate-400 text-[10px] block">Crowding Index (0-100):</span>
               <span className={`text-base font-bold ${cftc.crowdingIndex > 80 ? 'text-rose-400' : 'text-amber-400'}`}>
-                {cftc.crowdingIndex}/100 ({cftc.liquidationRisk} Risk)
+                {cftc.managedMoneyLong > 0 || cftc.managedMoneyShort > 0
+                  ? `${cftc.crowdingIndex}/100 (${cftc.liquidationRisk} Risk)`
+                  : '—'}
               </span>
             </div>
           </div>
 
           <div className="text-[11px] text-slate-300 space-y-1 mb-2">
-            <div>Gross Longs: <span className="font-mono text-emerald-400">{cftc.managedMoneyLong.toLocaleString()}</span> vs Shorts: <span className="font-mono text-rose-400">{cftc.managedMoneyShort.toLocaleString()}</span> ({cftc.longShortRatio.toFixed(1)}:1 ratio)</div>
-            <div className="text-slate-400">4-Week Net Stretch: [{cftc.fourWeekTrend.map((v) => `${Math.round(v / 1000)}k`).join(' → ')}]</div>
+            <div>Gross Longs: <span className="font-mono text-emerald-400">{cftc.managedMoneyLong > 0 || cftc.managedMoneyShort > 0 ? cftc.managedMoneyLong.toLocaleString() : '—'}</span> vs Shorts: <span className="font-mono text-rose-400">{cftc.managedMoneyLong > 0 || cftc.managedMoneyShort > 0 ? cftc.managedMoneyShort.toLocaleString() : '—'}</span> {cftc.longShortRatio > 0 ? `(${cftc.longShortRatio.toFixed(1)}:1 ratio)` : '(not on this feed)'}</div>
+            <div className="text-slate-400">4-Week Net Stretch: {cftc.fourWeekTrend.length > 0 ? `[${cftc.fourWeekTrend.map((v) => `${Math.round(v / 1000)}k`).join(' → ')}]` : 'not on this feed'}</div>
           </div>
 
           <div className="p-2 rounded bg-slate-900/60 border border-slate-800/80 text-[10px] text-amber-300/90">
@@ -136,20 +138,20 @@ export function GoldEtfCftcComexCard({
             <div className="p-2 rounded bg-slate-900 border border-slate-800">
               <span className="text-slate-400 text-[10px] block">Registered Ounces:</span>
               <span className="text-base font-bold text-slate-100">
-                {(comex.registeredOz / 1e6).toFixed(2)}M oz
+                {comex.registeredOz > 0 ? `${(comex.registeredOz / 1e6).toFixed(2)}M oz` : '—'}
               </span>
             </div>
             <div className="p-2 rounded bg-slate-900 border border-slate-800">
               <span className="text-slate-400 text-[10px] block">Eligible Ounces:</span>
               <span className="text-base font-bold text-slate-100">
-                {(comex.eligibleOz / 1e6).toFixed(2)}M oz
+                {comex.eligibleOz > 0 ? `${(comex.eligibleOz / 1e6).toFixed(2)}M oz` : '—'}
               </span>
             </div>
           </div>
 
           <div className="text-[11px] text-slate-300 space-y-1 mb-2">
-            <div>Total Depository: <span className="font-mono text-slate-100">{(comex.totalOz / 1e6).toFixed(2)}M oz</span> · Delivery Notices: <span className="font-mono text-amber-300">{comex.deliveryNotices}</span></div>
-            <div className="text-slate-400 font-mono">Net 20d Change: {(comex.change20dOz / 1e3).toFixed(0)}k oz</div>
+            <div>Total Depository: <span className="font-mono text-slate-100">{comex.totalOz > 0 ? `${(comex.totalOz / 1e6).toFixed(2)}M oz` : '—'}</span> · Delivery Notices: <span className="font-mono text-amber-300">{comex.registeredOz > 0 ? comex.deliveryNotices : '—'}</span></div>
+            <div className="text-slate-400 font-mono">Net 20d Change: {comex.registeredOz > 0 ? `${(comex.change20dOz / 1e3).toFixed(0)}k oz` : 'not on this feed'}</div>
           </div>
 
           {/* Institutional Warning Banner (Item 19) */}
@@ -175,19 +177,19 @@ export function GoldEtfCftcComexCard({
             <div className="p-2 rounded bg-slate-900 border border-slate-800">
               <span className="text-slate-400 text-[10px] block">Annual Purchases Run-Rate:</span>
               <span className="text-base font-bold text-emerald-400">
-                {centralBank.annualNetPurchasesTonnes} t/yr
+                {centralBank.annualNetPurchasesTonnes > 0 ? `${centralBank.annualNetPurchasesTonnes} t/yr` : '—'}
               </span>
             </div>
             <div className="p-2 rounded bg-slate-900 border border-slate-800">
               <span className="text-slate-400 text-[10px] block">PBOC Reported Gold:</span>
               <span className="text-base font-bold text-slate-100">
-                {(centralBank.pbocReportedOunces / 1e6).toFixed(2)}M oz
+                {centralBank.pbocReportedOunces > 0 ? `${(centralBank.pbocReportedOunces / 1e6).toFixed(2)}M oz` : '—'}
               </span>
             </div>
           </div>
 
           <div className="text-[11px] text-slate-300 space-y-1 mb-2">
-            <div>Pace: <span className="font-bold text-emerald-400">{centralBank.reserveDiversificationPace}</span> · Source: <span className="text-slate-400">{centralBank.imfDataTimestamp}</span></div>
+            <div>Pace: <span className="font-bold text-slate-300">{centralBank.annualNetPurchasesTonnes > 0 ? centralBank.reserveDiversificationPace : 'not on this feed'}</span> · Source: <span className="text-slate-400">{centralBank.imfDataTimestamp}</span></div>
             <div className="text-slate-300">{centralBank.pbocPurchasesStatus}</div>
           </div>
 

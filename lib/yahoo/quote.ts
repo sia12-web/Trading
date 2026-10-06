@@ -38,6 +38,28 @@ const quoteCache = new Map<string, { at: number; quote: YahooQuote }>()
 /** Keep short — desk polls ~400ms; stale cache was a major lag source */
 const QUOTE_TTL_MS = 200
 
+/**
+ * Last Yahoo quote held in this process, including entries older than the
+ * fetch TTL. Does not call Yahoo. Compare print timestamps, not cache age:
+ * a delayed book is only meaningful when it is close in time to the live print.
+ */
+export function peekCachedYahooQuote(instrument: Instrument): YahooQuote | null {
+  return quoteCache.get(instrument)?.quote ?? null
+}
+
+/** Test-only. Seeds or clears the in-memory quote without a network fetch. */
+export function __setCachedYahooQuoteForTest(
+  instrument: Instrument,
+  quote: YahooQuote | null,
+  at: number = Date.now()
+): void {
+  if (!quote) {
+    quoteCache.delete(instrument)
+    return
+  }
+  quoteCache.set(instrument, { at, quote })
+}
+
 export function yahooPrintAgeSec(
   quote: Pick<YahooQuote, 'timestamp'>,
   nowMs: number = Date.now()
@@ -189,6 +211,31 @@ export function getDayPreviousClose(instrument: Instrument): number | null {
 
   refreshDayPreviousClose(instrument)
   return null
+}
+
+/** Last print for any Yahoo symbol (index or future), without the desk instrument cache. */
+export async function getYahooSymbolQuote(symbol: string): Promise<YahooQuote | null> {
+  const url =
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}` +
+    `?interval=1d&range=5d&includePrePost=true`
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': YAHOO_UA,
+        Accept: 'application/json',
+      },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(3_500),
+    })
+    if (!response.ok) return null
+    const json = await response.json()
+    const meta = json?.chart?.result?.[0]?.meta
+    if (!meta) return null
+    return buildQuote(symbol, meta)
+  } catch {
+    return null
+  }
 }
 
 async function getYahooQuoteFromChart(

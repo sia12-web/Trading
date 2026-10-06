@@ -4,10 +4,6 @@
  */
 
 import {
-  NY_IB_STRATEGY_END,
-  NY_IB_STRATEGY_START,
-  TOKYO_LUNCH_RANGE_ENTRY_END,
-  TOKYO_LUNCH_RANGE_ENTRY_START,
   TOKYO_US_RANGE_STRATEGY_END,
   TOKYO_US_RANGE_STRATEGY_START,
   deskMarketFor,
@@ -60,19 +56,12 @@ export function formatSessionScheduleBlock(
       s.tz,
       now
     )
-    const ibWin = deskLocalRangeAsTraderDisplay(
-      TOKYO_LUNCH_RANGE_ENTRY_START,
-      TOKYO_LUNCH_RANGE_ENTRY_END,
-      s.tz,
-      now
-    )
     return [
       `Schedule (${tz}) — NIKKEI`,
       `• Prep / clock-in from ${prep}`,
       `• Session START (cash open) ${open}`,
       `• Open range locks ~${deskLocalHmsAsTraderDisplay('09:15:00', s.tz, now)} — morning entry until ${morningEnd}`,
       `• US Range window ${usWin} (prior NYC H/L — already shaped)`,
-      `• Tokyo IB locks ~${deskLocalHmsAsTraderDisplay('10:00:00', s.tz, now)} (first hour) — entry ${ibWin}`,
       `• Lunch confirm ${lunchConfirm}`,
       `• Session END (cash close) ${close}`,
       `• ${tradeifyScheduleRiskLine()} · SL beyond range · TP 1.5R (1:1.5) · ±10 of H / L after active range locks`,
@@ -85,20 +74,13 @@ export function formatSessionScheduleBlock(
     s.tz,
     now
   )
-  const ibWin = deskLocalRangeAsTraderDisplay(
-    NY_IB_STRATEGY_START,
-    NY_IB_STRATEGY_END,
-    s.tz,
-    now
-  )
   return [
     `Schedule (${tz}) — ${instrument}`,
     `• Prep / clock-in from ${prep}`,
     `• Session START (cash open) ${open}`,
     `• Open range locks ~${deskLocalHmsAsTraderDisplay('09:45:00', s.tz, now)} — morning entry until ${morningEnd}`,
     `• OR30 locks ~${deskLocalHmsAsTraderDisplay('10:00:00', s.tz, now)} · entry ${or30Win}`,
-    `• IB locks ~${deskLocalHmsAsTraderDisplay('10:30:00', s.tz, now)} · entry ${ibWin}`,
-    `• Lunch confirm ${lunchConfirm} (morning books — IB stay open past confirm)`,
+    `• Lunch confirm ${lunchConfirm}`,
     `• Session END (cash close) ${close}`,
     `• ${tradeifyScheduleRiskLine()} · SL beyond range · TP 1.5R (1:1.5) · ±10 of H / L after active range locks · Open range optional`,
   ].join('\n')

@@ -355,21 +355,18 @@ test('prod-style query-string cron secret is ignored when NODE_ENV=production', 
 
 // ─── Source contracts (money + auth) ─────────────────────────────────────────
 
-test('working route: auth + user_id + server money profile + no client size', () => {
+test('working route refuses new working limits', () => {
   const s = src('app/api/trading/positions/working/route.ts')
-  assert.ok(s.includes('getOrCreateUser') || s.includes('resolveDeskUser'), 'auth')
-  assert.ok(s.includes(".eq('user_id', user.id)"), 'scoped to user')
-  assert.ok(s.includes('resolveMoneyRiskProfile'), 'Tradeify cannot be skipped')
-  assert.ok(!s.includes('body.position_size'), 'client size unused')
-  assert.ok(!s.includes('body.risk_amount'), 'client risk unused')
-  assert.ok(s.includes('calculatePositionFromRiskAmount'), 'Tradeify $ path')
+  assert.ok(s.includes('does not place positions or working limits'))
+  assert.ok(s.includes('status: 403'))
+  assert.ok(!s.includes('.insert('), 'working route must not insert a book')
 })
 
-test('open route: auth + user_id + server money profile', () => {
+test('open route refuses new positions', () => {
   const s = src('app/api/trading/positions/open/route.ts')
-  assert.ok(s.includes('getOrCreateUser') || s.includes('resolveDeskUser'), 'auth')
-  assert.ok(s.includes(".eq('user_id', user.id)"), 'scoped to user')
-  assert.ok(s.includes('resolveMoneyRiskProfile'), 'Tradeify cannot be skipped')
+  assert.ok(s.includes('does not place positions or working limits'))
+  assert.ok(s.includes('status: 403'))
+  assert.ok(!s.includes('.insert('), 'open route must not insert a book')
 })
 
 test('cleanup-session: cron or desk user required', () => {

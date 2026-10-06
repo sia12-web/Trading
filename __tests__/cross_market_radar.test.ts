@@ -9,6 +9,7 @@ import {
 import {
   evaluateMarket,
   buildCrossMarketRadarReport,
+  deriveRadarMarketInput,
   type MarketInputData,
 } from '../lib/trading/crossMarketRadar'
 import { buildLeoSystemPrompt, type LeoChatContext } from '../lib/ai/leoAssistant'
@@ -132,27 +133,99 @@ describe('Cross-Asset Volatility & 5-Market Opportunity Radar Tests', () => {
     assert.strictEqual(card.location.present, false)
   })
 
-  it('builds full 5-market radar report and singles out the Grade A top pick', () => {
+  it('does not invent a Grade A crude book when no live inputs are supplied', () => {
     const quotes = buildDefaultVolatilityQuotes(new Date())
     const volState = buildCrossMarketVolatilityState(quotes)
-
     const report = buildCrossMarketRadarReport(volState, {})
-    assert.ok(report.markets.NASDAQ)
-    assert.ok(report.markets.DOW)
-    assert.ok(report.markets.SP500)
-    assert.ok(report.markets.GOLD)
-    assert.ok(report.markets.CRUDE)
+    assert.strictEqual(report.topPick, null)
+    assert.strictEqual(Object.keys(report.markets).length, 0)
+    assert.ok(!report.deskDirective.includes('CRUDE'))
+    assert.ok(!JSON.stringify(report).includes('72.8'))
+  })
 
+  it('ranks an explicit Grade A input above quiet markets', () => {
+    const quotes = buildDefaultVolatilityQuotes(new Date())
+    const volState = buildCrossMarketVolatilityState(quotes)
+    const quiet: MarketInputData = {
+      market: 'GOLD',
+      currentPrice: 4100,
+      dayChangePct: 0.05,
+      recentVolumeRatio: 0.7,
+      cvdTrend: 'BALANCED',
+      nearestLevel: { type: 'NONE', price: 0, distancePts: 999, thresholdPts: 3.5 },
+    }
+    const report = buildCrossMarketRadarReport(volState, {
+      CRUDE: {
+        market: 'CRUDE',
+        currentPrice: 89.4,
+        dayChangePct: 1.8,
+        recentVolumeRatio: 1.6,
+        cvdTrend: 'BUYER_DOMINANT',
+        cvdDivergence: 'BULLISH_ABSORPTION',
+        nearestLevel: { type: 'Y_VAL', price: 89.3, distancePts: 0.1, thresholdPts: 0.35 },
+        wyckoffPattern: 'SPRING',
+        candlestickPattern: 'Bullish Engulfing',
+        runwayRatio: 2.5,
+      },
+      GOLD: quiet,
+    })
     assert.strictEqual(report.topPick, 'CRUDE')
-    assert.strictEqual(report.markets.CRUDE.grade, 'A')
-    assert.strictEqual(report.markets.CRUDE.isTopPick, true)
+    assert.strictEqual(report.markets.CRUDE?.grade, 'A')
+    assert.strictEqual(report.markets.CRUDE?.isTopPick, true)
+    assert.strictEqual(report.markets.GOLD?.grade, 'C')
     assert.ok(report.deskDirective.includes('CRUDE'))
+  })
+
+  it('derives price, day change, and the prior-session shelf from the bars it is given', () => {
+    const day1 = Math.floor(Date.UTC(2026, 9, 5, 15, 0, 0) / 1000)
+    const day2 = Math.floor(Date.UTC(2026, 9, 6, 15, 0, 0) / 1000)
+    const prior = Array.from({ length: 12 }, (_, i) => ({
+      time: day1 + i * 300,
+      open: 100,
+      high: 100.4,
+      low: 99.6,
+      close: 100,
+      volume: 1000,
+    }))
+    const current = [
+      { time: day2, open: 101, high: 101.2, low: 100.4, close: 100.6, volume: 4000 },
+      { time: day2 + 300, open: 100.8, high: 101, low: 99.8, close: 100.2, volume: 4000 },
+      { time: day2 + 600, open: 100, high: 102.4, low: 99.9, close: 102, volume: 5000 },
+    ]
+    const input = deriveRadarMarketInput({
+      market: 'NASDAQ',
+      price: 102,
+      previousClose: 100,
+      candles: [...prior, ...current],
+      timeZone: 'UTC',
+      bin: 1,
+    })
+    assert.ok(input)
+    assert.strictEqual(input!.currentPrice, 102)
+    assert.ok(Math.abs(input!.dayChangePct! - 2) < 0.01)
+    assert.ok((input!.recentVolumeRatio ?? 0) > 1.2)
+    assert.ok(input!.nearestLevel)
+    assert.notStrictEqual(input!.nearestLevel!.type, 'NONE')
+    assert.ok(input!.nearestLevel!.price > 99 && input!.nearestLevel!.price < 101)
+    assert.ok(String(input!.candlestickPattern).includes('Engulfing'))
   })
 
   it('infuses Leo system prompt with cross-asset volatility gauges, the 3-factor matrix, and live radar', () => {
     const quotes = buildDefaultVolatilityQuotes(new Date())
     const volState = buildCrossMarketVolatilityState(quotes)
-    const report = buildCrossMarketRadarReport(volState, {})
+    const report = buildCrossMarketRadarReport(volState, {
+      CRUDE: {
+        market: 'CRUDE',
+        currentPrice: 89.4,
+        dayChangePct: 1.2,
+        recentVolumeRatio: 1.6,
+        cvdTrend: 'BUYER_DOMINANT',
+        nearestLevel: { type: 'Y_VAL', price: 89.3, distancePts: 0.1, thresholdPts: 0.35 },
+        wyckoffPattern: 'SPRING',
+        candlestickPattern: 'Bullish Engulfing',
+        runwayRatio: 2.5,
+      },
+    })
 
     const ctx: LeoChatContext = {
       instrument: 'CRUDE',

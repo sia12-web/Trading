@@ -174,9 +174,9 @@ export function evaluateSectorRotation(params: {
   const { ymChangePct, esChangePct, nqChangePct, rtyChangePct } = params
   const ymVsNqSpreadPct = +(ymChangePct - nqChangePct).toFixed(2)
 
-  let rotationRegime: DowRotationState['rotationRegime'] = 'BROAD_RISK_ON'
-  let leadershipSector = 'Industrials / Financials'
-  let laggingSector = 'Information Technology'
+  let rotationRegime: DowRotationState['rotationRegime'] = 'BALANCED'
+  let leadershipSector = 'No sector is leading on this print'
+  let laggingSector = 'No sector is lagging on this print'
 
   if (ymChangePct > 0.3 && ymChangePct > nqChangePct + 0.3) {
     rotationRegime = 'CYCLICAL_VALUE_OUTPERFORMANCE'

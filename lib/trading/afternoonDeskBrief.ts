@@ -2,7 +2,7 @@
  * Afternoon desk brief — pure facts from tools we already have.
  * Used to brief Level Finder after lunch (watch-only). No new data vendors.
  *
- * Sources: Yahoo H1 candles + volume, cash-open clock, Initial Balance,
+ * Sources: Yahoo H1 candles + volume, cash-open clock,
  * AVWAP bands, volume-profile POC, morning FLIP/RETEST candidates.
  */
 

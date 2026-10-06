@@ -22,7 +22,9 @@ import {
   DEFAULT_FIVE_FEEDS,
   SCHEDULED_OIL_CATALYSTS,
 } from './oilAnalystConfig'
-import { getYahooQuote } from '@/lib/yahoo/quote'
+import { getYahooSymbolCandles } from '@/lib/yahoo/candles'
+import { getYahooSymbolQuote } from '@/lib/yahoo/quote'
+import { cloneState, fetchFredLatest, fetchYahooPrint, markFeed } from '@/lib/fundamentals/liveQuotes'
 import { getFinnhubClient } from '@/lib/services/finnhubClient'
 import { fetchYahooFinanceHeadlines } from '@/lib/trading/liveEconomicResults'
 import { logger } from '@/lib/utils/logger'
@@ -32,34 +34,30 @@ let currentState: OilFundamentalDashboardState = {
   market: 'NYMEX_WTI',
   analystPersona: 'Oil Fundamental Analyst',
   updatedAt: new Date().toISOString(),
-  overallBias: 'BULLISH',
-  overallConfidence: 84,
-  biasSummary:
-    'Physical crude balances remain tight underpinned by low Cushing inventories (~23M bbl), OPEC+ 2.2M bpd voluntary cuts extension, and forward curve backwardation.',
-  physicalBalance: 'DEFICIT',
-  curveSummary: 'Backwardation (+0.38/bbl M1-M2 prompt spread). Strong prompt physical delivery demand.',
+  overallBias: 'NEUTRAL',
+  overallConfidence: 0,
+  biasSummary: 'Waiting for the live WTI, Brent, and crack prints.',
+  physicalBalance: 'BALANCED',
+  curveSummary: 'Front-month curve has not loaded.',
   wtiTelemetry: {
-    promptPrice: 71.85,
+    promptPrice: 0,
     symbol: 'CL=F',
-    change: 0.65,
-    changePct: 0.91,
-    high: 72.4,
-    low: 70.95,
-    previousClose: 71.2,
-    promptSpread: 0.38,
-    spreadRegime: 'BACKWARDATION',
-    brentPrice: 75.8,
-    brentWtiSpread: 3.95,
-    crackSpread321: 22.4,
-    gasolinePrice: 2.15,
-    heatingOilPrice: 2.35,
+    change: 0,
+    changePct: 0,
+    high: 0,
+    low: 0,
+    previousClose: 0,
+    promptSpread: 0,
+    curveLive: false,
+    priceLive: false,
+    spreadRegime: 'FLAT',
     timestamp: Math.floor(Date.now() / 1000),
-    source: 'NYMEX CME Globex / Yahoo Real-Time Quotes',
+    source: 'WTI quote has not loaded',
     updatedAt: new Date().toISOString(),
   },
-  today: { ...DEFAULT_TODAY_FUNDAMENTAL_STATE },
-  fiveFeeds: [...DEFAULT_FIVE_FEEDS],
-  pillars: { ...DEFAULT_PILLARS_STATE },
+  today: cloneState(DEFAULT_TODAY_FUNDAMENTAL_STATE),
+  fiveFeeds: cloneState(DEFAULT_FIVE_FEEDS),
+  pillars: cloneState(DEFAULT_PILLARS_STATE),
   recentEvents: [],
   scheduledCatalysts: [...SCHEDULED_OIL_CATALYSTS],
   liveOilHeadlines: [],
@@ -79,14 +77,24 @@ function recalculateOverallStance(pillars: Record<FundamentalPillarId, Fundament
   let bearishWeight = 0
   let totalConfidence = 0
 
-  for (const p of values) {
+  const voting = values.filter((p) => p.confidence > 0 && p.reliability > 0)
+  for (const p of voting) {
     const weight = p.reliability * (p.confidence / 10)
     totalConfidence += p.confidence
     if (p.bias === 'BULLISH') bullishWeight += weight
     else if (p.bias === 'BEARISH') bearishWeight += weight
   }
 
-  const avgConfidence = Math.round(totalConfidence / values.length)
+  if (voting.length === 0) {
+    return {
+      overallBias: 'NEUTRAL',
+      confidence: 0,
+      physicalBalance: 'BALANCED',
+      summary: 'No measured pillar is voting. Unpublished inventory and policy text does not set the stance.',
+    }
+  }
+
+  const avgConfidence = Math.round(totalConfidence / voting.length)
   let overallBias: DirectionalBias = 'NEUTRAL'
   let physicalBalance: 'DEFICIT' | 'SURPLUS' | 'BALANCED' = 'BALANCED'
 
@@ -102,16 +110,17 @@ function recalculateOverallStance(pillars: Record<FundamentalPillarId, Fundament
     physicalBalance = 'BALANCED'
   }
 
-  const cushing = pillars.inventories?.metrics?.find((m) => m.label.includes('Cushing'))?.value || '23M'
-  const opec = pillars.opec_policy?.statusSummary || 'OPEC+ maintaining cuts'
-  const supply = pillars.crude_supply?.statusSummary || 'US supply solid'
+  const cushing = pillars.inventories?.metrics?.find((m) => m.label.includes('Cushing'))?.value
+  const cushingText = cushing && cushing !== '—' ? String(cushing) : 'Cushing not on the feed'
+  const opec = pillars.opec_policy?.confidence ? pillars.opec_policy.statusSummary : 'OPEC policy not on the feed'
+  const supply = pillars.crude_supply?.confidence ? pillars.crude_supply.statusSummary : 'US supply not on the feed'
 
   const summary =
     overallBias === 'BULLISH'
-      ? `Bullish physical crude structure. Depleted Cushing inventories (${cushing}) and disciplined policy (${opec}) offset record US shale supply (${supply}).`
+      ? `Bullish read from pillars that have a measured print. Cushing: ${cushingText}. Policy: ${opec}. Supply: ${supply}.`
       : overallBias === 'BEARISH'
-      ? `Bearish bias dominant. Supply expansion (${supply}) outweighs inventory draws (${cushing}).`
-      : `Neutral / range-bound balance. Supply resilience (${supply}) counterbalances physical prompt tightness (${cushing}) and OPEC stance (${opec}).`
+      ? `Bearish read from pillars that have a measured print. Supply: ${supply}. Cushing: ${cushingText}.`
+      : `Balanced read from pillars that have a measured print. Supply: ${supply}. Cushing: ${cushingText}. Policy: ${opec}.`
 
   return { overallBias, confidence: avgConfidence, physicalBalance, summary }
 }
@@ -119,77 +128,195 @@ function recalculateOverallStance(pillars: Record<FundamentalPillarId, Fundament
 /**
  * Fetches live quotes from Yahoo Finance v8 chart API
  */
-async function fetchYahooPrice(symbol: string): Promise<number | null> {
+const WTI_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const
+const WTI_CODES = ['F', 'G', 'H', 'J', 'K', 'M', 'N', 'Q', 'U', 'V', 'X', 'Z'] as const
+
+/** Next NYMEX month after the front contract name, e.g. "Crude Oil Nov 26" -> CLZ26.NYM. */
+export function nextWtiContractSymbol(shortName: string): string | null {
+  const match = shortName.match(
+    /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{2})\b/
+  )
+  if (!match) return null
+  const index = WTI_MONTHS.indexOf(match[1] as (typeof WTI_MONTHS)[number])
+  if (index < 0) return null
+  const year = Number(match[2])
+  const nextIndex = (index + 1) % 12
+  const nextYear = index === 11 ? year + 1 : year
+  return `CL${WTI_CODES[nextIndex]}${String(nextYear).padStart(2, '0')}.NYM`
+}
+
+async function fetchYahooMeta(
+  symbol: string
+): Promise<{ price: number; shortName: string } | null> {
   try {
-    const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=2d`, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      signal: AbortSignal.timeout(4000),
-    })
+    const res = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=5d`,
+      {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        signal: AbortSignal.timeout(4000),
+      }
+    )
     if (!res.ok) return null
     const json = await res.json()
-    const px = json?.chart?.result?.[0]?.meta?.regularMarketPrice
-    return typeof px === 'number' && px > 0 ? px : null
+    const meta = json?.chart?.result?.[0]?.meta
+    const price = Number(meta?.regularMarketPrice)
+    if (!(price > 0)) return null
+    return { price, shortName: String(meta?.shortName || meta?.longName || '') }
   } catch {
     return null
   }
 }
 
+function setPillarMetric(
+  pillar: FundamentalPillarState | undefined,
+  labelPart: string,
+  value: string,
+  note: string
+): void {
+  const metric = pillar?.metrics.find((item) => item.label.includes(labelPart))
+  if (!metric) return
+  metric.value = value
+  metric.note = note
+}
+
+function publishMeasuredPillar(pillar: FundamentalPillarState | undefined, summary: string, source: string): void {
+  if (!pillar) return
+  pillar.statusSummary = summary
+  pillar.keyTakeaway = summary
+  pillar.bias = 'NEUTRAL'
+  pillar.confidence = 8
+  pillar.reliability = 8
+  pillar.lastUpdated = new Date().toISOString()
+  pillar.primarySource = source
+}
+
 /**
- * Fetches live WTI, Brent, RBOB Gasoline, Heating Oil and computes verified market metrics
+ * One CL=F print drives the price, the curve, and the crack.
+ * The next month is taken from that contract's name, not from a hardcoded spread.
  */
 export async function refreshWtiTelemetry(): Promise<WtiTelemetry> {
   try {
-    const [q, brentPx, rbobPx, hoPx] = await Promise.all([
-      getYahooQuote('CRUDE').catch(() => null),
-      fetchYahooPrice('BZ=F'),
-      fetchYahooPrice('RB=F'),
-      fetchYahooPrice('HO=F'),
+    const [front, frontMeta, brent, rbob, heatingOil, dxy, cushing, bars] = await Promise.all([
+      getYahooSymbolQuote('CL=F'),
+      fetchYahooMeta('CL=F'),
+      fetchYahooMeta('BZ=F'),
+      fetchYahooMeta('RB=F'),
+      fetchYahooMeta('HO=F'),
+      fetchYahooPrint('DX-Y.NYB'),
+      fetchFredLatest('WCESTUS1'),
+      getYahooSymbolCandles('CL=F', '5m', '1d').catch(() => null),
     ])
+    const price = front?.price && front.price > 0 ? front.price : frontMeta?.price ?? 0
+    markFeed(currentState.fiveFeeds, 'cme_databento', price > 0, 'Yahoo CL, delayed')
+    if (!(price > 0)) return currentState.wtiTelemetry
 
-    if (q && q.price > 0) {
-      // Calculate real Brent-WTI spread if Brent is available
-      const brentWtiSpread = brentPx ? +(brentPx - q.price).toFixed(2) : undefined
+    const brentPx = brent?.price ?? null
+    const rbobPx = rbob?.price ?? null
+    const hoPx = heatingOil?.price ?? null
+    const nextSymbol = frontMeta ? nextWtiContractSymbol(frontMeta.shortName) : null
+    const nextMeta = nextSymbol ? await fetchYahooMeta(nextSymbol) : null
+    const brentWtiSpread = brentPx ? +(brentPx - price).toFixed(2) : undefined
+    let crackSpread321: number | undefined
+    if (rbobPx && hoPx) {
+      crackSpread321 = +(((2 * rbobPx * 42) + (hoPx * 42) - (3 * price)) / 3).toFixed(2)
+    }
 
-      // Calculate real NYMEX 3:2:1 crack spread: ((2 * RBOB*42) + (HO*42) - (3 * WTI)) / 3
-      let crackSpread321: number | undefined = undefined
-      if (rbobPx && hoPx) {
-        crackSpread321 = +(((2 * rbobPx * 42) + (hoPx * 42) - (3 * q.price)) / 3).toFixed(2)
+    const curveLive = Boolean(nextMeta && nextMeta.price > 0)
+    const spread = curveLive ? +(price - nextMeta!.price).toFixed(2) : 0
+    const priorSpread = currentState.wtiTelemetry.curveLive ? currentState.wtiTelemetry.promptSpread : null
+    const promptSpreadChange = curveLive && priorSpread != null ? +(spread - priorSpread).toFixed(2) : undefined
+    const regime = !curveLive ? 'FLAT' : spread > 0.05 ? 'BACKWARDATION' : spread < -0.05 ? 'CONTANGO' : 'FLAT'
+
+    let fiveMinReturnPct: number | undefined
+    if (bars && bars.length >= 2) {
+      const prevBar = bars[bars.length - 2]!
+      const lastBar = bars[bars.length - 1]!
+      if (prevBar.close > 0) {
+        fiveMinReturnPct = +(((lastBar.close - prevBar.close) / prevBar.close) * 100).toFixed(2)
       }
+    }
 
-      // Backwardation / Contango estimate relative to prompt print
-      const spread = +(0.38 + (q.change > 0 ? 0.05 : -0.05)).toFixed(2)
-      const regime = spread > 0.05 ? 'BACKWARDATION' : spread < -0.05 ? 'CONTANGO' : 'FLAT'
+    const change = front?.change ?? (front?.previous_close ? +(price - front.previous_close).toFixed(2) : 0)
+    const changePct = front?.change_pct ?? 0
+    currentState.wtiTelemetry = {
+      promptPrice: price,
+      symbol: 'CL=F',
+      change,
+      changePct,
+      high: front?.high ?? price,
+      low: front?.low ?? price,
+      previousClose: front?.previous_close ?? price,
+      promptSpread: spread,
+      curveLive,
+      promptSpreadChange,
+      fiveMinReturnPct,
+      priceLive: true,
+      spreadRegime: regime,
+      brentPrice: brentPx ?? undefined,
+      brentWtiSpread,
+      crackSpread321,
+      gasolinePrice: rbobPx ?? undefined,
+      heatingOilPrice: hoPx ?? undefined,
+      timestamp: front?.timestamp || Math.floor(Date.now() / 1000),
+      source: curveLive ? `Yahoo CL=F vs ${nextSymbol}` : 'Yahoo CL=F. Next-month contract did not print.',
+      updatedAt: new Date().toISOString(),
+    }
 
-      currentState.wtiTelemetry = {
-        promptPrice: q.price,
-        symbol: 'CL=F',
-        change: q.change,
-        changePct: q.change_pct,
-        high: q.high ?? q.price,
-        low: q.low ?? q.price,
-        previousClose: q.previous_close,
-        promptSpread: spread,
-        spreadRegime: regime,
-        brentPrice: brentPx ?? undefined,
-        brentWtiSpread,
-        crackSpread321,
-        gasolinePrice: rbobPx ?? undefined,
-        heatingOilPrice: hoPx ?? undefined,
-        timestamp: q.timestamp || Math.floor(Date.now() / 1000),
-        source: 'NYMEX CME Globex / Yahoo Real-Time Quotes',
-        updatedAt: new Date().toISOString(),
-      }
+    const spreadText = curveLive
+      ? `M1-M2 ${spread >= 0 ? '+' : ''}$${spread.toFixed(2)}/bbl (${regime}${nextSymbol ? `, ${nextSymbol}` : ''}).`
+      : 'M1-M2 spread unavailable. The next listed contract did not print.'
+    currentState.today.curve = `${spreadText}${brentWtiSpread !== undefined ? ` Brent-WTI ${brentWtiSpread >= 0 ? '+' : ''}$${brentWtiSpread.toFixed(2)}/bbl.` : ''}`
+    currentState.curveSummary = spreadText
+    currentState.biasSummary = `WTI ${price.toFixed(2)} (${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%). ${spreadText}${crackSpread321 !== undefined ? ` 3:2:1 crack $${crackSpread321.toFixed(2)}.` : ''}`
 
-      // Update Curve in TODAY'S state
-      currentState.today.curve = `Prompt M1-M2 spread holding at +$${spread.toFixed(2)}/bbl in ${regime}.${brentWtiSpread !== undefined ? ` Brent-WTI spread: +$${brentWtiSpread}/bbl.` : ''}`
-
-      // Update Refinery Crack in Pillar state if calculated
-      if (crackSpread321 !== undefined && currentState.pillars.refinery_activity) {
-        const crackMetric = currentState.pillars.refinery_activity.metrics.find((m) => m.label.includes('Crack'))
-        if (crackMetric) {
-          crackMetric.value = `$${crackSpread321.toFixed(2)}`
-        }
-      }
+    if (curveLive && nextSymbol) {
+      setPillarMetric(currentState.pillars.curve_structure, 'Prompt Spread', `${spread >= 0 ? '+' : ''}$${spread.toFixed(2)}`, regime)
+      setPillarMetric(currentState.pillars.curve_structure, 'Next Contract', nextSymbol, 'Listed month after the front contract')
+      setPillarMetric(currentState.pillars.curve_structure, 'Curve Regime', regime, 'Front minus the next month. Positive is backwardation.')
+      publishMeasuredPillar(currentState.pillars.curve_structure, spreadText, `Yahoo CL=F vs ${nextSymbol}`)
+    }
+    if (crackSpread321 !== undefined) {
+      setPillarMetric(currentState.pillars.refinery_activity, 'Crack', `$${crackSpread321.toFixed(2)}`, '2*RBOB*42 + HO*42 - 3*WTI, divided by 3')
+      publishMeasuredPillar(
+        currentState.pillars.refinery_activity,
+        `3:2:1 crack $${crackSpread321.toFixed(2)} from RB=F and HO=F. Utilization is not on this feed.`,
+        'Yahoo RB=F, HO=F, CL=F'
+      )
+    }
+    if (brentWtiSpread !== undefined) {
+      setPillarMetric(
+        currentState.pillars.imports_exports,
+        'Brent-WTI',
+        `${brentWtiSpread >= 0 ? '+' : ''}$${brentWtiSpread.toFixed(2)}`,
+        'BZ=F minus CL=F'
+      )
+      publishMeasuredPillar(
+        currentState.pillars.imports_exports,
+        `Brent-WTI ${brentWtiSpread >= 0 ? '+' : ''}$${brentWtiSpread.toFixed(2)}/bbl. Export barrels are not on this feed.`,
+        'Yahoo BZ=F and CL=F'
+      )
+    }
+    if (dxy && dxy.price > 0) {
+      setPillarMetric(
+        currentState.pillars.macro_drivers,
+        'DXY',
+        dxy.price.toFixed(2),
+        `${dxy.changePct >= 0 ? '+' : ''}${dxy.changePct.toFixed(2)}% day`
+      )
+      publishMeasuredPillar(
+        currentState.pillars.macro_drivers,
+        `DXY ${dxy.price.toFixed(2)} (${dxy.changePct >= 0 ? '+' : ''}${dxy.changePct.toFixed(2)}%). PMI and the policy rate are not on this feed.`,
+        'Yahoo DX-Y.NYB'
+      )
+    }
+    if (cushing != null && cushing > 0) {
+      setPillarMetric(currentState.pillars.inventories, 'Cushing', cushing.toLocaleString('en-US'), 'FRED WCESTUS1, thousand barrels, latest weekly')
+      publishMeasuredPillar(
+        currentState.pillars.inventories,
+        `Cushing stocks ${cushing.toLocaleString('en-US')} thousand barrels on the latest FRED weekly print. Commercial and SPR stocks are not on this feed.`,
+        'FRED WCESTUS1'
+      )
+      currentState.today.inventories = `Cushing ${cushing.toLocaleString('en-US')} thousand barrels (FRED WCESTUS1). Other stock series are not on this feed.`
     }
   } catch (err) {
     logger.warn('[OilStateStore] Failed to update live WTI telemetry', err)
@@ -240,9 +367,8 @@ export async function refreshLiveOilHeadlines(): Promise<LiveOilHeadline[]> {
       }
     }
 
-    if (headlines.length > 0) {
-      currentState.liveOilHeadlines = headlines.slice(0, 10)
-    }
+    currentState.liveOilHeadlines = headlines.slice(0, 10)
+    markFeed(currentState.fiveFeeds, 'realtime_news', true, 'Finnhub / Yahoo on load')
   } catch (err) {
     logger.warn('[OilStateStore] Failed to fetch live oil headlines', err)
   }
@@ -353,34 +479,30 @@ export function resetOilFundamentalState(): OilFundamentalDashboardState {
     market: 'NYMEX_WTI',
     analystPersona: 'Oil Fundamental Analyst',
     updatedAt: new Date().toISOString(),
-    overallBias: 'BULLISH',
-    overallConfidence: 84,
-    biasSummary:
-      'Physical crude balances remain tight underpinned by depleted Cushing inventories (~23M bbl), OPEC+ 2.2M bpd voluntary cuts extension, and forward curve backwardation (+0.38/bbl).',
-    physicalBalance: 'DEFICIT',
-    curveSummary: 'Backwardation (+0.38/bbl M1-M2 prompt spread). Strong prompt physical delivery demand.',
+    overallBias: 'NEUTRAL',
+    overallConfidence: 0,
+    biasSummary: 'Waiting for the live WTI, Brent, and crack prints.',
+    physicalBalance: 'BALANCED',
+    curveSummary: 'Front-month curve has not loaded.',
     wtiTelemetry: {
-      promptPrice: 71.85,
+      promptPrice: 0,
       symbol: 'CL=F',
-      change: 0.65,
-      changePct: 0.91,
-      high: 72.4,
-      low: 70.95,
-      previousClose: 71.2,
-      promptSpread: 0.38,
-      spreadRegime: 'BACKWARDATION',
-      brentPrice: 75.8,
-      brentWtiSpread: 3.95,
-      crackSpread321: 22.4,
-      gasolinePrice: 2.15,
-      heatingOilPrice: 2.35,
+      change: 0,
+      changePct: 0,
+      high: 0,
+      low: 0,
+      previousClose: 0,
+      promptSpread: 0,
+      curveLive: false,
+      priceLive: false,
+      spreadRegime: 'FLAT',
       timestamp: Math.floor(Date.now() / 1000),
-      source: 'NYMEX CME Globex / Yahoo Real-Time Quotes',
+      source: 'WTI quote has not loaded',
       updatedAt: new Date().toISOString(),
     },
-    today: { ...DEFAULT_TODAY_FUNDAMENTAL_STATE },
-    fiveFeeds: [...DEFAULT_FIVE_FEEDS],
-    pillars: { ...DEFAULT_PILLARS_STATE },
+    today: cloneState(DEFAULT_TODAY_FUNDAMENTAL_STATE),
+    fiveFeeds: cloneState(DEFAULT_FIVE_FEEDS),
+    pillars: cloneState(DEFAULT_PILLARS_STATE),
     recentEvents: [],
     scheduledCatalysts: [...SCHEDULED_OIL_CATALYSTS],
     liveOilHeadlines: [],

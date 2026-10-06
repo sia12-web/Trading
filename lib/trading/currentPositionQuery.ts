@@ -2,7 +2,7 @@
  * Query scope for GET /api/trading/current-position.
  * Must use the same trade_date basis as open/working/management-status
  * (ET for NY, JST for NIKKEI) — never EST-only for Nikkei, or US Range
- * evening books vanish and the chart false-closes while Live Positions stays open.
+ * evening books vanish and the chart false-closes while management-status still shows open.
  */
 
 import { getESTDateString } from '@/lib/utils/timeUtils'

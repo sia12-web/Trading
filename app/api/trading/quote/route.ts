@@ -21,12 +21,41 @@ import {
   isLiveDeskInstrument,
 } from '@/lib/trading/sessionGate'
 import { isDatabentoConfigured } from '@/lib/databento/client'
-import { resolveDatabentoLiveQuote } from '@/lib/databento/liveHub'
-import { liveQuoteDisagreesWithReference } from '@/lib/chart/liveFormingBar'
+import {
+  getLatestDatabentoLiveQuote,
+  resolveDatabentoLiveQuote,
+  type DatabentoLiveQuote,
+} from '@/lib/databento/liveHub'
 import type { Instrument } from '@/types/price-feed'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+
+function databentoLiveResponse(
+  instrument: Instrument,
+  quote: Pick<DatabentoLiveQuote, 'price' | 'bid' | 'ask' | 'timestamp' | 'bar'>,
+  headers: HeadersInit
+) {
+  const previous_close = getDayPreviousClose(instrument) ?? quote.price
+  const change = quote.price - previous_close
+  const change_pct = previous_close ? (change / previous_close) * 100 : 0
+  return NextResponse.json(
+    {
+      instrument,
+      source: 'cme',
+      feed: 'databento',
+      price: quote.price,
+      bid: quote.bid,
+      ask: quote.ask,
+      change,
+      change_pct,
+      previous_close,
+      timestamp: quote.timestamp,
+      bar: quote.bar,
+    },
+    { headers }
+  )
+}
 
 /**
  * The desk re-polls this route several times a second and each call otherwise
@@ -100,56 +129,32 @@ export async function GET(request: Request) {
       )
     }
 
-    // 1. Direct Tier 1: Real-time CME Globex quote from Databento Live Sidecar / Hub
+    // Live book is the Databento print. A delayed Yahoo last must not withhold
+    // it or replace it. Day-change % still reads the cached Yahoo previous close.
     if (isDatabentoConfigured()) {
+      const memoryQuote = getLatestDatabentoLiveQuote(instrument)
+      if (memoryQuote && memoryQuote.price > 0) {
+        return databentoLiveResponse(instrument, memoryQuote, headers)
+      }
       const dbLive = await resolveDatabentoLiveQuote(instrument)
       if (dbLive && dbLive.price > 0) {
-        const yq = await getYahooQuote(instrument)
-        const book = yq?.price
-        if (
-          !(
-            book &&
-            liveQuoteDisagreesWithReference(
-              dbLive.price,
-              dbLive.timestamp,
-              book,
-              yq?.timestamp ?? 0,
-              instrument
-            )
-          )
-        ) {
-          const previous_close = getDayPreviousClose(instrument) ?? dbLive.price
-          const change = dbLive.price - previous_close
-          const change_pct = previous_close ? (change / previous_close) * 100 : 0
-          return NextResponse.json(
-            {
-              instrument,
-              source: 'cme',
-              feed: 'databento',
-              price: dbLive.price,
-              bid: dbLive.bid,
-              ask: dbLive.ask,
-              change,
-              change_pct,
-              previous_close,
-              timestamp: dbLive.timestamp,
-              bar: dbLive.bar,
-            },
-            { headers }
-          )
-        }
+        return databentoLiveResponse(instrument, dbLive, headers)
       }
+      return NextResponse.json(
+        { error: 'No quote', instrument, price: null, feed: 'databento' },
+        { status: 200, headers }
+      )
     }
 
-    // 2. Try OANDA with CME basis if available and configured
+    // Desk without a CME key: OANDA mid shifted by a CME basis already in memory.
     try {
       const oanda = await getOandaPrice(instrument)
-      const cachedBasis = getCmeBasis(instrument)
-      if (oanda?.price && oanda.price > 0 && cachedBasis != null) {
+      const knownBasis = getCmeBasis(instrument) ?? getLastKnownCmeBasis(instrument)
+      if (oanda?.price && oanda.price > 0 && knownBasis != null) {
         if (getCmeBasis(instrument, CME_BASIS_REFRESH_MS) == null) {
-          void warmCmeBasis(instrument)
+          void warmCmeBasis(instrument, { oandaMid: oanda.price })
         }
-        const price = applyCmeBasis(oanda.price, cachedBasis)
+        const price = applyCmeBasis(oanda.price, knownBasis)
         const previous_close = getDayPreviousClose(instrument) ?? price
         const change = price - previous_close
         const change_pct = previous_close ? (change / previous_close) * 100 : 0
@@ -159,8 +164,8 @@ export async function GET(request: Request) {
             instrument,
             source: 'cme',
             price,
-            bid: oanda.bid ? applyCmeBasis(oanda.bid, cachedBasis) : undefined,
-            ask: oanda.ask ? applyCmeBasis(oanda.ask, cachedBasis) : undefined,
+            bid: oanda.bid ? applyCmeBasis(oanda.bid, knownBasis) : undefined,
+            ask: oanda.ask ? applyCmeBasis(oanda.ask, knownBasis) : undefined,
             change,
             change_pct,
             previous_close,

@@ -104,7 +104,9 @@ export function NasdaqFundamentalsHeader({
             <span className="text-[10px] font-mono text-cyan-400">Front CME</span>
           </div>
           <div className="text-lg font-bold font-mono text-slate-100">
-            {t.nqPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {t.nqPrice > 0
+              ? t.nqPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+              : '—'}
           </div>
           <div className="flex items-center gap-1.5 mt-0.5 text-xs">
             <span

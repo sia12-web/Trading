@@ -440,7 +440,7 @@ export const NIKKEI_EVALUATION_PRESETS = [
     title: 'Ministry of Finance Direct Currency Intervention: Yen Surges 400 Pips',
     category: 'FX_USD_JPY',
     source: 'Ministry of Finance (MoF) & Tokyo Foreign Exchange Desk',
-    rawText: `TOKYO - Japan's Ministry of Finance conducted large-scale currency market intervention after USD/JPY crossed 156.50. The currency plummeted over 450 pips in under 15 minutes down to 151.90. CME Nikkei 225 futures (NKD) experienced severe automated liquidation, diving 920 points as algorithmic carry trade and currency-hedged equity funds dumped index futures contracts. CVD turned sharply negative with heavy delta selling at market, breaking through the Tokyo first-hour Initial Balance low.`,
+    rawText: `TOKYO - Japan's Ministry of Finance conducted large-scale currency market intervention after USD/JPY crossed 156.50. The currency plummeted over 450 pips in under 15 minutes down to 151.90. CME Nikkei 225 futures (NKD) experienced severe automated liquidation, diving 920 points as algorithmic carry trade and currency-hedged equity funds dumped index futures contracts. CVD turned sharply negative with heavy delta selling at market, breaking through the Tokyo session low.`,
   },
   {
     id: 'preset_4_fast_retailing_earnings_distortion',
