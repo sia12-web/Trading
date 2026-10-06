@@ -356,6 +356,8 @@ export default function ChartPage() {
   const hadClockedInRef = useRef<boolean | null>(null)
   const positionExitHandledRef = useRef(false)
   const livePriceRef = useRef<number | null>(null)
+  const managePosRef = useRef(managePos)
+  managePosRef.current = managePos
   const regimeFetchedRef = useRef(false)
   const lastParentPriceAt = useRef(0)
 
@@ -393,8 +395,11 @@ export default function ChartPage() {
       // forcing the entire desk page to React-render at burst tick rates.
       pendingFillTickRef.current(price)
     }
+    // No open book: the chart header ticker already paints the price. A parent
+    // setState here re-renders the whole desk, including the chart, on the open.
+    if (!pendingActiveRef.current && !managePosRef.current) return
     const now = Date.now()
-    if (now - lastParentPriceAt.current < 50) return
+    if (now - lastParentPriceAt.current < 250) return
     lastParentPriceAt.current = now
     setLivePrice(price)
   }, [])

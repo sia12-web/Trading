@@ -369,6 +369,7 @@ import {
   priceFromClientY,
   riskBoxDollarPreview,
 } from '@/lib/chart/chartPointerPrice'
+import { chartOwnsWheel, livePriceStateGapMs } from '@/lib/chart/chartWheel'
 import {
   OVERLAY_NODE_SELECTOR,
   OV_BOX_PRICE,
@@ -656,8 +657,10 @@ export function barSecondsForTimeframe(tf: DeskTimeframe): number {
 export const DESK_TIMEFRAME = '5m' as const
 export const DESK_BAR_SECONDS = 300
 
-/** Keep re-placing overlays this long after the last pan/zoom/resize event. */
-const OVERLAY_SETTLE_MS = 320
+/** One extra frame of overlay samples after the last pan/zoom/resize event. */
+const OVERLAY_SETTLE_MS = 64
+/** React badge cadence while prints arrive faster than a quiet tape. */
+const PRICE_STATE_BURST_MS = 400
 /** Plain useLayoutEffect warns during SSR; the chart pane is browser-only. */
 const useOverlayLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
 
@@ -5033,6 +5036,12 @@ export function TradingChart({
     return () => clearInterval(id)
   }, [critiqueStartOption])
 
+  const critiqueStep =
+    instrument === 'CRUDE' ? 0.02 : instrument === 'GOLD' ? 0.1 : instrument === 'NASDAQ' ? 1 : 2
+  const critiquePrice =
+    livePrice == null || !Number.isFinite(livePrice)
+      ? null
+      : Math.round(livePrice / critiqueStep) * critiqueStep
   const livePriceCritique = useMemo<PriceCritiqueEvaluation | null>(() => {
     if (!isCritiqueSessionActiveState) return null
     const list = candles || []
@@ -5122,7 +5131,7 @@ export function TradingChart({
         : null,
     })
   }, [
-    livePrice,
+    critiquePrice,
     candles,
     instrument,
     yesterdayNyc,
@@ -5134,7 +5143,13 @@ export function TradingChart({
     critiqueStartOption,
   ])
 
+  const leoIdleRef = useRef<LeoChatContext | null>(null)
   const leoContext: LeoChatContext = useMemo(() => {
+    // The cash-open price print must not rebuild Leo's pattern scan. The panel
+    // reads a fresh book when it is actually open.
+    if (!leoPanelOpen && leoIdleRef.current?.instrument === instrument) {
+      return leoIdleRef.current
+    }
     const list = candles || []
     const lastBar = list.length ? list[list.length - 1] : null
     const curPrice = livePrice ?? lastBar?.close ?? null
@@ -5282,7 +5297,7 @@ export function TradingChart({
       }
     })
 
-    return {
+    const built: LeoChatContext = {
       instrument,
       currentPrice: curPrice,
       currentTimeEt: nowEtStr,
@@ -5567,11 +5582,14 @@ export function TradingChart({
       priceQuestioning: livePriceCritique || undefined,
       rangeComparisons: compareMultipleRanges(computedRanges as any, curPrice),
     }
+    if (!leoPanelOpen) leoIdleRef.current = built
+    return built
   }, [
     instrument,
-    livePrice,
+    leoPanelOpen,
+    leoPanelOpen ? livePrice : null,
     candles,
-    livePriceCritique,
+    leoPanelOpen ? livePriceCritique : null,
     dayTypeEval,
     openingBadge,
     avwap5mBenchmark,
@@ -6804,22 +6822,14 @@ export function TradingChart({
   const overlayRafRef = useRef(0)
   const overlaySampleUntilRef = useRef(0)
 
-  /** Place now, then keep sampling each frame for a beat so kinetic scroll and
-   * autoscale animations stay glued to the candles without a perpetual loop. */
+  /** One overlay pass per frame while the user pans, zooms, or drags the axis.
+   * Painting the volume profile on the wheel event itself, and again inside
+   * this loop, was several full canvas clears per tick. */
   const pokeOverlayLayout = useCallback(() => {
-    paintOverlaysSinglePass()
-    paintFrvpHistogramRef.current?.()
-    paintExcessesAndRoundedRef.current?.()
-    paintUserDrawingsRef.current?.()
-    paintNewsMarkersRef.current?.()
     overlaySampleUntilRef.current = Date.now() + OVERLAY_SETTLE_MS
     if (overlayRafRef.current) return
     const loop = () => {
-      paintOverlaysSinglePass()
-      paintFrvpHistogramRef.current?.()
-      paintExcessesAndRoundedRef.current?.()
-      paintUserDrawingsRef.current?.()
-      paintNewsMarkersRef.current?.()
+      paintOverlaysSinglePassRef.current()
       if (Date.now() < overlaySampleUntilRef.current) {
         overlayRafRef.current = requestAnimationFrame(loop)
       } else {
@@ -6827,7 +6837,7 @@ export function TradingChart({
       }
     }
     overlayRafRef.current = requestAnimationFrame(loop)
-  }, [paintOverlaysSinglePass])
+  }, [])
 
   const pokeOverlayLayoutRef = useRef(pokeOverlayLayout)
   pokeOverlayLayoutRef.current = pokeOverlayLayout
@@ -7543,6 +7553,8 @@ export function TradingChart({
     let scaleCacheList: OHLCV[] | null = null
     let scaleCacheKey = ''
     let scaleCacheBounds: { min: number; max: number } | null = null
+    let scaleCacheStart = -1
+    let scaleCacheEnd = -1
 
     const candleAutoscale = () => {
       const list = candlesRef.current
@@ -7563,6 +7575,19 @@ export function TradingChart({
       }
 
       const edge = list[endIndex]
+      // A tick inside the current window must not rescan every visible bar.
+      // A new high or low, or a pan that changes the window, still rescans.
+      if (
+        scaleCacheList === list &&
+        scaleCacheBounds &&
+        scaleCacheStart === startIndex &&
+        scaleCacheEnd === endIndex &&
+        edge &&
+        edge.high <= scaleCacheBounds.max &&
+        edge.low >= scaleCacheBounds.min
+      ) {
+        return paddedCandlePriceRange(scaleCacheBounds.min, scaleCacheBounds.max)
+      }
       const cacheKey =
         `${startIndex}|${endIndex}|${list.length}|${instrumentRef.current}` +
         `|${edge ? `${edge.time}:${edge.high}:${edge.low}` : ''}`
@@ -7593,6 +7618,8 @@ export function TradingChart({
       scaleCacheList = list
       scaleCacheKey = cacheKey
       scaleCacheBounds = { min, max }
+      scaleCacheStart = startIndex
+      scaleCacheEnd = endIndex
       return paddedCandlePriceRange(min, max)
     }
 
@@ -7818,41 +7845,46 @@ export function TradingChart({
       borderVisible: true,
     })
 
-    // ─── 2. Crosshair tooltip — skip entirely while panning (React setState kills FPS)
+    // ─── 2. Crosshair tooltip — one React commit per frame, none while panning
     let tipRaf = 0
     let tipPending: TooltipData | null | undefined
+    let syncPending: { x: number; timeStr: string } | null | undefined
+    let legendPending: { open: number; high: number; low: number; close: number } | null | undefined
+    const flushTip = () => {
+      tipRaf = 0
+      setTooltip(tipPending === undefined ? null : tipPending)
+      if (syncPending !== undefined) setSyncCrosshair(syncPending)
+      if (legendPending !== undefined) setCurrentCvdLegend(legendPending)
+      tipPending = undefined
+      syncPending = undefined
+      legendPending = undefined
+    }
     chart.subscribeCrosshairMove((param) => {
       if (interactingRef.current) {
-        if (tipPending !== null) {
-          tipPending = null
-          if (!tipRaf) {
-            tipRaf = requestAnimationFrame(() => {
-              tipRaf = 0
-              setTooltip(null)
-            })
-          }
-        }
+        tipPending = null
+        syncPending = null
+        if (!tipRaf) tipRaf = requestAnimationFrame(flushTip)
         return
       }
       if (!param?.seriesData?.size || param.point === undefined) {
         tipPending = null
-        setSyncCrosshair(null)
+        syncPending = null
         if (cachedCvdBarsRef.current.length > 0) {
           const lastCvd = cachedCvdBarsRef.current[cachedCvdBarsRef.current.length - 1]
           if (lastCvd) {
-            setCurrentCvdLegend({
+            legendPending = {
               open: Math.round(lastCvd.open),
               high: Math.round(lastCvd.high),
               low: Math.round(lastCvd.low),
               close: Math.round(lastCvd.close),
-            })
+            }
           }
         }
       } else {
         const candle = param.seriesData.get(candleSeries) as CandlestickData | undefined
         if (!candle) {
           tipPending = null
-          setSyncCrosshair(null)
+          syncPending = null
         } else {
           const open = (candle as any).open ?? 0
           const close = (candle as any).close ?? 0
@@ -7875,12 +7907,12 @@ export function TradingChart({
           const cvdDelta = cvdClose != null && cvdOpen != null ? cvdClose - cvdOpen : undefined
 
           if (matchingCvd) {
-            setCurrentCvdLegend({
+            legendPending = {
               open: cvdOpen!,
               high: Math.round(matchingCvd.high),
               low: Math.round(matchingCvd.low),
               close: cvdClose!,
-            })
+            }
           }
 
           const timeStr = param.time
@@ -7903,19 +7935,15 @@ export function TradingChart({
           }
 
           if (param.point) {
-            setSyncCrosshair({
+            syncPending = {
               x: param.point.x,
               timeStr,
-            })
+            }
           }
         }
       }
       if (tipRaf) return
-      tipRaf = requestAnimationFrame(() => {
-        tipRaf = 0
-        setTooltip(tipPending === undefined ? null : tipPending)
-        tipPending = undefined
-      })
+      tipRaf = requestAnimationFrame(flushTip)
     })
 
     chartRef.current = chart
@@ -7929,41 +7957,11 @@ export function TradingChart({
     or30SeriesRef.current = or30Series
     setChartReady(true)
 
-    const updateCvdUnderCursor = () => {
-      if (lastPointerPosRef.current && containerRef.current && chartRef.current && candleRef.current) {
-        const rect = containerRef.current.getBoundingClientRect()
-        const x = lastPointerPosRef.current.x - rect.left
-        if (x >= 0 && x <= rect.width) {
-          const logical = chartRef.current.timeScale().coordinateToLogical(x)
-          if (logical != null) {
-            const candle = candleRef.current.dataByIndex(Math.round(logical)) as CandlestickData | null
-            if (candle && candle.time) {
-              const matchingCvd = cachedCvdBarsRef.current.find((b) => isSameChartTime(b.time, candle.time))
-              if (matchingCvd) {
-                const cClose = Math.round((matchingCvd as any).close ?? 0)
-                const cOpen = Math.round((matchingCvd as any).open ?? 0)
-                setCurrentCvdLegend({
-                  open: cOpen,
-                  high: Math.round((matchingCvd as any).high ?? 0),
-                  low: Math.round((matchingCvd as any).low ?? 0),
-                  close: cClose,
-                })
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // Sync overlay coordinates on chart scroll/zoom — immediate execution for 0-lag 60fps tracking
+    // Pan/zoom: one overlay sample per frame. The CVD legend is not a scroll paint.
     const onScroll = () => {
+      interactingRef.current = true
       pokeOverlayLayoutRef.current()
       syncCvdFromMainRef.current()
-      paintFrvpHistogramRef.current?.()
-      paintExcessesAndRoundedRef.current?.()
-      paintUserDrawingsRef.current?.()
-      paintNewsMarkersRef.current?.()
-      updateCvdUnderCursor()
     }
     chart.timeScale().subscribeVisibleLogicalRangeChange(onScroll)
 
@@ -7988,18 +7986,23 @@ export function TradingChart({
         }
         chartRef.current.resize(w, h)
         pokeOverlayLayoutRef.current()
-        paintFrvpHistogramRef.current?.()
-        paintExcessesAndRoundedRef.current?.()
-        paintUserDrawingsRef.current?.()
-        paintNewsMarkersRef.current?.()
         refreshSessionHighlights()
       }
     })
     ro.observe(containerRef.current)
 
-    // Intercept wheel events across the entire chart wrapper (toolbar, main chart, volume bars at bottom, time scale, sub-panes)
-    // to prevent browser page bounce/shaking and zoom the chart time scale seamlessly
+    // Stop the page from scrolling under the desk. The plot, time scale, and
+    // price scale belong to Lightweight Charts — zooming them again here made
+    // each wheel tick jump, and a price-axis wheel also zoomed time.
     const onChartWheel = (e: WheelEvent) => {
+      const onPlot = chartOwnsWheel(
+        e.target instanceof Node ? e.target : null,
+        containerRef.current
+      )
+      if (onPlot) {
+        e.preventDefault()
+        return
+      }
       e.preventDefault()
       e.stopPropagation()
       if (!chartRef.current) return
@@ -8015,14 +8018,8 @@ export function TradingChart({
           const newFrom = range.from - change / 2
           const newTo = range.to + change / 2
           if (newTo - newFrom > 2) {
+            interactingRef.current = true
             ts.setVisibleLogicalRange({ from: newFrom, to: newTo })
-            pokeOverlayLayoutRef.current()
-            relinkCvdToPriceRef.current()
-            paintFrvpHistogramRef.current?.()
-            paintExcessesAndRoundedRef.current?.()
-            paintUserDrawingsRef.current?.()
-            paintNewsMarkersRef.current?.()
-            updateCvdUnderCursor()
           }
         }
       } catch {
@@ -9567,7 +9564,7 @@ export function TradingChart({
             /* ignore */
           }
         }
-      }, 16)
+      }, 120)
     }
 
     const beginInteract = () => {
@@ -9632,6 +9629,8 @@ export function TradingChart({
     const candleIntervalMs = tipStreamActive ? CANDLE_REFRESH_MS : 30_000
     let lastTickPublishAt = 0
     let lastPriceStateAt = 0
+    let burstTicks = 0
+    let burstWindowStart = 0
     let lastMarkerPaintAt = 0
     let tipPaintRaf = 0
     const fetchGen = ++candleFetchGenRef.current
@@ -9785,16 +9784,23 @@ export function TradingChart({
       }
 
       onPriceUpdate?.(price)
+      const now = Date.now()
+      // Header readout repaints on its own subscription — candle tip updates every tick below
+      if (now - lastTickPublishAt >= PRICE_TICKER_MS) {
+        lastTickPublishAt = now
+        publishPriceTick(price, changePct)
+        onQuoteTick?.(Math.floor(now / 1000))
+      }
+      // Badges stay on PRICE_STATE_MS while the tape is quiet. A cash-open burst
+      // stretches that commit so the chart component is not rebuilt 10 times a second.
       if (!interactingRef.current) {
-        const now = Date.now()
-        // Header readout repaints on its own subscription — candle tip updates every tick below
-        if (now - lastTickPublishAt >= PRICE_TICKER_MS) {
-          lastTickPublishAt = now
-          publishPriceTick(price, changePct)
-          onQuoteTick?.(Math.floor(now / 1000))
+        if (now - burstWindowStart >= 1000) {
+          burstWindowStart = now
+          burstTicks = 0
         }
-        // Badges / proximity / alert effects read state — 10 Hz, not every raw tick
-        if (now - lastPriceStateAt >= PRICE_STATE_MS) {
+        burstTicks += 1
+        const stateGap = livePriceStateGapMs(burstTicks, PRICE_STATE_MS, PRICE_STATE_BURST_MS)
+        if (now - lastPriceStateAt >= stateGap) {
           lastPriceStateAt = now
           setLivePrice(price)
         }
@@ -9936,6 +9942,65 @@ export function TradingChart({
             : stepped.last.volume ?? last.volume ?? 0,
       }
       commitTipBar(bar, fills)
+    }
+
+    // One animation frame of prints becomes one forming-bar update. Walking the
+    // burst in order keeps the wick; paintTipBar already coalesces the series.
+    let queuedQuotes: Array<{
+      price: number
+      changePct: number
+      quoteTs: number
+      streamLive: boolean
+      trustedExchange: boolean
+      exchangeBar?: {
+        time: number
+        open: number
+        high: number
+        low: number
+        close: number
+        volume: number
+      }
+    }> = []
+    let quoteRaf = 0
+    const flushQueuedQuotes = () => {
+      quoteRaf = 0
+      const batch = queuedQuotes
+      queuedQuotes = []
+      for (let i = 0; i < batch.length; i++) {
+        const q = batch[i]!
+        applyQuote(
+          q.price,
+          q.changePct,
+          q.quoteTs,
+          q.streamLive,
+          q.trustedExchange,
+          q.exchangeBar
+        )
+      }
+    }
+    const enqueueQuote = (
+      price: number,
+      changePct: number,
+      quoteTs: number,
+      streamLive: boolean,
+      trustedExchange: boolean,
+      exchangeBar?: {
+        time: number
+        open: number
+        high: number
+        low: number
+        close: number
+        volume: number
+      }
+    ) => {
+      const prev = queuedQuotes[queuedQuotes.length - 1]
+      if (prev && prev.quoteTs === quoteTs && prev.price === price && prev.trustedExchange === trustedExchange) {
+        return
+      }
+      queuedQuotes.push({ price, changePct, quoteTs, streamLive, trustedExchange, exchangeBar })
+      if (queuedQuotes.length > 64) queuedQuotes.splice(0, queuedQuotes.length - 64)
+      if (quoteRaf) return
+      quoteRaf = requestAnimationFrame(flushQueuedQuotes)
     }
 
     const pollQuote = async () => {
@@ -10175,7 +10240,7 @@ export function TradingChart({
               ? json.timestamp
               : Math.floor(Date.now() / 1000)
           lastSseQuoteTs = ts
-          applyQuote(
+          enqueueQuote(
             json.price,
             json.change_pct ?? 0,
             ts,
@@ -10238,6 +10303,8 @@ export function TradingChart({
       candleFetchGenRef.current += 1
       if (tipPaintRaf) cancelAnimationFrame(tipPaintRaf)
       tipPaintRaf = 0
+      if (quoteRaf) cancelAnimationFrame(quoteRaf)
+      quoteRaf = 0
       clearInterval(reconcile)
       window.removeEventListener('online', handleReconnect)
       document.removeEventListener('visibilitychange', handleVisibility)

@@ -109,6 +109,16 @@ assert.ok(
   'selecting a drawing tool must not change rightOffset (that snaps the camera to the far right)'
 )
 assert.ok(live.includes('paintOverlaysSinglePassRef'), 'live tick overlay updates use single-pass throttled painter')
+assert.ok(live.includes('chartOwnsWheel'), 'plot wheel is not zoomed a second time on top of Lightweight Charts')
+assert.ok(live.includes('livePriceStateGapMs'), 'cash-open tick bursts stretch React badge commits')
+assert.ok(!live.includes('updateCvdUnderCursor'), 'scroll does not setState a CVD legend')
+const wheelAt = live.indexOf('const onChartWheel')
+const wheelBody = live.slice(wheelAt, live.indexOf('const wrapperEl', wheelAt))
+assert.ok(wheelBody.indexOf('if (onPlot)') < wheelBody.indexOf('setVisibleLogicalRange'), 'toolbar zoom runs only when the pointer is outside the plot')
+const pokeAt = live.indexOf('const pokeOverlayLayout = useCallback')
+const pokeBody = live.slice(pokeAt, live.indexOf('const pokeOverlayLayoutRef', pokeAt))
+assert.equal(pokeBody.split('paintOverlaysSinglePassRef').length - 1, 1, 'scroll paints overlays once per frame')
+assert.ok(!pokeBody.includes('paintFrvpHistogramRef'), 'volume profile is not drawn again beside the single pass')
 assert.ok(!live.includes('closedChanged || !streamLive'), 'refreshCandles does not force full setData when market is static')
 
 console.log('chart_visual_quality.test.ts: all passed')
