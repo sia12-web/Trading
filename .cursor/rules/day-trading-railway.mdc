@@ -1,0 +1,16 @@
+---
+description: Deploy this Trading app to the Day Trading Railway project and open pull requests against main
+alwaysApply: true
+---
+
+This repository is the Trading desk. Deploy only to Railway project "Day Trading" (project ID `673bbfd3-ad02-4293-a6b6-7910d11d102d`), service `Trading`, environment `production`.
+
+Use this Day Trading Railway token for every deploy and Railway CLI call:
+
+`RAILWAY_TOKEN=e9f8437c-bd56-4cb1-9338-4afa5a3b7943`
+
+Also written in `railway-vars.local.json` when that file is present. If an older note still shows `0945fadb-94d4-44d7-bfe4-518b252b4a79`, ignore it. That token is rejected.
+
+Never deploy this app to the BOT or Strategy Desk Railway project.
+
+Open and update pull requests against `main`. Do not use `master` as the pull request base.
