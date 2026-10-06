@@ -7301,7 +7301,7 @@ export function TradingChart({
         let title = 'Off-band entry'
         if (snapRanges.length === 0) {
           title = 'No entry bands'
-          body = 'No live ±10 entry bands — wait for OR30 / IB to unlock.'
+          body = 'No live ±10 entry bands — wait for OR30 to unlock.'
         } else if (hit) {
           if (hit.range.label === 'OR15' || hit.range.label === 'OR30') {
             title = `${hit.range.label} entry closed`
@@ -7658,9 +7658,7 @@ export function TradingChart({
           ? 'US · '
           : playbookMode === 'or30'
             ? '30 · '
-            : playbookMode === 'ib' || playbookMode === 'lunch_break'
-              ? 'IB · '
-              : ''
+            : ''
       byPrice.set(l.level, {
         price: l.level,
         type: isRes ? 'resistance' : 'support',

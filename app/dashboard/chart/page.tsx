@@ -867,9 +867,7 @@ export default function ChartPage() {
             ? 'US Range'
             : g.rangeStrategy === 'or30'
               ? 'OR30'
-              : g.rangeStrategy === 'ib'
-                ? 'IB'
-                : 'Morning (Open range)'
+              : 'Morning (Open range)'
         lastUnlockKeyRef.current = `${g.lockedInstrument}:${g.rangeStrategy ?? 'morning'}:${windowLabel}`
       }
       // Still allow regime fetch below — only Telegram rising-edges are suppressed.
@@ -880,9 +878,7 @@ export default function ChartPage() {
             ? 'US Range'
             : g.rangeStrategy === 'or30'
               ? 'OR30'
-              : g.rangeStrategy === 'ib'
-                ? 'IB'
-                : 'Morning (Open range)'
+              : 'Morning (Open range)'
         const key = `${g.lockedInstrument}:${g.rangeStrategy ?? 'morning'}:${windowLabel}`
         const claimKind = `entry_${g.rangeStrategy ?? 'morning'}`
         if (

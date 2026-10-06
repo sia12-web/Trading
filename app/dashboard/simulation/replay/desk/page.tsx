@@ -3123,9 +3123,7 @@ function SimulationDeskInner() {
           ? instrument === 'NIKKEI'
             ? 'US'
             : '30'
-          : bucket === 'lunch_range'
-            ? 'IB'
-            : 'AM'
+          : 'AM'
       setMsg(
         'FILLED ' +
           pend.direction +

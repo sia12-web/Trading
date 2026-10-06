@@ -110,7 +110,7 @@ assert(
   'OR30 still open at 10:20'
 )
 
-// Morning probes exhausted before IB unlock → IB is upcoming, not dead
+// Morning probes exhausted during OR30 → OR30 stays the open book. No Initial Balance.
 const ibUpcoming = buildInstrumentDeskCard(
   {
     instrument: 'DOW',
@@ -126,11 +126,15 @@ const ibUpcoming = buildInstrumentDeskCard(
   etDate(10, 5)
 )
 assert(
-  ibUpcoming.books.find((b) => b.label === 'IB')?.state === 'upcoming',
-  `IB must be upcoming before 10:30, got ${ibUpcoming.books.find((b) => b.label === 'IB')?.state}`
+  ibUpcoming.books.every((b) => b.label !== 'IB'),
+  'Initial Balance is not a desk book'
+)
+assert(
+  ibUpcoming.books.find((b) => b.label === 'OR30')?.state === 'open',
+  `OR30 must be open at 10:05, got ${ibUpcoming.books.find((b) => b.label === 'OR30')?.state}`
 )
 assert(ibUpcoming.tradeableNow === true, 'OR30 still tradeable at 10:05 after morning probes used')
-assert(/IB:/i.test(ibUpcoming.nextUnlock || ''), 'nextUnlock points at IB')
+assert(!/IB/i.test(ibUpcoming.nextUnlock || ''), 'nextUnlock does not name Initial Balance')
 
 const ranked = buildLiveDeskBrief(
   [
