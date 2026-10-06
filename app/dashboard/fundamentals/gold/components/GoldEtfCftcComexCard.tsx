@@ -74,8 +74,8 @@ export function GoldEtfCftcComexCard({
           </div>
 
           <div className="text-[11px] text-slate-300 space-y-1 mb-2">
-            <div>SPDR GLD: <span className="font-mono text-slate-100">{etfFlows.gldHoldingsTonnes} t</span> · iShares IAU: <span className="font-mono text-slate-100">{etfFlows.iauHoldingsTonnes} t</span></div>
-            <div className="text-emerald-400 font-medium">Flow Signal: {etfFlows.divergenceSignal}</div>
+            <div>SPDR GLD: <span className="font-mono text-slate-100">{etfFlows.gldHoldingsTonnes > 0 ? `${etfFlows.gldHoldingsTonnes} t` : '—'}</span> · iShares IAU: <span className="font-mono text-slate-100">{etfFlows.iauHoldingsTonnes > 0 ? `${etfFlows.iauHoldingsTonnes} t` : '—'}</span></div>
+            <div className="text-slate-400 font-medium">{etfFlows.globalTonnes > 0 ? `Flow Signal: ${etfFlows.divergenceSignal}` : 'ETF holdings are not on this feed.'}</div>
           </div>
 
           <div className="p-2 rounded bg-slate-900/60 border border-slate-800/80 text-[10px] text-slate-400 italic">
