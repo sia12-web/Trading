@@ -39,6 +39,7 @@ import {
 } from 'lightweight-charts'
 import {
   AVWAP_CANDLE_FETCH_CALENDAR_DAYS,
+  ONE_MINUTE_FETCH_CALENDAR_DAYS,
   activeDeskSessionsAt,
   computeSessionHighlightSpans,
   projectSessionHighlightRects,
@@ -8383,8 +8384,13 @@ export function TradingChart({
 
       // Full continuum including afternoon — clipAfternoonBars is a no-op while freeze is off
       try {
-        // Must cover cash open of 5 trading days prior (weekends truncate a plain 5d fetch; 1m is 3d — enough for 5 sessions Mon-Fri while keeping candle count low; 1D is 730d / 2 years)
-        const days = timeframe === '1D' ? 730 : timeframe === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
+        // Must cover cash open of 5 trading days prior. 1m uses Yahoo's 8-day window so a weekend still leaves five sessions. 1D is two years.
+        const days =
+          timeframe === '1D'
+            ? 730
+            : timeframe === '1m'
+              ? ONE_MINUTE_FETCH_CALENDAR_DAYS
+              : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
         const res = await fetch(
           `/api/trading/candles?instrument=${instrument}&timeframe=${timeframe}&days=${days}`
         )
@@ -9967,7 +9973,12 @@ export function TradingChart({
 
     const refreshCandles = async () => {
       try {
-        const days = timeframe === '1D' ? 730 : timeframe === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
+        const days =
+          timeframe === '1D'
+            ? 730
+            : timeframe === '1m'
+              ? ONE_MINUTE_FETCH_CALENDAR_DAYS
+              : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
         const res = await fetch(
           `/api/trading/candles?instrument=${instrument}&timeframe=${timeframe}&days=${days}&quote=0&_=${Date.now()}`,
           { cache: 'no-store' }
