@@ -27,6 +27,15 @@ import {
   DEFAULT_DOW_TELEMETRY,
   DEFAULT_DOW_FEEDS,
 } from './dowAnalystConfig'
+import {
+  blankDriverCards,
+  cloneState,
+  fetchFredLatest,
+  fetchYahooPrint,
+  markFeed,
+  markFeedsDisconnected,
+  oasToBps,
+} from '@/lib/fundamentals/liveQuotes'
 import { getFinnhubClient } from '@/lib/services/finnhubClient'
 import { fetchYahooFinanceHeadlines } from '@/lib/trading/liveEconomicResults'
 import {
@@ -38,78 +47,119 @@ import {
 import { logger } from '@/lib/utils/logger'
 import { candidateIsMaterial } from '@/lib/fundamentals/outputContract'
 
-// In-memory state singleton for Dow
-let currentDowState: DowFundamentalDashboardState = {
-  market: 'CME_YM',
-  analystPersona: 'Dow Jones Macro, Cyclical Economy, Earnings and Rotation Analyst',
-  updatedAt: new Date().toISOString(),
-  overallBias: 'BULLISH',
-  overallConfidence: 85,
-  biasSummary:
-    'Broad cyclical industrial resilience, favorable price-weighted contribution dynamics, and tight high-yield credit spreads (315 bps) offset higher nominal yields. Sector leadership favors Industrials (XLI) and Financials (XLF) over defensive utilities.',
-  dowTelemetry: { ...DEFAULT_DOW_TELEMETRY },
-  today: { ...DEFAULT_TODAY_DOW_STATE },
-  contribution: { ...DEFAULT_DJIA_CONTRIBUTION_STATE },
-  rotation: { ...DEFAULT_DOW_ROTATION_STATE },
-  credit: { ...DEFAULT_DOW_CREDIT_STATE },
-  industrial: { ...DEFAULT_INDUSTRIAL_CYCLE_STATE },
-  drivers: { ...DEFAULT_DOW_DRIVERS },
-  feeds: [...DEFAULT_DOW_FEEDS],
-  recentEvents: [],
-  liveHeadlines: [],
-}
+const NOT_ON_FEED = 'Not on this feed.'
 
-/**
- * Fetches price from Yahoo Finance v8 chart API
- */
-export async function fetchYahooPrice(symbol: string): Promise<{ price: number; changePct: number } | null> {
-  try {
-    const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=2d`, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      signal: AbortSignal.timeout(4000),
-    })
-    if (!res.ok) return null
-    const json = await res.json()
-    const meta = json?.chart?.result?.[0]?.meta
-    const px = meta?.regularMarketPrice
-    const prev = meta?.chartPreviousClose
-    if (typeof px === 'number' && px > 0) {
-      const changePct = prev ? +(((px - prev) / prev) * 100).toFixed(2) : 0
-      return { price: px, changePct }
+function freshDowState(): DowFundamentalDashboardState {
+  const telemetry = cloneState(DEFAULT_DOW_TELEMETRY)
+  telemetry.ymPrice = 0
+  telemetry.ymChange = 0
+  telemetry.ymChangePct = 0
+  telemetry.contractNotionalValue = 0
+  telemetry.esPrice = 0
+  telemetry.esChangePct = 0
+  telemetry.nqPrice = 0
+  telemetry.nqChangePct = 0
+  telemetry.rtyPrice = 0
+  telemetry.rtyChangePct = 0
+  telemetry.us2yNominalYield = 0
+  telemetry.us10yNominalYield = 0
+  telemetry.yieldCurve2s10sSpreadBps = 0
+  telemetry.yieldMoveDriver = 'UNKNOWN'
+  telemetry.growthInflationQuadrant = 'UNMEASURED'
+  telemetry.dxyIndex = 0
+  telemetry.dxyChangePct = 0
+  telemetry.oilWtiPrice = 0
+  telemetry.oilWtiChangePct = 0
+  telemetry.vixIndex = 0
+  telemetry.advancersCount = 0
+  telemetry.declinersCount = 0
+  telemetry.unchangedCount = 0
+  telemetry.cvdAggressionStance = 'NEUTRAL'
+  telemetry.source = 'Quotes have not loaded'
+  telemetry.topConstituentsByWeight = telemetry.topConstituentsByWeight.map((row) => ({
+    ...row,
+    price: 0,
+    dayChange: 0,
+    dayChangePct: 0,
+    pointContribution: 0,
+    priceWeightPct: 0,
+    lastEpsSurprise: undefined,
+    forwardGuidance: undefined,
+  }))
+  const today = cloneState(DEFAULT_TODAY_DOW_STATE)
+  for (const key of Object.keys(today) as (keyof typeof today)[]) {
+    const value = today[key]
+    if (typeof value !== 'string' || key === 'upcoming_catalysts') continue
+    if (value === 'BULLISH' || value === 'BEARISH' || value === 'MIXED') {
+      today[key] = 'NEUTRAL' as never
+    } else if (/\d/.test(value) || /Healthy|Robust|Expanding|Leading|Strong/.test(value)) {
+      today[key] = NOT_ON_FEED as never
     }
-    return null
-  } catch {
-    return null
+  }
+  today.us2y = 'UNAVAILABLE'
+  today.us10y = 'UNAVAILABLE'
+  today.yield_curve = '2s10s loads when both yields print.'
+  today.breadth = 'DJIA name breadth loads from the names that print.'
+  today.intraday_bias = 'NEUTRAL'
+  today.short_term_bias = 'NEUTRAL'
+  today.medium_term_bias = 'NEUTRAL'
+  const drivers = cloneState(DEFAULT_DOW_DRIVERS)
+  blankDriverCards(drivers)
+  const credit = cloneState(DEFAULT_DOW_CREDIT_STATE)
+  credit.hygPrice = 0
+  credit.hygChangePct = 0
+  credit.lqdPrice = 0
+  credit.lqdChangePct = 0
+  credit.highYieldSpreadBps = 0
+  credit.investmentGradeSpreadBps = 0
+  credit.bankSectorChangePct = 0
+  const industrial = cloneState(DEFAULT_INDUSTRIAL_CYCLE_STATE)
+  industrial.ismManufacturingHeadline = 0
+  industrial.ismNewOrders = 0
+  industrial.ismPricesPaid = 0
+  industrial.ismProduction = 0
+  industrial.durableGoodsMomPct = 0
+  industrial.coreCapitalGoodsOrdersMomPct = 0
+  industrial.cyclePhase = 'EXPANSION'
+  const contribution = cloneState(DEFAULT_DJIA_CONTRIBUTION_STATE)
+  contribution.sumSharePrices = 0
+  contribution.totalDayPointsMove = 0
+  contribution.top1ContributionPct = 0
+  contribution.top3ContributionPct = 0
+  contribution.top5ContributionPct = 0
+  contribution.equalWeight30ReturnPct = 0
+  contribution.priceWeightedDjiaReturnPct = 0
+  contribution.contributionConcentration = 'LOW'
+  const rotation = cloneState(DEFAULT_DOW_ROTATION_STATE)
+  rotation.ymChangePct = 0
+  rotation.esChangePct = 0
+  rotation.nqChangePct = 0
+  rotation.rtyChangePct = 0
+  rotation.ymVsNqSpreadPct = 0
+  rotation.rotationRegime = 'BALANCED'
+  rotation.leadershipSector = 'No sector is leading until YM and NQ both print'
+  rotation.laggingSector = 'No sector is lagging until YM and NQ both print'
+  return {
+    market: 'CME_YM',
+    analystPersona: 'Dow Jones Macro, Cyclical Economy, Earnings and Rotation Analyst',
+    updatedAt: new Date().toISOString(),
+    overallBias: 'NEUTRAL',
+    overallConfidence: 0,
+    biasSummary: 'Waiting for the live YM, yield, and credit prints.',
+    dowTelemetry: telemetry,
+    today,
+    contribution,
+    rotation,
+    credit,
+    industrial,
+    drivers,
+    feeds: markFeedsDisconnected(cloneState(DEFAULT_DOW_FEEDS)),
+    recentEvents: [],
+    liveHeadlines: [],
   }
 }
 
-/**
- * Fetches latest series value from St. Louis Fed FRED public CSV
- */
-export async function fetchFredSeries(seriesId: string): Promise<number | null> {
-  try {
-    const res = await fetch(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${encodeURIComponent(seriesId)}`, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      signal: AbortSignal.timeout(4500),
-    })
-    if (!res.ok) return null
-    const text = await res.text()
-    const lines = text.trim().split('\n')
-    for (let i = lines.length - 1; i >= 1; i--) {
-      const line = lines[i]
-      if (!line) continue
-      const parts = line.split(',')
-      const valStr = parts[1]
-      if (valStr) {
-        const val = parseFloat(valStr.trim())
-        if (!isNaN(val)) return val
-      }
-    }
-    return null
-  } catch {
-    return null
-  }
-}
+let currentDowState: DowFundamentalDashboardState = freshDowState()
 
 /**
  * Refreshes live Dow market telemetry:
@@ -128,7 +178,7 @@ export async function refreshDowTelemetry(): Promise<DowTelemetry> {
       nqQuote,
       rtyQuote,
       tnxQuote,
-      fvxQuote,
+      fred2y,
       vixQuote,
       dxyQuote,
       wtiQuote,
@@ -138,6 +188,7 @@ export async function refreshDowTelemetry(): Promise<DowTelemetry> {
       xlfQuote,
       xlkQuote,
       fredHyOas,
+      fredIgOas,
       unhQuote,
       gsQuote,
       msftQuote,
@@ -145,28 +196,29 @@ export async function refreshDowTelemetry(): Promise<DowTelemetry> {
       catQuote,
       baQuote,
     ] = await Promise.all([
-      fetchYahooPrice('YM=F'),
-      fetchYahooPrice('^DJI'),
-      fetchYahooPrice('ES=F'),
-      fetchYahooPrice('NQ=F'),
-      fetchYahooPrice('RTY=F'),
-      fetchYahooPrice('^TNX'),
-      fetchYahooPrice('^FVX'),
-      fetchYahooPrice('^VIX'),
-      fetchYahooPrice('DX-Y.NYB'),
-      fetchYahooPrice('CL=F'),
-      fetchYahooPrice('HYG'),
-      fetchYahooPrice('LQD'),
-      fetchYahooPrice('XLI'),
-      fetchYahooPrice('XLF'),
-      fetchYahooPrice('XLK'),
-      fetchFredSeries('BAMLH0A0HYM2'),
-      fetchYahooPrice('UNH'),
-      fetchYahooPrice('GS'),
-      fetchYahooPrice('MSFT'),
-      fetchYahooPrice('HD'),
-      fetchYahooPrice('CAT'),
-      fetchYahooPrice('BA'),
+      fetchYahooPrint('YM=F'),
+      fetchYahooPrint('^DJI'),
+      fetchYahooPrint('ES=F'),
+      fetchYahooPrint('NQ=F'),
+      fetchYahooPrint('RTY=F'),
+      fetchYahooPrint('^TNX'),
+      fetchFredLatest('DGS2'),
+      fetchYahooPrint('^VIX'),
+      fetchYahooPrint('DX-Y.NYB'),
+      fetchYahooPrint('CL=F'),
+      fetchYahooPrint('HYG'),
+      fetchYahooPrint('LQD'),
+      fetchYahooPrint('XLI'),
+      fetchYahooPrint('XLF'),
+      fetchYahooPrint('XLK'),
+      fetchFredLatest('BAMLH0A0HYM2'),
+      fetchFredLatest('BAMLC0A0CM'),
+      fetchYahooPrint('UNH'),
+      fetchYahooPrint('GS'),
+      fetchYahooPrint('MSFT'),
+      fetchYahooPrint('HD'),
+      fetchYahooPrint('CAT'),
+      fetchYahooPrint('BA'),
     ])
 
     const t = currentDowState.dowTelemetry
@@ -199,22 +251,30 @@ export async function refreshDowTelemetry(): Promise<DowTelemetry> {
 
     // 3. Rates & Yield Curve
     const prior10y = t.us10yNominalYield
+    const had10y = prior10y > 0
     if (tnxQuote && tnxQuote.price > 0) {
       t.us10yNominalYield = tnxQuote.price
     }
-    if (fvxQuote && fvxQuote.price > 0) {
-      t.us2yNominalYield = +(fvxQuote.price - 0.17).toFixed(2)
-      t.yieldCurve2s10sSpreadBps = +((t.us10yNominalYield - t.us2yNominalYield) * 100).toFixed(0)
+    if (fred2y != null && fred2y > 0) {
+      t.us2yNominalYield = fred2y
+    }
+    if (fred2y != null && fred2y > 0 && t.us10yNominalYield > 0) {
+      t.yieldCurve2s10sSpreadBps = Math.round((t.us10yNominalYield - t.us2yNominalYield) * 100)
+    } else {
+      t.yieldCurve2s10sSpreadBps = 0
     }
 
-    // Classify yield move driver
-    const yieldChangeBps = (t.us10yNominalYield - prior10y) * 100
-    t.yieldMoveDriver = classifyYieldMoveDriver({
-      yieldChangeBps,
-      growthSignal: t.ymChangePct > 0 ? 'UP' : t.ymChangePct < -0.3 ? 'DOWN' : 'NEUTRAL',
-      inflationSignal: 'NEUTRAL',
-      fedSignal: 'NEUTRAL',
-    })
+    if (tnxQuote && tnxQuote.price > 0 && had10y) {
+      const yieldChangeBps = (t.us10yNominalYield - prior10y) * 100
+      t.yieldMoveDriver = classifyYieldMoveDriver({
+        yieldChangeBps,
+        growthSignal: t.ymChangePct > 0 ? 'UP' : t.ymChangePct < -0.3 ? 'DOWN' : 'NEUTRAL',
+        inflationSignal: 'NEUTRAL',
+        fedSignal: 'NEUTRAL',
+      })
+    } else if (!(tnxQuote && tnxQuote.price > 0)) {
+      t.yieldMoveDriver = 'UNKNOWN'
+    }
 
     // 4. Volatility, DXY & Commodities
     if (vixQuote && vixQuote.price > 0) t.vixIndex = vixQuote.price
@@ -237,32 +297,34 @@ export async function refreshDowTelemetry(): Promise<DowTelemetry> {
       currentDowState.credit.lqdChangePct = lqdQuote.changePct
     }
     if (fredHyOas !== null) {
-      currentDowState.credit.highYieldSpreadBps = Math.round(fredHyOas * 100)
+      currentDowState.credit.highYieldSpreadBps = oasToBps(fredHyOas)
+    }
+    if (fredIgOas !== null) {
+      currentDowState.credit.investmentGradeSpreadBps = oasToBps(fredIgOas)
     }
     if (xlfQuote && xlfQuote.price > 0) {
       currentDowState.credit.bankSectorChangePct = xlfQuote.changePct
     }
-    currentDowState.credit.creditStressRegime =
-      currentDowState.credit.highYieldSpreadBps > 450
-        ? 'ACUTE_DISLOCATION'
-        : currentDowState.credit.highYieldSpreadBps > 380
-        ? 'STRESS_WIDENING'
-        : currentDowState.credit.highYieldSpreadBps < 300
-        ? 'MILD_COMPRESSION'
-        : 'HEALTHY_EXPANSION'
+    const hyBps = currentDowState.credit.highYieldSpreadBps
+    if (fredHyOas !== null && hyBps > 0) {
+      currentDowState.credit.creditStressRegime =
+        hyBps > 450 ? 'ACUTE_DISLOCATION' : hyBps > 380 ? 'STRESS_WIDENING' : hyBps < 300 ? 'MILD_COMPRESSION' : 'HEALTHY_EXPANSION'
+    }
 
-    // 6. Sector Rotation Evaluation
-    const rot = evaluateSectorRotation({
-      ymChangePct: t.ymChangePct,
-      esChangePct: t.esChangePct,
-      nqChangePct: t.nqChangePct,
-      rtyChangePct: t.rtyChangePct,
-    })
-    currentDowState.rotation = rot
+    const rotationReady = Boolean(ymQuote && esQuote && nqQuote)
+    const rot = rotationReady
+      ? evaluateSectorRotation({
+          ymChangePct: t.ymChangePct,
+          esChangePct: t.esChangePct,
+          nqChangePct: t.nqChangePct,
+          rtyChangePct: rtyQuote ? t.rtyChangePct : 0,
+        })
+      : currentDowState.rotation
+    if (rotationReady) currentDowState.rotation = rot
 
     // 7. Update Top DJIA Constituent Live Prices
     const constituents = [...t.topConstituentsByWeight]
-    const updateMap: Record<string, { price: number; changePct: number }> = {}
+    const updateMap: Record<string, { price: number; changePct: number; previousClose: number | null }> = {}
     if (unhQuote) updateMap['UNH'] = unhQuote
     if (gsQuote) updateMap['GS'] = gsQuote
     if (msftQuote) updateMap['MSFT'] = msftQuote
@@ -272,22 +334,24 @@ export async function refreshDowTelemetry(): Promise<DowTelemetry> {
 
     let adv = 0
     let dec = 0
+    let priced = 0
     for (const c of constituents) {
       const u = updateMap[c.symbol]
-      if (u) {
-        c.price = u.price
-        c.dayChangePct = u.changePct
-        c.dayChange = +(u.price * (u.changePct / 100)).toFixed(2)
-      }
+      if (!u) continue
+      priced += 1
+      c.price = u.price
+      c.dayChangePct = u.changePct
+      c.dayChange = u.previousClose ? +(u.price - u.previousClose).toFixed(2) : +(u.price * (u.changePct / 100)).toFixed(2)
       if (c.dayChangePct > 0) adv++
       else if (c.dayChangePct < 0) dec++
     }
     t.advancersCount = adv
     t.declinersCount = dec
-    t.unchangedCount = 30 - adv - dec
+    t.unchangedCount = Math.max(0, priced - adv - dec)
 
     // 8. Recompute Price Weighting & Point Contributions
-    const contrib = computeDjiaContributions(constituents, t.dowDivisor)
+    const pricedNamesForMath = constituents.filter((row) => row.price > 0)
+    const contrib = computeDjiaContributions(pricedNamesForMath.length > 0 ? pricedNamesForMath : [], t.dowDivisor)
     currentDowState.contribution = contrib
     t.topConstituentsByWeight = constituents
 
@@ -297,33 +361,69 @@ export async function refreshDowTelemetry(): Promise<DowTelemetry> {
     // 9. Sync Live Metrics into Drivers
     if (currentDowState.drivers.fed_rates) {
       const d = currentDowState.drivers.fed_rates
-      if (d.metrics[0]) d.metrics[0].value = `${t.us2yNominalYield.toFixed(2)}%`
-      if (d.metrics[1]) d.metrics[1].value = `${t.us10yNominalYield.toFixed(2)}%`
+      if (d.metrics[0]) {
+        d.metrics[0].value = fred2y != null && fred2y > 0 ? `${t.us2yNominalYield.toFixed(2)}%` : 'UNAVAILABLE'
+      }
+      if (d.metrics[1]) d.metrics[1].value = tnxQuote && t.us10yNominalYield > 0 ? `${t.us10yNominalYield.toFixed(2)}%` : 'UNAVAILABLE'
       if (d.metrics[2]) d.metrics[2].value = t.yieldMoveDriver
+      d.summary = `2Y ${fred2y != null && fred2y > 0 ? t.us2yNominalYield.toFixed(2) + '%' : 'UNAVAILABLE'}, 10Y ${tnxQuote && t.us10yNominalYield > 0 ? t.us10yNominalYield.toFixed(2) + '%' : 'UNAVAILABLE'}.`
     }
     if (currentDowState.drivers.credit_conditions) {
       const d = currentDowState.drivers.credit_conditions
-      if (d.metrics[0]) d.metrics[0].value = `${currentDowState.credit.highYieldSpreadBps} bps`
-      if (d.metrics[1]) d.metrics[1].value = `${currentDowState.credit.investmentGradeSpreadBps} bps`
-      if (d.metrics[2]) d.metrics[2].value = `$${currentDowState.credit.hygPrice.toFixed(2)}`
+      if (d.metrics[0]) {
+        d.metrics[0].value = currentDowState.credit.highYieldSpreadBps > 0 ? `${currentDowState.credit.highYieldSpreadBps} bps` : '—'
+      }
+      if (d.metrics[1]) {
+        d.metrics[1].value = currentDowState.credit.investmentGradeSpreadBps > 0 ? `${currentDowState.credit.investmentGradeSpreadBps} bps` : '—'
+      }
+      if (d.metrics[2]) {
+        d.metrics[2].value = currentDowState.credit.hygPrice > 0 ? `$${currentDowState.credit.hygPrice.toFixed(2)}` : '—'
+      }
+      d.summary = currentDowState.credit.highYieldSpreadBps > 0
+        ? `High-yield OAS ${currentDowState.credit.highYieldSpreadBps} bps. Investment-grade OAS ${currentDowState.credit.investmentGradeSpreadBps > 0 ? `${currentDowState.credit.investmentGradeSpreadBps} bps` : 'did not print'}.`
+        : 'Credit OAS did not print.'
     }
     if (currentDowState.drivers.sector_rotation) {
       const d = currentDowState.drivers.sector_rotation
-      if (d.metrics[0]) d.metrics[0].value = `${rot.ymVsNqSpreadPct >= 0 ? '+' : ''}${rot.ymVsNqSpreadPct}%`
+      if (d.metrics[0]) {
+        d.metrics[0].value = rotationReady ? `${rot.ymVsNqSpreadPct >= 0 ? '+' : ''}${rot.ymVsNqSpreadPct}%` : '—'
+      }
       if (d.metrics[1] && xliQuote && xlkQuote && xlkQuote.price > 0) {
         d.metrics[1].value = `${(xliQuote.price / xlkQuote.price).toFixed(2)}x`
       }
-      if (d.metrics[2]) d.metrics[2].value = `${t.rtyChangePct >= 0 ? '+' : ''}${t.rtyChangePct.toFixed(2)}%`
+      if (d.metrics[2]) d.metrics[2].value = rtyQuote ? `${t.rtyChangePct >= 0 ? '+' : ''}${t.rtyChangePct.toFixed(2)}%` : '—'
+      d.summary = rotationReady ? `${rot.rotationRegime}. ${rot.leadershipSector}.` : 'Rotation waits until YM, ES, and NQ all print.'
     }
 
     // 10. Sync TODAY'S state strings (Item 35: 24 points)
-    currentDowState.today.us2y = `${t.us2yNominalYield.toFixed(2)}%`
-    currentDowState.today.us10y = `${t.us10yNominalYield.toFixed(2)}%`
-    currentDowState.today.yield_curve = `2s10s spread at +${t.yieldCurve2s10sSpreadBps} bps (${t.yieldMoveDriver} yield backdrop).`
-    currentDowState.today.credit = `${currentDowState.credit.creditStressRegime}: High-Yield OAS at ${currentDowState.credit.highYieldSpreadBps} bps; HYG at $${currentDowState.credit.hygPrice.toFixed(2)} (${currentDowState.credit.hygChangePct >= 0 ? '+' : ''}${currentDowState.credit.hygChangePct}%).`
-    currentDowState.today.breadth = `${t.advancersCount} advancing vs ${t.declinersCount} declining constituents (${Math.round((t.advancersCount / 30) * 100)}% positive breadth).`
-    currentDowState.today.contribution_concentration = `${contrib.contributionConcentration}: Top 3 point movers represent ${contrib.top3ContributionPct.toFixed(1)}% of total daily points moved.`
-    currentDowState.today.sector_rotation = `${rot.rotationRegime}: ${rot.leadershipSector} leading while ${rot.laggingSector} lags (YM vs NQ 1D spread: ${rot.ymVsNqSpreadPct >= 0 ? '+' : ''}${rot.ymVsNqSpreadPct}%).`
+    const twoYearText = fred2y != null && fred2y > 0 ? `${t.us2yNominalYield.toFixed(2)}%` : 'UNAVAILABLE'
+    const curveBps = t.yieldCurve2s10sSpreadBps
+    currentDowState.today.us2y = twoYearText
+    currentDowState.today.us10y = tnxQuote && t.us10yNominalYield > 0 ? `${t.us10yNominalYield.toFixed(2)}%` : 'UNAVAILABLE'
+    currentDowState.today.yield_curve = fred2y != null && fred2y > 0 && t.us10yNominalYield > 0
+      ? `2s10s ${curveBps >= 0 ? '+' : ''}${curveBps} bps (${t.yieldMoveDriver}).`
+      : '2s10s is unavailable until both the 2Y and 10Y print.'
+    currentDowState.today.credit = currentDowState.credit.highYieldSpreadBps > 0
+      ? `${currentDowState.credit.creditStressRegime}: High-yield OAS ${currentDowState.credit.highYieldSpreadBps} bps${currentDowState.credit.hygPrice > 0 ? `; HYG $${currentDowState.credit.hygPrice.toFixed(2)}` : ''}.`
+      : 'High-yield OAS did not print.'
+    const pricedNames = t.advancersCount + t.declinersCount + t.unchangedCount
+    currentDowState.today.breadth = pricedNames > 0
+      ? `${t.advancersCount} up, ${t.declinersCount} down, ${t.unchangedCount} unchanged among ${pricedNames} DJIA names with a live print.`
+      : 'DJIA name breadth unavailable.'
+    const tenYearLabel = tnxQuote && t.us10yNominalYield > 0 ? `${t.us10yNominalYield.toFixed(2)}%` : '—'
+    const oasLabel = currentDowState.credit.highYieldSpreadBps > 0 ? `${currentDowState.credit.highYieldSpreadBps} bps` : '—'
+    currentDowState.biasSummary = t.ymPrice > 0
+      ? `YM ${t.ymPrice.toFixed(2)} (${t.ymChangePct >= 0 ? '+' : ''}${t.ymChangePct.toFixed(2)}%). 10Y ${tenYearLabel}. HY OAS ${oasLabel}.`
+      : 'Waiting for the live YM print.'
+    currentDowState.today.contribution_concentration = pricedNamesForMath.length > 0
+      ? `${contrib.contributionConcentration}: among ${pricedNamesForMath.length} priced names, the top 3 point movers are ${contrib.top3ContributionPct.toFixed(1)}% of the absolute points.`
+      : 'DJIA point contribution waits for live share prices.'
+    currentDowState.today.sector_rotation = rotationReady
+      ? `${rot.rotationRegime}: ${rot.leadershipSector}. YM vs NQ ${rot.ymVsNqSpreadPct >= 0 ? '+' : ''}${rot.ymVsNqSpreadPct}%.`
+      : 'Rotation waits until YM, ES, and NQ all print.'
+    markFeed(currentDowState.feeds, 'cme_globex_ym', Boolean((ymQuote && ymQuote.price > 0) || (djiQuote && djiQuote.price > 0)))
+    markFeed(currentDowState.feeds, 'rates_yield_curve_engine', Boolean(tnxQuote || (fred2y != null && fred2y > 0)), 'Yahoo ^TNX / FRED')
+    markFeed(currentDowState.feeds, 'credit_corporate_bonds', fredHyOas != null, 'FRED OAS')
   } catch (err) {
     logger.warn('[DowStateStore] Failed to update live Dow telemetry', err)
   }
@@ -392,9 +492,8 @@ export async function refreshLiveDowHeadlines(): Promise<LiveDowHeadline[]> {
       }
     }
 
-    if (headlines.length > 0) {
-      currentDowState.liveHeadlines = headlines.slice(0, 10)
-    }
+    currentDowState.liveHeadlines = headlines.slice(0, 10)
+    markFeed(currentDowState.feeds, 'institutional_wire_deduplicator', true, 'Finnhub / Yahoo on load')
   } catch (err) {
     logger.warn('[DowStateStore] Failed to fetch live Dow headlines', err)
   }
@@ -486,25 +585,7 @@ export function recordEvaluatedDowEvent(evaluation: DowEventEvaluation): void {
  * Resets state back to baseline
  */
 export function resetDowFundamentalState(): DowFundamentalDashboardState {
-  currentDowState = {
-    market: 'CME_YM',
-    analystPersona: 'Dow Jones Macro, Cyclical Economy, Earnings and Rotation Analyst',
-    updatedAt: new Date().toISOString(),
-    overallBias: 'BULLISH',
-    overallConfidence: 85,
-    biasSummary:
-      'Broad cyclical industrial resilience, favorable price-weighted contribution dynamics, and tight high-yield credit spreads (315 bps) offset higher nominal yields. Sector leadership favors Industrials (XLI) and Financials (XLF) over defensive utilities.',
-    dowTelemetry: { ...DEFAULT_DOW_TELEMETRY },
-    today: { ...DEFAULT_TODAY_DOW_STATE },
-    contribution: { ...DEFAULT_DJIA_CONTRIBUTION_STATE },
-    rotation: { ...DEFAULT_DOW_ROTATION_STATE },
-    credit: { ...DEFAULT_DOW_CREDIT_STATE },
-    industrial: { ...DEFAULT_INDUSTRIAL_CYCLE_STATE },
-    drivers: { ...DEFAULT_DOW_DRIVERS },
-    feeds: [...DEFAULT_DOW_FEEDS],
-    recentEvents: [],
-    liveHeadlines: [],
-  }
+  currentDowState = freshDowState()
   return currentDowState
 }
 

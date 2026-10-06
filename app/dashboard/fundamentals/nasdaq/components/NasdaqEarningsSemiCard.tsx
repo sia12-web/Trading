@@ -57,7 +57,7 @@ export function NasdaqEarningsSemiCard({
           </div>
 
           <div className="text-xs font-mono text-slate-400">
-            Blended NDX EPS Growth: <strong className="text-emerald-400 font-bold">+{earningsCycle.blendedEarningsGrowthPct.toFixed(1)}% YoY</strong>
+            Blended NDX EPS Growth: <strong className="text-emerald-400 font-bold">{earningsCycle.notableRecentReports.length > 0 ? `+${earningsCycle.blendedEarningsGrowthPct.toFixed(1)}% YoY` : 'Not on this feed'}</strong>
           </div>
         </div>
 
@@ -168,7 +168,9 @@ export function NasdaqEarningsSemiCard({
                 AI &amp; Semiconductor Capex Cycle Engine
               </h3>
               <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-mono">
-                Hyperscaler Run-Rate: ${semiCycle.hyperscalerCapexRunRateBillions}B
+                {semiCycle.hyperscalerCapexRunRateBillions > 0
+                  ? `Hyperscaler Run-Rate: $${semiCycle.hyperscalerCapexRunRateBillions}B`
+                  : 'Capex not on this feed'}
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-1">

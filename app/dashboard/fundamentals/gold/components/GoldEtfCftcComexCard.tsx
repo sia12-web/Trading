@@ -63,7 +63,7 @@ export function GoldEtfCftcComexCard({
           <div className="grid grid-cols-2 gap-2 my-2 text-xs font-mono">
             <div className="p-2 rounded bg-slate-900 border border-slate-800">
               <span className="text-slate-400 text-[10px] block">Global Holdings:</span>
-              <span className="text-base font-bold text-slate-100">{etfFlows.globalTonnes} t</span>
+              <span className="text-base font-bold text-slate-100">{etfFlows.globalTonnes > 0 ? `${etfFlows.globalTonnes} t` : '—'}</span>
             </div>
             <div className="p-2 rounded bg-slate-900 border border-slate-800">
               <span className="text-slate-400 text-[10px] block">Monthly Flow:</span>

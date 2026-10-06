@@ -188,15 +188,15 @@ export function DowRotationCreditCard({
           <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-2.5">
             <span className="text-[10px] text-slate-400 block">High Yield OAS</span>
             <div className="text-base font-bold text-slate-100 mt-0.5">
-              {credit.highYieldSpreadBps} <span className="text-xs text-slate-400">bps</span>
+              {credit.highYieldSpreadBps > 0 ? credit.highYieldSpreadBps : '—'} <span className="text-xs text-slate-400">bps</span>
             </div>
-            <span className="text-[10px] text-emerald-400 font-sans">Tight (&lt;380bp)</span>
+            <span className="text-[10px] text-slate-400 font-sans">{credit.highYieldSpreadBps > 0 ? 'FRED BAMLH0A0HYM2' : 'Not on this feed'}</span>
           </div>
 
           <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-2.5">
             <span className="text-[10px] text-slate-400 block">Inv. Grade OAS</span>
             <div className="text-base font-bold text-slate-100 mt-0.5">
-              {credit.investmentGradeSpreadBps} <span className="text-xs text-slate-400">bps</span>
+              {credit.investmentGradeSpreadBps > 0 ? credit.investmentGradeSpreadBps : '—'} <span className="text-xs text-slate-400">bps</span>
             </div>
             <span className="text-[10px] text-slate-400 font-sans">Stable</span>
           </div>

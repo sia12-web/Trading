@@ -94,23 +94,36 @@ export function computeNikkeiContributions(
   constituents: NikkeiConstituent[] = DEFAULT_NIKKEI_CONSTITUENTS,
   _divisor: number = NIKKEI_DIVISOR
 ): NikkeiContributionState {
-  const sorted = [...constituents].sort((a, b) => b.priceJpy - a.priceJpy)
+  const priced = constituents.filter((row) => row.priceJpy > 0)
+  const sorted = [...priced].sort((a, b) => b.priceJpy - a.priceJpy)
   const sumPrices = sorted.reduce((acc, c) => acc + c.priceJpy, 0)
+  if (!(sumPrices > 0)) {
+    return {
+      sumSharePricesJpy: 0,
+      top1ContributionPct: 0,
+      top3ContributionPct: 0,
+      top5ContributionPct: 0,
+      semiconductorSharePct: 0,
+      weightingConcentration: 'BALANCED',
+      fastRetailingWeightPct: 0,
+      tokyoElectronWeightPct: 0,
+      advantestWeightPct: 0,
+      softbankWeightPct: 0,
+    }
+  }
 
-  const fastRetailing = sorted.find((c) => c.symbol.startsWith('9983'))?.priceJpy || 48500
-  const tokyoElectron = sorted.find((c) => c.symbol.startsWith('8035'))?.priceJpy || 26200
-  const advantest = sorted.find((c) => c.symbol.startsWith('6857'))?.priceJpy || 7950
-  const softbank = sorted.find((c) => c.symbol.startsWith('9984'))?.priceJpy || 8900
+  const priceOf = (prefix: string) => sorted.find((row) => row.symbol.startsWith(prefix))?.priceJpy ?? 0
+  const fastRetailing = priceOf('9983')
+  const tokyoElectron = priceOf('8035')
+  const advantest = priceOf('6857')
+  const softbank = priceOf('9984')
 
-  const top1ContributionPct = Number(((sorted[0]!.priceJpy / sumPrices) * 100).toFixed(1))
-  const top3Sum = (sorted[0]?.priceJpy || 0) + (sorted[1]?.priceJpy || 0) + (sorted[2]?.priceJpy || 0)
+  const top1ContributionPct = Number((((sorted[0]?.priceJpy ?? 0) / sumPrices) * 100).toFixed(1))
+  const top3Sum = sorted.slice(0, 3).reduce((acc, row) => acc + row.priceJpy, 0)
   const top3ContributionPct = Number(((top3Sum / sumPrices) * 100).toFixed(1))
-
-  const top5Sum = sorted.slice(0, 5).reduce((acc, c) => acc + c.priceJpy, 0)
+  const top5Sum = sorted.slice(0, 5).reduce((acc, row) => acc + row.priceJpy, 0)
   const top5ContributionPct = Number(((top5Sum / sumPrices) * 100).toFixed(1))
-
-  // Semiconductor weight (Tokyo Electron + Advantest + Shin-Etsu + TDK)
-  const semiSum = tokyoElectron + advantest + 6100 + 2150
+  const semiSum = tokyoElectron + advantest
   const semiconductorSharePct = Number(((semiSum / sumPrices) * 100).toFixed(1))
 
   const weightingConcentration =
@@ -507,30 +520,30 @@ export async function evaluateNikkeiEvent(params: {
   const { rawText, sourceHint, forcedTelemetry } = params
 
   const telemetry: NikkeiTelemetry = forcedTelemetry || {
-    nkdPrice: 38900,
-    nkdChange: 350,
-    nkdChangePct: 0.91,
+    nkdPrice: 0,
+    nkdChange: 0,
+    nkdChangePct: 0,
     contractMultiplier: 5,
-    contractNotionalValue: 194500,
-    usdjpyRate: 152.4,
-    usdjpyChangePct: 0.35,
-    jgb10yNominalYield: 0.965,
-    jgb10yChangeBps: 2.5,
-    soxIndex: 5240,
-    soxChangePct: 1.85,
-    nqPrice: 20350,
-    nqChangePct: 0.72,
-    topixPrice: 2710,
-    topixChangePct: 0.55,
-    advancersCount: 162,
-    declinersCount: 58,
-    unchangedCount: 5,
+    contractNotionalValue: 0,
+    usdjpyRate: 0,
+    usdjpyChangePct: 0,
+    jgb10yNominalYield: 0,
+    jgb10yChangeBps: 0,
+    soxIndex: 0,
+    soxChangePct: 0,
+    nqPrice: 0,
+    nqChangePct: 0,
+    topixPrice: 0,
+    topixChangePct: 0,
+    advancersCount: 0,
+    declinersCount: 0,
+    unchangedCount: 0,
     nikkeiDivisor: NIKKEI_DIVISOR,
-    topConstituentsByWeight: DEFAULT_NIKKEI_CONSTITUENTS,
-    tokyoCashSessionActive: true,
-    tokyoSessionPhase: 'MORNING_CASH',
+    topConstituentsByWeight: DEFAULT_NIKKEI_CONSTITUENTS.map((row) => ({ ...row, priceJpy: 0 })),
+    tokyoCashSessionActive: false,
+    tokyoSessionPhase: 'CLOSED',
     timestamp: Date.now(),
-    source: 'CME Globex NKD MDP 3.0 / JPX TSE Arrowhead',
+    source: 'Nikkei quote has not loaded',
     updatedAt: new Date().toISOString(),
   }
 

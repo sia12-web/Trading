@@ -84,8 +84,8 @@ export async function evaluateOilEvent(params: AnalyzeEventParams): Promise<OilE
 
   // Sync structured market_confirmation with live telemetry
   result.structured.market_confirmation = {
-    cl_5m_return: +(telemetry.changePct >= 0 ? telemetry.changePct : -Math.abs(telemetry.changePct)).toFixed(2),
-    front_spread_change: +(telemetry.promptSpread >= 0 ? 0.06 : -0.04),
+    cl_5m_return: telemetry.fiveMinReturnPct ?? 0,
+    front_spread_change: telemetry.promptSpreadChange ?? 0,
     confirmation: mapVerdictToConfirmationStrength(result.step9_market_confirmation.verdict),
   }
 
@@ -95,6 +95,11 @@ export async function evaluateOilEvent(params: AnalyzeEventParams): Promise<OilE
   }
 
   return result
+}
+
+function finiteOrZero(value: unknown): number {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : 0
 }
 
 function mapVerdictToConfirmationStrength(verdict: MarketConfirmationVerdict): ConfirmationStrength {
@@ -121,44 +126,52 @@ function computeMarketConfirmation(
   const pxChg = telemetry.change
   const pctChg = telemetry.changePct
   const spread = telemetry.promptSpread
-  const regime = telemetry.spreadRegime
+  const regime = telemetry.curveLive ? telemetry.spreadRegime : 'FLAT'
 
   let verdict: MarketConfirmationVerdict = 'UNCONFIRMED_PENDING_FLOW'
   let priceDetail = ''
-  let spreadDetail = ''
+  let spreadDetail = telemetry.curveLive
+    ? `Front spread ${spread >= 0 ? '+' : ''}$${spread.toFixed(2)}/bbl (${regime}).`
+    : 'Front spread did not print, so the curve is not used as confirmation.'
+
+  if (!telemetry.priceLive || !(telemetry.promptPrice > 0)) {
+    return {
+      wtiPrice: 0,
+      wtiChange: 0,
+      wtiChangePct: 0,
+      calendarSpread: telemetry.curveLive ? spread : 0,
+      spreadRegime: regime,
+      verdict: 'UNCONFIRMED_PENDING_FLOW',
+      priceReactionDetail: 'WTI quote has not loaded. The event is not confirmed by price.',
+      spreadReactionDetail: spreadDetail,
+    }
+  }
 
   if (expectedDirection === 'BULLISH') {
-    if (pxChg > 0 && regime === 'BACKWARDATION') {
+    if (pxChg > 0) {
       verdict = 'CONFIRMED'
-      priceDetail = `Prompt WTI is up +$${pxChg.toFixed(2)} (+${pctChg.toFixed(2)}%), confirming physical buying.`
-      spreadDetail = `Front spread is firm in Backwardation (+$${spread.toFixed(2)}/bbl), validating spot delivery premium.`
+      priceDetail = `Prompt WTI is up +$${pxChg.toFixed(2)} (+${pctChg.toFixed(2)}%).`
     } else if (pxChg < 0) {
       verdict = 'CONTRADICTED'
-      priceDetail = `Contradiction: Prompt WTI is down -$${Math.abs(pxChg).toFixed(2)} (${pctChg.toFixed(2)}%) despite bullish catalyst.`
-      spreadDetail = `Check whether the market had already priced this in, or if broader macro risk-off flows dominate.`
+      priceDetail = `Prompt WTI is down -$${Math.abs(pxChg).toFixed(2)} (${pctChg.toFixed(2)}%) against the bullish read.`
     } else {
-      verdict = 'DIVERGENT'
-      priceDetail = `Price reaction is muted (+$${pxChg.toFixed(2)}).`
-      spreadDetail = `Calendar spread at $${spread.toFixed(2)} reflects incomplete market digestion.`
+      verdict = 'UNCONFIRMED_PENDING_FLOW'
+      priceDetail = `Prompt WTI is unchanged at $${telemetry.promptPrice.toFixed(2)}.`
     }
   } else if (expectedDirection === 'BEARISH') {
     if (pxChg < 0) {
       verdict = 'CONFIRMED'
-      priceDetail = `Prompt WTI has weakened by -$${Math.abs(pxChg).toFixed(2)} (${pctChg.toFixed(2)}%), matching bearish flow.`
-      spreadDetail = `Calendar spread under pressure at $${spread.toFixed(2)}/bbl.`
+      priceDetail = `Prompt WTI is down -$${Math.abs(pxChg).toFixed(2)} (${pctChg.toFixed(2)}%).`
     } else if (pxChg > 0) {
       verdict = 'CONTRADICTED'
-      priceDetail = `Contradiction: Prompt WTI is trading up +$${pxChg.toFixed(2)} despite bearish fundamental development.`
-      spreadDetail = `Prompt physical market refusing to liquidate; check for structural Cushing tightness or short covering.`
+      priceDetail = `Prompt WTI is up +$${pxChg.toFixed(2)} against the bearish read.`
     } else {
-      verdict = 'DIVERGENT'
-      priceDetail = `WTI trading flat ($${telemetry.promptPrice.toFixed(2)}).`
-      spreadDetail = `Market awaiting volume confirmation.`
+      verdict = 'UNCONFIRMED_PENDING_FLOW'
+      priceDetail = `Prompt WTI is unchanged at $${telemetry.promptPrice.toFixed(2)}.`
     }
   } else {
     verdict = 'UNCONFIRMED_PENDING_FLOW'
-    priceDetail = `Directional bias is Neutral/Mixed. WTI trading at $${telemetry.promptPrice.toFixed(2)} (change: ${pxChg >= 0 ? '+' : ''}${pxChg.toFixed(2)}).`
-    spreadDetail = `Spread remains at $${spread.toFixed(2)}/bbl (${regime}).`
+    priceDetail = `The read is neutral. WTI is $${telemetry.promptPrice.toFixed(2)} (${pxChg >= 0 ? '+' : ''}${pxChg.toFixed(2)}).`
   }
 
   return {
@@ -187,9 +200,15 @@ async function runLlmEvaluation(args: {
   const prompt = buildFundamentalEventUserPrompt({
     roleLine: 'You are the Oil Fundamental Analyst evaluating this supplied event.',
     telemetryLines: [
-      `Prompt WTI: $${args.telemetry.promptPrice.toFixed(2)} (change ${formatSignedDollars(args.telemetry.change)}) | frequency=LIVE | freshness=LIVE`,
-      `Front spread M1-M2 level: ${formatSignedDollars(args.telemetry.promptSpread)}/bbl (${args.telemetry.spreadRegime}) | frequency=LIVE | freshness=LIVE`,
-      'Front spread change: UNAVAILABLE unless a later packet measures it. Do not derive a change from the spread level.',
+      args.telemetry.priceLive
+        ? `Prompt WTI: $${args.telemetry.promptPrice.toFixed(2)} (change ${formatSignedDollars(args.telemetry.change)}) | frequency=YAHOO_DELAYED | freshness=THIS_LOAD`
+        : 'Prompt WTI: UNAVAILABLE',
+      args.telemetry.curveLive
+        ? `Front spread M1-M2 level: ${formatSignedDollars(args.telemetry.promptSpread)}/bbl (${args.telemetry.spreadRegime}) | frequency=YAHOO_DELAYED | freshness=THIS_LOAD`
+        : 'Front spread M1-M2: UNAVAILABLE',
+      args.telemetry.promptSpreadChange != null
+        ? `Front spread change versus the previous load: ${formatSignedDollars(args.telemetry.promptSpreadChange)}/bbl`
+        : 'Front spread change: UNAVAILABLE. Do not derive a change from the spread level.',
     ],
     rawText: args.rawText,
     source: args.sourceHint,
@@ -268,9 +287,9 @@ Put crude_stocks, gasoline_stocks, and front_spread_change in specialist. Use nu
       },
       drivers: Array.isArray(p.drivers) ? p.drivers : [],
       market_confirmation: {
-        cl_5m_return: Number(p.market_confirmation?.cl_5m_return) || 0.5,
-        front_spread_change: Number(p.market_confirmation?.front_spread_change) || 0.04,
-        confirmation: (p.market_confirmation?.confirmation as ConfirmationStrength) || 'STRONG',
+        cl_5m_return: finiteOrZero(p.market_confirmation?.cl_5m_return),
+        front_spread_change: finiteOrZero(p.market_confirmation?.front_spread_change),
+        confirmation: (p.market_confirmation?.confirmation as ConfirmationStrength) || 'UNCONFIRMED',
       },
       confidence: typeof p.confidence === 'number' ? p.confidence : 0.82,
       summary: p.summary || 'Event processed by institutional analyst.',
@@ -499,9 +518,9 @@ function runDeterministicEvaluation(args: {
     },
     drivers,
     market_confirmation: {
-      cl_5m_return: +(args.telemetry.changePct >= 0 ? 0.8 : -0.6),
-      front_spread_change: +(args.telemetry.promptSpread >= 0 ? 0.06 : -0.04),
-      confirmation: 'STRONG',
+      cl_5m_return: args.telemetry.fiveMinReturnPct ?? 0,
+      front_spread_change: args.telemetry.promptSpreadChange ?? 0,
+      confirmation: 'UNCONFIRMED',
     },
     confidence,
     summary,

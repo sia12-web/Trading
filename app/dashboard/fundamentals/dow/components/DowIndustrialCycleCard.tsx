@@ -92,10 +92,14 @@ export function DowIndustrialCycleCard({
           <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-3">
             <span className="text-[10px] text-slate-400 block">ISM Headline</span>
             <div className="text-lg font-bold text-slate-100 mt-0.5">
-              {industrial.ismManufacturingHeadline.toFixed(1)}
+              {industrial.ismManufacturingHeadline > 0 ? industrial.ismManufacturingHeadline.toFixed(1) : '—'}
             </div>
             <span className={`text-[10px] ${industrial.ismManufacturingHeadline >= 50 ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {industrial.ismManufacturingHeadline >= 50 ? 'Expanding (>50)' : 'Contracting (<50)'}
+              {industrial.ismManufacturingHeadline <= 0
+                ? 'Not on this feed'
+                : industrial.ismManufacturingHeadline >= 50
+                  ? 'Expanding (>50)'
+                  : 'Contracting (<50)'}
             </span>
           </div>
 
@@ -161,7 +165,7 @@ export function DowIndustrialCycleCard({
             </p>
           </div>
           <span className="px-2.5 py-1 rounded text-xs font-mono font-semibold bg-blue-500/20 text-blue-300 border border-blue-500/40">
-            Active: {quadrant.replace(/_/g, ' ')}
+            {quadrant === 'UNMEASURED' ? 'Not measured' : `Active: ${quadrant.replace(/_/g, ' ')}`}
           </span>
         </div>
 

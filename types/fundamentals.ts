@@ -248,7 +248,15 @@ export interface WtiTelemetry {
   high: number
   low: number
   previousClose: number
-  promptSpread: number // e.g. +0.45 (backwardation) or -0.30 (contango)
+  promptSpread: number // front month minus next month; positive is backwardation
+  /** False when the next contract did not print. Do not treat promptSpread as a curve. */
+  curveLive?: boolean
+  /** Change in the front spread since the previous refresh. Absent until two live curves exist. */
+  promptSpreadChange?: number
+  /** Last completed 5-minute return, percent. Absent when the 5-minute bars did not load. */
+  fiveMinReturnPct?: number
+  /** False when this object is still the unloaded seed. */
+  priceLive?: boolean
   spreadRegime: CurveRegime
   brentPrice?: number
   brentWtiSpread?: number
@@ -977,6 +985,7 @@ export type GrowthInflationQuadrant =
   | 'GROWTH_UP_INFLATION_UP' // Solid activity, mixed rates risk
   | 'GROWTH_DOWN_INFLATION_DOWN' // Easing hope vs recession worry
   | 'GROWTH_DOWN_INFLATION_UP' // Stagflation, bearish cyclicals
+  | 'UNMEASURED'
 
 export interface DowAbnormalBehavior {
   detected: boolean
@@ -1029,6 +1038,7 @@ export interface DowRotationState {
     | 'BROAD_RISK_ON'
     | 'BROAD_RISK_OFF'
     | 'DEFENSIVE_HEALTHCARE_CONSUMER'
+    | 'BALANCED'
   leadershipSector: string
   laggingSector: string
   ymVsNqSpreadPct: number

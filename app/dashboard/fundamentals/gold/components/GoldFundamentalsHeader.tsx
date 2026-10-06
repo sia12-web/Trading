@@ -87,7 +87,7 @@ export function GoldFundamentalsHeader({
             <span className="text-[10px] font-mono text-amber-400">Prompt</span>
           </div>
           <div className="text-lg font-bold font-mono text-slate-100">
-            ${t.goldPrice.toFixed(2)}
+            {t.goldPrice > 0 ? `$${t.goldPrice.toFixed(2)}` : '—'}
           </div>
           <div className={`text-xs font-mono font-medium ${t.goldChange >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
             {t.goldChange >= 0 ? '+' : ''}${t.goldChange.toFixed(2)} ({t.goldChangePct >= 0 ? '+' : ''}{t.goldChangePct.toFixed(2)}%)

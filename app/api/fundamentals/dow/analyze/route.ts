@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { evaluateDowEvent } from '@/lib/fundamentals/dowAnalystEngine'
-import { getDowFundamentalState } from '@/lib/fundamentals/dowStateStore'
+import { getDowFundamentalState, peekDowFundamentalState } from '@/lib/fundamentals/dowStateStore'
 import { logger } from '@/lib/utils/logger'
 
 export const dynamic = 'force-dynamic'
@@ -24,14 +24,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Event rawText is required' }, { status: 400 })
     }
 
+    const loaded = await getDowFundamentalState()
     const evaluation = await evaluateDowEvent({
       rawText: body.rawText.trim(),
       sourceHint: body.sourceHint?.trim(),
       timestampHint: body.timestampHint?.trim(),
       autoCommitIfMaterial: body.autoCommitIfMaterial !== false,
+      telemetry: loaded.dowTelemetry,
     })
 
-    const updatedState = await getDowFundamentalState()
+    const updatedState = peekDowFundamentalState()
     const out = evaluation.structuredOutput
 
     // Return exact machine-readable JSON conforming to Item 38 & Unified Multi-Agent Protocol

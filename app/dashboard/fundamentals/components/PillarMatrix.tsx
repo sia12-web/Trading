@@ -46,7 +46,9 @@ export function PillarMatrix({ pillars, onSelectPillar }: PillarMatrixProps) {
           <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
             10 Fundamental Pillars Matrix
           </span>
-          <span className="text-xs text-gray-500">({filteredPillars.length} of 10 active)</span>
+          <span className="text-xs text-gray-500">
+            ({filteredPillars.length} of 10) Pillar barrels, rigs, and CFTC totals are not a live print.
+          </span>
         </div>
 
         {/* Bias Filter Pills */}
