@@ -322,21 +322,31 @@ function weekdayFormatter(timeZone: string): Intl.DateTimeFormat {
 }
 
 export function hourInTz(unix: number, timeZone: string): number {
+  if (!Number.isFinite(unix)) return 0
   const key = `${timeZone}|${Math.floor(unix / 60)}`
   const hit = hourValueCache.get(key)
   if (hit !== undefined) return hit
-  const parts = hourFormatter(timeZone).formatToParts(new Date(unix * 1000))
-  let hour = parseInt(parts.find((p) => p.type === 'hour')?.value ?? '0', 10)
-  const minute = parseInt(parts.find((p) => p.type === 'minute')?.value ?? '0', 10)
-  if (hour === 24) hour = 0
-  return rememberClock(hourValueCache, key, hour + minute / 60)
+  try {
+    const parts = hourFormatter(timeZone).formatToParts(new Date(unix * 1000))
+    let hour = parseInt(parts.find((p) => p.type === 'hour')?.value ?? '0', 10)
+    const minute = parseInt(parts.find((p) => p.type === 'minute')?.value ?? '0', 10)
+    if (hour === 24) hour = 0
+    return rememberClock(hourValueCache, key, hour + minute / 60)
+  } catch {
+    return 0
+  }
 }
 
 function ymdInTz(unix: number, timeZone: string): string {
+  if (!Number.isFinite(unix)) return ''
   const key = `${timeZone}|${Math.floor(unix / 60)}`
   const hit = ymdValueCache.get(key)
   if (hit !== undefined) return hit
-  return rememberClock(ymdValueCache, key, dayFormatter(timeZone).format(new Date(unix * 1000)))
+  try {
+    return rememberClock(ymdValueCache, key, dayFormatter(timeZone).format(new Date(unix * 1000)))
+  } catch {
+    return ''
+  }
 }
 
 export function sessionEdgeUnix(
@@ -364,15 +374,22 @@ export function timeToX(
 ): number | null {
   if (candleTimes.length === 0) return null
   const toCoord = (unix: number) => {
-    if (!asBusinessDay) {
-      return timeScale.timeToCoordinate(unix as UTCTimestamp)
+    if (!Number.isFinite(unix)) return null
+    try {
+      if (!asBusinessDay) {
+        return timeScale.timeToCoordinate(unix as UTCTimestamp)
+      }
+      const d = new Date(unix * 1000)
+      return timeScale.timeToCoordinate({
+        year: d.getUTCFullYear(),
+        month: d.getUTCMonth() + 1,
+        day: d.getUTCDate(),
+      })
+    } catch {
+      // Wrong time type (unix vs BusinessDay) throws inside lightweight-charts.
+      // A throw here used to replace the whole desk with the Next.js error page.
+      return null
     }
-    const d = new Date(unix * 1000)
-    return timeScale.timeToCoordinate({
-      year: d.getUTCFullYear(),
-      month: d.getUTCMonth() + 1,
-      day: d.getUTCDate(),
-    })
   }
 
   const first = candleTimes[0]!

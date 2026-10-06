@@ -8300,7 +8300,11 @@ export function TradingChart({
         paintExcessesAndRoundedRef.current?.()
         paintUserDrawingsRef.current?.()
         paintNewsMarkersRef.current?.()
-        refreshSessionHighlights()
+        try {
+          refreshSessionHighlightsRef.current?.()
+        } catch {
+          /* session paint must not take down the page */
+        }
       }
     })
     ro.observe(containerRef.current)
@@ -9280,6 +9284,7 @@ export function TradingChart({
   // ── Push candle data to chart ─────────────────────────────────────────────────
   // Layout so the new book is on the canvas before the browser paints the switch.
   useLayoutEffect(() => {
+    try {
     if (!candleRef.current || !chartRef.current || candles.length === 0) return
 
     const ordered = normalizeCandleTimes(candles, timeframe)
@@ -9336,9 +9341,9 @@ export function TradingChart({
       }
     }
 
-    // Session colors ride with the bars. VWAP, CVD, and the other studies wait
-    // one frame so a market or timeframe click is not blocked on indicator math.
-    refreshSessionHighlights()
+    // Session colors are painted on the next frame (see below). Doing it here, before
+    // the time scale has a range, throws inside lightweight-charts and the Next.js
+    // error boundary replaces the whole desk with "a client-side exception".
     const paintGen = ++chartPaintGenRef.current
     requestAnimationFrame(() => {
       if (paintGen !== chartPaintGenRef.current) return
@@ -9628,8 +9633,15 @@ export function TradingChart({
       })
     }
     requestAnimationFrame(() => {
-      refreshSessionHighlightsRef.current?.()
+      try {
+        refreshSessionHighlightsRef.current?.()
+      } catch (err) {
+        console.error('[chart] session paint failed', err)
+      }
     })
+    } catch (err) {
+      console.error('[chart] paint failed', err)
+    }
   }, [candles, instrument, paintLevelLines, avwap5mBenchmark, timeframe, show5mAvwapOnChart]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Repaint VWAP series data when avwap5mBenchmark changes or on instrument switch
@@ -9785,6 +9797,7 @@ export function TradingChart({
 
   // ── Session color boxes (cached spans + imperative paint = smooth pan)
   const refreshSessionHighlights = useCallback(() => {
+    try {
     const chart = chartRef.current
     const series = candleRef.current
     const list = candlesRef.current
@@ -9910,6 +9923,9 @@ export function TradingChart({
     paintExcessesAndRoundedRef.current()
     paintNewsMarkersRef.current()
     paintUserDrawingsRef.current()
+    } catch (err) {
+      console.error('[chart] session paint failed', err)
+    }
   }, [instrument, timeframe])
 
   useEffect(() => {
@@ -13746,10 +13762,18 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
             {/* Full-height Vertical Beam Highlight connecting price candle to CVD candle */}
             <div
-              style={{
-                left: `${syncCrosshair.x - Math.round(((chartRef.current?.timeScale() as any)?.options?.()?.barSpacing ?? 10) * 0.42)}px`,
-                width: `${Math.max(4, Math.round(((chartRef.current?.timeScale() as any)?.options?.()?.barSpacing ?? 10) * 0.84))}px`,
-              }}
+              style={(() => {
+                let spacing = 10
+                try {
+                  spacing = chartRef.current?.timeScale().options().barSpacing ?? 10
+                } catch {
+                  /* a disposed chart must not blank the desk */
+                }
+                return {
+                  left: `${syncCrosshair.x - Math.round(spacing * 0.42)}px`,
+                  width: `${Math.max(4, Math.round(spacing * 0.84))}px`,
+                }
+              })()}
               className="absolute top-0 bottom-0 bg-cyan-400/[0.12] transition-none pointer-events-none"
             />
             {/* Full-height Vertical Crosshair Hairline */}

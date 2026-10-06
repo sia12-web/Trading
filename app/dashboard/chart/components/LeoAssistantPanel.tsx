@@ -246,10 +246,17 @@ export function LeoAssistantPanel({
   const [attachedPoints, setAttachedPoints] = useState<LeoDataPoint[]>([])
   const [armedRules, setArmedRulesState] = useState<ArmedDeskRule[]>(() => {
     if (typeof window === 'undefined') return []
+    // Read only. loadRulesForMarket() writes localStorage and broadcasts, and a
+    // listener on TradingChart then setStates during this render — that warning
+    // can escalate into the Next.js "client-side exception" page.
     try {
-      return loadRulesForMarket(context.instrument as MarketInstrument) as any
-    } catch {}
-    return []
+      const raw = window.localStorage.getItem(`leo_armed_rules_${context.instrument}`)
+      if (!raw) return []
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? (parsed as ArmedDeskRule[]) : []
+    } catch {
+      return []
+    }
   })
 
   const setArmedRules = (updater: ArmedDeskRule[] | ((prev: ArmedDeskRule[]) => ArmedDeskRule[])) => {

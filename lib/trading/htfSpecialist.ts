@@ -1221,7 +1221,18 @@ export function computeAnchorProfile(
     const primaryExcess = excesses.length > 0 ? excesses[0] : null
     let anchorResetTriggered = false
     let anchorResetReason = 'Standard 5-Day Rolling Anchor'
-    let anchorBar = bars[Math.max(0, bars.length - 288)]!
+    const fallback = bars[Math.max(0, bars.length - 288)]
+    if (!fallback) {
+        return {
+            anchorResetTriggered: false,
+            anchorResetReason: 'No bars',
+            anchorTimestamp: 0,
+            anchorPoc: 0,
+            anchorVah: 0,
+            anchorVal: 0,
+        }
+    }
+    let anchorBar = fallback
 
     if (primaryExcess) {
         anchorResetTriggered = true
@@ -1231,7 +1242,7 @@ export function computeAnchorProfile(
     } else if (bracket.bracketMode === 'INITIATIVE_TREND' || bracket.bracketMode === 'AUCTION_FAILURE_REVERSAL') {
         anchorResetTriggered = true
         anchorResetReason = `Anchor Reset: ${bracket.bracketMode} Breakout`
-        anchorBar = bars[Math.max(0, bars.length - 72)]! // Reset to breakout bar ~6 hours ago
+        anchorBar = bars[Math.max(0, bars.length - 72)] ?? anchorBar // Reset to breakout bar ~6 hours ago
     }
 
     const anchorSlice = bars.filter((b) => b.time >= anchorBar.time)
