@@ -158,14 +158,21 @@ test('Candle Gap Filler & Aggregator - 30m aggregation produces complete zero-ga
   assert.equal(agg30m[0]!.volume, 750, '30m volume must be sum of all six 5m bar volumes')
 })
 
-test('Intraday candle book is Databento for every market before Yahoo', () => {
+test('Live intraday book is Databento and does not paint Yahoo bars', () => {
   const route = fs.readFileSync(
     path.join(process.cwd(), 'app/api/trading/candles/route.ts'),
     'utf8'
   )
   const databentoAt = route.indexOf('const databento = await getDatabentoCandles')
+  const unconfiguredAt = route.indexOf('Unconfigured desk only')
   const yahooAt = route.indexOf('const yahoo = await getYahooCandles(instrument, resolution')
   assert.ok(databentoAt > 0, 'intraday path loads Databento history')
-  assert.ok(yahooAt > databentoAt, 'Yahoo is only the fallback after Databento')
+  assert.ok(unconfiguredAt > databentoAt, 'Yahoo sits on the unconfigured desk only')
+  assert.ok(yahooAt > unconfiguredAt, 'Yahoo intraday fetch is inside the unconfigured branch')
+  assert.equal(
+    route.slice(databentoAt, unconfiguredAt).includes('getYahooCandles'),
+    false,
+    'the live Databento branch does not call Yahoo'
+  )
 })
 

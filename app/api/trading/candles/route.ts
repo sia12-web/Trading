@@ -1,7 +1,7 @@
 /**
  * GET /api/trading/candles?instrument=DOW|NASDAQ|NIKKEI|GOLD|CRUDE&timeframe=5m&days=5
  * Intraday bars are Databento CME (MYM / MNQ / NKD / MGC / CL) for every market.
- * Yahoo is only the fallback when that history is down. OANDA is the last resort.
+ * Yahoo is the daily chart, the dated replay, and the book only when CME is unconfigured.
  * Live: full day continuum (morning + afternoon + overnight). Trading stays morning-only.
  * Sim/dated: full cash session continuum (entries still morning-gated in the UI).
  */
@@ -26,10 +26,7 @@ import {
   isLiveDeskInstrument,
   sessionFor,
 } from '@/lib/trading/sessionGate'
-import {
-  dropImplausibleDeskBars,
-  liveQuoteDisagreesWithReference,
-} from '@/lib/chart/liveFormingBar'
+import { dropImplausibleDeskBars } from '@/lib/chart/liveFormingBar'
 import {
   AVWAP_CANDLE_FETCH_CALENDAR_DAYS,
   ONE_MINUTE_FETCH_CALENDAR_DAYS,
@@ -189,8 +186,8 @@ export async function GET(request: Request) {
             ? ONE_MINUTE_FETCH_CALENDAR_DAYS
             : Math.max(days, AVWAP_CANDLE_FETCH_CALENDAR_DAYS)
 
-        // 1. Databento CME history for every market (MYM, MNQ, NKD, MGC, CL).
-        //    Yahoo drops quiet gold minutes and leaves a hole the live tail never covers.
+        // Live intraday book is Databento only. A delayed Yahoo series drops
+        // quiet minutes and would open a hole the live tail never covers.
         if (isDatabentoConfigured()) {
           try {
             const databento = await getDatabentoCandles(instrument, resolution, fetchDays)
@@ -199,12 +196,10 @@ export async function GET(request: Request) {
               source = 'databento'
             }
           } catch (err) {
-            logger.warn(`[Candles] Databento fetch failed for ${instrument}, falling back to Yahoo`, err)
+            logger.warn(`[Candles] Databento fetch failed for ${instrument}`, err)
           }
-        }
-
-        // 2. Yahoo continuous only when Databento history did not return a book
-        if (!candles || candles.length === 0) {
+        } else {
+          // Unconfigured desk only. A live book never paints delayed Yahoo bars.
           try {
             const yahoo = await getYahooCandles(instrument, resolution, fetchDays)
             if (yahoo?.candles?.length) {
@@ -216,8 +211,8 @@ export async function GET(request: Request) {
           }
         }
 
-        // 3. Fallback to OANDA 24/7 continuous CFDs shifted by CME basis if CME direct feeds unavailable
-        if ((!candles || candles.length === 0) && isOandaConfigured()) {
+        // OANDA only when the CME feed is not configured and Yahoo returned nothing.
+        if (!isDatabentoConfigured() && (!candles || candles.length === 0) && isOandaConfigured()) {
           try {
             const oanda = await getOandaCandles(instrument, resolution, fetchDays)
             if (oanda?.candles?.length) {
@@ -303,22 +298,7 @@ export async function GET(request: Request) {
       // opening tip than the stream it is about to attach to.
       if (!endDate && isDatabentoConfigured()) {
         const dbLive = await resolveDatabentoLiveQuote(instrument)
-        const bookTip = candles[candles.length - 1]
-        const bookClose = bookTip?.close
-        if (
-          dbLive &&
-          dbLive.price > 0 &&
-          !(
-            bookClose &&
-            liveQuoteDisagreesWithReference(
-              dbLive.price,
-              dbLive.timestamp,
-              bookClose,
-              bookTip?.time ?? 0,
-              instrument
-            )
-          )
-        ) {
+        if (dbLive && dbLive.price > 0) {
           const previous_close = getDayPreviousClose(instrument) ?? dbLive.price
           const change = dbLive.price - previous_close
           quote = {
@@ -329,8 +309,8 @@ export async function GET(request: Request) {
           }
         }
       }
-      // Only reached without a live exchange print — skipping it also saves a round trip.
-      if (!quote) {
+      // Unconfigured desk only. The live book does not wait on Yahoo or OANDA.
+      if (!quote && !isDatabentoConfigured()) {
         try {
           // Live tip on CME scale (same path as /quote) so painted ±10 bands
           // and the streaming last share one book.
@@ -356,8 +336,8 @@ export async function GET(request: Request) {
         }
       }
 
-      // Direct CME futures fallback from exchange feed (Tradovate / CME MYM, MNQ, NKD, MGC, CL)
-      if (!quote && !endDate) {
+      // Direct CME futures fallback when the desk has no Databento key.
+      if (!quote && !endDate && !isDatabentoConfigured()) {
         try {
           const yq = await getYahooQuote(instrument)
           if (yq?.price && yq.price > 0) {

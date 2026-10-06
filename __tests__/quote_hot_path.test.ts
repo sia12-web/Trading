@@ -92,15 +92,14 @@ test('in-memory Databento quote is returned before any awaited Yahoo or sidecar 
     'await resolveDatabentoLiveQuote(instrument)'
   )
 
-  assert.match(hot, /peekCachedYahooQuote\(instrument\)/)
-  assert.match(hot, /liveQuoteDisagreesWithReference\(/)
-  assert.match(hot, /void getYahooQuote\(instrument\)/)
   assert.match(
     hot,
     /return databentoLiveResponse\(instrument, memoryQuote, headers\)/
   )
+  assert.doesNotMatch(hot, /peekCachedYahooQuote/)
+  assert.doesNotMatch(hot, /getYahooQuote/)
+  assert.doesNotMatch(hot, /liveQuoteDisagreesWithReference/)
   assert.doesNotMatch(hot, /await\s/)
-  assert.doesNotMatch(hot, /await\s+getYahooQuote/)
   assert.doesNotMatch(hot, /resolveDatabentoLiveQuote/)
   assert.doesNotMatch(hot, /warmCmeBasis/)
   assert.doesNotMatch(hot, /getOandaPrice/)
@@ -270,7 +269,7 @@ test('GET returns the in-memory CME print while Yahoo and the sidecar hang', asy
   }
 })
 
-test('a close cached Yahoo book that disagrees skips the in-memory print', async () => {
+test('a cached Yahoo print cannot replace or withhold the in-memory CME price', async () => {
   const previousKey = process.env.DATABENTO_API_KEY
   process.env.DATABENTO_API_KEY = 'db-hotpath-test'
   const original = globalThis.fetch
@@ -296,8 +295,10 @@ test('a close cached Yahoo book that disagrees skips the in-memory print', async
         new Request('http://localhost/api/trading/quote?instrument=CRUDE')
       )
       const data = await res.json()
-      assert.notEqual(data.feed, 'databento')
-      assert.notEqual(data.price, 80)
+      assert.equal(data.feed, 'databento')
+      assert.equal(data.price, 80)
+      assert.equal(data.bid, 79)
+      assert.equal(data.ask, 81)
     })
   } finally {
     clearMemoryQuote('CRUDE')
@@ -358,9 +359,9 @@ test('sidecar and basis fallbacks stay behind the in-memory return', () => {
     'await resolveDatabentoLiveQuote(instrument)',
     'return databentoLiveResponse(instrument, dbLive, headers)'
   )
-  assert.match(sidecar, /peekCachedYahooQuote\(instrument\)/)
-  assert.match(sidecar, /void getYahooQuote\(instrument\)/)
-  assert.doesNotMatch(sidecar, /await\s+getYahooQuote/)
+  assert.doesNotMatch(sidecar, /getYahooQuote/)
+  assert.doesNotMatch(sidecar, /peekCachedYahooQuote/)
+  assert.doesNotMatch(sidecar, /liveQuoteDisagreesWithReference/)
   assert.doesNotMatch(sidecar, /warmCmeBasis/)
 
   const basisHot = between(

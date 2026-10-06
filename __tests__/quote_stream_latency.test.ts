@@ -162,11 +162,19 @@ assert.equal(
   'Databento listener does not call Yahoo'
 )
 
-const earlyAt = src.indexOf('if (pending && basis != null)')
-const refreshCall = src.indexOf('void refreshBook()')
+const earlyAt = src.indexOf('if (!isDatabentoConfigured() && pending && basis != null)')
 const warmCall = src.indexOf('void warmCmeBasis(instrument).then')
 assert.ok(earlyAt >= 0, 'cached OANDA price and CME basis enqueue inside start()')
-assert.ok(refreshCall > earlyAt, 'cached frame is before getYahooQuote refresh')
+assert.equal(
+  src.includes('void refreshBook()'),
+  false,
+  'live stream does not poll Yahoo to gate ticks'
+)
+assert.equal(
+  src.includes('databentoAgreesWithBook'),
+  false,
+  'a delayed Yahoo last cannot drop a Databento tick'
+)
 assert.ok(warmCall > earlyAt, 'cached frame is before warmCmeBasis')
 assert.match(
   src.slice(earlyAt, earlyAt + 700),

@@ -5,7 +5,7 @@
  */
 
 import { NextResponse } from 'next/server'
-import { getDayPreviousClose, getYahooQuote, peekCachedYahooQuote } from '@/lib/yahoo/quote'
+import { getDayPreviousClose, getYahooQuote } from '@/lib/yahoo/quote'
 import { activeDeskSessionsAt } from '@/lib/chart/sessionVwap'
 import { getOandaPrice } from '@/lib/oanda/pricing'
 import {
@@ -26,7 +26,6 @@ import {
   resolveDatabentoLiveQuote,
   type DatabentoLiveQuote,
 } from '@/lib/databento/liveHub'
-import { liveQuoteDisagreesWithReference } from '@/lib/chart/liveFormingBar'
 import type { Instrument } from '@/types/price-feed'
 
 export const dynamic = 'force-dynamic'
@@ -130,54 +129,24 @@ export async function GET(request: Request) {
       )
     }
 
-    // 1. Fresh in-memory CME print. Return it before Yahoo or the sidecar.
+    // Live book is the Databento print. A delayed Yahoo last must not withhold
+    // it or replace it. Day-change % still reads the cached Yahoo previous close.
     if (isDatabentoConfigured()) {
       const memoryQuote = getLatestDatabentoLiveQuote(instrument)
       if (memoryQuote && memoryQuote.price > 0) {
-        const cachedBook = peekCachedYahooQuote(instrument)
-        const book = cachedBook?.price
-        const cachedBookDisagrees =
-          !!(
-            book &&
-            book > 0 &&
-            liveQuoteDisagreesWithReference(
-              memoryQuote.price,
-              memoryQuote.timestamp,
-              book,
-              cachedBook?.timestamp ?? 0,
-              instrument
-            )
-          )
-        void getYahooQuote(instrument)
-        if (!cachedBookDisagrees) {
-          return databentoLiveResponse(instrument, memoryQuote, headers)
-        }
-      } else {
-        const dbLive = await resolveDatabentoLiveQuote(instrument)
-        if (dbLive && dbLive.price > 0) {
-          const cachedBook = peekCachedYahooQuote(instrument)
-          const book = cachedBook?.price
-          const cachedBookDisagrees =
-            !!(
-              book &&
-              book > 0 &&
-              liveQuoteDisagreesWithReference(
-                dbLive.price,
-                dbLive.timestamp,
-                book,
-                cachedBook?.timestamp ?? 0,
-                instrument
-              )
-            )
-          void getYahooQuote(instrument)
-          if (!cachedBookDisagrees) {
-            return databentoLiveResponse(instrument, dbLive, headers)
-          }
-        }
+        return databentoLiveResponse(instrument, memoryQuote, headers)
       }
+      const dbLive = await resolveDatabentoLiveQuote(instrument)
+      if (dbLive && dbLive.price > 0) {
+        return databentoLiveResponse(instrument, dbLive, headers)
+      }
+      return NextResponse.json(
+        { error: 'No quote', instrument, price: null, feed: 'databento' },
+        { status: 200, headers }
+      )
     }
 
-    // 2. OANDA mid shifted by a CME basis already in memory.
+    // Desk without a CME key: OANDA mid shifted by a CME basis already in memory.
     try {
       const oanda = await getOandaPrice(instrument)
       const knownBasis = getCmeBasis(instrument) ?? getLastKnownCmeBasis(instrument)

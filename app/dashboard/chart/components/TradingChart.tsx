@@ -10155,7 +10155,7 @@ export function TradingChart({
         )
 
         lastCandleRef.current = nextBars[nextBars.length - 1]!
-        // REST owns closed bars: replace gap-fill flats when Yahoo catches up.
+        // REST owns closed bars: replace carry-forward flats when the CME tape catches up.
         if (structureChanged || closedChanged) {
           setCandles(nextBars)
         } else {
