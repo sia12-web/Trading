@@ -552,4 +552,90 @@ assert.equal(unexecutedSpyLimit.entry, 755)
 assert.equal(unexecutedSpyLimit.target, null, 'Unexecuted working limit must NOT borrow position TP')
 assert.equal(unexecutedSpyLimit.stop, null, 'Unexecuted working limit must NOT borrow position SL')
 
+const meta = parseQuestradeSymbol('META23Oct26P680.00')
+assert.equal(meta?.asset, 'option')
+assert.equal(meta?.underlying, 'META')
+assert.equal(meta?.multiplier, 100)
+assert.equal(meta?.label, 'META 23OCT26 $680 Put')
+
+const qqqSym = parseQuestradeSymbol('QQQ6Aug26C670.00')
+assert.equal(qqqSym?.asset, 'option')
+assert.equal(qqqSym?.label, 'QQQ 06AUG26 $670 Call')
+assert.equal(qqqSym?.multiplier, 100)
+
+const activityBook = pairQuestradeBook({
+  orders: [
+    {
+      id: 1,
+      symbol: 'META23Oct26P680.00',
+      side: 'BTO',
+      orderType: 'Market',
+      state: 'Executed',
+      totalQuantity: 1,
+      filledQuantity: 1,
+      avgExecPrice: 35.25,
+      updateTime: '2026-09-16T15:14:35.301000-04:00',
+    },
+  ],
+  positions: [
+    {
+      symbol: 'META23Oct26P680.00',
+      openQuantity: 1,
+      averageEntryPrice: 35.25,
+      currentPrice: 6.27,
+      openPnl: -2898,
+    },
+  ],
+  activities: [
+    {
+      type: 'Trades',
+      action: 'Buy',
+      symbol: 'QQQ6Aug26C670.00',
+      quantity: 1,
+      price: 23.73,
+      grossAmount: -2373,
+      commission: -0.99,
+      netAmount: -2373.99,
+      tradeDate: '2026-07-27T00:00:00.000000-04:00',
+    },
+    {
+      type: 'Trades',
+      action: 'Sell',
+      symbol: 'QQQ6Aug26C670.00',
+      quantity: -1,
+      price: 26.67,
+      grossAmount: 2667,
+      commission: -0.06,
+      netAmount: 2666.94,
+      tradeDate: '2026-07-31T00:00:00.000000-04:00',
+    },
+    {
+      type: 'Trades',
+      action: 'Buy',
+      symbol: 'META23Oct26P680.00',
+      quantity: 1,
+      price: 35.25,
+      netAmount: -3525,
+      tradeDate: '2026-09-16T00:00:00.000000-04:00',
+    },
+    {
+      type: 'Dividends',
+      action: 'DIV',
+      symbol: 'GOOG',
+      netAmount: 1.2,
+      tradeDate: '2026-09-01T00:00:00.000000-04:00',
+    },
+  ],
+})
+const metaPos = activityBook.openPositions[0]
+assert.ok(metaPos)
+assert.equal(metaPos.asset, 'option')
+assert.equal(metaPos.livePnl, -2898)
+assert.equal(metaPos.multiplier, 100)
+assert.equal(activityBook.history.length, 1)
+assert.equal(activityBook.history[0]!.symbol, 'QQQ6AUG26C670.00')
+assert.equal(activityBook.history[0]!.pnl, 292.95)
+assert.equal(activityBook.history[0]!.multiplier, 100)
+assert.equal(activityBook.history[0]!.quantity, 1)
+
 console.log('questrade_book.test.ts: ok')

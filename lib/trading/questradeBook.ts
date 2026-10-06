@@ -15,6 +15,7 @@ import {
   pairQuestradeBook,
   type QuestradeBookRow,
   type QuestradeProtectiveLevel,
+  type QuestradeRawActivity,
   type QuestradeRawOrder,
 } from '@/lib/trading/questradeOrders'
 import {
@@ -41,6 +42,66 @@ function ordersStartIso(days = 180): string {
   const d = new Date()
   d.setUTCDate(d.getUTCDate() - days)
   return d.toISOString()
+}
+
+/** Questrade rejects activity ranges longer than about 30 days (error 1003). */
+function activityWindows(days = 196, spanDays = 27): Array<{ startTime: string; endTime: string }> {
+  const span = spanDays * 24 * 60 * 60 * 1000
+  const windows: Array<{ startTime: string; endTime: string }> = []
+  let end = Date.now()
+  const stop = end - days * 24 * 60 * 60 * 1000
+  while (end > stop) {
+    const start = Math.max(stop, end - span)
+    windows.push({
+      startTime: new Date(start).toISOString(),
+      endTime: new Date(end).toISOString(),
+    })
+    end = start - 1
+  }
+  return windows
+}
+
+async function loadQuestradeActivities(args: {
+  apiServer: string
+  accessToken: string
+  account: string
+}): Promise<QuestradeRawActivity[] | null> {
+  const windows = activityWindows()
+  const chunks = await Promise.all(
+    windows.map(async (w) => {
+      try {
+        return await questradeGet<{ activities?: QuestradeRawActivity[] }>({
+          apiServer: args.apiServer,
+          accessToken: args.accessToken,
+          endpoint: `v1/accounts/${args.account}/activities`,
+          params: w,
+        })
+      } catch {
+        return null
+      }
+    })
+  )
+  if (chunks.some((c) => c == null)) return null
+  const seen = new Set<string>()
+  const activities: QuestradeRawActivity[] = []
+  for (const chunk of chunks) {
+    for (const row of chunk?.activities || []) {
+      const key = [
+        row.tradeDate,
+        row.transactionDate,
+        row.type,
+        row.action,
+        row.symbol,
+        row.quantity,
+        row.price,
+        row.netAmount,
+      ].join('|')
+      if (seen.has(key)) continue
+      seen.add(key)
+      activities.push(row)
+    }
+  }
+  return activities
 }
 
 async function recordEquityPoint(
@@ -75,7 +136,7 @@ export async function loadQuestradeBook(
 
   const startTime = ordersStartIso()
   const deskId = process.env.DESK_USER_ID?.trim() || DEV_USER_ID
-  const [account, ordersRes, positionsRes, snap, attendance, dow, nasdaq] =
+  const [account, ordersRes, positionsRes, activities, snap, attendance, dow, nasdaq] =
     await Promise.all([
       loadQuestradeAccountSnapshot(supabase),
       questradeGet<{ orders?: QuestradeRawOrder[] }>({
@@ -98,6 +159,11 @@ export async function loadQuestradeBook(
         accessToken: creds.accessToken,
         endpoint: `v1/accounts/${creds.account}/positions`,
       }),
+      loadQuestradeActivities({
+        apiServer: creds.apiServer,
+        accessToken: creds.accessToken,
+        account: creds.account,
+      }),
       loadTradeifySessionSnapshot(supabase, deskId, now),
       getTodayAttendance(supabase, deskId, 'NY', now),
       getOandaPrice('DOW').catch(() => null),
@@ -111,6 +177,7 @@ export async function loadQuestradeBook(
   const book = pairQuestradeBook({
     orders: ordersRes.orders || [],
     positions: positionsRes.positions || [],
+    ...(activities ? { activities } : {}),
   })
   const place = resolveTradeifyPlace(snap)
   const advice = buildTeamCopyAdvice({

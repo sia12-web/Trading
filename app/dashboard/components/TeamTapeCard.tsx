@@ -12,17 +12,12 @@ import Link from 'next/link'
 import {
   teamTapeTarget1_5R,
   type TeamTapeSignal,
-  type TeamTapeSide,
-  type TeamTapeStatus,
 } from '@/lib/trading/teamTape'
 import type { QuestradeBookPayload } from '@/lib/trading/questradeBook'
 import type { QuestradeBookRow } from '@/lib/trading/questradeOrders'
 import { getSymbolRealName } from '@/lib/trading/symbolNames'
 import {
   calculatePerformanceMetrics,
-  DEFAULT_TEAM_POSITIONS,
-  DEFAULT_TEAM_TRADES,
-  DEFAULT_TEAM_WORKING_LIMITS,
   DURATION_BUCKETS,
   formatCmeExchangePrice,
   getExchangeTag,
@@ -64,11 +59,11 @@ function signalToBookRow(s: TeamTapeSignal, kind: 'open_position' | 'entry_limit
   return {
     sourceId: s.sourceId,
     symbol: s.symbol,
-    label: s.symbol,
+    label: s.realName && /\$/.test(s.realName) ? s.realName : s.symbol,
     companyName: s.companyName || s.symbol,
     realName: s.realName || s.companyName || s.symbol,
     underlying: s.symbol,
-    asset: 'stock',
+    asset: s.multiplier === 100 ? 'option' : 'stock',
     side: s.side === 'SELL' ? 'SELL' : 'BUY',
     quantity: s.quantity,
     entry: s.entry,
@@ -299,7 +294,9 @@ function PastOrderCard({ signal }: { signal: TeamTapeSignal }) {
           <span className={`text-xs font-extrabold px-1.5 py-0.5 rounded ${isBuy ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/50' : 'bg-red-950 text-red-300 border border-red-700/50'}`}>
             {signal.side}
           </span>
-          <span className="text-sm font-bold text-white">{signal.symbol}</span>
+          <span className="text-sm font-bold text-white">
+            {signal.realName && /\$/.test(signal.realName) ? signal.realName : signal.symbol}
+          </span>
           <span className="text-[10px] font-mono text-amber-300 bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-800/40">
             {exTag}
           </span>
@@ -355,7 +352,13 @@ function PastOrderCard({ signal }: { signal: TeamTapeSignal }) {
 }
 
 /** 📊 Performance Analytics Panel — closed trades with realized P&L only */
-function PerformanceAnalyticsPanel({ signals }: { signals?: TeamTapeSignal[] }) {
+function PerformanceAnalyticsPanel({
+  signals,
+  openRows,
+}: {
+  signals?: TeamTapeSignal[]
+  openRows?: QuestradeBookRow[]
+}) {
   const tradeRecords = useMemo(() => {
     if (signals && signals.length > 0) {
       return signals
@@ -393,6 +396,10 @@ function PerformanceAnalyticsPanel({ signals }: { signals?: TeamTapeSignal[] }) 
   }, [signals])
 
   const metrics = useMemo(() => calculatePerformanceMetrics(tradeRecords), [tradeRecords])
+  const openPnl = (openRows || []).reduce((sum, row) => {
+    return sum + (typeof row.livePnl === 'number' && Number.isFinite(row.livePnl) ? row.livePnl : 0)
+  }, 0)
+  const openCount = (openRows || []).filter((row) => typeof row.livePnl === 'number').length
 
   return (
     <div className="space-y-4">
@@ -418,11 +425,19 @@ function PerformanceAnalyticsPanel({ signals }: { signals?: TeamTapeSignal[] }) 
       {/* Primary Key Performance Indicators Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
         <div className="rounded-lg border border-white/10 bg-black/40 p-3">
-          <div className="text-[10px] uppercase font-semibold text-gray-400">Total P&amp;L</div>
+          <div className="text-[10px] uppercase font-semibold text-gray-400">Realized P&amp;L (USD)</div>
           <div className={`mt-1 text-lg font-bold price-mono ${metrics.totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
             {metrics.totalPnl >= 0 ? '+' : ''}${metrics.totalPnl.toFixed(2)}
           </div>
-          <div className="text-[10px] text-gray-500 mt-0.5">{metrics.totalTrades} total trades</div>
+          <div className="text-[10px] text-gray-500 mt-0.5">{metrics.totalTrades} closed trades</div>
+        </div>
+
+        <div className="rounded-lg border border-white/10 bg-black/40 p-3">
+          <div className="text-[10px] uppercase font-semibold text-gray-400">Open P&amp;L (USD)</div>
+          <div className={`mt-1 text-lg font-bold price-mono ${openPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+            {openPnl >= 0 ? '+' : ''}${openPnl.toFixed(2)}
+          </div>
+          <div className="text-[10px] text-gray-500 mt-0.5">{openCount} open position{openCount === 1 ? '' : 's'}</div>
         </div>
 
         <div className="rounded-lg border border-white/10 bg-black/40 p-3">
@@ -468,7 +483,7 @@ function PerformanceAnalyticsPanel({ signals }: { signals?: TeamTapeSignal[] }) 
         </div>
         <div>
           <span className="text-[10px] uppercase text-gray-500 block">Avg Duration</span>
-          <span className="text-gray-200">{metrics.avgDurationSec}s</span>
+          <span className="text-gray-200">{metrics.timedTrades > 0 ? `${metrics.avgDurationSec}s` : '—'}</span>
         </div>
         <div>
           <span className="text-[10px] uppercase text-gray-500 block">Trade Direction (Long)</span>
@@ -504,7 +519,7 @@ function PerformanceAnalyticsPanel({ signals }: { signals?: TeamTapeSignal[] }) 
       <div className="rounded-lg border border-white/10 bg-black/40 p-3 space-y-2">
         <div className="flex items-center justify-between">
           <h4 className="text-xs font-bold uppercase tracking-wider text-gray-300">
-            📅 Monthly P/L Calendar (Oct 2026)
+            📅 P/L by week ({metrics.calendarLabel})
           </h4>
           <span className={`text-xs font-bold ${metrics.totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
             Monthly P/L: {metrics.totalPnl >= 0 ? '+' : ''}${metrics.totalPnl.toFixed(2)}
@@ -565,54 +580,34 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
     return () => window.clearInterval(id)
   }, [load])
 
-  const brokerConnected = Boolean(book?.ok)
-
   const ongoingPositions = useMemo(() => {
     if (book?.ok) {
       return book.openPositions || []
     }
-    if (data?.open && data.open.length > 0) {
+    if (data?.open) {
       return data.open
         .filter((s) => s.status === 'filled')
         .map((s) => signalToBookRow(s, 'open_position'))
     }
-    return DEFAULT_TEAM_POSITIONS
+    return []
   }, [book, data?.open])
 
   const workingLimits = useMemo(() => {
     if (book?.ok) {
       return book.workingLimits || []
     }
-    if (data?.open && data.open.some((s) => s.status === 'working')) {
+    if (data?.open) {
       return data.open
         .filter((s) => s.status === 'working')
         .map((s) => signalToBookRow(s, 'entry_limit'))
     }
-    return DEFAULT_TEAM_WORKING_LIMITS
+    return []
   }, [book, data?.open])
 
   const historySignals: TeamTapeSignal[] = useMemo(() => {
-    if (data?.history) {
-      return data.history.filter((s) => s.status !== 'cancelled')
-    }
-    if (brokerConnected) return []
-    return DEFAULT_TEAM_TRADES.map((t) => ({
-      sourceId: t.id,
-      symbol: t.symbol,
-      companyName: t.symbol,
-      side: (t.direction === 'SELL' || t.direction === 'SHORT' ? 'SELL' : 'BUY') as TeamTapeSide,
-      quantity: t.quantity,
-      entry: t.entry,
-      stop: t.stop ?? null,
-      target: t.target ?? null,
-      status: 'closed' as TeamTapeStatus,
-      filledAt: t.entryTime,
-      exitAt: t.exitTime || null,
-      multiplier: getSymbolMultiplier(t.symbol),
-      pnl: t.pnl,
-      exit: t.exit ?? null,
-    }))
-  }, [data?.history, brokerConnected])
+    if (!data?.history) return []
+    return data.history.filter((s) => s.status !== 'cancelled')
+  }, [data?.history])
 
   const totalOngoing = ongoingPositions.length
   const totalLimits = workingLimits.length
@@ -626,7 +621,7 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
             <span>📡</span> Team Tape Fills &amp; Orders
           </h2>
           <p className="mt-0.5 text-xs text-gray-400">
-            Real CME futures prices &amp; desk orders — exact entry, SL, TP, and Win/Loss outcomes.
+            Questrade stocks and options — entry, mark, and realized P&amp;L from the team account.
           </p>
         </div>
         {compact ? (
@@ -676,7 +671,9 @@ export function TeamTapeCard({ compact = false }: { compact?: boolean }) {
       {/* Content Section */}
       <div className="mt-4 space-y-3">
         {/* 📊 Performance Analytics Panel */}
-        {activeTab === 'performance' && <PerformanceAnalyticsPanel signals={historySignals} />}
+        {activeTab === 'performance' && (
+          <PerformanceAnalyticsPanel signals={historySignals} openRows={ongoingPositions} />
+        )}
 
         {/* 🟢 Ongoing Positions */}
         {(activeTab === 'all' || activeTab === 'open') && (

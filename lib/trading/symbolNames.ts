@@ -230,8 +230,11 @@ export const KNOWN_SYMBOLS: Record<string, { name: string; shortName?: string; s
   NKD: { name: 'Nikkei 225 (USD) Futures', shortName: 'Nikkei USD', sector: 'Index Futures', assetType: 'future' },
 }
 
-const OPTION_FORMAT_A = /^([A-Z0-9.\-]+)\s+(\d{2}[A-Za-z]{3}\d{2})([CPcp])(\d+(?:\.\d+)?)$/
+const OPTION_FORMAT_A = /^([A-Za-z][A-Za-z0-9.\-]*?)\s*(\d{1,2})([A-Za-z]{3})(\d{2})([CPcp])(\d+(?:\.\d+)?)$/
 const OPTION_OCC = /^([A-Z]{1,6})\s*(\d{2})(\d{2})(\d{2})([CPcp])(\d{8})$/
+const OPTION_MONTHS = new Set([
+  'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC',
+])
 
 /**
  * Format an option ticker into a human readable company + strike + expiry string.
@@ -248,18 +251,18 @@ export function formatOptionRealName(raw: string): {
   const s = String(raw || '').trim().replace(/\s+/g, ' ')
   if (!s) return null
 
-  // Check Format A: "AAPL 21Aug26C150.00" or "NVDA 22Aug26P180.00"
+  // Questrade: "NVDA  22Aug26C180.00", "META23Oct26P680.00", "QQQ6Aug26C670.00"
   const m1 = s.match(OPTION_FORMAT_A)
-  if (m1 && m1[1] && m1[2] && m1[3] && m1[4]) {
+  if (m1 && m1[1] && m1[2] && m1[3] && m1[4] && m1[5] && m1[6] && OPTION_MONTHS.has(m1[3].toUpperCase())) {
     const underlying = m1[1].toUpperCase()
-    const expiry = m1[2]
-    const right = m1[3].toUpperCase() === 'P' ? 'Put' : 'Call'
-    const strikeNum = Number(m1[4])
+    const expiry = `${m1[2].padStart(2, '0')}${m1[3]}${m1[4]}`
+    const right = m1[5].toUpperCase() === 'P' ? 'Put' : 'Call'
+    const strikeNum = Number(m1[6])
     const strike = Number.isFinite(strikeNum)
       ? strikeNum % 1 === 0
         ? String(strikeNum)
         : strikeNum.toFixed(2)
-      : m1[4]
+      : m1[6]
     const company = getSymbolRealName(underlying)
     const label = `${underlying} ${expiry} $${strike} ${right}`
     const fullName = `${company.name} · ${expiry} $${strike} ${right}`
