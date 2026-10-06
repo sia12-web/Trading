@@ -1,6 +1,7 @@
 /**
  * GET /api/trading/candles?instrument=DOW|NASDAQ|NIKKEI|GOLD|CRUDE&timeframe=5m&days=5
- * CME futures first (MYM / MNQ / NKD / MGC / CL) so IB matches Tradovate; OANDA CFD fallback.
+ * Intraday bars are Databento CME (MYM / MNQ / NKD / MGC / CL) for every market.
+ * Yahoo is only the fallback when that history is down. OANDA is the last resort.
  * Live: full day continuum (morning + afternoon + overnight). Trading stays morning-only.
  * Sim/dated: full cash session continuum (entries still morning-gated in the UI).
  */
@@ -188,19 +189,9 @@ export async function GET(request: Request) {
             ? ONE_MINUTE_FETCH_CALENDAR_DAYS
             : Math.max(days, AVWAP_CANDLE_FETCH_CALENDAR_DAYS)
 
-        // 1. Direct CME Globex futures candles (MYM=F, MNQ=F, NKD=F, MGC=F, CL=F) matching Tradovate & TradingView
-        try {
-          const yahoo = await getYahooCandles(instrument, resolution, fetchDays)
-          if (yahoo?.candles?.length) {
-            candles = yahoo.candles
-            source = 'yahoo'
-          }
-        } catch (err) {
-          logger.warn(`[Candles] Yahoo CME fetch failed for ${instrument}, falling back to Databento/OANDA`, err)
-        }
-
-        // 2. Fallback to CME Globex MDP 3.0 candles via Databento archive when Yahoo unavailable
-        if ((!candles || candles.length === 0) && isDatabentoConfigured()) {
+        // 1. Databento CME history for every market (MYM, MNQ, NKD, MGC, CL).
+        //    Yahoo drops quiet gold minutes and leaves a hole the live tail never covers.
+        if (isDatabentoConfigured()) {
           try {
             const databento = await getDatabentoCandles(instrument, resolution, fetchDays)
             if (databento?.candles?.length) {
@@ -208,7 +199,20 @@ export async function GET(request: Request) {
               source = 'databento'
             }
           } catch (err) {
-            logger.warn(`[Candles] Databento fetch failed for ${instrument}, falling back to OANDA`, err)
+            logger.warn(`[Candles] Databento fetch failed for ${instrument}, falling back to Yahoo`, err)
+          }
+        }
+
+        // 2. Yahoo continuous only when Databento history did not return a book
+        if (!candles || candles.length === 0) {
+          try {
+            const yahoo = await getYahooCandles(instrument, resolution, fetchDays)
+            if (yahoo?.candles?.length) {
+              candles = yahoo.candles
+              source = 'yahoo'
+            }
+          } catch (err) {
+            logger.warn(`[Candles] Yahoo CME fetch failed for ${instrument}, falling back to OANDA`, err)
           }
         }
 
@@ -233,11 +237,9 @@ export async function GET(request: Request) {
           candles = clipAfternoonBars(candles, instrument)
         }
 
-        // 4. Overlay the tail with real CME Globex 1m prints. Yahoo/OANDA lag the
-        //    tape by several minutes. The sidecar is empty after a restart, so we
-        //    splice Databento Historical 1m into that window and let live win on
-        //    overlap. Skipping overlay because live *now* differs from delayed
-        //    Yahoo is what painted holes and late bars.
+        // 4. The historical dataset ends a few minutes behind the live sidecar.
+        //    Splice Databento live 1m (and a short historical tail after a
+        //    restart) onto the book. Live wins on the same timestamp.
         if (candles?.length && !isDaily && isDatabentoConfigured()) {
           try {
             const stepSec = resolutionSeconds(resolution, timeframe)

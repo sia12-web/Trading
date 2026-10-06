@@ -5,6 +5,8 @@
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
 import {
   fillCandleGaps,
   isCmeMarketHalt,
@@ -154,5 +156,16 @@ test('Candle Gap Filler & Aggregator - 30m aggregation produces complete zero-ga
   assert.equal(agg30m[0]!.low, 21495, '30m low must be the lowest low across all six 5m bars')
   assert.equal(agg30m[0]!.close, 21535, '30m close must match the last 5m bar close')
   assert.equal(agg30m[0]!.volume, 750, '30m volume must be sum of all six 5m bar volumes')
+})
+
+test('Intraday candle book is Databento for every market before Yahoo', () => {
+  const route = fs.readFileSync(
+    path.join(process.cwd(), 'app/api/trading/candles/route.ts'),
+    'utf8'
+  )
+  const databentoAt = route.indexOf('const databento = await getDatabentoCandles')
+  const yahooAt = route.indexOf('const yahoo = await getYahooCandles(instrument, resolution')
+  assert.ok(databentoAt > 0, 'intraday path loads Databento history')
+  assert.ok(yahooAt > databentoAt, 'Yahoo is only the fallback after Databento')
 })
 

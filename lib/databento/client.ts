@@ -538,8 +538,9 @@ async function fetchDatabentoOhlcvJsonl(
 }
 
 /**
- * Last ~45 minutes of official CME 1m bars. Used to cover the Yahoo lag window
- * when the live sidecar has just restarted and has no completed_bars yet.
+ * Official CME 1m bars from the last vendor bar through now.
+ * At least 45 minutes, and as far back as the book is behind, up to 6 hours.
+ * A sidecar restart must not leave that stretch to a feed that omits quiet minutes.
  */
 export async function getDatabentoRecent1m(
   instrument: Instrument,
@@ -549,8 +550,9 @@ export async function getDatabentoRecent1m(
   if (!apiKey) return null
   const activeSym = getDatabentoActiveSymbol(instrument)
   const nowSec = Math.floor(Date.now() / 1000)
-  const floor = nowSec - DATABENTO_RECENT_LOOKBACK_SEC
-  const startSec = Math.max(floor, (sinceSec || floor) - 60)
+  const behind = sinceSec > 0 ? Math.max(0, nowSec - sinceSec) : 0
+  const lookback = Math.min(6 * 3600, Math.max(DATABENTO_RECENT_LOOKBACK_SEC, behind + 120))
+  const startSec = nowSec - lookback
   const cacheKey = `${instrument}:${activeSym.symbol}:${Math.floor(startSec / 60)}`
   const cached = recent1mCache.get(cacheKey)
   if (cached && Date.now() - cached.at < RECENT_1M_TTL_MS) {
