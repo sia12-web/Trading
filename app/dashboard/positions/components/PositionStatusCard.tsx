@@ -380,8 +380,7 @@ export function PositionStatusCard({
       <div className="rounded-xl border border-dashed border-[#30363d] bg-[#161b22] px-6 py-14 text-center">
         <p className="text-lg font-semibold text-white">No open position</p>
         <p className="mt-2 text-sm text-gray-500 max-w-md mx-auto leading-relaxed">
-          Clock in and place a level during the entry window — filled books and working limits both
-          show on this page and on Live Trading.
+          This desk does not place positions or working limits.
         </p>
         <Link
           href="/dashboard/chart"

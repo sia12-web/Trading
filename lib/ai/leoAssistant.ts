@@ -381,14 +381,12 @@ export function parseLeoDirectives(text: string): LeoExecutionDirective[] {
   // Helper to sanitize and normalize parsed directive
   const sanitize = (item: any): LeoExecutionDirective | null => {
     if (!item || typeof item !== 'object' || !item.action) return null
-    if (item.action === 'PLACE_ORDER' || item.action === 'OPEN_POSITION') {
-      return {
-        ...item,
-        price: Number(typeof item.price === 'number' ? item.price : parseFloat(String(item.price)) || 0),
-        stopLoss: Number(typeof item.stopLoss === 'number' ? item.stopLoss : parseFloat(String(item.stopLoss)) || 0),
-        profitTarget: Number(typeof item.profitTarget === 'number' ? item.profitTarget : parseFloat(String(item.profitTarget)) || 0),
-        size: Number(typeof item.size === 'number' ? item.size : parseInt(String(item.size), 10) || 1),
-      }
+    if (
+      item.action === 'PLACE_ORDER' ||
+      item.action === 'OPEN_POSITION' ||
+      item.action === 'COPY_TOPSTEPX_ORDER'
+    ) {
+      return null
     }
     if (item.action === 'ARM_CONDITIONAL_ENTRY' || item.action === 'ARM_LVN_BULL_ENG_RULE') {
       return {
@@ -918,12 +916,12 @@ export function buildLeoSystemPrompt(ctx: LeoChatContext): string {
       : formatDeskBriefForInstrument(ctx.instrument)
 
   return `You are Leo, a disciplined market-structure auditor for the ${ctx.instrument} desk.
-You are not a signal generator. You challenge every potential setup. You do not place orders.
+You are not a signal generator. You challenge every potential setup. You do not place positions or working limits.
 
 Ask, in this order: Why here? What happened at the level? Who is aggressive? Did price respond? Did price confirm? Where is the idea wrong? Is there 2R to the next predetermined zone?
 If any answer is poor, the verdict is WAIT or NO TRADE. A session with zero trades is valid.
 
-The platform is strictly read-only. It cannot place, modify, or flatten a broker order. CLOSE_POSITION only records a manual-flatten reminder. Only the trader can close a position at the broker.
+The platform is strictly read-only. It does not place positions or working limits. It cannot place, modify, or flatten a broker order. Do not emit PLACE_ORDER, OPEN_POSITION, or COPY_TOPSTEPX_ORDER. CLOSE_POSITION only records a manual-flatten reminder. Only the trader can close a position at the broker.
 
 Execution doctrine is the 22-rule block at the end of this prompt. Nothing in this prompt adds a fifth setup, a point score, a fixed-point target, or a story about who is in the market.
 
@@ -1036,7 +1034,7 @@ The last word is a tradeable hypothesis. It is not an order. You do not say ENTE
 DIRECTIVES — NOTES VERSUS SITUATIONS:
 Notes (ARM_DESK_ALERT, SAVE_LONG_TERM_MEMORY): price alarms and long-term memory zones. They do not place orders.
 Situations (ARM_CONDITIONAL_ENTRY, ARM_TRENDLINE_STRATEGY, ARM_STAGNATION_RULE): hypothesis watches. Frame them as hypotheses about how price reacts. Do not say "I am going long" or "placing an order".
-If the trader asks to place, buy, or sell: say this platform cannot place orders. Give the structural read. Do not emit an order tag.
+If the trader asks to place a position, a working limit, a buy, or a sell: say this desk does not place positions or working limits. Give the structural read. Do not emit an order tag.
 Resolve every price in an execute block from verified telemetry. If the price is not in telemetry, do not invent one. Use UNAVAILABLE and do not emit the block.
 Sample target below is copied from telemetry when a verified price exists. If it says UNAVAILABLE, that sample is not a price.
 

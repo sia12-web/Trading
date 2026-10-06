@@ -132,14 +132,14 @@ export function LunchCloseCountdown({
     phase === 'morning'
       ? hasOpenPosition
         ? 'At lunch you will be asked to confirm close — not auto-flattened'
-        : 'No open book — place limits on Live Trading'
+        : 'No open book. This desk does not place positions or working limits.'
       : phase === 'afternoon'
         ? hasOpenPosition
           ? 'Open book auto-liquidates at cash close'
           : 'Afternoon — manage only, no new entries'
         : hasOpenPosition
           ? 'Open book on this desk'
-          : 'No open book — place limits on Live Trading'
+          : 'No open book. This desk does not place positions or working limits.'
 
   return (
     <div className={`rounded-xl border px-4 py-3 ${border}`}>

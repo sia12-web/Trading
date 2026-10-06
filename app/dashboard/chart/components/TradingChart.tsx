@@ -143,7 +143,6 @@ import {
   deskCallBadgeText,
   deskCallHoverText,
   resolveDeskCallAsOfUnix,
-  assertDeskTicketEntry,
   ticketAllowedEdges,
   type DeskCall,
 } from '@/lib/trading/deskCall'
@@ -193,7 +192,6 @@ import { isUsMarketHoliday } from '@/lib/chart/sessionVwap'
 import {
   loadRulesForMarket,
   saveRulesForMarket,
-  MARKET_DEFAULT_PARAMS,
   listenToRuleUpdates,
   isEntrySituationRule,
   type ArmedRule,
@@ -295,16 +293,13 @@ import {
   activeRangeForPlaybook,
   entryEligibleOverlayRanges,
   studyEntrySnapRanges,
-  strategyEntryRisk,
   type StrategyRangeEdges,
   type StrategyRiskMagnets,
 } from '@/lib/trading/strategyRiskGeometry'
 const snapEntryToNearestOpenBandCenter = (..._args: any[]): any => null
 const clampPriceToRangeEdgeEnvelope = (px: number, ..._args: any[]) => px
 const filterLevelsInRangeEdgeBand = (levels: any[], ..._args: any[]) => levels
-const attributePlaybookBandEntry = (..._args: any[]): any => null
 const NO_IN_BAND_LEVELS_MESSAGE = ''
-const RANGE_EDGE_OFF_BAND_MESSAGE = 'Entry restricted'
 
 const computeRangeEdgeTails = (..._args: any[]): any[] => []
 const latestQualityTail = (..._args: any[]): any => null
@@ -1281,7 +1276,7 @@ export function TradingChart({
   initialInstrument,
   lockedInstrument,
   allowedInstruments = null,
-  onLevelSelect,
+  onLevelSelect: _onLevelSelect,
   canPlaceOrder = false,
   rangeStrategy = null,
   attemptsUsed = 0,
@@ -7050,8 +7045,8 @@ export function TradingChart({
   /** Open Limit risk box with entry locked to a painted ±10 band center. */
   const openRiskBox = useCallback(
     (
-      preferredPrice?: number,
-      opts?: {
+      _preferredPrice?: number,
+      _opts?: {
         direction?: 'LONG' | 'SHORT'
         /**
          * Click-on-band: keep that painted edge center (H / L).
@@ -7065,181 +7060,14 @@ export function TradingChart({
         }
       }
     ) => {
-      const { strategyRange, snapRanges, ladder, call, strategyMagnets } = getStrategyRiskBundle()
-      const wait = assertDeskTicketEntry({
-        useCall: useCallRef.current,
-        call,
+      onDeskAlert?.({
+        kind: 'entry_band_deny',
+        title: 'No orders',
+        body: 'The desk does not place positions or working limits.',
+        telegram: '',
+        instrument,
       })
-      if (!wait.ok) {
-        onDeskAlert?.({
-          kind: 'entry_band_deny',
-          title: 'CALL WAIT',
-          body: wait.message,
-          telegram: '',
-          instrument,
-        })
-        return
-      }
-      const liveOk = (range: { label: string; high: number; low: number }) => {
-        if (range.label === 'OR30') {
-          return (
-            !!strategyRange &&
-            strategyRange.label === range.label &&
-            strategyRange.high === range.high &&
-            strategyRange.low === range.low
-          )
-        }
-        return assertBucketEntryEligible({
-          instrument,
-          market: deskMarketFor(instrument),
-          timeSec: deskClockSeconds(instrument),
-          ladder,
-          rangeLabel: range.label,
-        }).ok
-      }
-
-      if (opts?.lockHit) {
-        const { center, edge, range } = opts.lockHit
-        if (!liveOk(range)) {
-          const bucketCheck = assertBucketEntryEligible({
-            instrument,
-            market: deskMarketFor(instrument),
-            timeSec: deskClockSeconds(instrument),
-            ladder,
-            rangeLabel: range.label,
-          })
-          onDeskAlert?.({
-            kind: 'entry_band_deny',
-            title: `${range.label || 'range'} entry closed`,
-            body:
-              range.label === 'OR15' || range.label === 'OR30'
-                ? 'Open-range / OR30 ±10 window is closed — enter on the live next-range playbook when unlocked.'
-                : bucketCheck.ok
-                  ? RANGE_EDGE_OFF_BAND_MESSAGE
-                  : bucketCheck.message,
-            telegram: '',
-            instrument,
-          })
-          return
-        }
-        const gated = assertDeskTicketEntry({
-          useCall: useCallRef.current,
-          call,
-          edge,
-        })
-        if (!gated.ok) {
-          onDeskAlert?.({
-            kind: 'entry_band_deny',
-            title: 'CALL blocks this edge',
-            body: gated.message,
-            telegram: '',
-            instrument,
-          })
-          return
-        }
-        const entry = snapDeskPrice(instrument, center)
-        const dir = gated.side
-        const strat = strategyEntryRisk({
-          entry,
-          direction: dir,
-          activeRange: range,
-          magnets: strategyMagnets,
-        })
-        setRiskBox({
-          direction: dir,
-          orderType: 'LIMIT',
-          entryPrice: entry,
-          stopLoss: snapDeskPrice(instrument, strat.stop),
-          profitTarget: snapDeskPrice(instrument, strat.target),
-          preferRangeLabel: range.label ?? strategyRange?.label ?? null,
-        })
-        setRiskBoxActive(true)
-        return
-      }
-
-      const rawPx =
-        preferredPrice != null && Number.isFinite(preferredPrice) && preferredPrice > 0
-          ? preferredPrice
-          : livePrice || (candles.length > 0 ? candles[candles.length - 1]!.close : 67000)
-      // Limit / place-near: snap to nearest live band center (in-band → that center).
-      const snapped = snapEntryToNearestOpenBandCenter({
-        entry: Number(rawPx),
-        candidates: snapRanges,
-        preferLabel: strategyRange?.label ?? null,
-        liveOk,
-      })
-      if (!snapped) {
-        // Prefer bucket / unlock copy over generic off-band when bands exist but aren't live.
-        const hit = attributePlaybookBandEntry({
-          entry: Number(rawPx),
-          candidates: snapRanges,
-          preferLabel: strategyRange?.label ?? null,
-          liveOk,
-        })
-        let body = RANGE_EDGE_OFF_BAND_MESSAGE
-        let title = 'Off-band entry'
-        if (snapRanges.length === 0) {
-          title = 'No entry bands'
-          body = 'No live ±10 entry bands — wait for OR30 / IB to unlock.'
-        } else if (hit) {
-          if (hit.range.label === 'OR15' || hit.range.label === 'OR30') {
-            title = `${hit.range.label} entry closed`
-            body = 'Open-range / OR30 ±10 window is closed — enter on the live next-range playbook when unlocked.'
-          } else {
-            const bucketCheck = assertBucketEntryEligible({
-              instrument,
-              market: deskMarketFor(instrument),
-              timeSec: deskClockSeconds(instrument),
-              ladder,
-              rangeLabel: hit.range.label,
-            })
-            if (!bucketCheck.ok) {
-              title = `${hit.range.label} entry closed`
-              body = bucketCheck.message
-            }
-          }
-        }
-        onDeskAlert?.({
-          kind: 'entry_band_deny',
-          title,
-          body,
-          telegram: '',
-          instrument,
-        })
-        return
-      }
-      const gated = assertDeskTicketEntry({
-        useCall: useCallRef.current,
-        call,
-        edge: snapped.hit.edge,
-      })
-      if (!gated.ok) {
-        onDeskAlert?.({
-          kind: 'entry_band_deny',
-          title: 'CALL blocks this edge',
-          body: gated.message,
-          telegram: '',
-          instrument,
-        })
-        return
-      }
-      const entry = snapDeskPrice(instrument, snapped.price)
-      const dir = gated.side
-      const strat = strategyEntryRisk({
-        entry,
-        direction: dir,
-        activeRange: snapped.hit.range,
-        magnets: strategyMagnets,
-      })
-      setRiskBox({
-        direction: dir,
-        orderType: 'LIMIT',
-        entryPrice: entry,
-        stopLoss: snapDeskPrice(instrument, strat.stop),
-        profitTarget: snapDeskPrice(instrument, strat.target),
-        preferRangeLabel: snapped.hit.range.label ?? strategyRange?.label ?? null,
-      })
-      setRiskBoxActive(true)
+      return
     },
     [livePrice, candles, instrument, getStrategyRiskBundle, onDeskAlert]
   )
@@ -12092,75 +11920,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     setPriceAlert({ price: priceAlert.price, armed: false, pendingAway: false })
   }, [livePrice, priceAlert, instrument, onDeskAlert])
 
-  const confirmRiskBoxOrder = useCallback(() => {
-    if (!riskBox) return
-    const { entryPrice: boxEntry, stopLoss, profitTarget, direction } = riskBox
-
-    const { strategyMagnets, snapRanges, strategyRange, ladder } = getStrategyRiskBundle()
-    const preferLabel =
-      riskBox.preferRangeLabel ?? strategyRange?.label ?? null
-    const liveOk = (range: { label: string; high: number; low: number }) => {
-      if (range.label === 'OR30') {
-        return (
-          !!strategyRange &&
-          strategyRange.label === range.label &&
-          strategyRange.high === range.high &&
-          strategyRange.low === range.low
-        )
-      }
-      return assertBucketEntryEligible({
-        instrument,
-        market: deskMarketFor(instrument),
-        timeSec: deskClockSeconds(instrument),
-        ladder,
-        rangeLabel: range.label,
-      }).ok
-    }
-    const snapped = snapEntryToNearestOpenBandCenter({
-      entry: boxEntry,
-      candidates: snapRanges,
-      preferLabel,
-      liveOk,
-    })
-    if (!snapped) {
-      onDeskAlert?.({
-        kind: 'entry_band_deny',
-        title: 'Off-band entry',
-        body: RANGE_EDGE_OFF_BAND_MESSAGE,
-        telegram: '',
-        instrument,
-      })
-      return
-    }
-    const hit = snapped.hit
-    // Lock to band center — never place mid-band interior from a drifted risk box.
-    const entryPrice = snapDeskPrice(instrument, hit.center)
-    const attributedRange = hit.range
-
-    // Check if Leo was consulted for this session / price
-    const discussedWithLeo = (levelsRef.current || []).some(
-      (l) => Math.abs(l.price - entryPrice) / entryPrice < 0.005
-    )
-
-    const autoReason = discussedWithLeo
-      ? `Manual ${direction} Limit Zone (Discussed with Leo): Level @ ${entryPrice.toLocaleString()}, SL @ ${stopLoss.toLocaleString()}, TP @ ${profitTarget.toLocaleString()}`
-      : `Manual ${direction} entry: Technical structure limit @ ${entryPrice.toLocaleString()} | SL/TP rationale: Protective SL @ ${stopLoss.toLocaleString()}, Target TP @ ${profitTarget.toLocaleString()}`
-
-    onLevelSelect?.(entryPrice, {
-      source: 'manual',
-      type: 'manual',
-      orderType: 'LIMIT',
-      side: direction === 'LONG' ? 'BUY' : 'SHORT',
-      preferredDirection: direction,
-      reasoning: autoReason,
-      stopLoss,
-      profitTarget,
-      strategyRange: attributedRange,
-      strategyMagnets,
-    })
-    cancelRiskBox()
-  }, [riskBox, onLevelSelect, cancelRiskBox, getStrategyRiskBundle, onDeskAlert, instrument])
-
   const toggleRiskBoxDirection = useCallback(() => {
     if (!riskBox) return
     const newDir: 'LONG' | 'SHORT' = riskBox.direction === 'LONG' ? 'SHORT' : 'LONG'
@@ -14826,22 +14585,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 }}
                 title="Drag Entry between painted ±10 band centers (H / L)"
               >
-                {/* Explicit Buy / Sell Placement Button — ONLY BUTTON THAT PLACES ORDER */}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    confirmRiskBoxOrder()
-                  }}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  className={`px-3 py-1 text-xs font-extrabold uppercase rounded-md shadow-md transition border ${riskBox.direction === 'LONG'
-                    ? 'bg-blue-600 border-blue-400 text-white hover:bg-blue-500 hover:scale-105'
-                    : 'bg-red-600 border-red-400 text-white hover:bg-red-500 hover:scale-105'
-                    }`}
-                  title={`Click to place ${riskBox.direction} Limit Order`}
-                >
-                  {riskBox.direction === 'LONG' ? 'BUY LIMIT' : 'SELL LIMIT'}
-                </button>
+                <span className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                  No orders
+                </span>
 
                 {/* Direction Switch Icon Toggle Button — Switch between LONG and SHORT */}
                 <button
@@ -15197,32 +14943,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#089981]' : 'bg-[#f23645]'}`}>
                     {isLong ? '+1' : '-1'}
                   </div>
-                  {/* Instant 1-Click Market Enter Button */}
-                  {onPlaceOrder && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        const cur = livePrice ?? sitTarget
-                        const meta = MARKET_DEFAULT_PARAMS[instrument as MarketInstrument] || { defaultPrice: cur, defaultPoints: 20 }
-                        const sl = sitSl ?? (isLong ? cur - meta.defaultPoints : cur + meta.defaultPoints)
-                        const tp = sitTp ?? (isLong ? cur + meta.defaultPoints : cur - meta.defaultPoints)
-                        void onPlaceOrder({
-                          instrument,
-                          direction: isLong ? 'LONG' : 'SHORT',
-                          price: cur,
-                          stopLoss: sl,
-                          profitTarget: tp,
-                          size: 1,
-                          reason: `Manual 1-Click Trigger of Armed Situation: ${sit.description}`,
-                        })
-                      }}
-                      className="px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white font-bold transition border-l border-[#363a45] flex items-center gap-0.5 cursor-pointer"
-                      title="Jump in immediately at market price"
-                    >
-                      <span>⚡ In</span>
-                    </button>
-                  )}
+                  {/* Positions and working limits are not placed from the chart. */}
                   {/* Disarm / Cancel button */}
                   <button
                     type="button"

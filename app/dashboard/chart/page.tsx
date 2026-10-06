@@ -32,7 +32,7 @@ import {
   setDeskInstrumentPreference,
   type DeskInstrumentPref,
 } from '@/lib/trading/deskInstrumentPreference'
-import { isAfternoonWatchWindow, sessionFor, deskMarketFor } from '@/lib/trading/sessionGate'
+import { isAfternoonWatchWindow, sessionFor } from '@/lib/trading/sessionGate'
 import { isAsiaLiveOrderOverlay, type AsiaDeskOverlay } from '@/lib/trading/asiaDesk'
 import { isLiveClockInstrument } from '@/lib/trading/liveDeskBook'
 import { quoteBelongsToBook } from '@/lib/trading/deskExitGuard'
@@ -49,14 +49,6 @@ import {
   markLunchFlatKeepOpen,
 } from '@/lib/trading/morningLunchConfirm'
 import {
-  assertBucketEntryEligible,
-  attemptLadderFromCounts,
-  bucketForRangeLabel,
-  deskClockSeconds,
-  MAX_DAY_ATTEMPTS as SESSION_MAX_ATTEMPTS,
-} from '@/lib/trading/attemptLadder'
-import {
-  WORKING_LIMIT_ALREADY_MESSAGE,
   formatWorkingLimitAlreadyMessage,
   shouldCancelWorkingForGate,
   workingRowToPending,
@@ -82,57 +74,6 @@ import {
 } from '@/lib/notify/deskAlertTelegram'
 import type { DeskInstrument } from '@/lib/trading/sessionGate'
 
-
-function entryDeniedMessage(gate: SessionGateState | null | undefined): string | null {
-  if (!gate) return null
-  if (gate.phase === 'MANAGE' || gate.open_position_id) {
-    return 'Position open — manage only, no new entries.'
-  }
-  if (gate.dayLocked || (gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? SESSION_MAX_ATTEMPTS)) {
-    return 'Session attempt cap reached — trading switched off. No new entries.'
-  }
-  return null
-}
-
-/**
- * Range-aware override: the blanket gate above follows the single sequential
- * "active" range and can deny a click on a range with its own budget left
- * (e.g. IB still 1/2 while the clock highlight has moved to Lunch-range).
- * Session (day) total cap always wins — 3 trades/session regardless of which
- * window still shows spare probes.
- */
-function rangeAwareEntryDeniedMessage(
-  gate: SessionGateState | null | undefined,
-  instrument: string,
-  rangeLabel: string | null | undefined
-): string | null {
-  const denied = entryDeniedMessage(gate)
-  if (!denied) return null
-  if (!gate || gate.dayLocked || gate.phase === 'MANAGE' || gate.phase === 'CLOSED') {
-    return denied
-  }
-  if ((gate.attemptsUsed ?? 0) >= (gate.maxAttempts ?? SESSION_MAX_ATTEMPTS)) {
-    return denied
-  }
-  if (!rangeLabel) return denied
-  const bucket = bucketForRangeLabel(instrument, rangeLabel)
-  if (!bucket) return denied
-  const ladder = attemptLadderFromCounts({
-    morningAttempts: gate.morningAttempts,
-    ibAttempts: gate.ibAttempts,
-    lunchAttempts: gate.lunchAttempts,
-    now: new Date(),
-    instrument,
-  })
-  const check = assertBucketEntryEligible({
-    instrument,
-    market: deskMarketFor(instrument),
-    timeSec: deskClockSeconds(instrument),
-    ladder,
-    rangeLabel,
-  })
-  return check.ok ? null : denied
-}
 
 /** Cancelled working-limit copy — matches why the gate stopped the book. */
 function workingLimitCancelledMessage(gate: SessionGateState): string {
@@ -345,21 +286,6 @@ export default function ChartPage() {
     if (isAsiaLiveOrderOverlay(gold)) setInstrument('GOLD')
     else if (isAsiaLiveOrderOverlay(dow)) setInstrument('DOW')
   }, [gate?.asiaDeskActive, gate?.clockedIn, asiaOverlays, instrument, setInstrument])
-  const [_orderLevel, setOrderLevel] = useState<number | null>(null)
-  const [_orderLevelType, setOrderLevelType] = useState<string | undefined>()
-  const [_orderLevelSide, setOrderLevelSide] = useState<'BUY' | 'SHORT' | undefined>()
-  const [_orderPreferredDirection, setOrderPreferredDirection] = useState<
-    'LONG' | 'SHORT' | undefined
-  >()
-  const [_orderLevelReason, setOrderLevelReason] = useState<string | undefined>()
-  const [_orderEntrySource, setOrderEntrySource] = useState<'ai' | 'structure' | 'manual'>('ai')
-  const [orderStrategyRange, setOrderStrategyRange] =
-    useState<StrategyRangeEdges | null>(null)
-  const [_orderStrategyMagnets, setOrderStrategyMagnets] =
-    useState<StrategyRiskMagnets | null>(null)
-  const [_orderPresetStopLoss, setOrderPresetStopLoss] = useState<number | null>(null)
-  const [_orderPresetProfitTarget, setOrderPresetProfitTarget] = useState<number | null>(null)
-  const [_orderAutoConfirm, setOrderAutoConfirm] = useState(false)
   const [_regime, setRegime] = useState<'bullish' | 'bearish' | 'choppy'>('bullish')
   const [_regimeConfidence, setRegimeConfidence] = useState(70)
   const [gateTick, setGateTick] = useState(0)
@@ -491,71 +417,11 @@ export default function ChartPage() {
         strategyMagnets?: StrategyRiskMagnets | null
       }
     ) => {
-      if (managePos || positionOverlay || pending) {
-        if (pending) {
-          setFillError(WORKING_LIMIT_ALREADY_MESSAGE)
-          setOrderStatus('rejected')
-        }
-        return
-      }
-
-      const inst = (gate?.lockedInstrument || instrument) as Instrument
-      const denied = rangeAwareEntryDeniedMessage(gate, inst, meta?.strategyRange?.label)
-      if (denied) {
-        setFillError(denied)
-        setOrderStatus('rejected')
-        return
-      }
-
-      const isManualFlow =
-        meta?.source === 'manual' ||
-        meta?.type === 'manual' ||
-        meta?.type === 'market'
-      let workingPrice = price
-      if (isManualFlow) {
-        // Unconstrained manual/market limit entry
-      }
-
-      const side =
-        meta?.side === 'BUY' || meta?.side === 'SHORT' ? meta.side : undefined
-      const preferred =
-        meta?.preferredDirection === 'LONG' || meta?.preferredDirection === 'SHORT'
-          ? meta.preferredDirection
-          : side === 'SHORT'
-            ? 'SHORT'
-            : side === 'BUY'
-              ? 'LONG'
-              : undefined
-
-      // Manual / journal-rationale flows (risk-box drag, rationale modal) already
-      // collected SL + TP before calling onLevelSelect — auto-submit immediately
-      // instead of opening a second "Place manual limit" ticket to click through.
-      const hasPresetRisk =
-        meta?.stopLoss != null &&
-        Number.isFinite(meta.stopLoss) &&
-        meta?.profitTarget != null &&
-        Number.isFinite(meta.profitTarget)
-
-      // Desk is limit-only — always open the working-limit ticket
-      setOrderLevel(workingPrice)
-      setOrderLevelType(meta?.type === 'market' ? 'manual' : meta?.type)
-      setOrderLevelSide(side)
-      setOrderPreferredDirection(preferred)
-      setOrderLevelReason(meta?.reasoning)
-      setOrderEntrySource(
-        meta?.source === 'manual' ||
-          meta?.type === 'manual' ||
-          meta?.type === 'market'
-          ? 'manual'
-          : meta?.source === 'structure'
-            ? 'structure'
-            : 'ai'
-      )
-      setOrderStrategyRange(meta?.strategyRange ?? null)
-      setOrderStrategyMagnets(meta?.strategyMagnets ?? null)
-      setOrderPresetStopLoss(hasPresetRisk ? (meta!.stopLoss as number) : null)
-      setOrderPresetProfitTarget(hasPresetRisk ? (meta!.profitTarget as number) : null)
-      setOrderAutoConfirm(hasPresetRisk)
+      void price
+      void meta
+      setFillError('The desk does not place positions or working limits.')
+      setOrderStatus('rejected')
+      return
     },
     [managePos, positionOverlay, pending, gate, instrument]
   )
@@ -1442,58 +1308,12 @@ export default function ChartPage() {
 
   const handlePlaced = useCallback(
     (order: PendingLimitOrder) => {
-      if (placingOrderRef.current || pendingRef.current || managePos) {
-        if (pendingRef.current) {
-          setFillError(WORKING_LIMIT_ALREADY_MESSAGE)
-          setOrderStatus('rejected')
-        }
-        return
-      }
-      const denied = rangeAwareEntryDeniedMessage(
-        gate,
-        order.instrument,
-        (order.strategyRange ?? orderStrategyRange)?.label
-      )
-      if (denied) {
-        setFillError(denied)
-        setOrderStatus('rejected')
-        setOrderLevel(null)
-        setOrderLevelType(undefined)
-        return
-      }
-      const range = order.strategyRange ?? orderStrategyRange
-      const level = order.level
-      // Attach range onto order for API if missing
-      const orderWithRange: PendingLimitOrder = {
-        ...order,
-        level,
-        strategyRange: range ?? null,
-      }
-      placingOrderRef.current = true
-      setOrderStatus('placing')
-      setOrderLevel(null)
-      setOrderLevelType(undefined)
-      setOrderLevelSide(undefined)
-      setOrderPreferredDirection(undefined)
-      setOrderLevelReason(undefined)
-      setOrderEntrySource('ai')
-      setOrderStrategyRange(null)
-      setOrderStrategyMagnets(null)
-      setOrderPresetStopLoss(null)
-      setOrderPresetProfitTarget(null)
-      setOrderAutoConfirm(false)
-      setFillError(null)
-
-      const px = livePriceRef.current
-      // Direct market execution — execute immediately at current price
-      const execPrice = px ?? orderWithRange.level
-      pendingRef.current = orderWithRange
-      setPending(orderWithRange)
-      void fillPending(orderWithRange, execPrice).finally(() => {
-        placingOrderRef.current = false
-      })
+      void order
+      setFillError('The desk does not place positions or working limits.')
+      setOrderStatus('rejected')
+      return
     },
-    [fillPending, managePos, gate, orderStrategyRange]
+    [fillPending, managePos, gate]
   )
   handlePlacedRef.current = handlePlaced
 
@@ -1507,101 +1327,10 @@ export default function ChartPage() {
       reason: string
       size?: number
     }) => {
-      try {
-        const fillPrice = order.price || livePriceRef.current || 0
-        if (!fillPrice || fillPrice <= 0) {
-          return { success: false, message: 'Live price unavailable to execute order' }
-        }
-        const targetInst = (order.instrument || instrument) as Instrument
-
-        if (targetInst !== instrument) {
-          setInstrument(targetInst)
-        }
-
-        const res = await fetch('/api/trading/positions/open', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            instrument: targetInst,
-            entry_price: fillPrice,
-            entry_direction: order.direction,
-            entry_window: 1,
-            account_size: 50000,
-            regime: order.direction === 'LONG' ? 'bullish' : 'bearish',
-            regime_confidence: 90,
-            entry_source: 'ai',
-            is_leo_order: true,
-            stop_loss_price: order.stopLoss,
-            profit_target_price: order.profitTarget,
-            entry_reason: `Leo AI Order: ${order.direction} ${targetInst} @ ${fillPrice}. ${order.reason}`,
-            auction_ticket: true,
-            risk_profile: 'tradeify_growth_50k',
-          }),
-        })
-        const json = await res.json()
-        if (res.ok && json.success) {
-          enterManage(
-            {
-              position_id: json.position_id,
-              entry_price: json.entry_price ?? fillPrice,
-              stop_loss_price: json.stop_loss_price ?? order.stopLoss,
-              position_size: json.position_size ?? order.size ?? 1,
-              risk_amount: json.risk_amount ?? 150,
-              entry_direction: order.direction,
-              profit_target_price: json.profit_target_price ?? order.profitTarget,
-              entry_source: 'ai',
-            },
-            targetInst
-          )
-          window.setTimeout(() => jumpToPriceRef.current?.(fillPrice), 150)
-          return { success: true, position_id: json.position_id, message: json.message }
-        } else {
-          // If server desk gate or broker rejects (e.g. cash close, Tradeify session cap, offline dev),
-          // STILL mount the order on the chart as a live desk / simulation position so the trader can see it!
-          const simId = `leo-sim-${Date.now()}`
-          const riskAmt = Math.abs(fillPrice - order.stopLoss) * (order.size ?? 1)
-          enterManage(
-            {
-              position_id: simId,
-              entry_price: fillPrice,
-              stop_loss_price: order.stopLoss,
-              position_size: order.size ?? 1,
-              risk_amount: Number.isFinite(riskAmt) && riskAmt > 0 ? riskAmt : 150,
-              entry_direction: order.direction,
-              profit_target_price: order.profitTarget,
-              entry_source: 'ai',
-            },
-            targetInst
-          )
-          window.setTimeout(() => jumpToPriceRef.current?.(fillPrice), 150)
-          return {
-            success: true,
-            position_id: simId,
-            message: `Position mounted on chart (${json?.message || 'Desk Simulation Mode'})`,
-          }
-        }
-      } catch (err: any) {
-        // Network or fetch error: still mount on chart for the trader
-        const simId = `leo-sim-${Date.now()}`
-        const fillPrice = order.price || livePriceRef.current || 0
-        const targetInst = (order.instrument || instrument) as Instrument
-        if (fillPrice > 0) {
-          enterManage(
-            {
-              position_id: simId,
-              entry_price: fillPrice,
-              stop_loss_price: order.stopLoss,
-              position_size: order.size ?? 1,
-              risk_amount: Math.abs(fillPrice - order.stopLoss) * (order.size ?? 1),
-              entry_direction: order.direction,
-              profit_target_price: order.profitTarget,
-              entry_source: 'ai',
-            },
-            targetInst
-          )
-          window.setTimeout(() => jumpToPriceRef.current?.(fillPrice), 150)
-        }
-        return { success: true, position_id: simId, message: 'Position mounted on chart (Offline fallback)' }
+      void order
+      return {
+        success: false,
+        message: 'The desk does not place positions or working limits.',
       }
     },
     [enterManage, instrument, setInstrument]

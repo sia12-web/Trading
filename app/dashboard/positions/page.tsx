@@ -258,8 +258,7 @@ export default function PositionsPage() {
             </p>
             <h1 className="mt-1 text-2xl font-semibold text-white">Live positions</h1>
             <p className="mt-1 text-sm text-gray-500 max-w-lg">
-              Manage today’s open live book (path to TP, room to SL, take profit). Unfilled
-              working limits show here too — cancel or open the chart.
+              This desk does not place positions or working limits. Existing books can still be reviewed.
             </p>
           </div>
           <div className="flex items-center gap-2">

@@ -23,10 +23,7 @@ import {
   getLastNNycTradingDays,
   getLastNTokyoTradingDays,
 } from '@/lib/utils/dateUtils'
-import {
-  previewPositionSizingFromRiskAmount,
-  type DeskEntrySource,
-} from '@/lib/trading/positionSizing'
+import { type DeskEntrySource } from '@/lib/trading/positionSizing'
 import {
   getDeskRiskProfile,
   isTradeifyGrowth50k,
@@ -41,7 +38,6 @@ import {
 import {
   snapDeskPrice,
   snapStopToTick,
-  snapTargetToTick,
 } from '@/lib/trading/instrumentTicks'
 import { breakEvenShouldOffer } from '@/lib/trading/breakEvenStop'
 import {
@@ -73,10 +69,8 @@ import {
   DeskManageBracketOverlay,
   DeskRiskBoxOverlay,
   DeskWorkingBracketOverlay,
-  openDeskRiskBox,
   type DeskRiskBoxState,
 } from '@/app/dashboard/chart/components/DeskRiskBoxOverlay'
-import { assertProtectiveStop } from '@/lib/trading/stopLossGuard'
 import { MorningLunchFlatConfirm } from '@/app/dashboard/chart/components/MorningLunchFlatConfirm'
 import {
   clearLunchFlatKeepOpen,
@@ -434,21 +428,6 @@ function makeChartFormatters(timeZone: string, tzLabel: string): ChartFmt {
 
 function barTouches(bar: Candle, level: number): boolean {
   return bar.low <= level && bar.high >= level
-}
-
-/** Live-style: only the current sim bar can fill a new limit — not earlier bars. */
-function currentBarIfTouches(
-  candles: Candle[],
-  openUnix: number,
-  now: number,
-  level: number
-): Candle | undefined {
-  let last: Candle | undefined
-  for (const c of candles) {
-    if (c.time < openUnix || c.time > now) continue
-    last = c
-  }
-  return last && barTouches(last, level) ? last : undefined
 }
 
 /** Last index with candle.time <= t (candles must be sorted ascending). */
@@ -2492,69 +2471,9 @@ function SimulationDeskInner() {
 
   const openRiskBoxFromPrice = useCallback(
     (rawPrice?: number | null) => {
-      if (positionRef.current || pendingRef.current || riskBox) return
-      const seed = rawPrice ?? lastPriceRef.current
-      if (seed == null || !(seed > 0)) {
-        setMsg('No price to place from — wait for the sim bar')
-        return
-      }
-      const snapped = snapSimEntryOrDeny(seed)
-      if ('deny' in snapped) {
-        setMsg(snapped.deny)
-        return
-      }
-      const { snapRanges, strategyRange, ladder, call } = getStrategyRiskBundle()
-      const now = new Date(simNowRef.current * 1000)
-      const hit = attributePlaybookBandEntry({
-        entry: snapped.price,
-        candidates: snapRanges,
-        preferLabel: strategyRange?.label ?? null,
-        liveOk: (range: any) => {
-          if (range.label === 'OR30') {
-            return (
-              !!strategyRange &&
-              strategyRange.label === range.label &&
-              strategyRange.high === range.high &&
-              strategyRange.low === range.low
-            )
-          }
-          return assertBucketEntryEligible({
-            instrument,
-            market: deskMarketFor(instrument),
-            timeSec: deskClockSeconds(instrument, now),
-            ladder,
-            rangeLabel: range.label,
-          }).ok
-        },
-      })
-      const gated = assertDeskTicketEntry({
-        useCall: useCallRef.current,
-        call,
-        edge: hit?.edge ?? null,
-      })
-      if (!gated.ok) {
-        setMsg(gated.message)
-        return
-      }
-      const dir: Direction = gated.side
-      setPlaying(false)
-      setRiskBox(
-        openDeskRiskBox({
-          entry: snapped.price,
-          direction: dir,
-          instrument,
-          preferRangeLabel: snapped.range.label ?? strategyRange?.label ?? null,
-        })
-      )
-      setMsg(
-        useCallRef.current === false
-          ? `Regular ${dir} — drag SL / TP on the chart, then ${
-              dir === 'LONG' ? 'BUY LIMIT' : 'SELL LIMIT'
-            }`
-          : `CALL ${dir} — drag SL / TP on the chart, then ${
-              dir === 'LONG' ? 'BUY LIMIT' : 'SELL LIMIT'
-            }`
-      )
+      void rawPrice
+      setMsg('The desk does not place positions or working limits.')
+      return
     },
     [getStrategyRiskBundle, instrument, riskBox, snapSimEntryOrDeny]
   )
@@ -2573,65 +2492,9 @@ function SimulationDeskInner() {
       entryReason: string
       strategyRangeLabel?: string | null
     }) => {
-      const snapped = snapSimEntryOrDeny(order.level)
-      if ('deny' in snapped) {
-        setMsg(snapped.deny)
-        return
-      }
-      const { call } = getStrategyRiskBundle()
-      const gated = assertDeskTicketEntry({
-        useCall: useCallRef.current,
-        call,
-        direction: order.direction,
-      })
-      if (!gated.ok) {
-        setMsg(gated.message)
-        return
-      }
-      const edge = assertRangeEdgeEntry({
-        entry: snapped.price,
-        range: snapped.range,
-      })
-      if (!edge.ok) {
-        setMsg(edge.message)
-        return
-      }
-      const windowEndUnix =
-        gate?.entryWindow === 3
-          ? lateEndUnix
-          : gate?.entryWindow === 2
-            ? midEndUnix
-            : entryCloseUnix
-      const pend: PendingOrder = {
-        level: snapped.price,
-        direction: order.direction,
-        stopLoss: order.stopLoss,
-        target: order.profitTarget,
-        size: order.size,
-        risk: order.risk,
-        accountSize: order.accountSize,
-        entryReason: order.entryReason,
-        entrySource: 'manual',
-        windowEndUnix: windowEndUnix || cashCloseUnix,
-        strategyRangeLabel: snapped.range.label ?? order.strategyRangeLabel ?? null,
-      }
-      setRiskBox(null)
-      const now = simNowRef.current
-      const touched = currentBarIfTouches(
-        allCandlesRef.current,
-        openUnix,
-        now,
-        pend.level
-      )
-      if (touched) {
-        fillPendingRef.current(pend, touched.time)
-        return
-      }
-      pendingRef.current = pend
-      setPending(pend)
-      setMsg(
-        `Manual ${order.direction} limit @ ${snapped.price.toLocaleString()} — drag TP on the chart · press Play until fill`
-      )
+      void order
+      setMsg('The desk does not place positions or working limits.')
+      return
     },
     [
       snapSimEntryOrDeny,
@@ -2646,100 +2509,8 @@ function SimulationDeskInner() {
   )
 
   const confirmRiskBox = useCallback(() => {
-    if (!riskBox) return
-    const { snapRanges, strategyRange, ladder, call } = getStrategyRiskBundle()
-    const now = new Date(simNowRef.current * 1000)
-    const snapped = snapEntryToNearestOpenBandCenter({
-      entry: riskBox.entryPrice,
-      candidates: snapRanges,
-      preferLabel: riskBox.preferRangeLabel ?? strategyRange?.label ?? null,
-      liveOk: (range: any) => {
-        if (range.label === 'OR30') {
-          return (
-            !!strategyRange &&
-            strategyRange.label === range.label &&
-            strategyRange.high === range.high &&
-            strategyRange.low === range.low
-          )
-        }
-        return assertBucketEntryEligible({
-          instrument,
-          market: deskMarketFor(instrument),
-          timeSec: deskClockSeconds(instrument, now),
-          ladder,
-          rangeLabel: range.label,
-        }).ok
-      },
-    })
-    if (!snapped) {
-      setMsg(RANGE_EDGE_OFF_BAND_MESSAGE)
-      return
-    }
-    const hit = snapped.hit
-    const gated = assertDeskTicketEntry({
-      useCall: useCallRef.current,
-      call,
-      edge: hit.edge,
-      direction: riskBox.direction,
-    })
-    if (!gated.ok) {
-      setMsg(gated.message)
-      return
-    }
-    const entry = snapDeskPrice(instrument, hit.center)
-    const stopGuard = assertProtectiveStop({
-      instrument,
-      entry,
-      stop: riskBox.stopLoss,
-      direction: riskBox.direction,
-    })
-    if (!stopGuard.ok) {
-      setMsg(stopGuard.message)
-      return
-    }
-    const stop = stopGuard.stop
-    let tp = riskBox.profitTarget
-    if (riskBox.direction === 'LONG' && !(tp > entry)) {
-      setMsg('Take profit must be above the limit for LONG')
-      return
-    }
-    if (riskBox.direction === 'SHORT' && !(tp < entry)) {
-      setMsg('Take profit must be below the limit for SHORT')
-      return
-    }
-    tp = snapTargetToTick(instrument, entry, tp, riskBox.direction)
-    const decision = resolveTradeifyPlace({
-      now,
-      fillsUsed: attemptsUsedRef.current,
-      stopOutsToday: stopHitsRef.current,
-      dailyPnl: paperDayPnl,
-    })
-    if (!decision.allowed) {
-      setMsg(decision.refuseMessage)
-      return
-    }
-    const sized = previewPositionSizingFromRiskAmount(
-      entry,
-      TRADEIFY_STARTING_BALANCE,
-      riskBox.direction,
-      stop,
-      decision.riskDollars
-    )
-    if (!sized) {
-      setMsg('Could not size this stop — widen SL or pick another band')
-      return
-    }
-    placeSimWorkingLimit({
-      level: entry,
-      direction: riskBox.direction,
-      stopLoss: stop,
-      profitTarget: tp,
-      size: sized.position_size,
-      risk: sized.risk_amount,
-      accountSize: TRADEIFY_STARTING_BALANCE,
-      entryReason: `Manual ${riskBox.direction} limit @ ${entry.toLocaleString()} | SL ${stop.toLocaleString()} TP ${tp.toLocaleString()}`,
-      strategyRangeLabel: hit.range.label ?? null,
-    })
+    setMsg('The desk does not place positions or working limits.')
+    return
   }, [
     riskBox,
     getStrategyRiskBundle,
@@ -4111,16 +3882,9 @@ function SimulationDeskInner() {
             </span>
           )}
 
-          {canEnter && (
-            <button
-              type="button"
-              onClick={() => openRiskBoxFromPrice(lastPriceRef.current ?? lastPrice)}
-              className="rounded border border-amber-500/50 bg-amber-600/80 px-2 py-1 text-[10px] font-bold uppercase text-white hover:bg-amber-500"
-              title="Place CALL limit on the active playbook ±10"
-            >
-              Place limit
-            </button>
-          )}
+          <span className="rounded border border-white/10 px-2 py-1 text-[10px] font-semibold uppercase text-gray-500">
+            No orders
+          </span>
           <span
             className="shrink-0 rounded bg-amber-500 px-2 py-1 text-[10px] font-bold uppercase text-black"
             title="Tradeify $50k dollar risk — $400 / $250 / $150"
