@@ -48,11 +48,11 @@ export function NasdaqEarningsSemiCard({
                 Nasdaq-100 Constituent Weights &amp; Index Impact Engine
               </h3>
               <span className="text-[11px] px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 font-mono">
-                May 2026 Methodology
+                Not the live Nasdaq weight file
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              Top 8 mega-caps control &gt;45% of NQ weight. An earnings surprise in NVDA or MSFT has massive index point leverage.
+              NVDA, MSFT, and AAPL prices load from Yahoo. The weight percents are not the current official Nasdaq-100 file, so the point estimate is only a sketch.
             </p>
           </div>
 
