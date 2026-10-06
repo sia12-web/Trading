@@ -1037,6 +1037,14 @@ export const AVWAP_LOOKBACK_TRADING_DAYS = 5
  */
 export const AVWAP_CANDLE_FETCH_CALENDAR_DAYS = AVWAP_LOOKBACK_TRADING_DAYS + 7 // 12
 
+/**
+ * Yahoo only keeps about 8 calendar days of 1-minute bars.
+ * Eight days still reaches 5 RTH sessions when the tip is a Monday
+ * (the prior Tuesday sits 6 calendar days back). A 3-day pull stops
+ * around Friday and hides the rest of the week.
+ */
+export const ONE_MINUTE_FETCH_CALENDAR_DAYS = 8
+
 function dayKeyInTz(unix: number, timeZone: string): string {
   return dayFormatter(timeZone).format(new Date(unix * 1000))
 }

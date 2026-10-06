@@ -6,6 +6,7 @@
 import {
   AVWAP_CANDLE_FETCH_CALENDAR_DAYS,
   AVWAP_LOOKBACK_TRADING_DAYS,
+  ONE_MINUTE_FETCH_CALENDAR_DAYS,
   NY_DESK_CLOCK,
   TOKYO_DESK_CLOCK,
   cashOpenUnixForYmd,
@@ -24,6 +25,10 @@ assert(AVWAP_LOOKBACK_TRADING_DAYS === 5, 'lookback is 5 trading days')
 assert(
   AVWAP_CANDLE_FETCH_CALENDAR_DAYS >= AVWAP_LOOKBACK_TRADING_DAYS + 7,
   'candle fetch must include weekend buffer beyond 5 trading days'
+)
+assert(
+  ONE_MINUTE_FETCH_CALENDAR_DAYS >= 7 && ONE_MINUTE_FETCH_CALENDAR_DAYS <= 8,
+  '1m fetch must cover 5 sessions across a weekend without exceeding the Yahoo 1m window'
 )
 
 {

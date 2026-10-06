@@ -26,7 +26,10 @@ import {
   dropImplausibleDeskBars,
   liveQuoteDisagreesWithReference,
 } from '@/lib/chart/liveFormingBar'
-import { AVWAP_CANDLE_FETCH_CALENDAR_DAYS } from '@/lib/chart/sessionVwap'
+import {
+  AVWAP_CANDLE_FETCH_CALENDAR_DAYS,
+  ONE_MINUTE_FETCH_CALENDAR_DAYS,
+} from '@/lib/chart/sessionVwap'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import type { Instrument } from '@/types/price-feed'
 import { getDatabentoCandles, getDatabentoRecent1m, isDatabentoConfigured } from '@/lib/databento/client'
@@ -241,13 +244,13 @@ export async function GET(request: Request) {
           source = 'yahoo'
         }
       } else {
-        // Intraday (1m, 5m, 15m, 30m, 1H, 4H):
-        // For 1m, 3 calendar days guarantees at least 5 full RTH sessions Mon-Fri.
-        // Previously 8 days caused ~11,520 raw bars to be fetched; 3 days = ~4,320 bars,
-        // trimmed to ~1,950 (5 × 6.5h × 60min) by lastNTradingSessions.
+        // Intraday (1m, 5m, 15m, 30m, 1H, 4H).
+        // 1m is capped at Yahoo's ~8 calendar days, which is what it takes to
+        // keep 5 RTH sessions when the week starts on Monday. 3 days stops at
+        // the prior Friday and the chart cannot scroll the rest of the week.
         const fetchDays =
           timeframe === '1m'
-            ? Math.max(days, 3)
+            ? Math.max(days, ONE_MINUTE_FETCH_CALENDAR_DAYS)
             : Math.max(days, AVWAP_CANDLE_FETCH_CALENDAR_DAYS)
 
         // 1. Direct CME Globex futures candles (MYM=F, MNQ=F, NKD=F, MGC=F, CL=F) matching Tradovate & TradingView

@@ -53,6 +53,7 @@ import {
   zonedCivilToUnix,
   computeAnchoredVwap,
   lastNTradingSessions as trimDeskCandles,
+  ONE_MINUTE_FETCH_CALENDAR_DAYS,
   type SessionBar,
 } from '@/lib/chart/sessionVwap'
 import { parseCalendarEventMs } from '@/lib/trading/deskNewsHazard'
@@ -686,7 +687,7 @@ const DESK_CANDLE_STORE_PREFIX = 'desk.candles.v2:'
 const PREFETCH_INSTRUMENTS: Instrument[] = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'NIKKEI']
 
 function candleFetchDays(tf: DeskTimeframe): number {
-  return tf === '1D' ? 730 : tf === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
+  return tf === '1D' ? 730 : tf === '1m' ? ONE_MINUTE_FETCH_CALENDAR_DAYS : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
 }
 
 function deskCandleSignature(
@@ -10419,7 +10420,7 @@ export function TradingChart({
 
     const refreshCandles = async () => {
       try {
-        const days = timeframe === '1D' ? 730 : timeframe === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
+        const days = candleFetchDays(timeframe)
         const res = await fetch(
           `/api/trading/candles?instrument=${instrument}&timeframe=${timeframe}&days=${days}&quote=0&_=${Date.now()}`,
           { cache: 'no-store' }
