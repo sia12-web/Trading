@@ -63,14 +63,25 @@ test('Candle Gap Filler - Fills missing 5m timeframe bars with carry-forward pri
   assert.equal(filled[3]!.time, baseT + 900)
   assert.equal(filled[3]!.close, 21535)
 
-  // Verify that an extended gap (> 3 bars) does NOT invent endless flat bars
+  // A two-hour quiet tape (Yahoo null gold slots) must still print.
+  // 10:00 to 12:00 ET is 23 missing 5m bars, all inside the open session.
   const extendedGap: BaseCandle[] = [
     { time: baseT, open: 21500, high: 21520, low: 21490, close: 21510, volume: 150 },
-    // 2-hour gap (24 bars missing)
     { time: baseT + 7200, open: 21600, high: 21620, low: 21590, close: 21610, volume: 200 },
   ]
-  const notFlooded = fillCandleGaps(extendedGap, '5m', 'NASDAQ')
-  assert.equal(notFlooded.length, 2, 'Extended gap (>3 bars) should not flood chart with flat lines')
+  const quietTape = fillCandleGaps(extendedGap, '5m', 'NASDAQ')
+  assert.equal(quietTape.length, 25, 'Two-hour open-market hole is carried forward, not left blank')
+  assert.equal(quietTape[1]!.close, 21510)
+  assert.equal(quietTape[quietTape.length - 1]!.close, 21610)
+
+  // Saturday is closed. Do not invent a bar for every 5m slot across the weekend.
+  const saturday = 1789833600
+  const weekend: BaseCandle[] = [
+    { time: saturday, open: 21500, high: 21510, low: 21490, close: 21500, volume: 1 },
+    { time: saturday + 7200, open: 21500, high: 21510, low: 21490, close: 21502, volume: 1 },
+  ]
+  const closed = fillCandleGaps(weekend, '5m', 'GOLD')
+  assert.equal(closed.length, 2, 'Weekend halt is not filled with flat gold bars')
 })
 
 test('Candle Gap Filler - Handles duplicate timestamps by updating OHLC', () => {

@@ -33,6 +33,17 @@ const TIMEFRAME_SECONDS: Record<string, number> = {
 
 /** Max gap slots to fill in one go to prevent infinite loops (e.g. 5 days of 1m = 7,200 bars) */
 const MAX_GAP_FILL_BARS = 10_000
+/**
+ * Longest CME open stretch: 23h between the 17:00 and 18:00 ET halts.
+ * A quiet tape (Yahoo null gold bars) must be carried across that whole
+ * stretch. A longer hole is a weekend or a broken feed, not a missing print.
+ */
+const CME_OPEN_SESSION_SEC = 23 * 3600
+
+function maxSessionGapBars(stepSec: number): number {
+  if (!(stepSec > 0)) return 0
+  return Math.floor(CME_OPEN_SESSION_SEC / stepSec)
+}
 
 /**
  * Checks if a given UTC timestamp falls during the daily CME maintenance halt
@@ -123,10 +134,11 @@ export function fillCandleGaps<T extends BaseCandle>(
       continue
     }
 
-    // Fill intraday dropouts (up to 10 bars on 1m, up to 3 bars on 5m+).
-    // Never invent endless synthetic flat bars over session pauses, halts, or extended lulls.
+    // Carry the last print across every open-market slot. Yahoo omits gold
+    // 5m bars when the tape is quiet (a two-hour hole). That must still print
+    // as flat bars. Halt and weekend slots stay empty.
     const gapBarsCount = Math.round((targetTime - prev.time) / step) - 1
-    const maxGapAllowed = timeframe === '1m' || timeframe === '1' ? 10 : 3
+    const maxGapAllowed = maxSessionGapBars(step)
     if (gapBarsCount > 0 && gapBarsCount <= maxGapAllowed) {
       let cursorTime = expectedNextTime
       while (cursorTime < targetTime && filledCount < MAX_GAP_FILL_BARS) {
