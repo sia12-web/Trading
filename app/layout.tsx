@@ -19,6 +19,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
       <body className="min-h-screen bg-surface-900 text-gray-100 font-sans antialiased">
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "window.addEventListener('error',function(e){try{var m=(e&&e.message)||'';if(!m||m==='Script error.')return;fetch('/api/client-error',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',keepalive:true,body:JSON.stringify({message:String(m).slice(0,500),stack:String((e.error&&e.error.stack)||'').slice(0,2000),label:'window',href:location.href.slice(0,300)})})}catch(x){}})",
+          }}
+        />
         {children}
       </body>
     </html>

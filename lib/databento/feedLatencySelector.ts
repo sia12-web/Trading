@@ -158,7 +158,20 @@ export function getBestFeed(instrument: Instrument = 'NASDAQ'): FeedMetrics {
       return a.latencyMs - b.latencyMs
     })
 
-  const best = candidates[0] || s.metrics.get('databento_live')!
+  const fallback = s.metrics.get('databento_live')
+  const best = candidates[0] || fallback
+  if (!best) {
+    return {
+      source: 'databento_live',
+      name: 'Databento CME',
+      latencyMs: 0,
+      tickCount: 0,
+      lastTickAt: Date.now(),
+      gapCount: 0,
+      status: 'DEGRADED',
+      qualityScore: 0,
+    }
+  }
   s.activeFeedByInstrument.set(instrument, best.source)
   return best
 }

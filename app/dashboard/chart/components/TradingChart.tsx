@@ -1354,6 +1354,24 @@ export interface RenderedSessionExtremeHit {
   }
 }
 
+function finiteDrawingPoint(p: { time?: number; price?: number } | null | undefined): boolean {
+  return !!p && Number.isFinite(p.time) && Number.isFinite(p.price)
+}
+
+/** Drop saved drawings that would throw while the chart is rendering. */
+function loadStoredDrawings<T>(key: string, ok: (row: T) => boolean): T[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const saved = localStorage.getItem(key)
+    if (!saved) return []
+    const parsed = JSON.parse(saved) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((row): row is T => ok(row as T))
+  } catch {
+    return []
+  }
+}
+
 // ─── Main TradingChart component ──────────────────────────────────────────────
 
 export function TradingChart({
@@ -1459,16 +1477,12 @@ export function TradingChart({
   // ── User Interactive Drawing Tools (Wyckoff Structure Line, Range, Manual FRVP, Measure) ────────
   type DrawingToolType = 'NONE' | 'TRENDLINE' | 'RANGE' | 'FRVP' | 'MEASURE'
   const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingToolType>('NONE')
-  const [trendlines, setTrendlines] = useState<UserTrendline[]>(() => {
-    if (typeof window === 'undefined') return []
-    try {
-      const saved = localStorage.getItem('trading_desk_trendlines_v1')
-      if (!saved) return []
-      return JSON.parse(saved)
-    } catch {
-      return []
-    }
-  })
+  const [trendlines, setTrendlines] = useState<UserTrendline[]>(() =>
+    loadStoredDrawings<UserTrendline>('trading_desk_trendlines_v1', (row) => {
+      const t = row as UserTrendline
+      return finiteDrawingPoint(t?.p1) && finiteDrawingPoint(t?.p2)
+    })
+  )
   const [selectedTrendlineId, setSelectedTrendlineId] = useState<string | null>(null)
   const selectedTrendlineIdRef = useRef<string | null>(null)
   selectedTrendlineIdRef.current = selectedTrendlineId
@@ -1479,33 +1493,24 @@ export function TradingChart({
     p2: { time: number; price: number }
     direction?: 'BEARISH' | 'BULLISH'
   } | null>(null)
-  const [rangeBoxes, setRangeBoxes] = useState<UserRangeBox[]>(() => {
-    if (typeof window === 'undefined') return []
-    try {
-      const saved = localStorage.getItem('trading_desk_ranges_v1')
-      return saved ? JSON.parse(saved) : []
-    } catch {
-      return []
-    }
-  })
-  const [manualFrvps, setManualFrvps] = useState<UserManualFRVP[]>(() => {
-    if (typeof window === 'undefined') return []
-    try {
-      const saved = localStorage.getItem('trading_desk_frvps_v1')
-      return saved ? JSON.parse(saved) : []
-    } catch {
-      return []
-    }
-  })
-  const [measures, setMeasures] = useState<UserMeasure[]>(() => {
-    if (typeof window === 'undefined') return []
-    try {
-      const saved = localStorage.getItem('trading_desk_measures_v1')
-      return saved ? JSON.parse(saved) : []
-    } catch {
-      return []
-    }
-  })
+  const [rangeBoxes, setRangeBoxes] = useState<UserRangeBox[]>(() =>
+    loadStoredDrawings<UserRangeBox>('trading_desk_ranges_v1', (row) => {
+      const r = row as UserRangeBox
+      return finiteDrawingPoint(r?.p1) && finiteDrawingPoint(r?.p2)
+    })
+  )
+  const [manualFrvps, setManualFrvps] = useState<UserManualFRVP[]>(() =>
+    loadStoredDrawings<UserManualFRVP>('trading_desk_frvps_v1', (row) => {
+      const f = row as UserManualFRVP
+      return Number.isFinite(f?.timeStart) && Number.isFinite(f?.timeEnd) && Number.isFinite(f?.poc)
+    })
+  )
+  const [measures, setMeasures] = useState<UserMeasure[]>(() =>
+    loadStoredDrawings<UserMeasure>('trading_desk_measures_v1', (row) => {
+      const m = row as UserMeasure
+      return finiteDrawingPoint(m?.p1) && finiteDrawingPoint(m?.p2)
+    })
+  )
   const measureBadgeHitsRef = useRef<Map<string, { x: number; y: number; w: number; h: number }>>(new Map())
 
   // ── Leo Long-Term Memory Architecture & TradingView Alarms ────────────────
@@ -7825,23 +7830,29 @@ export function TradingChart({
     if (!containerRef.current) return
 
     const themeOpts = getDeskChartThemeOptions(chartThemeMode)
-    const chart = createChart(containerRef.current, {
-      ...CHART_THEME,
-      ...themeOpts,
-      width: containerRef.current.clientWidth,
-      height: containerRef.current.clientHeight,
-      localization: {
-        timeFormatter: (time: Time) =>
-          chartFmtRef.current.timeFormatter(time),
-      },
-      timeScale: {
-        ...CHART_THEME.timeScale,
-        tickMarkFormatter: (
-          time: Time,
-          tickMarkType: TickMarkType,
-        ) => chartFmtRef.current.tickMarkFormatter(time, tickMarkType),
-      },
-    })
+    let chart: IChartApi
+    try {
+      chart = createChart(containerRef.current, {
+        ...CHART_THEME,
+        ...themeOpts,
+        width: containerRef.current.clientWidth,
+        height: containerRef.current.clientHeight,
+        localization: {
+          timeFormatter: (time: Time) =>
+            chartFmtRef.current.timeFormatter(time),
+        },
+        timeScale: {
+          ...CHART_THEME.timeScale,
+          tickMarkFormatter: (
+            time: Time,
+            tickMarkType: TickMarkType,
+          ) => chartFmtRef.current.tickMarkFormatter(time, tickMarkType),
+        },
+      })
+    } catch (err) {
+      console.error('[chart] create failed', err)
+      return
+    }
 
     // ─── 1. Candlestick series on the main 'right' price scale ────────────────
     // Autoscale from VISIBLE candles on screen ONLY — distantly historical bars or orphan level lines
