@@ -1,6 +1,6 @@
 /**
  * Regression: Nikkei US Range evening (ET) uses JST trade_date — chart current-position
- * must not query EST-only or it returns null and false-closes while Live Positions stays open.
+ * must not query EST-only or it returns null and false-closes while management-status stays open.
  *
  * Run: npx tsx __tests__/current_position_trade_date.test.ts
  */

@@ -763,6 +763,13 @@ export function SessionBanner({
           >
             Refresh
           </button>
+          <Link
+            href="/dashboard"
+            className="text-[10px] uppercase tracking-wider text-gray-500 hover:text-white"
+            title="Open desk home"
+          >
+            Dashboard
+          </Link>
         </div>
       </div>
     </>

@@ -1841,7 +1841,7 @@ export default function ChartPage() {
             ) {
               return
             }
-            // Confirm against Live Positions SoT + working — never false-close on null alone
+            // Confirm against management-status SoT + working — never false-close on null alone
             let hasFilledOpen = false
             let hasWorkingLimit = false
             try {

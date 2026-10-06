@@ -440,7 +440,7 @@ export function ManageDeskBar({
       }
       if (json.position) return
 
-      // Never toast "closed" on a lone null — confirm Live Positions SoT + working limit.
+      // Never toast "closed" on a lone null — confirm management-status SoT + working limit.
       // (Wrong trade_date / race used to false-close Nikkei US Range books.)
       const [statusRes, workingRes] = await Promise.all([
         fetch(
