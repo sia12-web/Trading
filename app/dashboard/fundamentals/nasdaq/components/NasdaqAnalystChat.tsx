@@ -118,7 +118,7 @@ export function NasdaqAnalystChat() {
   const promptSuggestions = [
     'How do current real yields affect NQ tech multiples?',
     'Explain the difference between an EPS beat and slashed forward guidance.',
-    'What does today\'s advance/decline ratio signal about market participation?',
+    'Nasdaq breadth is unavailable. Which print would you need before calling participation broad or narrow?',
     'Why is hyperscaler capex bullish for semiconductors but margin-dilutive for spenders?',
     'How does Wyckoff delta absorption invalidate a hot CPI headline at the 5-day volume profile POC?',
   ]

@@ -11,6 +11,7 @@
 
 import React from 'react'
 import type { DowRotationState, DowCreditState, DowTelemetry } from '@/types/fundamentals'
+import { showNumber } from '@/lib/fundamentals/honesty'
 
 interface DowRotationCreditCardProps {
   rotation: DowRotationState
@@ -72,7 +73,9 @@ export function DowRotationCreditCard({
             </p>
           </div>
           <span className={`px-2.5 py-1 rounded text-xs font-mono font-semibold border ${getRegimeColor(rotation.rotationRegime)}`}>
-            {rotation.rotationRegime.replace(/_/g, ' ')}
+            {telemetry.sourced?.ym && telemetry.sourced?.nq && telemetry.sourced?.es && telemetry.sourced?.rty
+              ? rotation.rotationRegime.replace(/_/g, ' ')
+              : 'Unavailable'}
           </span>
         </div>
 
@@ -81,60 +84,44 @@ export function DowRotationCreditCard({
           <div className="bg-slate-950/70 border border-blue-500/40 rounded-lg p-2.5">
             <span className="text-[10px] text-blue-400 block font-bold">YM (Dow)</span>
             <div className="text-sm font-bold text-slate-100 mt-0.5">
-              {telemetry.ymPrice.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+              {telemetry.sourced?.ym || telemetry.ymPriceSource === 'CASH_DJI'
+                ? telemetry.ymPrice.toLocaleString('en-US', { maximumFractionDigits: 0 })
+                : 'Unavailable'}
             </div>
-            <span
-              className={`text-xs font-semibold ${
-                telemetry.ymChangePct >= 0 ? 'text-emerald-400' : 'text-rose-400'
-              }`}
-            >
-              {telemetry.ymChangePct >= 0 ? '+' : ''}
-              {telemetry.ymChangePct.toFixed(2)}%
+            <span className="text-xs font-semibold text-slate-300">
+              {telemetry.sourced?.ym || telemetry.ymPriceSource === 'CASH_DJI'
+                ? `${telemetry.ymChangePct >= 0 ? '+' : ''}${telemetry.ymChangePct.toFixed(2)}%`
+                : '—'}
             </span>
           </div>
 
           <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-2.5">
             <span className="text-[10px] text-slate-400 block">NQ (Nasdaq)</span>
             <div className="text-sm font-bold text-slate-100 mt-0.5">
-              {telemetry.nqPrice.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+              {showNumber(telemetry.sourced?.nq, telemetry.nqPrice, 0)}
             </div>
-            <span
-              className={`text-xs font-semibold ${
-                telemetry.nqChangePct >= 0 ? 'text-emerald-400' : 'text-rose-400'
-              }`}
-            >
-              {telemetry.nqChangePct >= 0 ? '+' : ''}
-              {telemetry.nqChangePct.toFixed(2)}%
+            <span className="text-xs font-semibold text-slate-300">
+              {telemetry.sourced?.nq ? `${telemetry.nqChangePct >= 0 ? '+' : ''}${telemetry.nqChangePct.toFixed(2)}%` : '—'}
             </span>
           </div>
 
           <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-2.5">
             <span className="text-[10px] text-slate-400 block">ES (S&amp;P 500)</span>
             <div className="text-sm font-bold text-slate-100 mt-0.5">
-              {telemetry.esPrice.toLocaleString('en-US', { maximumFractionDigits: 1 })}
+              {showNumber(telemetry.sourced?.es, telemetry.esPrice, 1)}
             </div>
-            <span
-              className={`text-xs font-semibold ${
-                telemetry.esChangePct >= 0 ? 'text-emerald-400' : 'text-rose-400'
-              }`}
-            >
-              {telemetry.esChangePct >= 0 ? '+' : ''}
-              {telemetry.esChangePct.toFixed(2)}%
+            <span className="text-xs font-semibold text-slate-300">
+              {telemetry.sourced?.es ? `${telemetry.esChangePct >= 0 ? '+' : ''}${telemetry.esChangePct.toFixed(2)}%` : '—'}
             </span>
           </div>
 
           <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-2.5">
             <span className="text-[10px] text-slate-400 block">RTY (Russell)</span>
             <div className="text-sm font-bold text-slate-100 mt-0.5">
-              {telemetry.rtyPrice.toLocaleString('en-US', { maximumFractionDigits: 1 })}
+              {showNumber(telemetry.sourced?.rty, telemetry.rtyPrice, 1)}
             </div>
-            <span
-              className={`text-xs font-semibold ${
-                telemetry.rtyChangePct >= 0 ? 'text-emerald-400' : 'text-rose-400'
-              }`}
-            >
-              {telemetry.rtyChangePct >= 0 ? '+' : ''}
-              {telemetry.rtyChangePct.toFixed(2)}%
+            <span className="text-xs font-semibold text-slate-300">
+              {telemetry.sourced?.rty ? `${telemetry.rtyChangePct >= 0 ? '+' : ''}${telemetry.rtyChangePct.toFixed(2)}%` : '—'}
             </span>
           </div>
         </div>
@@ -144,13 +131,13 @@ export function DowRotationCreditCard({
           <div>
             <span className="text-[10px] text-slate-400 block uppercase tracking-wider">Leading Sectors</span>
             <span className="font-semibold text-emerald-400 font-mono">
-              {rotation.leadershipSector}
+              {telemetry.sourced?.ym && telemetry.sourced?.nq ? rotation.leadershipSector : 'Unavailable'}
             </span>
           </div>
           <div>
             <span className="text-[10px] text-slate-400 block uppercase tracking-wider">Lagging Sectors</span>
             <span className="font-semibold text-slate-300 font-mono">
-              {rotation.laggingSector}
+              {telemetry.sourced?.ym && telemetry.sourced?.nq ? rotation.laggingSector : 'Unavailable'}
             </span>
           </div>
         </div>
@@ -159,7 +146,9 @@ export function DowRotationCreditCard({
         <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800 text-xs font-mono flex items-center justify-between">
           <span className="text-slate-400">YM vs NQ 1-Day Spread:</span>
           <span className={`font-bold text-sm ${rotation.ymVsNqSpreadPct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-            {rotation.ymVsNqSpreadPct >= 0 ? '+' : ''}{rotation.ymVsNqSpreadPct}%
+            {telemetry.sourced?.ym && telemetry.sourced?.nq
+              ? `${rotation.ymVsNqSpreadPct >= 0 ? '+' : ''}${rotation.ymVsNqSpreadPct}%`
+              : 'Unavailable'}
           </span>
         </div>
       </div>
@@ -179,7 +168,7 @@ export function DowRotationCreditCard({
             </p>
           </div>
           <span className={`px-2.5 py-1 rounded text-xs font-mono font-semibold border ${getCreditRegimeColor(credit.creditStressRegime)}`}>
-            {credit.creditStressRegime.replace(/_/g, ' ')}
+            {telemetry.sourced?.hyOas ? credit.creditStressRegime.replace(/_/g, ' ') : 'Unavailable'}
           </span>
         </div>
 
@@ -188,31 +177,26 @@ export function DowRotationCreditCard({
           <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-2.5">
             <span className="text-[10px] text-slate-400 block">High Yield OAS</span>
             <div className="text-base font-bold text-slate-100 mt-0.5">
-              {credit.highYieldSpreadBps} <span className="text-xs text-slate-400">bps</span>
+              {telemetry.sourced?.hyOas ? credit.highYieldSpreadBps : 'Unavailable'} <span className="text-xs text-slate-400">bps</span>
             </div>
-            <span className="text-[10px] text-emerald-400 font-sans">Tight (&lt;380bp)</span>
+            <span className="text-[10px] text-slate-400 font-sans">FRED high-yield OAS</span>
           </div>
 
           <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-2.5">
             <span className="text-[10px] text-slate-400 block">Inv. Grade OAS</span>
             <div className="text-base font-bold text-slate-100 mt-0.5">
-              {credit.investmentGradeSpreadBps} <span className="text-xs text-slate-400">bps</span>
+              Unavailable <span className="text-xs text-slate-400">bps</span>
             </div>
-            <span className="text-[10px] text-slate-400 font-sans">Stable</span>
+            <span className="text-[10px] text-slate-400 font-sans">No live investment-grade feed</span>
           </div>
 
           <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-2.5">
             <span className="text-[10px] text-slate-400 block">HYG ETF Price</span>
             <div className="text-sm font-bold text-slate-100 mt-0.5">
-              ${credit.hygPrice.toFixed(2)}
+              {telemetry.sourced?.hyg ? `$${credit.hygPrice.toFixed(2)}` : 'Unavailable'}
             </div>
-            <span
-              className={`text-xs font-semibold ${
-                credit.hygChangePct >= 0 ? 'text-emerald-400' : 'text-rose-400'
-              }`}
-            >
-              {credit.hygChangePct >= 0 ? '+' : ''}
-              {credit.hygChangePct.toFixed(2)}%
+            <span className="text-xs font-semibold text-slate-300">
+              {telemetry.sourced?.hyg ? `${credit.hygChangePct >= 0 ? '+' : ''}${credit.hygChangePct.toFixed(2)}%` : '—'}
             </span>
           </div>
 
@@ -226,15 +210,14 @@ export function DowRotationCreditCard({
                 credit.bankSectorChangePct >= 0 ? 'text-emerald-400' : 'text-rose-400'
               }`}
             >
-              {credit.bankSectorChangePct >= 0 ? '+' : ''}
-              {credit.bankSectorChangePct.toFixed(2)}%
+              {telemetry.sourced?.xlf ? `${credit.bankSectorChangePct >= 0 ? '+' : ''}${credit.bankSectorChangePct.toFixed(2)}%` : 'Unavailable'}
             </span>
           </div>
         </div>
 
         {/* Credit Safeguard / Divergence Alert */}
         <div className="bg-slate-950/50 p-3 rounded-lg border border-slate-800/80 text-xs font-mono leading-relaxed">
-          <span className="font-bold text-amber-400">CREDIT ENGINE PRINCIPLE (Prompt 10): </span>
+          <span className="font-bold text-amber-400">Credit note: </span>
           When credit spreads widen sharply while equities appear quiet, mature corporations face refinancing headwinds and banks tighten loan standards. Look for HYG volume breakdown as an early warning signal of macro equity liquidation.
         </div>
       </div>

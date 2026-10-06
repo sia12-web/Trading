@@ -27,10 +27,9 @@ export function DowEventEvaluatorCard({
   selectedHeadline,
   onClearHeadline,
 }: DowEventEvaluatorCardProps) {
-  const defaultPreset = DOW_EVALUATION_PRESETS[0]
-  const [selectedPresetId, setSelectedPresetId] = useState<string>(defaultPreset?.id || 'preset-strong-ism-cyclical-rotation')
-  const [rawText, setRawText] = useState<string>(defaultPreset?.rawText || '')
-  const [sourceHint, setSourceHint] = useState<string>(defaultPreset?.source || '')
+  const [selectedPresetId, setSelectedPresetId] = useState<string>('')
+  const [rawText, setRawText] = useState<string>('')
+  const [sourceHint, setSourceHint] = useState<string>('')
   const [evaluating, setEvaluating] = useState(false)
   const [lastResult, setLastResult] = useState<StructuredDowEventOutput | null>(null)
   const [jsonCopied, setJsonCopied] = useState(false)
@@ -171,7 +170,7 @@ export function DowEventEvaluatorCard({
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                Structured JSON (Prompt 38)
+                Structured JSON
               </button>
             </div>
             {viewTab === 'json' && (
@@ -189,7 +188,7 @@ export function DowEventEvaluatorCard({
       {/* Preset Selector */}
       <div className="mt-4">
         <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider block mb-1.5">
-          Load Institutional Test Scenarios (Prompts 5, 10, 12, 16, 28):
+          Sample notes (not live releases):
         </label>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
           {DOW_EVALUATION_PRESETS.map((preset) => (
@@ -345,7 +344,7 @@ export function DowEventEvaluatorCard({
                       </span>
                     </div>
                   </div>
-                  {lastResult.event_analysis?.estimated_dow_point_impact !== undefined && (
+                  {lastResult.event_analysis?.estimated_dow_point_impact != null && (
                     <div className="text-[11px] text-slate-300 font-mono pt-1">
                       Estimated Point Impact: <span className="font-bold text-blue-400">{lastResult.event_analysis.estimated_dow_point_impact >= 0 ? '+' : ''}{lastResult.event_analysis.estimated_dow_point_impact} Dow points</span>
                     </div>
@@ -407,7 +406,7 @@ export function DowEventEvaluatorCard({
               {/* Crisp Institutional Summary */}
               <div className="bg-blue-950/20 border border-blue-800/40 rounded-lg p-3">
                 <span className="text-[10px] font-semibold text-blue-400 uppercase tracking-wider block mb-1">
-                  Analyst Institutional Summary (Item 38)
+                  Analyst summary
                 </span>
                 <p className="text-xs text-slate-100 font-mono leading-relaxed">
                   {lastResult.summary}

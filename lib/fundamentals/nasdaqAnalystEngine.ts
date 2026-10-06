@@ -27,6 +27,7 @@ import {
 } from './nasdaqAnalystConfig'
 import { refreshNasdaqTelemetry, recordEvaluatedNasdaqEvent } from './nasdaqStateStore'
 import { logger } from '@/lib/utils/logger'
+import { scrubSummary, textContainsNumber } from '@/lib/fundamentals/honesty'
 import {
   adaptLegacyFundamentalJson,
   buildFundamentalEventUserPrompt,
@@ -301,9 +302,11 @@ function runDeterministicNasdaqEvaluation(params: {
       fundamentalState.short_term = 'NEUTRAL'
       fundamentalState.medium_term = 'BULLISH'
 
-      const stdRes = computeMacroStandardizedSurprise('CORE_CPI_MOM', 0.4, 0.2)
-      rawSurprise = stdRes.rawSurprise
-      standardizedSurprise = stdRes.standardizedSurprise
+      if (textContainsNumber(rawText, 0.4) && textContainsNumber(rawText, 0.2)) {
+        const stdRes = computeMacroStandardizedSurprise('CORE_CPI_MOM', 0.4, 0.2)
+        rawSurprise = stdRes.rawSurprise
+        standardizedSurprise = stdRes.standardizedSurprise
+      }
 
       marketResponse.rates_confirmation = 'YES'
       marketResponse.volatility_confirmation = 'YES'
@@ -470,7 +473,7 @@ function runDeterministicNasdaqEvaluation(params: {
     },
   ]
 
-  const cl5mReturn = marketResponse.nq_5m === 'UP' ? 0.85 : marketResponse.nq_5m === 'DOWN' ? -0.85 : 0.05
+  const cl5mReturn = telemetry.sourced?.nq ? +telemetry.nqChangePct.toFixed(2) : 0
 
   return {
     timestamp: nowIso,
@@ -484,17 +487,17 @@ function runDeterministicNasdaqEvaluation(params: {
     },
     drivers: driversList,
     market_confirmation: {
-      cl_5m_return: cl5mReturn,
-      us2y_bps_change: transmission.us2y === 'UP' ? 8.5 : transmission.us2y === 'DOWN' ? -6.0 : 0.0,
-      us10y_bps_change: transmission.us10y === 'UP' ? 5.2 : transmission.us10y === 'DOWN' ? -4.0 : 0.0,
-      vxn_point_change: transmission.fed_expectations === 'MORE_HAWKISH' ? 0.8 : -0.4,
-      advance_decline_ratio: telemetry.advanceDeclineRatio,
+      cl_5m_return: telemetry.sourced?.nq ? cl5mReturn : null,
+      us2y_bps_change: undefined,
+      us10y_bps_change: undefined,
+      vxn_point_change: undefined,
+      advance_decline_ratio: undefined,
       confirmation,
       market_state: marketResponse.nq_15m,
     },
     abnormal_behavior: abnormalBehavior,
-    confidence,
-    summary,
+    confidence: scrubSummary(rawText, summary) === summary ? confidence : 0,
+    summary: scrubSummary(rawText, summary),
     event_analysis: {
       category,
       expected_direction: expectedDirection,
@@ -527,14 +530,14 @@ async function runLlmNasdaqEvaluation(params: {
   const prompt = buildFundamentalEventUserPrompt({
     roleLine: 'You are evaluating a supplied event for CME E-mini Nasdaq-100 futures (NQ).',
     telemetryLines: [
-      datumLine('NQ', telemetry.nqPrice.toFixed(2), 'TICK', 'LIVE'),
-      datumLine('ES', telemetry.esPrice.toFixed(2), 'TICK', 'LIVE'),
-      datumLine('YM', telemetry.ymPrice.toFixed(0), 'TICK', 'LIVE'),
-      datumLine('US 2Y', `${telemetry.us2yNominalYield.toFixed(2)}%`, 'INTRADAY', 'RECENT'),
-      datumLine('US 10Y', `${telemetry.us10yNominalYield.toFixed(2)}%`, 'INTRADAY', 'RECENT'),
-      datumLine('10Y real', `${telemetry.us10yRealYield.toFixed(2)}%`, 'DAILY', 'RECENT'),
-      datumLine('VXN', telemetry.vxnIndex.toFixed(1), 'INTRADAY', 'RECENT'),
-      datumLine('VIX', telemetry.vixIndex.toFixed(1), 'INTRADAY', 'RECENT'),
+      datumLine('NQ', telemetry.sourced?.nq ? telemetry.nqPrice.toFixed(2) : 'UNAVAILABLE', telemetry.sourced?.nq ? 'TICK' : 'UNAVAILABLE', telemetry.sourced?.nq ? 'LIVE' : 'STALE'),
+      datumLine('ES', telemetry.sourced?.es ? telemetry.esPrice.toFixed(2) : 'UNAVAILABLE', telemetry.sourced?.es ? 'TICK' : 'UNAVAILABLE', telemetry.sourced?.es ? 'LIVE' : 'STALE'),
+      datumLine('YM', telemetry.sourced?.ym ? telemetry.ymPrice.toFixed(0) : 'UNAVAILABLE', telemetry.sourced?.ym ? 'TICK' : 'UNAVAILABLE', telemetry.sourced?.ym ? 'LIVE' : 'STALE'),
+      datumLine('US 2Y', telemetry.sourced?.us2y ? `${telemetry.us2yNominalYield.toFixed(2)}%` : 'UNAVAILABLE', 'INTRADAY', telemetry.sourced?.us2y ? 'RECENT' : 'STALE'),
+      datumLine('US 10Y', telemetry.sourced?.us10y ? `${telemetry.us10yNominalYield.toFixed(2)}%` : 'UNAVAILABLE', 'INTRADAY', telemetry.sourced?.us10y ? 'RECENT' : 'STALE'),
+      datumLine('10Y real', telemetry.sourced?.us10yReal ? `${telemetry.us10yRealYield.toFixed(2)}%` : 'UNAVAILABLE', 'DAILY', telemetry.sourced?.us10yReal ? 'RECENT' : 'STALE'),
+      datumLine('VXN', telemetry.sourced?.vxn ? telemetry.vxnIndex.toFixed(1) : 'UNAVAILABLE', 'INTRADAY', telemetry.sourced?.vxn ? 'RECENT' : 'STALE'),
+      datumLine('VIX', telemetry.sourced?.vix ? telemetry.vixIndex.toFixed(1) : 'UNAVAILABLE', 'INTRADAY', telemetry.sourced?.vix ? 'RECENT' : 'STALE'),
       'CURRENT NDX WEIGHTS: UNAVAILABLE. Do not use default or memorized constituent weights.',
       'CVD and profile: not supplied.',
     ],
@@ -621,24 +624,13 @@ Do not infer absorption or reclaim.`,
       ]
     }
     if (!parsed.market_confirmation) {
-      const q = parsed.market_response?.nq_response_quality || 'CONFIRMED'
-      const conf =
-        q === 'CONFIRMED'
-          ? 'STRONG'
-          : q === 'PARTIAL_CONFIRMATION'
-          ? 'MODERATE'
-          : q === 'PARTIAL_REJECTION'
-          ? 'WEAK'
-          : q === 'COMPLETE_REJECTION'
-          ? 'CONTRADICTED'
-          : 'MODERATE'
       parsed.market_confirmation = {
-        cl_5m_return: parsed.market_response?.nq_5m === 'UP' ? 0.8 : -0.8,
-        us2y_bps_change: 0,
-        us10y_bps_change: 0,
-        vxn_point_change: 0,
-        advance_decline_ratio: telemetry.advanceDeclineRatio,
-        confirmation: conf,
+        cl_5m_return: telemetry.sourced?.nq ? +telemetry.nqChangePct.toFixed(2) : null,
+        us2y_bps_change: undefined,
+        us10y_bps_change: undefined,
+        vxn_point_change: undefined,
+        advance_decline_ratio: undefined,
+        confirmation: 'INCONCLUSIVE',
       }
     }
     if (!parsed.abnormal_behavior) {

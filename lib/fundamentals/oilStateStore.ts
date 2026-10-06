@@ -26,40 +26,74 @@ import { getYahooQuote } from '@/lib/yahoo/quote'
 import { getFinnhubClient } from '@/lib/services/finnhubClient'
 import { fetchYahooFinanceHeadlines } from '@/lib/trading/liveEconomicResults'
 import { logger } from '@/lib/utils/logger'
+import { markFeed, sortByDatetimeDesc, withholdFeeds } from '@/lib/fundamentals/honesty'
+
+const UNSOURCED_OIL_TODAY: Partial<TodaysOilFundamentalState> = {
+  supply: 'Unavailable',
+  demand: 'Unavailable',
+  inventories: 'Unavailable',
+  opec: 'Unavailable',
+  geopolitical_risk: 'Unavailable',
+  positioning: 'Unavailable',
+  curve: 'M1-M2 calendar spread is unavailable.',
+  bias: 'NEUTRAL',
+  confidence: 0,
+  what_changed_since_yesterday: 'Unavailable',
+  what_would_invalidate_this_view: 'A sourced inventory, OPEC, or curve print.',
+}
+
+function blankWtiTelemetry(): WtiTelemetry {
+  return {
+    promptPrice: 0,
+    symbol: 'CL=F',
+    change: 0,
+    changePct: 0,
+    high: 0,
+    low: 0,
+    previousClose: 0,
+    promptSpread: null,
+    spreadRegime: 'UNKNOWN',
+    sourced: {},
+    timestamp: Math.floor(Date.now() / 1000),
+    source: 'Unavailable until Yahoo quotes return',
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+function blankOilPillars(
+  pillars: Record<FundamentalPillarId, FundamentalPillarState>,
+): Record<FundamentalPillarId, FundamentalPillarState> {
+  const next = { ...pillars }
+  for (const id of Object.keys(next) as FundamentalPillarId[]) {
+    const pillar = next[id]
+    next[id] = {
+      ...pillar,
+      bias: 'NEUTRAL',
+      confidence: 0,
+      statusSummary: 'Unavailable. No live print is connected for this pillar.',
+      keyTakeaway: 'Unavailable until a sourced print arrives.',
+      metrics: pillar.metrics.map((metric) => ({ label: metric.label, value: 'Unavailable' })),
+      sourced: false,
+    }
+  }
+  return next
+}
 
 // In-memory persistent state for server runtime
 let currentState: OilFundamentalDashboardState = {
   market: 'NYMEX_WTI',
   analystPersona: 'Oil Fundamental Analyst',
   updatedAt: new Date().toISOString(),
-  overallBias: 'BULLISH',
-  overallConfidence: 84,
+  overallBias: 'NEUTRAL',
+  overallConfidence: 0,
   biasSummary:
-    'Physical crude balances remain tight underpinned by low Cushing inventories (~23M bbl), OPEC+ 2.2M bpd voluntary cuts extension, and forward curve backwardation.',
-  physicalBalance: 'DEFICIT',
-  curveSummary: 'Backwardation (+0.38/bbl M1-M2 prompt spread). Strong prompt physical delivery demand.',
-  wtiTelemetry: {
-    promptPrice: 71.85,
-    symbol: 'CL=F',
-    change: 0.65,
-    changePct: 0.91,
-    high: 72.4,
-    low: 70.95,
-    previousClose: 71.2,
-    promptSpread: 0.38,
-    spreadRegime: 'BACKWARDATION',
-    brentPrice: 75.8,
-    brentWtiSpread: 3.95,
-    crackSpread321: 22.4,
-    gasolinePrice: 2.15,
-    heatingOilPrice: 2.35,
-    timestamp: Math.floor(Date.now() / 1000),
-    source: 'NYMEX CME Globex / Yahoo Real-Time Quotes',
-    updatedAt: new Date().toISOString(),
-  },
-  today: { ...DEFAULT_TODAY_FUNDAMENTAL_STATE },
-  fiveFeeds: [...DEFAULT_FIVE_FEEDS],
-  pillars: { ...DEFAULT_PILLARS_STATE },
+    'Live WTI, Brent, and crack quotes update from Yahoo. Inventories, OPEC flows, positioning, and the M1-M2 calendar spread stay unavailable until those feeds print.',
+  physicalBalance: 'BALANCED',
+  curveSummary: 'M1-M2 calendar spread is unavailable. No curve feed is connected.',
+  wtiTelemetry: blankWtiTelemetry(),
+  today: { ...DEFAULT_TODAY_FUNDAMENTAL_STATE, ...UNSOURCED_OIL_TODAY },
+  fiveFeeds: withholdFeeds(DEFAULT_FIVE_FEEDS),
+  pillars: blankOilPillars(DEFAULT_PILLARS_STATE),
   recentEvents: [],
   scheduledCatalysts: [...SCHEDULED_OIL_CATALYSTS],
   liveOilHeadlines: [],
@@ -150,15 +184,11 @@ export async function refreshWtiTelemetry(): Promise<WtiTelemetry> {
       // Calculate real Brent-WTI spread if Brent is available
       const brentWtiSpread = brentPx ? +(brentPx - q.price).toFixed(2) : undefined
 
-      // Calculate real NYMEX 3:2:1 crack spread: ((2 * RBOB*42) + (HO*42) - (3 * WTI)) / 3
+      // Real NYMEX 3:2:1 crack: ((2 * RBOB*42) + (HO*42) - (3 * WTI)) / 3
       let crackSpread321: number | undefined = undefined
       if (rbobPx && hoPx) {
         crackSpread321 = +(((2 * rbobPx * 42) + (hoPx * 42) - (3 * q.price)) / 3).toFixed(2)
       }
-
-      // Backwardation / Contango estimate relative to prompt print
-      const spread = +(0.38 + (q.change > 0 ? 0.05 : -0.05)).toFixed(2)
-      const regime = spread > 0.05 ? 'BACKWARDATION' : spread < -0.05 ? 'CONTANGO' : 'FLAT'
 
       currentState.wtiTelemetry = {
         promptPrice: q.price,
@@ -168,20 +198,27 @@ export async function refreshWtiTelemetry(): Promise<WtiTelemetry> {
         high: q.high ?? q.price,
         low: q.low ?? q.price,
         previousClose: q.previous_close,
-        promptSpread: spread,
-        spreadRegime: regime,
+        promptSpread: null,
+        spreadRegime: 'UNKNOWN',
         brentPrice: brentPx ?? undefined,
         brentWtiSpread,
         crackSpread321,
         gasolinePrice: rbobPx ?? undefined,
         heatingOilPrice: hoPx ?? undefined,
+        sourced: {
+          prompt: true,
+          brent: brentPx != null,
+          crack: crackSpread321 != null,
+        },
         timestamp: q.timestamp || Math.floor(Date.now() / 1000),
-        source: 'NYMEX CME Globex / Yahoo Real-Time Quotes',
+        source: 'Yahoo CL=F, BZ=F, RB=F, HO=F',
         updatedAt: new Date().toISOString(),
       }
 
-      // Update Curve in TODAY'S state
-      currentState.today.curve = `Prompt M1-M2 spread holding at +$${spread.toFixed(2)}/bbl in ${regime}.${brentWtiSpread !== undefined ? ` Brent-WTI spread: +$${brentWtiSpread}/bbl.` : ''}`
+      const brentNote = brentWtiSpread !== undefined ? ` Brent-WTI: $${brentWtiSpread}/bbl.` : ''
+      const crackNote = crackSpread321 !== undefined ? ` 3:2:1 crack: $${crackSpread321.toFixed(2)}/bbl.` : ''
+      currentState.today.curve = `M1-M2 calendar spread is unavailable.${brentNote}${crackNote}`
+      markFeed(currentState.fiveFeeds, 'cme_databento', 'ONLINE', new Date().toISOString())
 
       // Update Refinery Crack in Pillar state if calculated
       if (crackSpread321 !== undefined && currentState.pillars.refinery_activity) {
@@ -241,7 +278,8 @@ export async function refreshLiveOilHeadlines(): Promise<LiveOilHeadline[]> {
     }
 
     if (headlines.length > 0) {
-      currentState.liveOilHeadlines = headlines.slice(0, 10)
+      currentState.liveOilHeadlines = sortByDatetimeDesc(headlines).slice(0, 12)
+      markFeed(currentState.fiveFeeds, 'realtime_news', 'ONLINE', new Date().toISOString())
     }
   } catch (err) {
     logger.warn('[OilStateStore] Failed to fetch live oil headlines', err)
@@ -353,34 +391,16 @@ export function resetOilFundamentalState(): OilFundamentalDashboardState {
     market: 'NYMEX_WTI',
     analystPersona: 'Oil Fundamental Analyst',
     updatedAt: new Date().toISOString(),
-    overallBias: 'BULLISH',
-    overallConfidence: 84,
+    overallBias: 'NEUTRAL',
+    overallConfidence: 0,
     biasSummary:
-      'Physical crude balances remain tight underpinned by depleted Cushing inventories (~23M bbl), OPEC+ 2.2M bpd voluntary cuts extension, and forward curve backwardation (+0.38/bbl).',
-    physicalBalance: 'DEFICIT',
-    curveSummary: 'Backwardation (+0.38/bbl M1-M2 prompt spread). Strong prompt physical delivery demand.',
-    wtiTelemetry: {
-      promptPrice: 71.85,
-      symbol: 'CL=F',
-      change: 0.65,
-      changePct: 0.91,
-      high: 72.4,
-      low: 70.95,
-      previousClose: 71.2,
-      promptSpread: 0.38,
-      spreadRegime: 'BACKWARDATION',
-      brentPrice: 75.8,
-      brentWtiSpread: 3.95,
-      crackSpread321: 22.4,
-      gasolinePrice: 2.15,
-      heatingOilPrice: 2.35,
-      timestamp: Math.floor(Date.now() / 1000),
-      source: 'NYMEX CME Globex / Yahoo Real-Time Quotes',
-      updatedAt: new Date().toISOString(),
-    },
-    today: { ...DEFAULT_TODAY_FUNDAMENTAL_STATE },
-    fiveFeeds: [...DEFAULT_FIVE_FEEDS],
-    pillars: { ...DEFAULT_PILLARS_STATE },
+      'Live WTI, Brent, and crack quotes update from Yahoo. Inventories, OPEC flows, positioning, and the M1-M2 calendar spread stay unavailable until those feeds print.',
+    physicalBalance: 'BALANCED',
+    curveSummary: 'M1-M2 calendar spread is unavailable. No curve feed is connected.',
+    wtiTelemetry: blankWtiTelemetry(),
+    today: { ...DEFAULT_TODAY_FUNDAMENTAL_STATE, ...UNSOURCED_OIL_TODAY },
+    fiveFeeds: withholdFeeds(DEFAULT_FIVE_FEEDS),
+    pillars: blankOilPillars(DEFAULT_PILLARS_STATE),
     recentEvents: [],
     scheduledCatalysts: [...SCHEDULED_OIL_CATALYSTS],
     liveOilHeadlines: [],

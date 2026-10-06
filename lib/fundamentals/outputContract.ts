@@ -107,8 +107,8 @@ export function formatSignedNumber(value: number, digits = 2): string {
 }
 
 /** Signed dollar amount. Negative values render as -$0.24, never +$-0.24. */
-export function formatSignedDollars(value: number, digits = 2): string {
-  if (!Number.isFinite(value)) return 'UNAVAILABLE'
+export function formatSignedDollars(value: number | null | undefined, digits = 2): string {
+  if (value == null || !Number.isFinite(value)) return 'UNAVAILABLE'
   const body = Math.abs(value).toFixed(digits)
   if (value > 0) return `+$${body}`
   if (value < 0) return `-$${body}`

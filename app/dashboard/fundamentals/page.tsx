@@ -27,6 +27,7 @@ import { GoldDashboard } from './gold/GoldDashboard'
 import { NasdaqDashboard } from './nasdaq/NasdaqDashboard'
 import { DowDashboard } from './dow/DowDashboard'
 import { NikkeiDashboard } from './nikkei/NikkeiDashboard'
+import { confidencePercent } from '@/lib/fundamentals/honesty'
 
 type OilTabKey = 'today' | 'wire' | 'evaluator' | 'matrix' | 'feeds' | 'history' | 'calendar' | 'terminal'
 type MarketKey = 'CL' | 'GC' | 'NQ' | 'YM' | 'NKD'
@@ -47,6 +48,14 @@ function FundamentalsContent() {
       ? 'NKD'
       : 'CL'
   const [market, setMarket] = useState<MarketKey>(initialMarket)
+
+  useEffect(() => {
+    setMarket(initialMarket)
+    const raw = searchParams.get('market')?.toUpperCase()
+    if (raw !== initialMarket) {
+      router.replace(`/dashboard/fundamentals?market=${initialMarket}`)
+    }
+  }, [initialMarket, router, searchParams])
 
   // Oil State
   const [tab, setTab] = useState<OilTabKey>('today')
@@ -94,11 +103,13 @@ function FundamentalsContent() {
         body: JSON.stringify({ action: 'refresh_telemetry' }),
       })
       const data = await res.json()
-      if (data.ok && data.state) {
-        setState(data.state)
+      if (!res.ok || !data.ok || !data.state) {
+        throw new Error(data.error || `Refresh failed (${res.status})`)
       }
-    } catch {
-      await loadState()
+      setState(data.state)
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Refresh failed')
     } finally {
       setRefreshing(false)
     }
@@ -114,11 +125,13 @@ function FundamentalsContent() {
         body: JSON.stringify({ action: 'reset' }),
       })
       const data = await res.json()
-      if (data.ok && data.state) {
-        setState(data.state)
+      if (!res.ok || !data.ok || !data.state) {
+        throw new Error(data.error || `HTTP ${res.status}`)
       }
-    } catch {
-      await loadState()
+      setState(data.state)
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Reset failed')
     } finally {
       setRefreshing(false)
     }
@@ -235,9 +248,9 @@ function FundamentalsContent() {
 
         <div className="px-3 text-[11px] text-slate-400 hidden sm:block">
           {market === 'NKD'
-            ? 'Nikkei Analyst: BoJ Policy · USD/JPY FX Pass-Through (155-160 alert) · Price-Weighting (Fast Retailing / Semis) · Tokyo Session'
+            ? 'Nikkei Analyst: NKD and USD/JPY after a Yahoo quote. BoJ policy and index weights stay unavailable.'
             : market === 'YM'
-            ? 'Dow Analyst: Price-Weighting (0.1517) · ISM Industrial Cycle · Rotation (XLI/XLF) · Credit Spreads'
+            ? 'Dow Analyst: quoted names, yields, and credit after a live print. ISM and the official divisor stay unavailable.'
             : market === 'NQ'
             ? 'Nasdaq Analyst: Macro · Rates Engine · Mega-Cap Guidance · AI/Semis · Breadth'
             : market === 'GC'
@@ -281,11 +294,16 @@ function FundamentalsContent() {
 
           {state && (
             <div className="space-y-5 pb-10">
+              {error && (
+                <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-300">
+                  {error}
+                </div>
+              )}
               {/* Executive Header with live WTI quote, calendar spread, and safeguards */}
               <FundamentalsHeader
                 telemetry={state.wtiTelemetry}
                 overallBias={state.overallBias}
-                overallConfidence={state.today ? Math.round(state.today.confidence * 100) : state.overallConfidence}
+                overallConfidence={state.today ? confidencePercent(state.today.confidence) : confidencePercent(state.overallConfidence)}
                 physicalBalance={state.physicalBalance}
                 onRefresh={handleRefresh}
                 onReset={handleReset}
@@ -305,7 +323,33 @@ function FundamentalsContent() {
                     }`}
                   >
                     <span>🛢️</span>
-                    <span>Today&apos;s State (V1)</span>
+                    <span>Today&apos;s State</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setTab('matrix')}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition border ${
+                      tab === 'matrix'
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm'
+                        : 'bg-slate-950/70 text-slate-400 hover:text-slate-200 border-slate-800'
+                    }`}
+                  >
+                    <span>🏛️</span>
+                    <span>Drivers</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setTab('calendar')}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition border ${
+                      tab === 'calendar'
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm'
+                        : 'bg-slate-950/70 text-slate-400 hover:text-slate-200 border-slate-800'
+                    }`}
+                  >
+                    <span>📅</span>
+                    <span>Catalyst Calendar</span>
                   </button>
 
                   <button
@@ -334,33 +378,7 @@ function FundamentalsContent() {
                     }`}
                   >
                     <span>⚙️</span>
-                    <span>Structured Evaluator</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setTab('matrix')}
-                    className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition border ${
-                      tab === 'matrix'
-                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm'
-                        : 'bg-slate-950/70 text-slate-400 hover:text-slate-200 border-slate-800'
-                    }`}
-                  >
-                    <span>🏛️</span>
-                    <span>10-Pillar Matrix</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setTab('feeds')}
-                    className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition border ${
-                      tab === 'feeds'
-                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm'
-                        : 'bg-slate-950/70 text-slate-400 hover:text-slate-200 border-slate-800'
-                    }`}
-                  >
-                    <span>🔌</span>
-                    <span>5 Feeds Architecture</span>
+                    <span>Event Evaluator</span>
                   </button>
 
                   <button
@@ -383,15 +401,15 @@ function FundamentalsContent() {
 
                   <button
                     type="button"
-                    onClick={() => setTab('calendar')}
+                    onClick={() => setTab('feeds')}
                     className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition border ${
-                      tab === 'calendar'
+                      tab === 'feeds'
                         ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm'
                         : 'bg-slate-950/70 text-slate-400 hover:text-slate-200 border-slate-800'
                     }`}
                   >
-                    <span>📅</span>
-                    <span>Catalyst Calendar</span>
+                    <span>🔌</span>
+                    <span>Feeds</span>
                   </button>
 
                   <button
@@ -411,16 +429,7 @@ function FundamentalsContent() {
 
               {/* Tab Workspaces */}
               {tab === 'today' && (
-                <div className="space-y-5">
-                  <TodayFundamentalCard today={state.today} telemetry={state.wtiTelemetry} />
-                  <LiveOilNewsWire
-                    headlines={state.liveOilHeadlines}
-                    onSelectHeadline={handleSelectWireHeadline}
-                    onRefreshNews={handleRefresh}
-                    loading={refreshing}
-                  />
-                  <FiveFeedsCard feeds={state.fiveFeeds} />
-                </div>
+                <TodayFundamentalCard today={state.today} telemetry={state.wtiTelemetry} />
               )}
 
               {tab === 'wire' && (

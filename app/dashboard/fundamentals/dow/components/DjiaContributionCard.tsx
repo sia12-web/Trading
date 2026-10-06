@@ -91,7 +91,13 @@ export function DjiaContributionCard({
     }
   }
 
-  const divMeta = getDivergenceBadge(contributions.weightingDivergenceSignal)
+  const divMeta = {
+    label: 'Contribution unavailable',
+    color: 'text-slate-300 bg-slate-500/15 border-slate-700',
+  }
+  void getDivergenceBadge
+  void contributions
+  void dowDivisor
 
   return (
     <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-6 backdrop-blur-sm shadow-xl space-y-6">
@@ -104,11 +110,11 @@ export function DjiaContributionCard({
               DJIA 30 Price-Weighting &amp; Point Contribution Engine
             </h2>
             <span className="text-[11px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-mono">
-              Divisor: {dowDivisor}
+              Official divisor unavailable
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            The Dow is price-weighted, NOT market-cap-weighted. Point move = (&Delta;Price / Divisor). A $1 move in any constituent generates ~6.59 Dow points ($32.95 per YM contract).
+            The Dow is price-weighted. Official divisor, index weights, and point contribution stay unavailable. A share price appears only after Yahoo returns that name.
           </p>
         </div>
 
@@ -118,7 +124,7 @@ export function DjiaContributionCard({
             {divMeta.label}
           </span>
           <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-            Equal-weight: {contributions.equalWeight30ReturnPct >= 0 ? '+' : ''}{contributions.equalWeight30ReturnPct}% vs DJIA: {contributions.priceWeightedDjiaReturnPct >= 0 ? '+' : ''}{contributions.priceWeightedDjiaReturnPct}%
+            Equal-weight versus price-weight divergence is unavailable
           </div>
         </div>
       </div>
@@ -130,12 +136,12 @@ export function DjiaContributionCard({
             Top 1 Constituent Point Share
           </div>
           <div className="text-xl font-bold font-mono text-slate-100">
-            {contributions.top1ContributionPct.toFixed(1)}%
+            Unavailable
           </div>
           <div className="w-full bg-slate-800 h-1.5 rounded-full mt-2 overflow-hidden">
             <div
               className="bg-blue-500 h-full rounded-full"
-              style={{ width: `${Math.min(100, contributions.top1ContributionPct)}%` }}
+              style={{ width: '0%' }}
             />
           </div>
         </div>
@@ -145,18 +151,16 @@ export function DjiaContributionCard({
             Top 3 Point Concentration
           </div>
           <div className="text-xl font-bold font-mono text-slate-100">
-            {contributions.top3ContributionPct.toFixed(1)}%
+            Unavailable
           </div>
           <div className="w-full bg-slate-800 h-1.5 rounded-full mt-2 overflow-hidden">
             <div
-              className={`h-full rounded-full ${
-                contributions.top3ContributionPct > 55 ? 'bg-amber-500' : 'bg-emerald-500'
-              }`}
-              style={{ width: `${Math.min(100, contributions.top3ContributionPct)}%` }}
+              className="h-full rounded-full bg-slate-600"
+              style={{ width: '0%' }}
             />
           </div>
           <span className="text-[10px] font-mono text-slate-400 mt-1 block">
-            Regime: {contributions.contributionConcentration}
+            Regime: Unavailable
           </span>
         </div>
 
@@ -165,12 +169,12 @@ export function DjiaContributionCard({
             Top 5 Point Concentration
           </div>
           <div className="text-xl font-bold font-mono text-slate-100">
-            {contributions.top5ContributionPct.toFixed(1)}%
+            Unavailable
           </div>
           <div className="w-full bg-slate-800 h-1.5 rounded-full mt-2 overflow-hidden">
             <div
               className="bg-purple-500 h-full rounded-full"
-              style={{ width: `${Math.min(100, contributions.top5ContributionPct)}%` }}
+              style={{ width: '0%' }}
             />
           </div>
         </div>
@@ -179,16 +183,11 @@ export function DjiaContributionCard({
           <div className="text-[10.5px] text-slate-400 uppercase tracking-wider mb-1">
             Total Net Daily Points Moved
           </div>
-          <div
-            className={`text-xl font-bold font-mono ${
-              contributions.totalDayPointsMove >= 0 ? 'text-emerald-400' : 'text-rose-400'
-            }`}
-          >
-            {contributions.totalDayPointsMove >= 0 ? '+' : ''}
-            {contributions.totalDayPointsMove.toFixed(1)} pts
+          <div className="text-xl font-bold font-mono text-slate-300">
+            Unavailable
           </div>
           <span className="text-[10px] text-slate-400 font-mono mt-1 block">
-            Notional $\Delta$: ${(Math.abs(contributions.totalDayPointsMove * 5)).toLocaleString('en-US', { maximumFractionDigits: 0 })} / contract
+            Point contribution is not on a live feed
           </span>
         </div>
       </div>
@@ -196,7 +195,7 @@ export function DjiaContributionCard({
       {/* Institutional Explanatory Alert */}
       <div className="bg-slate-950/50 border border-slate-800/80 rounded-lg p-3 text-xs text-slate-300 leading-relaxed font-mono">
         <span className="font-bold text-blue-400">PRICE-WEIGHTING LEVERAGE RULE: </span>
-        UnitedHealth ($585) or Goldman Sachs ($535) has roughly <strong>6.8x the point influence</strong> of Nike ($86) or Coca-Cola ($68). When high-priced stocks have earnings or guidance shocks, they overpower dozens of lower-priced constituents combined.
+        A higher share price carries more Dow points than a lower share price. Live prices and the official divisor are required before that leverage can be stated.
       </div>
 
       {/* Search & Sort Controls */}
@@ -282,7 +281,6 @@ export function DjiaContributionCard({
           </thead>
           <tbody className="divide-y divide-slate-800/60">
             {filteredAndSorted.map((c) => {
-              const isPositive = c.pointContribution >= 0
               return (
                 <tr
                   key={c.symbol}
@@ -298,27 +296,17 @@ export function DjiaContributionCard({
                     {c.sector}
                   </td>
                   <td className="py-2 px-3 text-right font-bold text-slate-100">
-                    ${c.price.toFixed(2)}
+                    {c.quoteLive ? `$${c.price.toFixed(2)}` : 'Unavailable'}
                   </td>
                   <td className="py-2 px-3 text-right text-slate-300">
-                    {c.priceWeightPct.toFixed(2)}%
+                    Unavailable
                   </td>
-                  <td
-                    className={`py-2 px-3 text-right font-semibold ${
-                      c.dayChangePct >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                    }`}
-                  >
-                    {c.dayChangePct >= 0 ? '+' : ''}
-                    {c.dayChangePct.toFixed(2)}% (${c.dayChange >= 0 ? '+' : ''}{c.dayChange.toFixed(2)})
+                  <td className="py-2 px-3 text-right font-semibold text-slate-300">
+                    {c.quoteLive ? `${c.dayChangePct >= 0 ? '+' : ''}${c.dayChangePct.toFixed(2)}%` : 'Unavailable'}
                   </td>
-                  <td
-                    className={`py-2 px-3 text-right font-bold ${
-                      isPositive ? 'text-emerald-400' : 'text-rose-400'
-                    }`}
-                  >
+                  <td className="py-2 px-3 text-right font-bold text-slate-400">
                     <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800 inline-block min-w-[70px]">
-                      {isPositive ? '+' : ''}
-                      {c.pointContribution.toFixed(1)} pts
+                      Unavailable
                     </span>
                   </td>
                   <td className="py-2 px-3 text-center">
@@ -331,7 +319,7 @@ export function DjiaContributionCard({
                           : 'bg-slate-800 text-slate-400'
                       }`}
                     >
-                      {c.lastEpsSurprise || 'N/A'}
+                      Unavailable
                     </span>
                   </td>
                   <td className="py-2 px-3 text-center">

@@ -34,10 +34,10 @@ export function DowFeedsCard({ feeds }: DowFeedsCardProps) {
           <div className="flex items-center gap-2">
             <span className="text-xl">🔌</span>
             <h2 className="text-lg font-bold text-slate-100">
-              Dow Fundamental Engine Data Feeds (9 Feeds Architecture)
+              Dow data feeds
             </h2>
             <span className="text-[11px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-mono">
-              Pragmatic V1
+              Dow data feeds
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-1">

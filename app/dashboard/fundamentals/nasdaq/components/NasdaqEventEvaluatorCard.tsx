@@ -27,10 +27,9 @@ export function NasdaqEventEvaluatorCard({
   selectedHeadline,
   onClearHeadline,
 }: NasdaqEventEvaluatorCardProps) {
-  const defaultPreset = NASDAQ_EVALUATION_PRESETS[0]
-  const [selectedPresetId, setSelectedPresetId] = useState<string>(defaultPreset?.id || 'preset-hot-cpi-rejection')
-  const [rawText, setRawText] = useState<string>(defaultPreset?.rawText || '')
-  const [sourceHint, setSourceHint] = useState<string>(defaultPreset?.source || '')
+  const [selectedPresetId, setSelectedPresetId] = useState<string>('')
+  const [rawText, setRawText] = useState<string>('')
+  const [sourceHint, setSourceHint] = useState<string>('')
   const [evaluating, setEvaluating] = useState(false)
   const [lastResult, setLastResult] = useState<StructuredNasdaqEventOutput | null>(null)
   const [jsonCopied, setJsonCopied] = useState(false)
@@ -170,7 +169,7 @@ export function NasdaqEventEvaluatorCard({
       {/* Preset Scenario Selector */}
       <div className="my-4">
         <label className="text-xs font-semibold text-slate-300 block mb-2">
-          Select Institutional Scenario Preset:
+          Sample notes (not live releases):
         </label>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
           {NASDAQ_EVALUATION_PRESETS.map((p) => (
@@ -398,32 +397,35 @@ export function NasdaqEventEvaluatorCard({
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                 <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800 text-center">
                   <div className="text-[10px] text-slate-400">NQ 5m Reaction</div>
-                  <div className={`font-mono font-bold text-sm ${lastResult.market_confirmation.cl_5m_return >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {lastResult.market_confirmation.cl_5m_return >= 0 ? '+' : ''}
-                    {lastResult.market_confirmation.cl_5m_return.toFixed(2)}%
+                  <div className="font-mono font-bold text-sm text-slate-200">
+                    {lastResult.market_confirmation.cl_5m_return == null
+                      ? 'Unavailable'
+                      : `${lastResult.market_confirmation.cl_5m_return >= 0 ? '+' : ''}${lastResult.market_confirmation.cl_5m_return.toFixed(2)}%`}
                   </div>
                 </div>
 
                 <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800 text-center">
                   <div className="text-[10px] text-slate-400">2Y Yield Change</div>
                   <div className="font-mono font-bold text-sm text-cyan-300">
-                    {(lastResult.market_confirmation.us2y_bps_change ?? 0) >= 0 ? '+' : ''}
-                    {(lastResult.market_confirmation.us2y_bps_change ?? 0).toFixed(1)} bps
+                    {lastResult.market_confirmation.us2y_bps_change == null
+                      ? 'Unavailable'
+                      : `${lastResult.market_confirmation.us2y_bps_change >= 0 ? '+' : ''}${lastResult.market_confirmation.us2y_bps_change.toFixed(1)} bps`}
                   </div>
                 </div>
 
                 <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800 text-center">
                   <div className="text-[10px] text-slate-400">10Y Yield Change</div>
                   <div className="font-mono font-bold text-sm text-cyan-300">
-                    {(lastResult.market_confirmation.us10y_bps_change ?? 0) >= 0 ? '+' : ''}
-                    {(lastResult.market_confirmation.us10y_bps_change ?? 0).toFixed(1)} bps
+                    {lastResult.market_confirmation.us10y_bps_change == null
+                      ? 'Unavailable'
+                      : `${lastResult.market_confirmation.us10y_bps_change >= 0 ? '+' : ''}${lastResult.market_confirmation.us10y_bps_change.toFixed(1)} bps`}
                   </div>
                 </div>
 
                 <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800 text-center">
                   <div className="text-[10px] text-slate-400">Advance / Decline</div>
                   <div className="font-mono font-bold text-sm text-amber-300">
-                    {lastResult.market_confirmation.advance_decline_ratio ? `${lastResult.market_confirmation.advance_decline_ratio.toFixed(2)}:1` : 'N/A'}
+                    {lastResult.market_confirmation.advance_decline_ratio == null ? 'Unavailable' : `${lastResult.market_confirmation.advance_decline_ratio.toFixed(2)}:1`}
                   </div>
                 </div>
               </div>

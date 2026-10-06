@@ -26,10 +26,9 @@ export function GoldEventEvaluatorCard({
   selectedHeadline,
   onClearHeadline,
 }: GoldEventEvaluatorCardProps) {
-  const defaultPreset = GOLD_EVALUATION_PRESETS[0]
-  const [selectedPresetId, setSelectedPresetId] = useState<string>(defaultPreset?.id || 'preset-hot-cpi-rejection')
-  const [rawText, setRawText] = useState<string>(defaultPreset?.rawText || '')
-  const [sourceHint, setSourceHint] = useState<string>(defaultPreset?.source || '')
+  const [selectedPresetId, setSelectedPresetId] = useState<string>('')
+  const [rawText, setRawText] = useState<string>('')
+  const [sourceHint, setSourceHint] = useState<string>('')
   const [evaluating, setEvaluating] = useState(false)
   const [lastResult, setLastResult] = useState<StructuredGoldEventOutput | null>(null)
   const [jsonCopied, setJsonCopied] = useState(false)
@@ -122,7 +121,7 @@ export function GoldEventEvaluatorCard({
               Gold Event Evaluator & Structured JSON Engine
             </h2>
             <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-              Item 36 Specification
+              Structured evaluation
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
@@ -134,7 +133,7 @@ export function GoldEventEvaluatorCard({
       {/* Preset Selector */}
       <div className="my-4">
         <label className="text-xs font-semibold text-slate-300 block mb-2">
-          Select Institutional Scenario Preset:
+          Sample notes (not live releases):
         </label>
         <div className="flex flex-wrap gap-2">
           {GOLD_EVALUATION_PRESETS.map((p) => (
@@ -344,7 +343,7 @@ export function GoldEventEvaluatorCard({
           {/* Machine-Readable Structured JSON Viewer */}
           <div className="p-4 rounded-lg bg-slate-950 border border-slate-800 font-mono text-xs">
             <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800 text-slate-400">
-              <span>MACHINE-READABLE STRUCTURED OUTPUT (ITEM 36 COMPLIANT)</span>
+              <span>Structured output</span>
               <span className="text-[10px] text-emerald-400 font-bold">Agents Consume: {lastResult.market_response.gold_response_quality}</span>
             </div>
             <pre className="text-emerald-400 whitespace-pre-wrap overflow-x-auto max-h-96">

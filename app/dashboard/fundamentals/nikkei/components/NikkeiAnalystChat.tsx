@@ -122,7 +122,7 @@ export function NikkeiAnalystChat() {
           </div>
         </div>
         <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-          ONLINE
+          Chat ready
         </span>
       </div>
 

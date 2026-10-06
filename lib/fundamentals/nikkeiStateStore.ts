@@ -34,16 +34,17 @@ import { getFinnhubClient } from '@/lib/services/finnhubClient'
 import { fetchYahooFinanceHeadlines } from '@/lib/trading/liveEconomicResults'
 import { logger } from '@/lib/utils/logger'
 import { candidateIsMaterial } from '@/lib/fundamentals/outputContract'
+import { markFeed, sortByDatetimeDesc, tokyoCashPhase, withholdFeeds } from '@/lib/fundamentals/honesty'
 
 // In-memory state singleton for Nikkei
 let currentNikkeiState: NikkeiFundamentalDashboardState = {
   market: 'CME_NKD',
   analystPersona: 'Nikkei 225 Macro, BoJ Monetary Policy, FX Pass-Through & Global Tech Analyst',
   updatedAt: new Date().toISOString(),
-  overallBias: 'BULLISH',
-  overallConfidence: 88,
+  overallBias: 'NEUTRAL',
+  overallConfidence: 0,
   biasSummary:
-    'Favorable USD/JPY stability near 152.40, historic AI semiconductor capex driving Tokyo Electron and Advantest, and corporate governance reforms fueling foreign inflows support broad upward momentum in NKD futures.',
+    'NKD and USD/JPY update from Yahoo. BoJ policy, wages, foreign flows, and index weights stay unavailable until those feeds print.',
   nikkeiTelemetry: {
     nkdPrice: 38900,
     nkdChange: 350,
@@ -65,13 +66,27 @@ let currentNikkeiState: NikkeiFundamentalDashboardState = {
     unchangedCount: 5,
     nikkeiDivisor: NIKKEI_DIVISOR,
     topConstituentsByWeight: DEFAULT_NIKKEI_CONSTITUENTS,
-    tokyoCashSessionActive: true,
-    tokyoSessionPhase: 'MORNING_CASH',
+    tokyoCashSessionActive: tokyoCashPhase() !== 'CLOSED' && tokyoCashPhase() !== 'PREP',
+    tokyoSessionPhase: tokyoCashPhase(),
+    sourced: {},
     timestamp: Date.now(),
     source: 'CME Globex NKD MDP 3.0 / JPX TSE Arrowhead',
     updatedAt: new Date().toISOString(),
   },
-  today: { ...TODAYS_NIKKEI_FUNDAMENTAL_INITIAL },
+  today: {
+    ...TODAYS_NIKKEI_FUNDAMENTAL_INITIAL,
+    intraday_bias: 'NEUTRAL',
+    short_term_bias: 'NEUTRAL',
+    medium_term_bias: 'NEUTRAL',
+    domestic_macro_growth: 'Unavailable',
+    inflation_wages_shunto: 'Unavailable',
+    tokyo_cash_session_bias: 'Unavailable',
+    foreign_investor_flow: 'NEUTRAL',
+    semiconductor_tailwind: 'NEUTRAL',
+    us_overnight_lead: 'FLAT',
+    summary_narrative: 'NKD and USD/JPY update from Yahoo. BoJ policy, wages, and foreign flows stay unavailable until those feeds print.',
+    updated_at: 'Waiting for quotes',
+  },
   contribution: computeNikkeiContributions(DEFAULT_NIKKEI_CONSTITUENTS, NIKKEI_DIVISOR),
   boj: {
     uncollateralizedCallRatePct: 0.25,
@@ -91,8 +106,13 @@ let currentNikkeiState: NikkeiFundamentalDashboardState = {
     implicationForNikkei:
       'USD/JPY holding above 151.50 translates to robust overseas profit repatriation for automakers and chip equipment manufacturers.',
   },
-  drivers: { ...NIKKEI_DRIVERS_INITIAL },
-  feeds: [...NIKKEI_FEEDS_INITIAL],
+  drivers: Object.fromEntries(
+    Object.entries(NIKKEI_DRIVERS_INITIAL).map(([key, row]) => [
+      key,
+      { ...row, stance: 'NEUTRAL' as const, summary: 'Unavailable until a live print is on the feed.' },
+    ]),
+  ) as typeof NIKKEI_DRIVERS_INITIAL,
+  feeds: withholdFeeds(NIKKEI_FEEDS_INITIAL),
   recentEvents: [],
   liveHeadlines: [],
 }
@@ -106,6 +126,7 @@ export function recordEvaluatedNikkeiEvent(event: NikkeiEventEvaluation) {
   // Adapt overall bias if event is material
   if (candidateIsMaterial(event.structuredOutput.importance, event.structuredOutput.confidence)) {
     currentNikkeiState.overallBias = event.structuredOutput.market_stance.intraday
+    currentNikkeiState.overallConfidence = event.structuredOutput.confidence
     currentNikkeiState.today.intraday_bias = event.structuredOutput.market_stance.intraday
     currentNikkeiState.biasSummary = event.structuredOutput.summary
   }
@@ -131,19 +152,24 @@ export async function updateNikkeiTelemetry(): Promise<NikkeiTelemetry> {
       const results = data.quoteResponse?.result || []
 
       for (const q of results) {
-        if (q.symbol === 'NKD=F') {
-          currentNikkeiState.nikkeiTelemetry.nkdPrice = q.regularMarketPrice || currentNikkeiState.nikkeiTelemetry.nkdPrice
-          currentNikkeiState.nikkeiTelemetry.nkdChange = q.regularMarketChange || currentNikkeiState.nikkeiTelemetry.nkdChange
-          currentNikkeiState.nikkeiTelemetry.nkdChangePct = q.regularMarketChangePercent || currentNikkeiState.nikkeiTelemetry.nkdChangePct
-          currentNikkeiState.nikkeiTelemetry.contractNotionalValue = currentNikkeiState.nikkeiTelemetry.nkdPrice * 5
-        } else if (q.symbol === 'JPY=X') {
-          currentNikkeiState.nikkeiTelemetry.usdjpyRate = q.regularMarketPrice || currentNikkeiState.nikkeiTelemetry.usdjpyRate
-          currentNikkeiState.nikkeiTelemetry.usdjpyChangePct = q.regularMarketChangePercent || currentNikkeiState.nikkeiTelemetry.usdjpyChangePct
-          currentNikkeiState.fx.usdjpyRate = currentNikkeiState.nikkeiTelemetry.usdjpyRate
-          currentNikkeiState.fx.usdjpyChangePct = currentNikkeiState.nikkeiTelemetry.usdjpyChangePct
-        } else if (q.symbol === '^SOX') {
-          currentNikkeiState.nikkeiTelemetry.soxIndex = q.regularMarketPrice || currentNikkeiState.nikkeiTelemetry.soxIndex
-          currentNikkeiState.nikkeiTelemetry.soxChangePct = q.regularMarketChangePercent || currentNikkeiState.nikkeiTelemetry.soxChangePct
+        if (q.symbol === 'NKD=F' && q.regularMarketPrice > 0) {
+          currentNikkeiState.nikkeiTelemetry.nkdPrice = q.regularMarketPrice
+          currentNikkeiState.nikkeiTelemetry.nkdChange = q.regularMarketChange ?? 0
+          currentNikkeiState.nikkeiTelemetry.nkdChangePct = q.regularMarketChangePercent ?? 0
+          currentNikkeiState.nikkeiTelemetry.contractNotionalValue = q.regularMarketPrice * 5
+          currentNikkeiState.nikkeiTelemetry.sourced = { ...(currentNikkeiState.nikkeiTelemetry.sourced || {}), nkd: true }
+          markFeed(currentNikkeiState.feeds, 'cme_nkd_tape', 'ONLINE', new Date().toISOString())
+        } else if (q.symbol === 'JPY=X' && q.regularMarketPrice > 0) {
+          currentNikkeiState.nikkeiTelemetry.usdjpyRate = q.regularMarketPrice
+          currentNikkeiState.nikkeiTelemetry.usdjpyChangePct = q.regularMarketChangePercent ?? 0
+          currentNikkeiState.nikkeiTelemetry.sourced = { ...(currentNikkeiState.nikkeiTelemetry.sourced || {}), usdjpy: true }
+          markFeed(currentNikkeiState.feeds, 'fx_usdjpy_engine', 'ONLINE', new Date().toISOString())
+          currentNikkeiState.fx.usdjpyRate = q.regularMarketPrice
+          currentNikkeiState.fx.usdjpyChangePct = q.regularMarketChangePercent ?? 0
+        } else if (q.symbol === '^SOX' && q.regularMarketPrice > 0) {
+          currentNikkeiState.nikkeiTelemetry.soxIndex = q.regularMarketPrice
+          currentNikkeiState.nikkeiTelemetry.soxChangePct = q.regularMarketChangePercent ?? 0
+          currentNikkeiState.nikkeiTelemetry.sourced = { ...(currentNikkeiState.nikkeiTelemetry.sourced || {}), sox: true }
         }
       }
 
@@ -160,6 +186,10 @@ export async function updateNikkeiTelemetry(): Promise<NikkeiTelemetry> {
     // Keep telemetry fallback
   }
 
+  currentNikkeiState.nikkeiTelemetry.tokyoSessionPhase = tokyoCashPhase()
+  currentNikkeiState.nikkeiTelemetry.tokyoCashSessionActive =
+    currentNikkeiState.nikkeiTelemetry.tokyoSessionPhase === 'MORNING_CASH' ||
+    currentNikkeiState.nikkeiTelemetry.tokyoSessionPhase === 'AFTERNOON_CASH'
   currentNikkeiState.nikkeiTelemetry.updatedAt = new Date().toISOString()
   return currentNikkeiState.nikkeiTelemetry
 }
@@ -224,7 +254,7 @@ export async function refreshLiveNikkeiNewsWire(): Promise<LiveNikkeiHeadline[]>
     }
 
     if (headlines.length > 0) {
-      currentNikkeiState.liveHeadlines = headlines.slice(0, 10)
+      currentNikkeiState.liveHeadlines = sortByDatetimeDesc(headlines).slice(0, 12)
     }
   } catch (err) {
     logger.warn('[NikkeiStateStore] Failed to fetch live Nikkei headlines', err)
@@ -239,17 +269,15 @@ export async function refreshLiveNikkeiNewsWire(): Promise<LiveNikkeiHeadline[]>
 export function formatTodaysNikkeiFundamentalStateText(today: TodaysNikkeiFundamentalState): string {
   const telemetry = currentNikkeiState.nikkeiTelemetry
   const fx = currentNikkeiState.fx
-  const boj = currentNikkeiState.boj
-  const contrib = currentNikkeiState.contribution
 
   return [
     `NIKKEI 225 FUNDAMENTAL STATE (CME NKD)`,
-    `NKD Futures Price: ${telemetry.nkdPrice.toLocaleString()} ($5 multiplier, ${telemetry.nkdChange >= 0 ? '+' : ''}${telemetry.nkdChange} pts)`,
-    `USD/JPY Exchange Rate: ${fx.usdjpyRate.toFixed(2)} (${fx.usdjpyChangePct >= 0 ? '+' : ''}${fx.usdjpyChangePct.toFixed(2)}%) - Regime: ${fx.fxRegime}`,
-    `MoF Currency Intervention Danger Zone: ${fx.mofInterventionZone ? 'CRITICAL ALERT (155-160 zone)' : 'NORMAL / LOW RISK'}`,
-    `Bank of Japan Policy Rate: ${boj.uncollateralizedCallRatePct}% (10Y JGB: ${boj.jgb10yYieldPct}%) - Stance: ${boj.policyStance}`,
-    `Semiconductor Momentum: SOX Index ${telemetry.soxIndex} (${telemetry.soxChangePct >= 0 ? '+' : ''}${telemetry.soxChangePct.toFixed(2)}%) - Tailwind: ${today.semiconductor_tailwind}`,
-    `Price-Weighting Leverage: Top 3 constituents command ${contrib.top3ContributionPct}% of index (Fast Retailing ${contrib.fastRetailingWeightPct}%, Tokyo Electron ${contrib.tokyoElectronWeightPct}%, Advantest ${contrib.advantestWeightPct}%)`,
+    `NKD Futures Price: ${telemetry.sourced?.nkd ? `${telemetry.nkdPrice.toLocaleString()} (${telemetry.nkdChange >= 0 ? '+' : ''}${telemetry.nkdChange} pts)` : 'Unavailable'}`,
+    `USD/JPY Exchange Rate: ${telemetry.sourced?.usdjpy ? `${fx.usdjpyRate.toFixed(2)} (${fx.usdjpyChangePct >= 0 ? '+' : ''}${fx.usdjpyChangePct.toFixed(2)}%)` : 'Unavailable'}`,
+    `MoF intervention status: Unavailable`,
+    `Bank of Japan policy rate and 10Y JGB: Unavailable`,
+    `SOX: ${telemetry.sourced?.sox ? `${telemetry.soxIndex} (${telemetry.soxChangePct >= 0 ? '+' : ''}${telemetry.soxChangePct.toFixed(2)}%)` : 'Unavailable'}`,
+    `Price-weight concentration: Unavailable. Official Nikkei weights are not on a live feed.`,
     `Domestic Macro & Growth: ${today.domestic_macro_growth}`,
     `Shunto Wages & Inflation: ${today.inflation_wages_shunto}`,
     `Foreign Institutional Flow: ${today.foreign_investor_flow}`,

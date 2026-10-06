@@ -46,17 +46,17 @@ ${GOLD_ANALYST_CHAT_PROMPT}
 SUPPLIED GOLD STATE (not a live monitor; interpret only this packet):
 - Market: COMEX Gold Futures (GC)
 - Current Date & Server Time: ${new Date().toUTCString()}
-- Prompt GC Live Price: $${t.goldPrice.toFixed(2)}/oz (${t.goldChange >= 0 ? '+' : ''}$${t.goldChange.toFixed(2)}, ${t.goldChangePct >= 0 ? '+' : ''}${t.goldChangePct.toFixed(2)}%)
-- COMEX Silver (SI): $${t.silverPrice.toFixed(3)} | Gold/Silver Ratio: ${t.goldSilverRatio.toFixed(2)}
-- 10Y Nominal Treasury: ${t.us10yNominalYield.toFixed(2)}% | 5Y Nominal: ${t.us5yNominalYield.toFixed(2)}%
-- 10Y Real TIPS Yield (DFII10): ${t.us10yRealYield.toFixed(2)}% (FRED series)
-- 10Y Breakeven Inflation (T10YIE): ${t.us10yBreakeven.toFixed(2)}%
-- US Dollar Index (DXY): ${t.dxyIndex.toFixed(2)} (${t.dxyChangePct >= 0 ? '+' : ''}${t.dxyChangePct.toFixed(2)}%) | EUR/USD: ${t.eurUsd.toFixed(4)}
-- Gold CVOL (30-day Implied Volatility): ${t.goldCvol.toFixed(1)}%
-${datumLine('Global gold ETF holdings', `${state.etfFlows.globalTonnes} tonnes (monthly ${state.etfFlows.monthlyChangeTonnes >= 0 ? '+' : ''}${state.etfFlows.monthlyChangeTonnes}t)`, 'MONTHLY', 'STALE_FOR_INTRADAY')}
-${datumLine('CFTC managed-money net', `${state.cftcPositioning.netManagedMoney.toLocaleString()} contracts`, 'WEEKLY', 'STALE_FOR_INTRADAY')}
-${datumLine('COMEX registered / eligible', `${state.comexInventory.registeredOz.toLocaleString()} oz / ${state.comexInventory.eligibleOz.toLocaleString()} oz`, 'DAILY', 'SLOW_MOVING')}
-${datumLine('Central-bank purchase run rate', `${state.centralBankDemand.annualNetPurchasesTonnes} t/yr`, 'SLOW', 'SLOW_MOVING')}
+- Prompt GC Live Price: ${t.sourced?.gold ? `$${t.goldPrice.toFixed(2)}/oz (${t.goldChange >= 0 ? '+' : ''}$${t.goldChange.toFixed(2)}, ${t.goldChangePct >= 0 ? '+' : ''}${t.goldChangePct.toFixed(2)}%)` : 'Unavailable'}
+- COMEX Silver (SI): ${t.sourced?.silver ? `$${t.silverPrice.toFixed(3)}` : 'Unavailable'} | Gold/Silver Ratio: ${t.sourced?.gold && t.sourced?.silver ? t.goldSilverRatio.toFixed(2) : 'Unavailable'}
+- 10Y Nominal Treasury: ${t.sourced?.us10y ? `${t.us10yNominalYield.toFixed(2)}%` : 'Unavailable'} | 5Y Nominal: ${t.sourced?.us5y ? `${t.us5yNominalYield.toFixed(2)}%` : 'Unavailable'}
+- 10Y Real TIPS Yield (DFII10): ${t.sourced?.us10yReal ? `${t.us10yRealYield.toFixed(2)}%` : 'Unavailable'}
+- 10Y Breakeven Inflation (T10YIE): ${t.sourced?.breakeven ? `${t.us10yBreakeven.toFixed(2)}%` : 'Unavailable'}
+- US Dollar Index (DXY): ${t.sourced?.dxy ? `${t.dxyIndex.toFixed(2)} (${t.dxyChangePct >= 0 ? '+' : ''}${t.dxyChangePct.toFixed(2)}%)` : 'Unavailable'} | EUR/USD: ${t.sourced?.eurusd ? t.eurUsd.toFixed(4) : 'Unavailable'}
+- Gold CVOL (30-day Implied Volatility): Unavailable
+${datumLine('Global gold ETF holdings', 'UNAVAILABLE', 'UNAVAILABLE', 'STALE')}
+${datumLine('CFTC managed-money net', 'UNAVAILABLE', 'UNAVAILABLE', 'STALE')}
+${datumLine('COMEX registered / eligible', 'UNAVAILABLE', 'UNAVAILABLE', 'STALE')}
+${datumLine('Central-bank purchase run rate', 'UNAVAILABLE', 'UNAVAILABLE', 'STALE')}
 - Overall Stance: Intraday=${state.today.intraday_bias} | Short-Term=${state.today.short_term_bias} | Medium-Term=${state.today.medium_term_bias}
 - Invalidation Criteria: ${state.today.what_would_invalidate_this_view}
 
@@ -75,19 +75,18 @@ Never invent missing data. Never claim COMEX inventory shifts prove a physical s
       const fallbackText = `### GOLD FUNDAMENTAL ANALYST BRIEFING (COMEX GC)
 
 #### 1. Real Interest Rates & Treasury Breakevens
-- **10Y Real TIPS Yield**: Holding at **${t.us10yRealYield.toFixed(2)}%** (FRED DFII10). Elevated real yields exert structural opportunity cost pressure on gold, but long-term monetary debasement premiums have blunted traditional sensitivity.
-- **10Y Breakeven Inflation**: **${t.us10yBreakeven.toFixed(2)}%** (FRED T10YIE). Core inflation sticky at 3.2% YoY keeps currency debasement hedging active.
+- **10Y Real TIPS Yield**: **${t.sourced?.us10yReal ? `${t.us10yRealYield.toFixed(2)}% (FRED DFII10)` : 'Unavailable'}**.
+- **10Y Breakeven Inflation**: **${t.sourced?.breakeven ? `${t.us10yBreakeven.toFixed(2)}% (FRED T10YIE)` : 'Unavailable'}**. Core CPI is unavailable on this desk.
+- **GC price**: **${t.sourced?.gold ? `$${t.goldPrice.toFixed(2)}` : 'Unavailable'}**.
 
-#### 2. U.S. Dollar & Cross-Market Decoupling
-- **DXY Index**: Trading at **${t.dxyIndex.toFixed(2)}** (${t.dxyChangePct >= 0 ? '+' : ''}${t.dxyChangePct.toFixed(2)}%).
-- **Relative Strength**: Gold has repeatedly absorbed USD rallies at key supports, signaling sovereign accumulation under the surface.
-- **Gold/Silver Ratio**: **${t.goldSilverRatio.toFixed(1)}:1**, reflecting precious-metals monetary outperformance.
+#### 2. U.S. Dollar
+- **DXY Index**: **${t.sourced?.dxy ? `${t.dxyIndex.toFixed(2)} (${t.dxyChangePct >= 0 ? '+' : ''}${t.dxyChangePct.toFixed(2)}%)` : 'Unavailable'}**.
+- **Gold/Silver Ratio**: **${t.sourced?.gold && t.sourced?.silver ? `${t.goldSilverRatio.toFixed(1)}:1` : 'Unavailable'}**.
 
-#### 3. Institutional Demand & Positioning
-- **Central-Bank Accumulation**: Official sector purchases pace **~${state.centralBankDemand.annualNetPurchasesTonnes} t/yr** (PBOC: ${(state.centralBankDemand.pbocReportedOunces / 1e6).toFixed(1)}M oz), establishing a structural macro floor.
-- **CFTC Managed Money**: Net longs at **${state.cftcPositioning.netManagedMoney.toLocaleString()} contracts** (Crowding: ${state.cftcPositioning.crowdingIndex}/100). Watch for absorption vs flush at key Volume Profile levels.
+#### 3. Institutional demand
+- Central-bank tonnes, CFTC managed-money, COMEX warehouse stocks, and ETF holdings are unavailable on this desk.
 
-*Trading Guidance: Use this fundamental context alongside Volume Profile levels and CVD delta absorption to identify high-probability setups.*`
+*Use the sourced prints above. Do not fill gaps with a remembered figure.*`
 
       return new Response(`data: ${JSON.stringify({ text: fallbackText })}\n\ndata: [DONE]\n\n`, {
         headers: {

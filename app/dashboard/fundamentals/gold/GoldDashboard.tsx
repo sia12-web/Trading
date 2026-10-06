@@ -70,11 +70,13 @@ export function GoldDashboard() {
         body: JSON.stringify({ action: 'refresh_telemetry' }),
       })
       const data = await res.json()
-      if (data.ok && data.state) {
-        setState(data.state)
+      if (!res.ok || !data.ok || !data.state) {
+        throw new Error(data.error || `Refresh failed (${res.status})`)
       }
-    } catch {
-      await loadState()
+      setState(data.state)
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Refresh failed')
     } finally {
       setRefreshing(false)
     }
@@ -90,11 +92,13 @@ export function GoldDashboard() {
         body: JSON.stringify({ action: 'reset' }),
       })
       const data = await res.json()
-      if (data.ok && data.state) {
-        setState(data.state)
+      if (!res.ok || !data.ok || !data.state) {
+        throw new Error(data.error || `HTTP ${res.status}`)
       }
-    } catch {
-      await loadState()
+      setState(data.state)
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Reset failed')
     } finally {
       setRefreshing(false)
     }
@@ -151,13 +155,13 @@ export function GoldDashboard() {
 
   const tabs: Array<{ key: GoldTabKey; label: string; icon: string }> = [
     { key: 'today', label: "Today's State", icon: '📋' },
-    { key: 'evaluator', label: 'Event Evaluator', icon: '⚡' },
-    { key: 'wire', label: 'Live Metals Wire', icon: '📡' },
     { key: 'yields_usd', label: 'Real Yields & USD', icon: '📊' },
-    { key: 'institutional', label: 'WGC, CFTC & COMEX', icon: '🏛️' },
-    { key: 'drivers', label: '7 Drivers Matrix', icon: '⚙️' },
-    { key: 'feeds', label: 'V1 Feeds', icon: '🔌' },
-    { key: 'terminal', label: 'Analyst Terminal', icon: '💬' },
+    { key: 'drivers', label: 'Drivers', icon: '⚙️' },
+    { key: 'institutional', label: 'ETF, CFTC & COMEX', icon: '🏛️' },
+    { key: 'wire', label: 'Live Metals Wire', icon: '📡' },
+    { key: 'evaluator', label: 'Event Evaluator', icon: '⚡' },
+    { key: 'feeds', label: 'Feeds', icon: '🔌' },
+    { key: 'terminal', label: 'Analyst Chat', icon: '💬' },
   ]
 
   return (

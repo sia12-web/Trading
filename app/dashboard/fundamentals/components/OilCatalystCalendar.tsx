@@ -74,12 +74,9 @@ export function OilCatalystCalendar({ catalysts }: OilCatalystCalendarProps) {
                 ))}
               </div>
 
-              {cat.lastActual && (
-                <div className="text-gray-400">
-                  Last Release: <strong className="text-gray-200 font-mono">{cat.lastActual}</strong>{' '}
-                  {cat.lastSurprise && <span className="text-brand-300 font-mono">({cat.lastSurprise})</span>}
-                </div>
-              )}
+              <div className="text-gray-400">
+                Last release: <strong className="text-gray-200 font-mono">Unavailable</strong>
+              </div>
             </div>
           </div>
         ))}

@@ -8,6 +8,7 @@
 
 import React from 'react'
 import type { NasdaqTelemetry, NdxBreadthState } from '@/types/fundamentals'
+import { showNumber } from '@/lib/fundamentals/honesty'
 
 interface NasdaqRatesBreadthTrackerProps {
   telemetry: NasdaqTelemetry
@@ -55,7 +56,9 @@ export function NasdaqRatesBreadthTracker({ telemetry, breadth }: NasdaqRatesBre
             <span className={`px-2 py-0.5 rounded border font-bold ${
               telemetry.yieldCurve2s10sSpreadBps >= 0 ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30' : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
             }`}>
-              2s10s: {telemetry.yieldCurve2s10sSpreadBps >= 0 ? '+' : ''}{telemetry.yieldCurve2s10sSpreadBps.toFixed(1)} bps (Disinverted)
+              {telemetry.sourced?.us2y && telemetry.sourced?.us10y
+                ? `2s10s: ${telemetry.yieldCurve2s10sSpreadBps >= 0 ? '+' : ''}${telemetry.yieldCurve2s10sSpreadBps.toFixed(1)} bps`
+                : '2s10s unavailable'}
             </span>
           </div>
         </div>
@@ -69,7 +72,7 @@ export function NasdaqRatesBreadthTracker({ telemetry, breadth }: NasdaqRatesBre
               <span className="font-mono text-cyan-400 text-[10px]">Fed Expectations</span>
             </div>
             <div className="text-2xl font-bold font-mono text-slate-100">
-              {telemetry.us2yNominalYield.toFixed(2)}%
+              {showNumber(telemetry.sourced?.us2y, telemetry.us2yNominalYield, 2, '%')}
             </div>
             <div className="text-[11px] text-slate-400 mt-1">
               Sensitive to short-term FOMC terminal rate pricing &amp; labor data.
@@ -83,7 +86,7 @@ export function NasdaqRatesBreadthTracker({ telemetry, breadth }: NasdaqRatesBre
               <span className="font-mono text-cyan-400 text-[10px]">Long-Duration</span>
             </div>
             <div className="text-2xl font-bold font-mono text-slate-100">
-              {telemetry.us10yNominalYield.toFixed(2)}%
+              {showNumber(telemetry.sourced?.us10y, telemetry.us10yNominalYield, 2, '%')}
             </div>
             <div className="text-[11px] text-slate-400 mt-1">
               Primary discount rate for terminal value growth cash flows.
@@ -97,7 +100,7 @@ export function NasdaqRatesBreadthTracker({ telemetry, breadth }: NasdaqRatesBre
               <span className="font-mono text-emerald-400 text-[10px]">FRED DFII10</span>
             </div>
             <div className="text-2xl font-bold font-mono text-emerald-300">
-              {telemetry.us10yRealYield.toFixed(2)}%
+              {showNumber(telemetry.sourced?.us10yReal, telemetry.us10yRealYield, 2, '%')}
             </div>
             <div className="text-[11px] text-slate-400 mt-1">
               Real opportunity cost. Real yield spikes directly compress P/E multiples.
@@ -108,13 +111,15 @@ export function NasdaqRatesBreadthTracker({ telemetry, breadth }: NasdaqRatesBre
           <div className="p-4 rounded-lg bg-slate-950/70 border border-slate-800">
             <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
               <span>CBOE VXN (Nasdaq Vol)</span>
-              <span className="font-mono text-indigo-400 text-[10px]">VIX: {telemetry.vixIndex.toFixed(1)}</span>
+              <span className="font-mono text-indigo-400 text-[10px]">VIX: {showNumber(telemetry.sourced?.vix, telemetry.vixIndex, 1)}</span>
             </div>
             <div className="text-2xl font-bold font-mono text-indigo-300">
-              {telemetry.vxnIndex.toFixed(2)}
+              {showNumber(telemetry.sourced?.vxn, telemetry.vxnIndex, 2)}
             </div>
             <div className="text-[11px] text-slate-400 mt-1">
-              Tech volatility spread: +{(telemetry.vxnIndex - telemetry.vixIndex).toFixed(2)} pts over S&amp;P 500 VIX.
+              {telemetry.sourced?.vxn && telemetry.sourced?.vix
+                ? `Tech volatility spread: ${(telemetry.vxnIndex - telemetry.vixIndex >= 0 ? '+' : '')}${(telemetry.vxnIndex - telemetry.vixIndex).toFixed(2)} pts`
+                : 'Volatility spread unavailable'}
             </div>
           </div>
         </div>
@@ -136,7 +141,7 @@ export function NasdaqRatesBreadthTracker({ telemetry, breadth }: NasdaqRatesBre
                 Nasdaq-100 Market Breadth &amp; Participation Engine
               </h3>
               <span className={`text-[11px] px-2 py-0.5 rounded border font-semibold ${breadthMeta.color}`}>
-                {breadthMeta.label}
+                {breadth.breadthLive ? breadthMeta.label : 'Unavailable'}
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-1">
@@ -147,7 +152,7 @@ export function NasdaqRatesBreadthTracker({ telemetry, breadth }: NasdaqRatesBre
           <div className="flex items-center gap-2 text-xs font-mono">
             <span className="text-slate-400">QQQ / QQQE Ratio:</span>
             <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-cyan-300 font-bold">
-              {breadth.qqqVsQqqeRatio.toFixed(3)}x
+              {breadth.breadthLive ? `${breadth.qqqVsQqqeRatio.toFixed(3)}x` : 'Unavailable'}
             </span>
           </div>
         </div>
@@ -158,10 +163,10 @@ export function NasdaqRatesBreadthTracker({ telemetry, breadth }: NasdaqRatesBre
           <div className="p-3.5 rounded-lg bg-slate-950/70 border border-slate-800 text-center">
             <div className="text-[11px] text-slate-400 mb-1">Advance / Decline</div>
             <div className="text-xl font-bold font-mono text-slate-100">
-              {breadth.advancingCount} <span className="text-emerald-400 text-sm">Adv</span> / {breadth.decliningCount} <span className="text-rose-400 text-sm">Dec</span>
+              {breadth.breadthLive ? <>{breadth.advancingCount} <span className="text-emerald-400 text-sm">Adv</span> / {breadth.decliningCount} <span className="text-rose-400 text-sm">Dec</span></> : 'Unavailable'}
             </div>
             <div className="text-xs font-mono text-cyan-300 mt-1">
-              Ratio: {breadth.advanceDeclineRatio.toFixed(2)}:1
+              {breadth.breadthLive ? `Ratio: ${breadth.advanceDeclineRatio.toFixed(2)}:1` : 'No breadth feed'}
             </div>
           </div>
 
@@ -169,7 +174,7 @@ export function NasdaqRatesBreadthTracker({ telemetry, breadth }: NasdaqRatesBre
           <div className="p-3.5 rounded-lg bg-slate-950/70 border border-slate-800 text-center">
             <div className="text-[11px] text-slate-400 mb-1">% Above 20-Day MA</div>
             <div className="text-xl font-bold font-mono text-slate-100">
-              {breadth.pctAbove20dMa.toFixed(0)}%
+              {breadth.breadthLive ? `${breadth.pctAbove20dMa.toFixed(0)}%` : 'Unavailable'}
             </div>
             <div className="text-[11px] text-slate-400 mt-1">
               Short-term momentum
@@ -180,7 +185,7 @@ export function NasdaqRatesBreadthTracker({ telemetry, breadth }: NasdaqRatesBre
           <div className="p-3.5 rounded-lg bg-slate-950/70 border border-slate-800 text-center">
             <div className="text-[11px] text-slate-400 mb-1">% Above 50-Day MA</div>
             <div className="text-xl font-bold font-mono text-slate-100">
-              {breadth.pctAbove50dMa.toFixed(0)}%
+              {breadth.breadthLive ? `${breadth.pctAbove50dMa.toFixed(0)}%` : 'Unavailable'}
             </div>
             <div className="text-[11px] text-slate-400 mt-1">
               Intermediate regime health
@@ -191,7 +196,7 @@ export function NasdaqRatesBreadthTracker({ telemetry, breadth }: NasdaqRatesBre
           <div className="p-3.5 rounded-lg bg-slate-950/70 border border-slate-800 text-center">
             <div className="text-[11px] text-slate-400 mb-1">% Above 200-Day MA</div>
             <div className="text-xl font-bold font-mono text-slate-100">
-              {breadth.pctAbove200dMa.toFixed(0)}%
+              {breadth.breadthLive ? `${breadth.pctAbove200dMa.toFixed(0)}%` : 'Unavailable'}
             </div>
             <div className="text-[11px] text-slate-400 mt-1">
               Secular structural trend

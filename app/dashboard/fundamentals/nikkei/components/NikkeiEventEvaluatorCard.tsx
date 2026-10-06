@@ -1,16 +1,27 @@
 'use client'
 
-import React, { useState } from 'react'
-import type { NikkeiEventEvaluation, StructuredNikkeiEventOutput } from '@/types/fundamentals'
+import React, { useEffect, useState } from 'react'
+import type { NikkeiEventEvaluation, NikkeiFundamentalDashboardState, StructuredNikkeiEventOutput } from '@/types/fundamentals'
 import { NIKKEI_EVALUATION_PRESETS } from '@/lib/fundamentals/nikkeiAnalystConfig'
+import { confidencePercent } from '@/lib/fundamentals/honesty'
 
 interface NikkeiEventEvaluatorCardProps {
-  onEventEvaluated: (evaluation: NikkeiEventEvaluation) => void
+  onEventEvaluated: (evaluation: NikkeiEventEvaluation, nextState?: NikkeiFundamentalDashboardState) => void
+  prefillText?: string
+  prefillSource?: string
+  prefillNonce?: number
 }
 
-export function NikkeiEventEvaluatorCard({ onEventEvaluated }: NikkeiEventEvaluatorCardProps) {
-  const [rawText, setRawText] = useState('')
-  const [sourceHint, setSourceHint] = useState('')
+export function NikkeiEventEvaluatorCard({ onEventEvaluated, prefillText, prefillSource, prefillNonce = 0 }: NikkeiEventEvaluatorCardProps) {
+  const [rawText, setRawText] = useState(prefillText || '')
+  const [sourceHint, setSourceHint] = useState(prefillSource || '')
+
+  useEffect(() => {
+    if (prefillText) {
+      setRawText(prefillText)
+      setSourceHint(prefillSource || '')
+    }
+  }, [prefillText, prefillSource, prefillNonce])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [currentResult, setCurrentResult] = useState<StructuredNikkeiEventOutput | null>(null)
@@ -47,7 +58,7 @@ export function NikkeiEventEvaluatorCard({ onEventEvaluated }: NikkeiEventEvalua
       if (data.ok && data.structured) {
         setCurrentResult(data.structured)
         if (data.evaluation) {
-          onEventEvaluated(data.evaluation)
+          onEventEvaluated(data.evaluation, data.state)
         }
       } else {
         throw new Error(data.error || 'Failed to parse evaluation')
@@ -74,7 +85,7 @@ export function NikkeiEventEvaluatorCard({ onEventEvaluated }: NikkeiEventEvalua
       {/* Preset Selector */}
       <div className="space-y-2">
         <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
-          Load Institutional Scenarios & Presets:
+          Sample notes (not live releases):
         </label>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
           {NIKKEI_EVALUATION_PRESETS.map((preset) => (
@@ -156,7 +167,7 @@ export function NikkeiEventEvaluatorCard({ onEventEvaluated }: NikkeiEventEvalua
             <div className="flex items-center gap-2">
               <span className="text-xs text-slate-400">Confidence:</span>
               <span className="text-xs font-mono font-bold text-emerald-400">
-                {currentResult.confidence}%
+                {confidencePercent(currentResult.confidence)}%
               </span>
             </div>
           </div>
@@ -181,13 +192,16 @@ export function NikkeiEventEvaluatorCard({ onEventEvaluated }: NikkeiEventEvalua
               <div className="text-[10px] uppercase font-mono text-slate-400">Est. NKD Point Impact</div>
               <div
                 className={`text-sm font-bold font-mono mt-1 ${
-                  (currentResult.estimated_nkd_point_impact || 0) >= 0
+                  currentResult.estimated_nkd_point_impact == null
+                    ? 'text-slate-400'
+                    : currentResult.estimated_nkd_point_impact >= 0
                     ? 'text-emerald-400'
                     : 'text-rose-400'
                 }`}
               >
-                {(currentResult.estimated_nkd_point_impact || 0) >= 0 ? '+' : ''}
-                {currentResult.estimated_nkd_point_impact || 0} pts
+                {currentResult.estimated_nkd_point_impact == null
+                  ? 'Unavailable'
+                  : `${currentResult.estimated_nkd_point_impact >= 0 ? '+' : ''}${currentResult.estimated_nkd_point_impact} pts`}
               </div>
             </div>
 

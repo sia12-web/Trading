@@ -31,9 +31,9 @@ import type {
 import {
   DOW_ANALYST_EVENT_PROMPT,
   DJIA_DIVISOR,
-  DEFAULT_DJIA_30_CONSTITUENTS,
 } from './dowAnalystConfig'
-import { recordEvaluatedDowEvent } from './dowStateStore'
+import { peekDowFundamentalState, recordEvaluatedDowEvent } from './dowStateStore'
+import { scrubSummary, sourcedImpact } from '@/lib/fundamentals/honesty'
 import { logger } from '@/lib/utils/logger'
 import {
   adaptLegacyFundamentalJson,
@@ -270,8 +270,14 @@ function buildDowUnifiedProtocol(
     },
     {
       factor: 'DJIA_POINT_CONTRIBUTION',
-      impact: `30-Stock Breadth: ${output.breadth.advancers} Adv / ${output.breadth.decliners} Dec | Concentration: ${output.breadth.contribution_concentration}`,
-      effect: output.breadth.advancers > output.breadth.decliners ? ('BULLISH' as const) : ('BEARISH' as const),
+      impact: output.breadth.advancers == null || output.breadth.decliners == null
+        ? '30-name breadth is unavailable.'
+        : `30-Stock Breadth: ${output.breadth.advancers} Adv / ${output.breadth.decliners} Dec`,
+      effect: output.breadth.advancers == null || output.breadth.decliners == null
+        ? ('NEUTRAL' as const)
+        : output.breadth.advancers > output.breadth.decliners
+        ? ('BULLISH' as const)
+        : ('BEARISH' as const),
     },
     {
       factor: 'SECTOR_ROTATION',
@@ -521,6 +527,8 @@ function runDeterministicDowEvaluation(params: {
     summary = 'General market flow evaluated across the 30 Dow constituents. Cyclical and interest rate factors remained in balance.'
   }
 
+  void breadth
+
   const driversList = [
     {
       factor: eventName,
@@ -552,16 +560,21 @@ function runDeterministicDowEvaluation(params: {
     drivers: driversList,
     market_response: marketResponse,
     market_confirmation: {
-      cl_5m_return: marketResponse.ym_5m === 'UP' ? 0.75 : marketResponse.ym_5m === 'DOWN' ? -0.75 : 0.05,
-      ym_points_change: estimatedDowPointImpact !== 0 ? estimatedDowPointImpact : (marketResponse.ym_5m === 'UP' ? 320 : -320),
-      us2y_bps_change: transmission.us10y === 'UP' ? 6.0 : -4.0,
-      us10y_bps_change: transmission.us10y === 'UP' ? 8.0 : -3.0,
+      cl_5m_return: telemetry.sourced?.ym ? +telemetry.ymChangePct.toFixed(2) : null,
+      ym_points_change: sourcedImpact(rawText, estimatedDowPointImpact),
+      us2y_bps_change: undefined,
+      us10y_bps_change: undefined,
       confirmation: marketResponse.confirmation,
     },
-    breadth,
+    breadth: {
+      advancers: null,
+      decliners: null,
+      contribution_concentration: 'LOW',
+      top3_contribution_pct: undefined,
+    },
     abnormal_behavior: abnormalBehavior,
-    confidence,
-    summary,
+    confidence: scrubSummary(rawText, summary) === summary ? confidence : 0,
+    summary: scrubSummary(rawText, summary),
   }
 
   return output
@@ -583,14 +596,14 @@ async function runLlmDowEvaluation(params: {
   const prompt = buildFundamentalEventUserPrompt({
     roleLine: 'You are evaluating a supplied event for CME E-mini Dow futures (YM).',
     telemetryLines: [
-      datumLine('YM', telemetry.ymPrice.toLocaleString(), 'TICK', 'LIVE'),
-      datumLine('ES', telemetry.esPrice.toFixed(2), 'TICK', 'LIVE'),
-      datumLine('NQ', telemetry.nqPrice.toFixed(2), 'TICK', 'LIVE'),
-      datumLine('US 2Y', `${telemetry.us2yNominalYield.toFixed(2)}%`, 'INTRADAY', 'RECENT'),
-      datumLine('US 10Y', `${telemetry.us10yNominalYield.toFixed(2)}%`, 'INTRADAY', 'RECENT'),
-      datumLine('Yield-move label', String(telemetry.yieldMoveDriver), 'DERIVED', 'RECENT'),
-      datumLine('Advancers', String(telemetry.advancersCount), 'INTRADAY', 'RECENT'),
-      datumLine('Decliners', String(telemetry.declinersCount), 'INTRADAY', 'RECENT'),
+      datumLine('YM', telemetry.sourced?.ym ? telemetry.ymPrice.toLocaleString() : 'UNAVAILABLE', telemetry.sourced?.ym ? 'TICK' : 'UNAVAILABLE', telemetry.sourced?.ym ? 'LIVE' : 'STALE'),
+      datumLine('ES', telemetry.sourced?.es ? telemetry.esPrice.toFixed(2) : 'UNAVAILABLE', telemetry.sourced?.es ? 'TICK' : 'UNAVAILABLE', telemetry.sourced?.es ? 'LIVE' : 'STALE'),
+      datumLine('NQ', telemetry.sourced?.nq ? telemetry.nqPrice.toFixed(2) : 'UNAVAILABLE', telemetry.sourced?.nq ? 'TICK' : 'UNAVAILABLE', telemetry.sourced?.nq ? 'LIVE' : 'STALE'),
+      datumLine('US 2Y', telemetry.sourced?.us2y ? `${telemetry.us2yNominalYield.toFixed(2)}%` : 'UNAVAILABLE', 'INTRADAY', telemetry.sourced?.us2y ? 'RECENT' : 'STALE'),
+      datumLine('US 10Y', telemetry.sourced?.us10y ? `${telemetry.us10yNominalYield.toFixed(2)}%` : 'UNAVAILABLE', 'INTRADAY', telemetry.sourced?.us10y ? 'RECENT' : 'STALE'),
+      datumLine('Yield-move label', telemetry.sourced?.us10y ? String(telemetry.yieldMoveDriver) : 'UNAVAILABLE', 'DERIVED', 'STALE'),
+      datumLine('Advancers', 'UNAVAILABLE', 'INTRADAY', 'STALE'),
+      datumLine('Decliners', 'UNAVAILABLE', 'INTRADAY', 'STALE'),
       'PRECOMPUTED_DOW_POINT_IMPACT: UNAVAILABLE. Leave specialist.dow_point_impact null. Do not divide by the divisor.',
       'CVD and volume profile: not supplied.',
     ],
@@ -678,11 +691,11 @@ breadth is BROAD, NARROW, or null from the supplied advancer counts only.`,
     }
     if (!parsed.market_confirmation) {
       parsed.market_confirmation = {
-        cl_5m_return: parsed.market_response?.ym_5m === 'UP' ? 0.75 : -0.75,
-        ym_points_change: parsed.event_analysis?.estimated_dow_point_impact || (parsed.market_response?.ym_5m === 'UP' ? 320 : -320),
-        us2y_bps_change: 0,
-        us10y_bps_change: 0,
-        confirmation: parsed.market_response?.confirmation || 'STRONG',
+        cl_5m_return: telemetry.sourced?.ym ? +telemetry.ymChangePct.toFixed(2) : null,
+        ym_points_change: sourcedImpact(rawText, parsed.event_analysis?.estimated_dow_point_impact),
+        us2y_bps_change: undefined,
+        us10y_bps_change: undefined,
+        confirmation: 'INCONCLUSIVE',
       }
     }
     if (!parsed.abnormal_behavior) {
@@ -694,8 +707,8 @@ breadth is BROAD, NARROW, or null from the supplied advancer counts only.`,
     }
     if (!parsed.breadth) {
       parsed.breadth = {
-        advancers: 20,
-        decliners: 10,
+        advancers: null,
+        decliners: null,
         contribution_concentration: 'LOW',
       }
     }
@@ -719,38 +732,7 @@ export async function evaluateDowEvent(params: {
 }): Promise<DowEventEvaluation> {
   const { rawText, sourceHint, timestampHint, autoCommitIfMaterial = true } = params
 
-  const telemetry: DowTelemetry = params.telemetry || {
-    ymPrice: 46500.0,
-    ymChange: 340.0,
-    ymChangePct: 0.74,
-    contractMultiplier: 5,
-    contractNotionalValue: 46500 * 5,
-    esPrice: 6420.25,
-    esChangePct: 0.42,
-    nqPrice: 24850.5,
-    nqChangePct: 0.15,
-    rtyPrice: 2520.0,
-    rtyChangePct: 0.88,
-    us2yNominalYield: 4.88,
-    us10yNominalYield: 5.28,
-    yieldCurve2s10sSpreadBps: 40.0,
-    yieldMoveDriver: 'GROWTH_DRIVEN',
-    growthInflationQuadrant: 'GROWTH_UP_INFLATION_DOWN',
-    dxyIndex: 101.92,
-    dxyChangePct: -0.15,
-    oilWtiPrice: 74.5,
-    oilWtiChangePct: 0.8,
-    vixIndex: 15.2,
-    advancersCount: 24,
-    declinersCount: 6,
-    unchangedCount: 0,
-    dowDivisor: DJIA_DIVISOR,
-    topConstituentsByWeight: [...DEFAULT_DJIA_30_CONSTITUENTS],
-    cvdAggressionStance: 'AGGRESSIVE_BUYING',
-    timestamp: Math.floor(Date.now() / 1000),
-    source: 'CME Globex / S&P Dow Jones',
-    updatedAt: new Date().toISOString(),
-  }
+  const telemetry: DowTelemetry = params.telemetry || peekDowFundamentalState().dowTelemetry
 
   const anthropicKey = process.env.ANTHROPIC_API_KEY
   const openaiKey = process.env.OPENAI_API_KEY

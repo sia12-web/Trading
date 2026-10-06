@@ -66,7 +66,9 @@ export function NikkeiDriversMatrix({ drivers }: NikkeiDriversMatrixProps) {
                   </div>
                 </div>
 
-                <p className="text-xs text-slate-300 leading-relaxed">{d.summary}</p>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  {/\d/.test(d.summary) ? 'Unavailable until a live print is on the feed.' : d.summary}
+                </p>
               </div>
 
               {/* Metrics */}
@@ -77,7 +79,7 @@ export function NikkeiDriversMatrix({ drivers }: NikkeiDriversMatrixProps) {
                       {m.name}
                     </span>
                     <span className="font-bold text-slate-200">
-                      {m.currentValue} {m.unit}
+                      Unavailable
                     </span>
                   </div>
                 ))}

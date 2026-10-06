@@ -103,7 +103,7 @@ export function EventEvaluatorCard({
 
           <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
             <div className="text-[11px] font-mono text-gray-400 bg-surface-900 px-2.5 py-1 rounded border border-surface-700">
-              Benchmark: <strong className="text-white">${currentTelemetry.promptPrice.toFixed(2)}</strong> · Spread: <strong className="text-brand-300">{currentTelemetry.promptSpread >= 0 ? '+' : ''}${currentTelemetry.promptSpread.toFixed(2)}</strong> ({currentTelemetry.spreadRegime})
+              Benchmark: <strong className="text-white">{currentTelemetry.sourced?.prompt ? `$${currentTelemetry.promptPrice.toFixed(2)}` : 'Unavailable'}</strong> · Spread: <strong className="text-brand-300">{currentTelemetry.promptSpread == null ? 'Unavailable' : `${currentTelemetry.promptSpread >= 0 ? '+' : ''}$${currentTelemetry.promptSpread.toFixed(2)}`}</strong> ({currentTelemetry.spreadRegime})
             </div>
             <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer select-none">
               <input
@@ -122,7 +122,7 @@ export function EventEvaluatorCard({
         {/* Quick Test Presets Bar */}
         <div>
           <span className="text-[11px] font-semibold uppercase text-gray-500 tracking-wider">
-            Quick Test Presets:
+            Sample notes (not live releases):
           </span>
           <div className="flex flex-wrap gap-2 mt-1.5">
             {PRESET_EVENTS_FOR_EVALUATION.map((p) => (
@@ -297,7 +297,7 @@ export function EventEvaluatorCard({
                     = {lastEvaluation.structured.market_confirmation.confirmation.toLowerCase()}
                   </div>
                   <div className="text-[10px] text-gray-500 mt-0.5">
-                    5m: {lastEvaluation.structured.market_confirmation.cl_5m_return}% · spread: +${lastEvaluation.structured.market_confirmation.front_spread_change}
+                    5m: {lastEvaluation.structured.market_confirmation.cl_5m_return == null ? 'Unavailable' : `${lastEvaluation.structured.market_confirmation.cl_5m_return}%`} · spread: {lastEvaluation.structured.market_confirmation.front_spread_change == null ? 'Unavailable' : `${lastEvaluation.structured.market_confirmation.front_spread_change}`}
                   </div>
                 </div>
               </div>

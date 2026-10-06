@@ -17,19 +17,19 @@ const PRESET_QUERIES = [
     id: 'cushing',
     label: '🛢️ Cushing Storage & Spread Audit',
     prompt:
-      'Analyze the current Cushing OK hub inventory level (~23M bbl) and explain how operational tank bottoms impact prompt WTI backwardation.',
+      'Cushing inventory is unavailable on this desk. Say what a sourced Cushing print would need to show before it changes the WTI view.',
   },
   {
     id: 'opec-floor',
     label: '🏛️ OPEC+ Spare Capacity & Price Floor',
     prompt:
-      'What is OPEC+ current spare capacity cushion and how reliably does the 2.2M bpd voluntary cut delay defend a $70-$75 WTI price floor?',
+      'OPEC spare capacity and quota changes are unavailable until the note states them. Do not invent a cut size or a price floor.',
   },
   {
     id: 'crack-refinery',
     label: '⚙️ Refinery Runs & 3:2:1 Crack Margins',
     prompt:
-      'Break down how current 91.8% refinery utilization and 3:2:1 crack spreads ($22.40/bbl) drive domestic crude absorption.',
+      'Use only the live 3:2:1 crack when it is on the tape. Refinery utilization is unavailable. Do not invent 91.8% or $22.40.',
   },
   {
     id: 'macro-cot',
@@ -135,9 +135,9 @@ export function OilAnalystChat({ telemetry }: OilAnalystChatProps) {
         </div>
 
         <div className="text-right font-mono text-[11px] text-gray-400">
-          Prompt: <span className="text-white font-bold">${telemetry.promptPrice.toFixed(2)}</span> · Spread:{' '}
+          Prompt: <span className="text-white font-bold">{telemetry.sourced?.prompt ? `$${telemetry.promptPrice.toFixed(2)}` : 'Unavailable'}</span> · Spread:{' '}
           <span className="text-brand-300 font-bold">
-            {telemetry.promptSpread >= 0 ? '+' : ''}${telemetry.promptSpread.toFixed(2)}
+            {telemetry.promptSpread == null ? 'Unavailable' : `${telemetry.promptSpread >= 0 ? '+' : ''}$${telemetry.promptSpread.toFixed(2)}`}
           </span>
         </div>
       </div>

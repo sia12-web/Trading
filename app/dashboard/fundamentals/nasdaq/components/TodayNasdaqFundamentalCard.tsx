@@ -55,29 +55,29 @@ export function TodayNasdaqFundamentalCard({ today, telemetry }: TodayNasdaqFund
 
   const unifiedProtocolData: UnifiedAgentProtocolOutput = {
     market: 'NQ',
-    regime: `2Y ${telemetry.us2yNominalYield.toFixed(2)}% | 10Y ${telemetry.us10yNominalYield.toFixed(2)}% | 10Y Real TIPS ${telemetry.us10yRealYield.toFixed(2)}% | VXN ${telemetry.vxnIndex.toFixed(2)} | Hyperscaler Capex ~$210B`,
+    regime: [
+      telemetry.sourced?.us2y ? `2Y ${telemetry.us2yNominalYield.toFixed(2)}%` : '2Y unavailable',
+      telemetry.sourced?.us10y ? `10Y ${telemetry.us10yNominalYield.toFixed(2)}%` : '10Y unavailable',
+      telemetry.sourced?.us10yReal ? `10Y real ${telemetry.us10yRealYield.toFixed(2)}%` : '10Y real unavailable',
+      telemetry.sourced?.vxn ? `VXN ${telemetry.vxnIndex.toFixed(2)}` : 'VXN unavailable',
+    ].join(' | '),
     catalyst: today.main_current_market_driver,
     expected_direction: today.short_term_bias,
-    magnitude: 'HIGH',
+    magnitude: 'LOW',
     horizon: 'SHORT_TERM',
-    confidence: 0.84,
-    market_confirmation: 'CONFIRMED',
+    confidence: 0,
+    market_confirmation: 'INCONCLUSIVE',
     key_drivers: [
-      {
-        factor: 'TREASURY_RATES_ENGINE',
-        impact: `2Y yield at ${telemetry.us2yNominalYield.toFixed(2)}%, 10Y real TIPS at ${telemetry.us10yRealYield.toFixed(2)}%`,
-        effect: telemetry.us10yRealYield > 3.0 ? 'BEARISH' : 'NEUTRAL',
-      },
-      {
-        factor: 'AI_SEMI_CAPEX',
-        impact: `Hyperscaler capex run-rate resilient; semi basket ${telemetry.semiBasketChangePct >= 0 ? '+' : ''}${telemetry.semiBasketChangePct.toFixed(2)}%`,
-        effect: 'BULLISH',
-      },
-      {
-        factor: 'MARKET_BREADTH',
-        impact: `Advance/Decline ratio at ${telemetry.advanceDeclineRatio.toFixed(2)}:1`,
-        effect: telemetry.advanceDeclineRatio >= 1.0 ? 'BULLISH' : 'MIXED',
-      },
+      ...(telemetry.sourced?.us2y || telemetry.sourced?.us10yReal
+        ? [{
+            factor: 'TREASURY_RATES_ENGINE',
+            impact: [
+              telemetry.sourced?.us2y ? `2Y ${telemetry.us2yNominalYield.toFixed(2)}%` : null,
+              telemetry.sourced?.us10yReal ? `10Y real ${telemetry.us10yRealYield.toFixed(2)}%` : null,
+            ].filter(Boolean).join(', '),
+            effect: 'NEUTRAL' as const,
+          }]
+        : []),
     ],
     invalidation: today.what_would_invalidate_the_current_interpretation,
   }
@@ -139,7 +139,7 @@ export function TodayNasdaqFundamentalCard({ today, telemetry }: TodayNasdaqFund
           <button
             onClick={() => setShowUnified(!showUnified)}
             className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 transition flex items-center gap-1.5"
-            title="View Multi-Agent Unified Protocol Output (Item 39)"
+            title="Unified protocol from sourced prints"
           >
             <span>⚡</span>
             {showUnified ? 'Hide Protocol' : 'Unified Protocol'}

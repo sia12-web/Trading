@@ -29,6 +29,7 @@ import {
 } from '@/lib/fundamentals/outputContract'
 import { refreshWtiTelemetry, recordEvaluatedEvent } from './oilStateStore'
 import { logger } from '@/lib/utils/logger'
+import { finiteOrNull, scrubSummary } from '@/lib/fundamentals/honesty'
 
 interface AnalyzeEventParams {
   rawText: string
@@ -84,8 +85,8 @@ export async function evaluateOilEvent(params: AnalyzeEventParams): Promise<OilE
 
   // Sync structured market_confirmation with live telemetry
   result.structured.market_confirmation = {
-    cl_5m_return: +(telemetry.changePct >= 0 ? telemetry.changePct : -Math.abs(telemetry.changePct)).toFixed(2),
-    front_spread_change: +(telemetry.promptSpread >= 0 ? 0.06 : -0.04),
+    cl_5m_return: telemetry.sourced?.prompt ? +telemetry.changePct.toFixed(2) : null,
+    front_spread_change: null,
     confirmation: mapVerdictToConfirmationStrength(result.step9_market_confirmation.verdict),
   }
 
@@ -122,6 +123,7 @@ function computeMarketConfirmation(
   const pctChg = telemetry.changePct
   const spread = telemetry.promptSpread
   const regime = telemetry.spreadRegime
+  const spreadText = spread == null ? 'unavailable' : `$${spread.toFixed(2)}`
 
   let verdict: MarketConfirmationVerdict = 'UNCONFIRMED_PENDING_FLOW'
   let priceDetail = ''
@@ -131,7 +133,7 @@ function computeMarketConfirmation(
     if (pxChg > 0 && regime === 'BACKWARDATION') {
       verdict = 'CONFIRMED'
       priceDetail = `Prompt WTI is up +$${pxChg.toFixed(2)} (+${pctChg.toFixed(2)}%), confirming physical buying.`
-      spreadDetail = `Front spread is firm in Backwardation (+$${spread.toFixed(2)}/bbl), validating spot delivery premium.`
+      spreadDetail = `Front calendar spread is ${spreadText}. A level is not a measured change.`
     } else if (pxChg < 0) {
       verdict = 'CONTRADICTED'
       priceDetail = `Contradiction: Prompt WTI is down -$${Math.abs(pxChg).toFixed(2)} (${pctChg.toFixed(2)}%) despite bullish catalyst.`
@@ -139,13 +141,13 @@ function computeMarketConfirmation(
     } else {
       verdict = 'DIVERGENT'
       priceDetail = `Price reaction is muted (+$${pxChg.toFixed(2)}).`
-      spreadDetail = `Calendar spread at $${spread.toFixed(2)} reflects incomplete market digestion.`
+      spreadDetail = `Calendar spread is ${spreadText}.`
     }
   } else if (expectedDirection === 'BEARISH') {
     if (pxChg < 0) {
       verdict = 'CONFIRMED'
       priceDetail = `Prompt WTI has weakened by -$${Math.abs(pxChg).toFixed(2)} (${pctChg.toFixed(2)}%), matching bearish flow.`
-      spreadDetail = `Calendar spread under pressure at $${spread.toFixed(2)}/bbl.`
+      spreadDetail = `Calendar spread is ${spreadText}.`
     } else if (pxChg > 0) {
       verdict = 'CONTRADICTED'
       priceDetail = `Contradiction: Prompt WTI is trading up +$${pxChg.toFixed(2)} despite bearish fundamental development.`
@@ -158,7 +160,7 @@ function computeMarketConfirmation(
   } else {
     verdict = 'UNCONFIRMED_PENDING_FLOW'
     priceDetail = `Directional bias is Neutral/Mixed. WTI trading at $${telemetry.promptPrice.toFixed(2)} (change: ${pxChg >= 0 ? '+' : ''}${pxChg.toFixed(2)}).`
-    spreadDetail = `Spread remains at $${spread.toFixed(2)}/bbl (${regime}).`
+    spreadDetail = `Calendar spread is ${spreadText} (${regime}).`
   }
 
   return {
@@ -187,8 +189,8 @@ async function runLlmEvaluation(args: {
   const prompt = buildFundamentalEventUserPrompt({
     roleLine: 'You are the Oil Fundamental Analyst evaluating this supplied event.',
     telemetryLines: [
-      `Prompt WTI: $${args.telemetry.promptPrice.toFixed(2)} (change ${formatSignedDollars(args.telemetry.change)}) | frequency=LIVE | freshness=LIVE`,
-      `Front spread M1-M2 level: ${formatSignedDollars(args.telemetry.promptSpread)}/bbl (${args.telemetry.spreadRegime}) | frequency=LIVE | freshness=LIVE`,
+      `Prompt WTI: ${args.telemetry.sourced?.prompt ? `$${args.telemetry.promptPrice.toFixed(2)} (change ${formatSignedDollars(args.telemetry.change)}) | frequency=LIVE | freshness=LIVE` : 'UNAVAILABLE | frequency=UNAVAILABLE | freshness=STALE'}`,
+      `Front spread M1-M2 level: ${args.telemetry.promptSpread == null ? 'UNAVAILABLE' : formatSignedDollars(args.telemetry.promptSpread) + '/bbl (' + args.telemetry.spreadRegime + ')'} | frequency=${args.telemetry.promptSpread == null ? 'UNAVAILABLE' : 'LIVE'} | freshness=${args.telemetry.promptSpread == null ? 'UNAVAILABLE' : 'LIVE'}`,
       'Front spread change: UNAVAILABLE unless a later packet measures it. Do not derive a change from the spread level.',
     ],
     rawText: args.rawText,
@@ -268,8 +270,8 @@ Put crude_stocks, gasoline_stocks, and front_spread_change in specialist. Use nu
       },
       drivers: Array.isArray(p.drivers) ? p.drivers : [],
       market_confirmation: {
-        cl_5m_return: Number(p.market_confirmation?.cl_5m_return) || 0.5,
-        front_spread_change: Number(p.market_confirmation?.front_spread_change) || 0.04,
+        cl_5m_return: finiteOrNull(p.market_confirmation?.cl_5m_return),
+        front_spread_change: finiteOrNull(p.market_confirmation?.front_spread_change),
         confirmation: (p.market_confirmation?.confirmation as ConfirmationStrength) || 'STRONG',
       },
       confidence: typeof p.confidence === 'number' ? p.confidence : 0.82,
@@ -381,111 +383,49 @@ function runDeterministicEvaluation(args: {
   const isCot = text.includes('cftc') || text.includes('cot') || text.includes('managed money')
   const isConflict = text.includes('conflict') || (text.includes('api') && text.includes('platts'))
 
+  const pushParsed = (factor: string, match: RegExpMatchArray | null, unit: string) => {
+    const actual = match ? finiteOrNull(match[1]) : null
+    if (actual == null) return
+    drivers.push({
+      factor,
+      actual,
+      consensus: null,
+      unit,
+      effect: 'NEUTRAL',
+    })
+  }
+
   if (isEia) {
     eventType = 'EIA_WEEKLY_PETROLEUM'
     importance = 'HIGH'
-
-    const crudeDrawMatch = args.rawText.match(/decreased by ([\d.]+)\s*million barrels/i) || args.rawText.match(/draw of -?([\d.]+)/i)
-    const cushingMatch = args.rawText.match(/cushing.*?dropped by ([\d.]+)\s*million/i)
-    const gasolineMatch = args.rawText.match(/gasoline.*?fell by ([\d.]+)/i) || args.rawText.match(/gasoline.*?built by ([\d.]+)/i)
-
-    const crudeVal = crudeDrawMatch ? -parseFloat(crudeDrawMatch[1] || '4.15') : -4.15
-    drivers.push({
-      factor: 'US_CRUDE_STOCKS',
-      actual: crudeVal,
-      consensus: 0.6,
-      unit: 'million_barrels',
-      effect: crudeVal < 0 ? 'BULLISH' : 'BEARISH',
-    })
-
-    if (cushingMatch) {
-      drivers.push({
-        factor: 'CUSHING_STOCKS',
-        actual: -parseFloat(cushingMatch[1] || '1.28'),
-        consensus: -0.4,
-        unit: 'million_barrels',
-        effect: 'BULLISH',
-      })
-    }
-
-    if (gasolineMatch) {
-      const gasVal = -parseFloat(gasolineMatch[1] || '1.82')
-      drivers.push({
-        factor: 'GASOLINE_STOCKS',
-        actual: gasVal,
-        consensus: -0.4,
-        unit: 'million_barrels',
-        effect: gasVal < 0 ? 'BULLISH' : 'BEARISH',
-      })
-    }
-
-    intraday = 'BULLISH'
-    shortTerm = 'BULLISH'
-    mediumTerm = 'NEUTRAL'
+    pushParsed('US_CRUDE_STOCKS', args.rawText.match(/decreased by ([\d.]+)\s*million barrels/i) || args.rawText.match(/draw of -?([\d.]+)/i), 'million_barrels')
+    pushParsed('CUSHING_STOCKS', args.rawText.match(/cushing.*?dropped by ([\d.]+)\s*million/i), 'million_barrels')
+    pushParsed('GASOLINE_STOCKS', args.rawText.match(/gasoline.*?(?:fell|built) by ([\d.]+)/i), 'million_barrels')
   } else if (isOpec) {
     eventType = 'OPEC_MINISTERIAL_DECISION'
     importance = 'HIGH'
-    intraday = 'BULLISH'
-    shortTerm = 'BULLISH'
-    mediumTerm = 'BULLISH'
-    drivers.push({
-      factor: 'OPEC_VOLUNTARY_CUTS',
-      actual: 2.2,
-      consensus: 2.2,
-      unit: 'million_bpd',
-      effect: 'BULLISH',
-    })
+    pushParsed('OPEC_VOLUNTARY_CUTS', args.rawText.match(/([\d.]+)\s*m(?:illion)?\s*bpd/i), 'million_bpd')
   } else if (isGeo) {
     eventType = 'GEOPOLITICAL_TRANSIT_RISK'
     importance = 'HIGH'
-    intraday = 'BULLISH'
-    shortTerm = 'BULLISH'
-    mediumTerm = 'NEUTRAL'
-    drivers.push({
-      factor: 'RED_SEA_TRANSIT_FLOW',
-      actual: -55,
-      consensus: 0,
-      unit: 'percent_diverted',
-      effect: 'BULLISH',
-    })
   } else if (isCot) {
     eventType = 'CFTC_COT_POSITIONING'
     importance = 'MEDIUM'
-    intraday = 'BEARISH'
-    shortTerm = 'NEUTRAL'
-    mediumTerm = 'NEUTRAL'
-    drivers.push({
-      factor: 'MANAGED_MONEY_NET_LONG',
-      actual: 124100,
-      consensus: 146550,
-      unit: 'contracts',
-      effect: 'BEARISH',
-    })
+    pushParsed('MANAGED_MONEY_NET_LONG', args.rawText.match(/([\d,]+)\s*contracts/i), 'contracts')
   } else if (isConflict) {
     eventType = 'SOURCE_CONFLICT_ALERT'
     importance = 'HIGH'
     intraday = 'MIXED'
     shortTerm = 'MIXED'
-    mediumTerm = 'NEUTRAL'
-    drivers.push({
-      factor: 'API_INVENTORY_REPORT',
-      actual: 3.42,
-      consensus: -1.5,
-      unit: 'million_barrels',
-      effect: 'BEARISH',
-    })
   }
 
-  const confidence = isConflict ? 0.65 : 0.84
-  const summary = isEia
-    ? 'Commercial crude and Cushing storage experienced significant draws beating consensus expectations. Front calendar spread firming validates immediate spot physical delivery tightness.'
-    : isOpec
-    ? 'OPEC+ voluntary 2.2M bpd supply cuts rolled over into next quarter, reinforcing the $70-$75 institutional price floor.'
-    : isGeo
-    ? 'Maritime security incident forces Cape of Good Hope rerouting, injecting persistent logistical risk premium into prompt WTI.'
-    : isConflict
-    ? 'Source discrepancy: Private API survey reported surprise build (+3.4M bbl) contradicting analyst survey draw consensus (-1.5M bbl). Awaiting official EIA release.'
-    : 'Event digested by physical crude desk; balance remains within seasonal limits.'
+  const summary = scrubSummary(
+    args.rawText,
+    drivers.length > 0
+      ? `The note includes ${drivers.length} sourced figure${drivers.length === 1 ? '' : 's'}. No figure was added beyond that text.`
+      : '',
+  )
+  const confidence = drivers.length > 0 ? 0.55 : 0
 
   const structured: StructuredOilEventOutput = {
     timestamp: nowIso,
@@ -499,9 +439,9 @@ function runDeterministicEvaluation(args: {
     },
     drivers,
     market_confirmation: {
-      cl_5m_return: +(args.telemetry.changePct >= 0 ? 0.8 : -0.6),
-      front_spread_change: +(args.telemetry.promptSpread >= 0 ? 0.06 : -0.04),
-      confirmation: 'STRONG',
+      cl_5m_return: args.telemetry.sourced?.prompt ? +args.telemetry.changePct.toFixed(2) : null,
+      front_spread_change: null,
+      confirmation: 'UNCONFIRMED',
     },
     confidence,
     summary,
@@ -511,7 +451,7 @@ function runDeterministicEvaluation(args: {
   const impactedPillars: FundamentalPillarId[] = isEia ? ['inventories', 'refinery_activity'] : isOpec ? ['opec_policy', 'crude_supply'] : isGeo ? ['geopolitical_risk'] : isCot ? ['speculative_positioning'] : ['inventories']
 
   const facts = args.rawText.split(/[.\n;]+/).map((s) => s.trim()).filter((s) => s.length > 5).slice(0, 4)
-  const conflicts = isConflict ? ['API reported +3.42M build vs Platts survey draw consensus of -1.50M'] : []
+  const conflicts = isConflict ? ['The note names conflicting sources. Figures are included only when the text states them.'] : []
 
   return {
     id: `eval-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
