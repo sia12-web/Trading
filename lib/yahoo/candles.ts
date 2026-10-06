@@ -213,6 +213,10 @@ export function resolveYahooSymbol(
   return YAHOO_SYMBOLS[instrument] ?? null
 }
 
+/** Successful live pulls reused across market/timeframe switches and the chart poll. */
+const yahooLiveCache = new Map<string, { at: number; candles: YahooCandle[]; symbol: string }>()
+const YAHOO_LIVE_CACHE_MS = 20_000
+
 export async function getYahooCandles(
   instrument: Instrument,
   resolution: string,
@@ -220,6 +224,12 @@ export async function getYahooCandles(
 ): Promise<{ candles: YahooCandle[]; symbol: string } | null> {
   const symbol = resolveYahooSymbol(instrument, resolution)
   if (!symbol) return null
+
+  const liveKey = `${symbol}:${resolution}:${days}`
+  const liveHit = yahooLiveCache.get(liveKey)
+  if (liveHit && Date.now() - liveHit.at < YAHOO_LIVE_CACHE_MS) {
+    return { candles: liveHit.candles, symbol: liveHit.symbol }
+  }
 
   const interval = INTERVAL_MAP[resolution] || '5m'
   const is1m = resolution === '1' || interval === '1m'
@@ -278,6 +288,7 @@ export async function getYahooCandles(
   }
   if (resolution === '240') candles = aggregateTo4H(candles)
   if (resolution === '30') candles = aggregateTo30m(candles)
+  yahooLiveCache.set(liveKey, { at: Date.now(), candles, symbol })
   return { candles, symbol }
 }
 
