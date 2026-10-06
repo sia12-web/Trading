@@ -301,11 +301,15 @@ export async function GET(request: Request) {
         if (candles?.length && !isDaily && isDatabentoConfigured()) {
           try {
             const work = overlayLiveTape(candles, instrument, resolution, timeframe)
+            let overlayTimer: ReturnType<typeof setTimeout> | undefined
             const raced = await Promise.race([
-              work.then((rows) => ({ timedOut: false as const, rows })),
-              new Promise<{ timedOut: true; rows: null }>((resolve) =>
-                setTimeout(() => resolve({ timedOut: true, rows: null }), 700)
-              ),
+              work.then((rows) => {
+                if (overlayTimer) clearTimeout(overlayTimer)
+                return { timedOut: false as const, rows }
+              }),
+              new Promise<{ timedOut: true; rows: null }>((resolve) => {
+                overlayTimer = setTimeout(() => resolve({ timedOut: true, rows: null }), 700)
+              }),
             ])
             if (!raced.timedOut && raced.rows) {
               candles = raced.rows
@@ -468,6 +472,8 @@ export async function GET(request: Request) {
           freshUntil: t + w.fresh,
           staleUntil: t + w.stale,
         })
+      }).catch((err) => {
+        logger.warn(`[Candles] Late Databento tail splice failed for ${lateInstrument}`, err)
       })
     }
 
