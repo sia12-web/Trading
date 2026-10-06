@@ -11,7 +11,6 @@ import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import {
   calculatePerformanceMetrics,
-  DEFAULT_CMC_TRADES,
   DEFAULT_TEAM_TRADES,
   DURATION_BUCKETS,
   formatCmeExchangePrice,
@@ -43,8 +42,9 @@ export default function PerformancePage() {
   const [dateFilter, setDateFilter] = useState<DateFilter>('custom')
   const [copiedLink, setCopiedLink] = useState(false)
 
-  const [cmcTrades, setCmcTrades] = useState<TradeRecord[]>(DEFAULT_CMC_TRADES)
+  const [cmcTrades, setCmcTrades] = useState<TradeRecord[]>([])
   const [teamTrades, setTeamTrades] = useState<TradeRecord[]>(DEFAULT_TEAM_TRADES)
+  const [cmcLoaded, setCmcLoaded] = useState(false)
 
   const isCmc = accountMode === 'cmc'
   const accountId = isCmc ? 'CMC-CFD-LIVE-2000' : '1.5KCHCR-LABS004-V2-675081-67067724'
@@ -57,28 +57,65 @@ export default function PerformancePage() {
 
     async function loadTrades() {
       try {
-        // Fetch CMC CFD trades from journal
-        const jRes = await fetch('/api/trading/journal?limit=100', { cache: 'no-store' })
+        // CMC CFD: only real journal fills — empty book stays $2,000 / 0 trades
+        const jRes = await fetch('/api/trading/journal?days=90&limit=200', { cache: 'no-store' })
         if (jRes.ok) {
           const jData = await jRes.json()
-          if (Array.isArray(jData.trades) && jData.trades.length > 0) {
-            const mapped: TradeRecord[] = jData.trades.map((t: any) => ({
+          const rows = Array.isArray(jData.entries)
+            ? jData.entries
+            : Array.isArray(jData.trades)
+              ? jData.trades
+              : []
+          const mapped: TradeRecord[] = rows.map((t: any) => {
+            const directionRaw = t.direction || t.entry_direction || t.fill?.direction
+            const isSell =
+              directionRaw === 'SELL' || directionRaw === 'SHORT'
+            return {
               id: String(t.id),
-              symbol: String(t.instrument || 'MNQ'),
-              direction: t.entry_direction === 'SELL' || t.entry_direction === 'SHORT' ? 'SELL' : 'BUY',
-              entry: Number(t.entry_price || 0),
-              exit: t.exit_price ? Number(t.exit_price) : null,
-              stop: t.stop_loss_price ? Number(t.stop_loss_price) : null,
-              target: t.profit_target_price ? Number(t.profit_target_price) : null,
-              pnl: t.profit_loss != null ? Number(t.profit_loss) : null,
-              quantity: Number(t.position_size || 1),
-              status: t.exit_timestamp ? 'closed' : 'open',
-              entryTime: t.entry_timestamp || t.created_at || new Date().toISOString(),
-              exitTime: t.exit_timestamp || null,
+              symbol: String(t.instrument || t.symbol || '—'),
+              direction: (isSell ? 'SELL' : 'BUY') as 'BUY' | 'SELL',
+              entry: Number(t.fill?.price ?? t.entry_price ?? t.entry ?? 0),
+              exit:
+                t.exit?.price != null
+                  ? Number(t.exit.price)
+                  : t.exit_price != null
+                    ? Number(t.exit_price)
+                    : null,
+              stop:
+                t.risk?.stop_loss != null
+                  ? Number(t.risk.stop_loss)
+                  : t.stop_loss_price != null
+                    ? Number(t.stop_loss_price)
+                    : null,
+              target:
+                t.risk?.take_profit != null
+                  ? Number(t.risk.take_profit)
+                  : t.profit_target_price != null
+                    ? Number(t.profit_target_price)
+                    : null,
+              pnl:
+                t.pnl?.dollars != null
+                  ? Number(t.pnl.dollars)
+                  : t.profit_loss != null
+                    ? Number(t.profit_loss)
+                    : null,
+              quantity: Number(t.risk?.position_size ?? t.position_size ?? 1),
+              status: (t.status === 'closed' || t.exit_timestamp || t.exit?.time
+                ? 'closed'
+                : 'open') as 'open' | 'closed',
+              entryTime:
+                t.fill?.time || t.entry_timestamp || t.created_at || new Date().toISOString(),
+              exitTime: t.exit?.time || t.exit_timestamp || null,
               exchange: 'CME Globex',
-            }))
-            if (!cancelled) setCmcTrades(mapped)
+            }
+          })
+          if (!cancelled) {
+            setCmcTrades(mapped)
+            setCmcLoaded(true)
           }
+        } else if (!cancelled) {
+          setCmcTrades([])
+          setCmcLoaded(true)
         }
 
         // Team Tape: closed round-trips with realized P&L + open positions with live mark P&L.
@@ -168,6 +205,10 @@ export default function PerformancePage() {
         }
       } catch (err) {
         console.error('Failed to load live performance trades:', err)
+        if (!cancelled) {
+          setCmcTrades([])
+          setCmcLoaded(true)
+        }
       }
     }
 
@@ -520,7 +561,18 @@ export default function PerformancePage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5 text-gray-300">
-                {activeTrades.map((t) => {
+                {activeTrades.length === 0 ? (
+                  <tr>
+                    <td colSpan={11} className="py-10 px-3 text-center text-sm text-gray-500">
+                      {isCmc
+                        ? cmcLoaded
+                          ? 'No CMC Markets CFD fills yet — capital remains $2,000.00 with 0 trades.'
+                          : 'Loading live journal…'
+                        : 'No team tape fills in this window.'}
+                    </td>
+                  </tr>
+                ) : (
+                  activeTrades.map((t) => {
                   const pnl = t.pnl ?? 0
                   const exTag = t.exchange || getExchangeTag(t.symbol)
                   const isCme = exTag === 'CME Globex'
@@ -602,7 +654,8 @@ export default function PerformancePage() {
                       </td>
                     </tr>
                   )
-                })}
+                })
+                )}
               </tbody>
             </table>
           </div>
