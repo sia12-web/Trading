@@ -153,6 +153,9 @@ export function SessionBanner({
     bracketMode: string
     tradeLocationGrade: string
     directiveSummary: string
+    formed?: boolean
+    locationPct?: number
+    swingSessions?: number
   } | null>(null)
   const [htfCorr, setHtfCorr] = useState<{
     type: string
@@ -369,12 +372,17 @@ export function SessionBanner({
                 holdingDirective: data.state.directionalPerformance.dynamicRR?.holdingDirective ?? '',
               })
             }
-            if (data.state.bracket) {
+            if (data.state.bracket && data.state.bracket.formed !== false) {
               setHtfBracket({
                 bracketMode: data.state.bracket.bracketMode,
                 tradeLocationGrade: data.state.bracket.tradeLocationGrade,
                 directiveSummary: data.state.bracket.directiveSummary,
+                formed: data.state.bracket.formed,
+                locationPct: data.state.bracket.locationPct,
+                swingSessions: data.state.bracket.swingSessions,
               })
+            } else {
+              setHtfBracket(null)
             }
             if (data.state.correctiveAction) {
               setHtfCorr({
@@ -653,17 +661,28 @@ export function SessionBanner({
         )}
         {!SYSTEMATIC_LIVE_DESK && htfBracket && (
           <span
-            className={`rounded px-2 py-0.5 font-semibold text-[10px] uppercase tracking-wide border ${htfBracket.tradeLocationGrade === 'RESPONSIVE_LONG'
+            className={`rounded px-2 py-0.5 font-semibold text-[10px] uppercase tracking-wide border ${htfBracket.bracketMode === 'AUCTION_FAILURE_REVERSAL'
+              ? 'bg-amber-500/30 text-amber-200 border-amber-400/50'
+              : htfBracket.tradeLocationGrade === 'RESPONSIVE_LONG'
               ? 'bg-emerald-500/30 text-emerald-200 border-emerald-400/50'
               : htfBracket.tradeLocationGrade === 'RESPONSIVE_SHORT'
                 ? 'bg-rose-500/30 text-rose-200 border-rose-400/50'
                 : htfBracket.tradeLocationGrade === 'MID_BRACKET_CHOP'
-                  ? 'bg-amber-500/30 text-amber-200 border-amber-400/50 animate-pulse'
+                  ? 'bg-amber-500/30 text-amber-200 border-amber-400/50'
                   : 'bg-indigo-500/25 text-indigo-200 border-indigo-500/40'
               }`}
             title={`Long-Term Bracket: ${htfBracket.bracketMode} | ${htfBracket.directiveSummary}`}
           >
-            Bracket: {String(htfBracket.tradeLocationGrade || '').replace(/_/g, ' ')}
+            Bracket: {(() => {
+              const where = typeof htfBracket.locationPct === 'number' ? ` ${htfBracket.locationPct}%` : ''
+              const span = (htfBracket.swingSessions ?? 0) >= 5 ? '5D ' : htfBracket.swingSessions ? `${htfBracket.swingSessions}D ` : ''
+              if (htfBracket.bracketMode === 'AUCTION_FAILURE_REVERSAL') return `${span}AUCTION FAILURE${where}`
+              if (htfBracket.bracketMode === 'INITIATIVE_TREND') return `${span}BREAKOUT${where}`
+              if (htfBracket.bracketMode === 'TREND_AGING') return `${span}TREND AGING${where}`
+              if (htfBracket.tradeLocationGrade === 'RESPONSIVE_LONG') return `${span}LOWER THIRD${where}`
+              if (htfBracket.tradeLocationGrade === 'RESPONSIVE_SHORT') return `${span}UPPER THIRD${where}`
+              return `${span}MID BRACKET${where}`
+            })()}
           </span>
         )}
         {!SYSTEMATIC_LIVE_DESK && htfCorr && htfCorr.type !== 'NONE' && (

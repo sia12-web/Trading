@@ -6,8 +6,37 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
-import { computeHTFContextState } from '@/lib/trading/htfSpecialist'
+import { computeHTFContextState, type HTFBarInput } from '@/lib/trading/htfSpecialist'
 import { isDeskInstrument, type DeskInstrument } from '@/lib/trading/sessionGate'
+import { getYahooCandles } from '@/lib/yahoo/candles'
+import type { Instrument } from '@/types/price-feed'
+
+/** Daily sessions for the 5-day / 20-day bracket. Independent of the chart timeframe. */
+async function loadDailyBracketBars(instrument: DeskInstrument): Promise<HTFBarInput[]> {
+    try {
+        const daily = await getYahooCandles(instrument as Instrument, '1D', 120)
+        if (!daily?.candles?.length) return []
+        return daily.candles
+            .filter(
+                (c) =>
+                    Number.isFinite(c.time) &&
+                    Number.isFinite(c.high) &&
+                    Number.isFinite(c.low) &&
+                    Number.isFinite(c.close) &&
+                    c.high >= c.low
+            )
+            .map((c) => ({
+                time: c.time,
+                open: c.open,
+                high: c.high,
+                low: c.low,
+                close: c.close,
+                volume: c.volume,
+            }))
+    } catch {
+        return []
+    }
+}
 
 export const dynamic = 'force-dynamic'
 
@@ -45,6 +74,7 @@ export async function POST(request: NextRequest) {
     const avwapAnchors = Array.isArray(body.avwapAnchors) ? body.avwapAnchors : undefined
     const vpAnchors = Array.isArray(body.vpAnchors) ? body.vpAnchors : undefined
 
+    const bracketBars = await loadDailyBracketBars(instrument)
     const htfState = computeHTFContextState({
         instrument,
         candles5m,
@@ -53,6 +83,7 @@ export async function POST(request: NextRequest) {
         asOfUnix,
         avwapAnchors,
         vpAnchors,
+        bracketBars: bracketBars.length > 0 ? bracketBars : undefined,
     })
 
     // Optional: Persist HTF Context to Supabase htf_context_logs (non-blocking)
@@ -89,10 +120,12 @@ export async function GET(request: NextRequest) {
         ? (rawInstrument as DeskInstrument)
         : 'DOW'
 
+    const bracketBars = await loadDailyBracketBars(instrument)
     const htfState = computeHTFContextState({
         instrument,
         candles5m: [],
         asOfUnix: Math.floor(Date.now() / 1000),
+        bracketBars,
     })
 
     return NextResponse.json({

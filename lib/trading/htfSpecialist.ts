@@ -183,6 +183,12 @@ export type HTFBracketDetails = {
     target1Poc: number
     target2OppositeExtreme: number
     directiveSummary: string
+    /** False when completed sessions are not enough to locate price. Never invent a range. */
+    formed?: boolean
+    swingSessions?: number
+    macroSessions?: number
+    /** 0 = bracket low, 100 = bracket high. Outside prints fall below 0 or above 100. */
+    locationPct?: number
 }
 
 export type HTFCorrectiveActionType =
@@ -1041,93 +1047,297 @@ export function computeDynamicRiskReward(
     }
 }
 
+const BRACKET_MIN_COMPLETED_SESSIONS = 3
+const BRACKET_SWING_SESSIONS = 5
+const BRACKET_MACRO_SESSIONS = 20
+/** Lower third = responsive long, upper third = responsive short, middle third = chop. */
+const BRACKET_LOWER_THIRD = 1 / 3
+const BRACKET_UPPER_THIRD = 2 / 3
+/** A completed session "tests" an extreme when it trades into the outer 10% of the bracket. */
+const BRACKET_TEST_BAND = 0.1
+
+type BracketSession = {
+    key: string
+    time: number
+    open: number
+    high: number
+    low: number
+    close: number
+    volume: number
+}
+
+function barTimeMs(time: number): number {
+    if (!Number.isFinite(time)) return NaN
+    return time > 1e12 ? time : time * 1000
+}
+
+function nySessionKey(time: number): string {
+    return new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/New_York',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).format(new Date(barTimeMs(time)))
+}
+
+function roundBracketPx(n: number): number {
+    return Math.round(n * 100) / 100
+}
+
+/** Derived value prices only. Printed highs and lows stay exact. */
+function roundDerivedPx(n: number): number {
+    const step = Math.abs(n) >= 1000 ? 0.25 : 0.01
+    return Math.round(n / step) * step
+}
+
+function formatBracketPx(n: number): string {
+    return n.toLocaleString('en-US', { maximumFractionDigits: 2 })
+}
+
 /**
- * Evaluate Long-Term Auction Rotations & Brackets (Mind Over Markets Ch 4, Pages 183-210)
- * Evaluates 5-Day Swing Bracket and 20-Day Macro Bracket structures, trade location grades (Rule 1),
- * test counts (Rule 2), Auction Failures / Outside Days, and Trend-Aging volume divergence (Page 196).
+ * Collapse intraday or daily bars into one OHLC per New York session.
+ * A 5-day bracket is five sessions, not a fixed count of 5-minute bars.
+ */
+function aggregateBracketSessions(bars: HTFBarInput[]): BracketSession[] {
+    const sorted = bars
+        .filter(
+            (b) =>
+                Number.isFinite(b.time) &&
+                Number.isFinite(b.high) &&
+                Number.isFinite(b.low) &&
+                Number.isFinite(b.close) &&
+                b.high >= b.low
+        )
+        .slice()
+        .sort((a, b) => a.time - b.time)
+
+    const sessions: BracketSession[] = []
+    for (const bar of sorted) {
+        const key = nySessionKey(bar.time)
+        const volume = Number.isFinite(bar.volume) && (bar.volume as number) > 0 ? (bar.volume as number) : 0
+        const prev = sessions[sessions.length - 1]
+        if (!prev || prev.key !== key) {
+            sessions.push({
+                key,
+                time: bar.time,
+                open: bar.open,
+                high: bar.high,
+                low: bar.low,
+                close: bar.close,
+                volume,
+            })
+            continue
+        }
+        prev.high = Math.max(prev.high, bar.high)
+        prev.low = Math.min(prev.low, bar.low)
+        prev.close = bar.close
+        prev.volume += volume
+    }
+    return sessions
+}
+
+/**
+ * Volume value area inside a high/low bracket.
+ * Each session's volume is spread across the prices it actually traded.
+ */
+function bracketVolumeValue(sessions: BracketSession[]): { poc: number; vah: number; val: number } {
+    const high = Math.max(...sessions.map((s) => s.high))
+    const low = Math.min(...sessions.map((s) => s.low))
+    const range = high - low
+    const mid = roundBracketPx((high + low) / 2)
+    if (!(range > 0)) return { poc: mid, vah: mid, val: mid }
+
+    const bins = 32
+    const size = range / bins
+    const vol = new Array<number>(bins).fill(0)
+    let total = 0
+    for (const session of sessions) {
+        const weight = session.volume > 0 ? session.volume : 1
+        let from = Math.floor((session.low - low) / size)
+        let to = Math.floor((Math.max(session.low, session.high - size / 1000) - low) / size)
+        from = Math.max(0, Math.min(bins - 1, from))
+        to = Math.max(from, Math.min(bins - 1, to))
+        const share = weight / (to - from + 1)
+        for (let i = from; i <= to; i++) vol[i] = (vol[i] ?? 0) + share
+        total += weight
+    }
+
+    let pocIdx = 0
+    for (let i = 1; i < bins; i++) {
+        if (vol[i]! > vol[pocIdx]!) pocIdx = i
+    }
+
+    let acc = vol[pocIdx] ?? 0
+    let lo = pocIdx
+    let hi = pocIdx
+    const target = total * 0.7
+    while (acc < target && (lo > 0 || hi < bins - 1)) {
+        const left = lo > 0 ? vol[lo - 1]! : -1
+        const right = hi < bins - 1 ? vol[hi + 1]! : -1
+        if (right >= left && hi < bins - 1) {
+            hi += 1
+            acc += vol[hi] ?? 0
+        } else if (lo > 0) {
+            lo -= 1
+            acc += vol[lo] ?? 0
+        } else {
+            break
+        }
+    }
+
+    const poc = Math.min(high, Math.max(low, roundDerivedPx(low + (pocIdx + 0.5) * size)))
+    const val = Math.min(high, Math.max(low, roundDerivedPx(low + lo * size)))
+    const vah = Math.min(high, Math.max(low, roundDerivedPx(low + (hi + 1) * size)))
+    return {
+        poc: roundBracketPx(poc),
+        val: roundBracketPx(val),
+        vah: roundBracketPx(Math.max(vah, val)),
+    }
+}
+
+function bracketLevels(sessions: BracketSession[]): {
+    high: number
+    low: number
+    vah: number
+    val: number
+    poc: number
+} {
+    const high = roundBracketPx(Math.max(...sessions.map((s) => s.high)))
+    const low = roundBracketPx(Math.min(...sessions.map((s) => s.low)))
+    const value = bracketVolumeValue(sessions)
+    return { high, low, ...value }
+}
+
+function unformedBracket(reason: string, swingSessions = 0, macroSessions = 0): HTFBracketDetails {
+    const flat = { high: 0, low: 0, vah: 0, val: 0, poc: 0 }
+    return {
+        bracketMode: 'BRACKETED_BALANCE',
+        tradeLocationGrade: 'MID_BRACKET_CHOP',
+        swing5d: flat,
+        macro20d: flat,
+        highTestCount: 0,
+        lowTestCount: 0,
+        auctionFailureDetected: false,
+        trendAgingDivergence: false,
+        target1Poc: 0,
+        target2OppositeExtreme: 0,
+        directiveSummary: reason,
+        formed: false,
+        swingSessions,
+        macroSessions,
+        locationPct: undefined,
+    }
+}
+
+/**
+ * Evaluate Long-Term Auction Rotations & Brackets (Mind Over Markets Ch 4, Pages 183-210).
+ *
+ * The bracket is the high/low of completed New York sessions. The session being
+ * located is excluded, so a live spike cannot widen the range and hide a breakout.
+ * Location is a fraction of that range (lower third / middle third / upper third),
+ * never a fixed point buffer.
  */
 export function computeLongTermBracket(
     bars: HTFBarInput[],
     currentPrice: number
 ): HTFBracketDetails {
-    const bars5d = bars.slice(-288) // ~5 days of 5m bars
-    const bars20d = bars.slice(-1152) // ~20 days of 5m bars
-
-    // 5-Day Swing Bracket Boundaries
-    const s5Highs = bars5d.map((b) => b.high)
-    const s5Lows = bars5d.map((b) => b.low)
-    const s5Max = s5Highs.length > 0 ? Math.max(...s5Highs) : currentPrice + 20
-    const s5Min = s5Lows.length > 0 ? Math.min(...s5Lows) : currentPrice - 20
-    const s5Poc = Math.round(((s5Max + s5Min) / 2) * 100) / 100
-    const s5Range = s5Max - s5Min
-    const s5Vah = Math.round((s5Min + s5Range * 0.7) * 100) / 100
-    const s5Val = Math.round((s5Min + s5Range * 0.3) * 100) / 100
-
-    // 20-Day Macro Bracket Boundaries
-    const m20Highs = bars20d.map((b) => b.high)
-    const m20Lows = bars20d.map((b) => b.low)
-    const m20Max = m20Highs.length > 0 ? Math.max(...m20Highs) : currentPrice + 50
-    const m20Min = m20Lows.length > 0 ? Math.min(...m20Lows) : currentPrice - 50
-    const m20Poc = Math.round(((m20Max + m20Min) / 2) * 100) / 100
-    const m20Range = m20Max - m20Min
-    const m20Vah = Math.round((m20Min + m20Range * 0.7) * 100) / 100
-    const m20Val = Math.round((m20Min + m20Range * 0.3) * 100) / 100
-
-    // Rule 1: Trade Location Classification
-    let tradeLocationGrade: HTFBracketTradeLocationGrade = 'MID_BRACKET_CHOP'
-    if (currentPrice <= s5Val || currentPrice <= s5Min + 5) {
-        tradeLocationGrade = 'RESPONSIVE_LONG'
-    } else if (currentPrice >= s5Vah || currentPrice >= s5Max - 5) {
-        tradeLocationGrade = 'RESPONSIVE_SHORT'
-    } else if (currentPrice > s5Max || currentPrice < s5Min) {
-        tradeLocationGrade = 'OUT_OF_BRACKET_BREAKOUT'
+    const sessions = aggregateBracketSessions(bars)
+    if (sessions.length < BRACKET_MIN_COMPLETED_SESSIONS + 1 || !Number.isFinite(currentPrice)) {
+        return unformedBracket(
+            `Bracket unavailable: need ${BRACKET_MIN_COMPLETED_SESSIONS} completed sessions before the current one. Got ${Math.max(0, sessions.length - 1)}.`
+        )
     }
 
-    // Rule 2: Extreme Test Counter
-    const highTestCount = s5Highs.filter((h) => h >= s5Max - 3).length
-    const lowTestCount = s5Lows.filter((l) => l <= s5Min + 3).length
+    const developing = sessions[sessions.length - 1]!
+    const completed = sessions.slice(0, -1)
+    const price = Number.isFinite(developing.close) ? developing.close : currentPrice
+    const swing = completed.slice(-BRACKET_SWING_SESSIONS)
+    const macro = completed.slice(-BRACKET_MACRO_SESSIONS)
+    if (swing.length < BRACKET_MIN_COMPLETED_SESSIONS) {
+        return unformedBracket(
+            `Bracket unavailable: need ${BRACKET_MIN_COMPLETED_SESSIONS} completed sessions before the current one. Got ${swing.length}.`,
+            swing.length,
+            macro.length
+        )
+    }
 
-    // Rule 4 / Breakout Failure: Auction Failure Detection
-    const recentRecent = bars.slice(-12)
-    const probedBelowAndRebounded = recentRecent.some((b) => b.low < s5Min - 2) && currentPrice > s5Val
-    const probedAboveAndReversed = recentRecent.some((b) => b.high > s5Max + 2) && currentPrice < s5Vah
-    const auctionFailureDetected = probedBelowAndRebounded || probedAboveAndReversed
+    const swing5d = bracketLevels(swing)
+    const macro20d = bracketLevels(macro)
+    const range = swing5d.high - swing5d.low
+    if (!(range > 0)) {
+        return unformedBracket('Bracket unavailable: completed sessions have no range.', swing.length, macro.length)
+    }
 
-    // Page 196: Trend Aging Volume Divergence
-    const upDaysVol = bars5d.filter((b) => b.close > b.open).reduce((sum, b) => sum + (b.volume || 0), 0)
-    const downDaysVol = bars5d.filter((b) => b.close < b.open).reduce((sum, b) => sum + (b.volume || 0), 0)
-    const trendAgingDivergence = downDaysVol > 1.25 * upDaysVol && currentPrice > s5Poc
+    const pos = (price - swing5d.low) / range
+    let tradeLocationGrade: HTFBracketTradeLocationGrade
+    if (price > swing5d.high || price < swing5d.low) {
+        tradeLocationGrade = 'OUT_OF_BRACKET_BREAKOUT'
+    } else if (pos <= BRACKET_LOWER_THIRD) {
+        tradeLocationGrade = 'RESPONSIVE_LONG'
+    } else if (pos >= BRACKET_UPPER_THIRD) {
+        tradeLocationGrade = 'RESPONSIVE_SHORT'
+    } else {
+        tradeLocationGrade = 'MID_BRACKET_CHOP'
+    }
 
-    // Determine Bracket Mode
+    const testBand = range * BRACKET_TEST_BAND
+    const highTestCount = swing.filter((s) => s.high >= swing5d.high - testBand).length
+    const lowTestCount = swing.filter((s) => s.low <= swing5d.low + testBand).length
+
+    const probedAbove = developing.high > swing5d.high && price <= swing5d.high
+    const probedBelow = developing.low < swing5d.low && price >= swing5d.low
+    const auctionFailureDetected = probedAbove || probedBelow
+
+    const upVol = swing.filter((s) => s.close > s.open).reduce((sum, s) => sum + s.volume, 0)
+    const downVol = swing.filter((s) => s.close < s.open).reduce((sum, s) => sum + s.volume, 0)
+    const trendAgingDivergence = downVol > 1.25 * upVol && price > swing5d.poc
+
     let bracketMode: HTFBracketMode = 'BRACKETED_BALANCE'
     if (auctionFailureDetected) {
         bracketMode = 'AUCTION_FAILURE_REVERSAL'
-    } else if (trendAgingDivergence) {
-        bracketMode = 'TREND_AGING'
     } else if (tradeLocationGrade === 'OUT_OF_BRACKET_BREAKOUT') {
         bracketMode = 'INITIATIVE_TREND'
+    } else if (trendAgingDivergence) {
+        bracketMode = 'TREND_AGING'
     }
 
-    // Profit Targets: Target 1 = Mid-Bracket POC, Target 2 = Opposite Bracket Extreme
-    const target1Poc = s5Poc
-    const target2OppositeExtreme = currentPrice < s5Poc ? s5Vah : s5Val
+    const target1Poc = swing5d.poc
+    const target2OppositeExtreme = price < swing5d.poc ? swing5d.high : swing5d.low
+    const pct = Math.round(pos * 100)
+    const windowLabel =
+        swing.length >= BRACKET_SWING_SESSIONS
+            ? '5-day'
+            : `${swing.length}-session`
+    const bounds = `${formatBracketPx(swing5d.low)}–${formatBracketPx(swing5d.high)}`
 
-    let directiveSummary = 'Trading in 5-day Balance. Focus on Responsive Entries at Bracket Extremes.'
-    if (tradeLocationGrade === 'RESPONSIVE_LONG') {
-        directiveSummary = `★ RESPONSIVE BUY ZONE: Near 5D VAL @ ${s5Val.toLocaleString()} (Target 1: POC @ ${s5Poc.toLocaleString()}, Target 2: VAH @ ${s5Vah.toLocaleString()})`
+    let directiveSummary = `${windowLabel} bracket ${bounds}. Price ${formatBracketPx(price)} is ${pct}% up the range.`
+    if (bracketMode === 'AUCTION_FAILURE_REVERSAL') {
+        const probe = probedAbove
+            ? `high ${formatBracketPx(developing.high)} failed above ${formatBracketPx(swing5d.high)}`
+            : `low ${formatBracketPx(developing.low)} failed below ${formatBracketPx(swing5d.low)}`
+        directiveSummary = `Auction failure: ${probe} and closed back inside at ${formatBracketPx(price)} (${pct}% of ${windowLabel} ${bounds}). Target ${formatBracketPx(target2OppositeExtreme)}.`
+    } else if (tradeLocationGrade === 'OUT_OF_BRACKET_BREAKOUT') {
+        const side = price > swing5d.high ? `above ${formatBracketPx(swing5d.high)}` : `below ${formatBracketPx(swing5d.low)}`
+        directiveSummary = `Breakout: ${formatBracketPx(price)} is ${side} the ${windowLabel} bracket ${bounds}. Initiative continuation, not a fade.`
+    } else if (tradeLocationGrade === 'RESPONSIVE_LONG') {
+        directiveSummary = `Responsive long: ${formatBracketPx(price)} is in the lower third of the ${windowLabel} bracket ${bounds} (${pct}%). Target 1 ${formatBracketPx(target1Poc)}, target 2 ${formatBracketPx(swing5d.high)}.`
     } else if (tradeLocationGrade === 'RESPONSIVE_SHORT') {
-        directiveSummary = `★ RESPONSIVE SELL ZONE: Near 5D VAH @ ${s5Vah.toLocaleString()} (Target 1: POC @ ${s5Poc.toLocaleString()}, Target 2: VAL @ ${s5Val.toLocaleString()})`
-    } else if (tradeLocationGrade === 'MID_BRACKET_CHOP') {
-        directiveSummary = `⚠️ MID-BRACKET CHOP ZONE: Near POC @ ${s5Poc.toLocaleString()}. Initiative trades carry poor trade location — wait for bracket boundary.`
-    } else if (bracketMode === 'AUCTION_FAILURE_REVERSAL') {
-        directiveSummary = `🚨 AUCTION FAILURE REVERSAL: Failed probe beyond bracket extreme! Target opposite extreme @ ${target2OppositeExtreme.toLocaleString()}`
+        directiveSummary = `Responsive short: ${formatBracketPx(price)} is in the upper third of the ${windowLabel} bracket ${bounds} (${pct}%). Target 1 ${formatBracketPx(target1Poc)}, target 2 ${formatBracketPx(swing5d.low)}.`
+    } else {
+        directiveSummary = `Mid-bracket chop: ${formatBracketPx(price)} is in the middle third of the ${windowLabel} bracket ${bounds} (${pct}%). Poor location until price reaches an extreme.`
+    }
+    if (trendAgingDivergence && bracketMode !== 'INITIATIVE_TREND') {
+        directiveSummary += ' Down-day volume is leading while price holds above value — trend aging.'
+    }
+    if (macro.length < BRACKET_MACRO_SESSIONS) {
+        directiveSummary += ` 20-day bracket not formed (${macro.length} sessions).`
     }
 
     return {
         bracketMode,
         tradeLocationGrade,
-        swing5d: { high: s5Max, low: s5Min, vah: s5Vah, val: s5Val, poc: s5Poc },
-        macro20d: { high: m20Max, low: m20Min, vah: m20Vah, val: m20Val, poc: m20Poc },
+        swing5d,
+        macro20d,
         highTestCount,
         lowTestCount,
         auctionFailureDetected,
@@ -1135,6 +1345,10 @@ export function computeLongTermBracket(
         target1Poc,
         target2OppositeExtreme,
         directiveSummary,
+        formed: true,
+        swingSessions: swing.length,
+        macroSessions: macro.length,
+        locationPct: pct,
     }
 }
 
@@ -1467,8 +1681,17 @@ export function computeMarketStandAsideState(
         }
     }
 
-    // 3. Long-Term Nontrend Markets (Page 267) — Multi-week bracket chop
-    if (bracket.bracketMode === 'BRACKETED_BALANCE' && isChopLocation) {
+    // 3. Long-Term Nontrend Markets (Page 267) — Multi-week bracket chop.
+    // A single mid-5-day print is rotational balance, not a multi-week nontrend.
+    // Require a formed 20-day balance whose range has not expanded beyond the 5-day swing.
+    const macroRange = bracket.macro20d.high - bracket.macro20d.low
+    const swingSpan = bracket.swing5d.high - bracket.swing5d.low
+    const multiWeekBalance =
+        bracket.formed !== false &&
+        (bracket.macroSessions ?? 0) >= 15 &&
+        macroRange > 0 &&
+        swingSpan >= macroRange * 0.72
+    if (bracket.bracketMode === 'BRACKETED_BALANCE' && isChopLocation && multiWeekBalance) {
         return {
             isStandAside: true,
             reason: 'LONG_TERM_NONTREND',
@@ -1513,6 +1736,8 @@ export function computeHTFContextState(args: {
     asOfUnix: number
     avwapAnchors?: number[]
     vpAnchors?: number[]
+    /** Daily (or multi-session) bars used only for the 5-day / 20-day bracket. */
+    bracketBars?: HTFBarInput[]
 }): HTFContextState {
     const { instrument, asOfUnix, candles5m } = args
     const excesses = computeHTFExcessSignals(args)
@@ -1561,7 +1786,10 @@ export function computeHTFContextState(args: {
 
     // Long-Term Bracket Engine (Mind Over Markets Ch 4, Pages 183-210)
     const currentPrice = candles5m.length > 0 ? candles5m[candles5m.length - 1]!.close : 0
-    const bracket = computeLongTermBracket(candles5m, currentPrice)
+    const bracketSource = args.bracketBars && args.bracketBars.length > 0 ? args.bracketBars : candles5m
+    const bracketPrice =
+        bracketSource.length > 0 ? bracketSource[bracketSource.length - 1]!.close : currentPrice
+    const bracket = computeLongTermBracket(bracketSource, bracketPrice)
 
     // Corrective Action, Dynamic Anchor Profile, Special Situation & Stand-Aside Engine (Mind Over Markets Ch 4, Pages 225-275)
     const correctiveAction = computeCorrectiveAction(candles5m, vaPlacement, bracket)
@@ -1636,7 +1864,9 @@ export function computeHTFContextState(args: {
         'DAY TIMEFRAME & LONG-TERM SPECIALIST (Layer 1 — Market Profile & Macro Conviction):',
         `Day TF Status: ${status} (Market State: ${marketEvolution})`,
         standAside.isStandAside ? `🛑 STAND ASIDE WARNING: ${standAside.directiveSummary}` : 'Stand-Aside Status: Clean opportunity conditions active.',
-        `Long-Term Bracket Mode: ${bracket.bracketMode} (Location Grade: ${bracket.tradeLocationGrade})`,
+        bracket.formed === false
+            ? `Long-Term Bracket: unavailable. ${bracket.directiveSummary}`
+            : `Long-Term Bracket Mode: ${bracket.bracketMode} (Location Grade: ${bracket.tradeLocationGrade})`,
         `Bracket Directive: ${bracket.directiveSummary}`,
         `Special Situation Active: ${specialSituation.activeSituation} (${specialSituation.continuationProbabilityPct}% Continuation Odds)`,
         `Special Situation Directive: ${specialSituation.directiveSummary}`,
