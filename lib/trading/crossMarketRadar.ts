@@ -358,7 +358,7 @@ export function buildCrossMarketRadarReport(
     }
   }
 
-  if (topPick && results[topPick]) {
+  if (topPick && results[topPick]?.grade === 'A') {
     results[topPick]!.isTopPick = true
   }
 

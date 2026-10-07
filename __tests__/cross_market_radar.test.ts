@@ -151,7 +151,9 @@ describe('Cross-Asset Volatility & 5-Market Opportunity Radar Tests', () => {
 
     assert.strictEqual(report.markets.CRUDE.currentPrice, 0)
     assert.strictEqual(report.markets.CRUDE.grade, 'C')
+    assert.strictEqual(report.markets.CRUDE.isTopPick, false)
     assert.strictEqual(report.gradeACount, 0)
+    assert.ok(Object.values(report.markets).every((card) => card.isTopPick === false))
     assert.strictEqual(report.markets.NASDAQ.location.present, false)
     assert.strictEqual(report.markets.NASDAQ.structure.present, false)
   })
