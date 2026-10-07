@@ -931,7 +931,7 @@ export function paintSessionHighlightOverlay(
     d.style.right = 'auto'
     d.style.backgroundColor = s.color
     d.style.zIndex = String(s.zIndex)
-    d.title = `${s.displayName ?? s.name} session`
+    d.removeAttribute('title')
 
     if (s.isColumn || opts?.hideLabels) {
       d.style.borderLeft = 'none'
@@ -958,7 +958,7 @@ export function paintSessionHighlightOverlay(
       continue
     }
 
-    // Clean label metadata (Range / Avg / Session) without dashed lines covering the high/low
+    // Range and Avg only — session names stay off the color band.
     const rangeStr =
       s.range != null
         ? Number.isInteger(s.range)
@@ -971,20 +971,21 @@ export function paintSessionHighlightOverlay(
           ? s.avg.toString()
           : s.avg.toFixed(2)
         : ''
-    const sessName = s.displayName ?? (s.name === 'Asia' ? 'Tokyo' : s.name)
     const labelTop = s.height + 6
     // Position changes every pan frame. Label text does not — skip innerHTML
     // so session colors track the viewport without rebuilding DOM.
-    const labelKey = `${sessName}|${rangeStr}|${avgStr}|${lineColor}|${Math.round(labelTop)}`
+    const labelKey = `${rangeStr}|${avgStr}|${lineColor}|${Math.round(labelTop)}`
     if (d.dataset.labelKey !== labelKey) {
       d.dataset.labelKey = labelKey
-      d.innerHTML = `
+      d.innerHTML =
+        rangeStr || avgStr
+          ? `
       <div style="position:absolute;left:8px;top:${labelTop}px;font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;font-size:11px;font-weight:500;line-height:1.35;color:${lineColor};pointer-events:none;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,0.4);">
         ${rangeStr ? `<div>Range: ${rangeStr}</div>` : ''}
         ${avgStr ? `<div>Avg: ${avgStr}</div>` : ''}
-        <div style="font-weight:600;">${sessName}</div>
       </div>
     `
+          : ''
     }
   }
 }
