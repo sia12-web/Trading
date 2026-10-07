@@ -252,26 +252,109 @@ export function detectNewsCatalysts(
   return scored.map((s) => s.cat)
 }
 
+/** News AVWAP is always built on 1-minute bars — chart timeframe only paints it. */
+export const NEWS_AVWAP_SOURCE_TIMEFRAME = '1m' as const
+
+export type NewsAvwapBandSeries = {
+  vwap: { time: UTCTimestamp; value: number }[]
+  upper1: { time: UTCTimestamp; value: number }[]
+  lower1: { time: UTCTimestamp; value: number }[]
+  upper2: { time: UTCTimestamp; value: number }[]
+  lower2: { time: UTCTimestamp; value: number }[]
+  upper3: { time: UTCTimestamp; value: number }[]
+  lower3: { time: UTCTimestamp; value: number }[]
+}
+
 /**
- * Compute Anchored VWAP and ±1σ, ±2σ, ±3σ standard deviation bands
- * from the selected news catalyst release candle.
+ * Pick the catalyst by wall-clock news time.
+ * Calendar high-impact events win over bar-surge guesses so a timeframe switch
+ * cannot re-rank the anchor.
+ */
+export function pickNewsCatalyst(
+  catalysts: NewsCatalystInfo[],
+  selectedCatalystId?: string | null
+): NewsCatalystInfo | null {
+  if (!catalysts.length) return null
+  if (selectedCatalystId) {
+    const hit = catalysts.find((c) => c.id === selectedCatalystId)
+    if (hit) return hit
+  }
+  const calendar = catalysts.filter((c) => !c.id.startsWith('bar-surge-'))
+  if (calendar.length > 0) {
+    return [...calendar].sort((a, b) => {
+      const hiA = isHighImpact(a.impact) ? 1 : 0
+      const hiB = isHighImpact(b.impact) ? 1 : 0
+      if (hiB !== hiA) return hiB - hiA
+      return b.eventTimeUnix - a.eventTimeUnix
+    })[0]!
+  }
+  return catalysts[0]!
+}
+
+/**
+ * Sample a 1m AVWAP series onto chart bar times.
+ * Each chart bar shows the 1m value as of the end of that bar (next bar open),
+ * so the tip on 5m/30m matches the live 1m tip.
+ */
+export function projectBandSeriesOntoTimes(
+  bands: NewsAvwapBandSeries,
+  targetTimes: number[]
+): NewsAvwapBandSeries {
+  const project = (src: { time: UTCTimestamp | number; value: number }[]) => {
+    if (!src.length || !targetTimes.length) return [] as { time: UTCTimestamp; value: number }[]
+    const firstSrc = Number(src[0]!.time)
+    const out: { time: UTCTimestamp; value: number }[] = []
+    let j = 0
+    for (let i = 0; i < targetTimes.length; i++) {
+      const t = targetTimes[i]!
+      const endExclusive =
+        i + 1 < targetTimes.length ? targetTimes[i + 1]! : Number.POSITIVE_INFINITY
+      if (endExclusive <= firstSrc) continue
+      while (j + 1 < src.length && Number(src[j + 1]!.time) < endExclusive) j++
+      if (Number(src[j]!.time) >= endExclusive) continue
+      out.push({ time: t as UTCTimestamp, value: src[j]!.value })
+    }
+    return out
+  }
+  return {
+    vwap: project(bands.vwap),
+    upper1: project(bands.upper1),
+    lower1: project(bands.lower1),
+    upper2: project(bands.upper2),
+    lower2: project(bands.lower2),
+    upper3: project(bands.upper3),
+    lower3: project(bands.lower3),
+  }
+}
+
+/**
+ * Anchored VWAP from a news release.
+ * Pass 1-minute candles so the print is stable across chart timeframes.
+ * Optional chartTimes projects the same values onto the visible bars.
  */
 export function computeNewsCatalystVwap(
   candles: SessionBar[],
   newsEvents: DeskCalendarEvent[] = [],
-  selectedCatalystId?: string | null
+  selectedCatalystId?: string | null,
+  chartTimes?: number[]
 ): NewsCatalystVwapResult | null {
   if (!candles || candles.length === 0) return null
 
   const catalysts = detectNewsCatalysts(candles, newsEvents)
   if (catalysts.length === 0) return null
 
-  const chosen =
-    (selectedCatalystId ? catalysts.find((c) => c.id === selectedCatalystId) : null) ??
-    catalysts[0]!
+  const chosen = pickNewsCatalyst(catalysts, selectedCatalystId)
+  if (!chosen) return null
 
-  const bands = computeVwapFromCustomAnchor(candles, chosen.barTimeUnix)
-  if (!bands || bands.vwap.length === 0) return null
+  // Anchor at the event clock, not a timeframe-dependent bar open.
+  const bands1m = computeVwapFromCustomAnchor(candles, chosen.eventTimeUnix)
+  if (!bands1m || bands1m.vwap.length === 0) return null
+
+  const bands =
+    chartTimes && chartTimes.length > 0
+      ? projectBandSeriesOntoTimes(bands1m, chartTimes)
+      : bands1m
+  if (!bands.vwap.length) return null
 
   const lastV = bands.vwap[bands.vwap.length - 1]!.value
   const lastU1 = bands.upper1[bands.upper1.length - 1]?.value ?? lastV
@@ -293,4 +376,26 @@ export function computeNewsCatalystVwap(
     latestSigma3Upper: lastU3,
     latestSigma3Lower: lastL3,
   }
+}
+
+/** Rebuild canvas AVWAP points for a news move from 1m bars at the event clock. */
+export function newsAvwapPointsFrom1m(
+  bars1m: SessionBar[],
+  eventTimeUnix: number,
+  chartTimes?: number[]
+): Array<{ time: number; vwap: number; upper1: number; lower1: number }> | undefined {
+  if (!bars1m.length || !(eventTimeUnix > 0)) return undefined
+  const bands1m = computeVwapFromCustomAnchor(bars1m, eventTimeUnix)
+  if (!bands1m || bands1m.vwap.length < 2) return undefined
+  const bands =
+    chartTimes && chartTimes.length > 0
+      ? projectBandSeriesOntoTimes(bands1m, chartTimes)
+      : bands1m
+  if (bands.vwap.length < 2) return undefined
+  return bands.vwap.map((pt, idx) => ({
+    time: Number(pt.time),
+    vwap: pt.value,
+    upper1: bands.upper1[idx]?.value ?? pt.value,
+    lower1: bands.lower1[idx]?.value ?? pt.value,
+  }))
 }

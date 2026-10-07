@@ -59,7 +59,11 @@ import {
 import { parseCalendarEventMs } from '@/lib/trading/deskNewsHazard'
 import AtrSubPane from './AtrSubPane'
 import type { DeskCalendarEvent } from '@/lib/trading/deskNews'
-import { computeNewsCatalystVwap } from '@/lib/chart/newsCatalystVwap'
+import {
+  computeNewsCatalystVwap,
+  newsAvwapPointsFrom1m,
+  NEWS_AVWAP_SOURCE_TIMEFRAME,
+} from '@/lib/chart/newsCatalystVwap'
 import {
   detect5DaySessionExtremes,
   detectDailyExtremes,
@@ -1689,6 +1693,11 @@ export function TradingChart({
   // News Catalyst Anchored VWAP (News AVWAP) state
   const [showNewsAvwap, setShowNewsAvwap] = useState(false)
   const [newsAvwapBandCount, setNewsAvwapBandCount] = useState<2 | 3>(3)
+  /** 1m book for News AVWAP — timeframe switches only re-paint, they do not recompute. */
+  const [newsAvwap1mCandles, setNewsAvwap1mCandles] = useState<OHLCV[]>([])
+  const newsAvwap1mRef = useRef<OHLCV[]>([])
+  newsAvwap1mRef.current = newsAvwap1mCandles
+  const newsCatalystIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     try {
@@ -3022,7 +3031,24 @@ export function TradingChart({
           (isVeryImportantMacroEvent(m.eventName, m.country) || m.impact === 'High') &&
           nowSec - m.reactionEndTime <= 36 * 3600
       )
-      newsMovesRef.current = significant.length > 0 ? [significant[significant.length - 1]!] : []
+      const latest = significant.length > 0 ? significant[significant.length - 1]! : null
+      if (latest && shouldAnchorVwapToNews(latest)) {
+        const source1m =
+          timeframe === NEWS_AVWAP_SOURCE_TIMEFRAME
+            ? rawBars
+            : newsAvwap1mRef.current.map((c) => ({
+                time: c.time as number,
+                open: c.open,
+                high: c.high,
+                low: c.low,
+                close: c.close,
+                volume: c.volume,
+              }))
+        const chartTimes = rawBars.map((b) => b.time)
+        const pts = newsAvwapPointsFrom1m(source1m, latest.newsTime, chartTimes)
+        if (pts) latest.avwapPoints = pts
+      }
+      newsMovesRef.current = latest ? [latest] : []
     } else {
       spikesRef.current = []
       distRefsRef.current = []
@@ -3034,7 +3060,7 @@ export function TradingChart({
     paintExcessesAndRoundedRef.current?.()
     paintUserDrawingsRef.current?.()
     paintNewsMarkersRef.current?.()
-  }, [candles, timeframe, instrument, yesterdayNyc, newsEvents])
+  }, [candles, timeframe, instrument, yesterdayNyc, newsEvents, newsAvwap1mCandles])
 
   // ─── Multi-Timeframe Money Fixed Range Volume Profiles (Canvas) ─────────────
   const paintFrvpHistogram = useCallback(() => {
@@ -9735,37 +9761,91 @@ export function TradingChart({
     }
   }, [avwap5mBenchmark, instrument, timeframe, show5mAvwapOnChart, showSdBands])
 
-  // Repaint News Catalyst Anchored VWAP series and standard deviation bands
+  // Keep a 1m book for News AVWAP. Chart timeframe never feeds the math.
   useEffect(() => {
-    const nvs = newsVwapSeriesRef.current
-    const list = candlesRef.current
-    if (!list || list.length === 0) {
-      if (nvs) {
-        try { nvs.vwap.setData([]) } catch {}
-        try { nvs.upper1.setData([]) } catch {}
-        try { nvs.lower1.setData([]) } catch {}
-        try { nvs.upper2.setData([]) } catch {}
-        try { nvs.lower2.setData([]) } catch {}
-        try { nvs.upper3.setData([]) } catch {}
-        try { nvs.lower3.setData([]) } catch {}
-      }
-      return
+    newsCatalystIdRef.current = null
+    setNewsAvwap1mCandles([])
+    newsAvwap1mRef.current = []
+  }, [instrument])
+
+  useEffect(() => {
+    if (!chartReady) return
+    if (!showNewsAvwap && !showNewsOnChart) return
+    let cancelled = false
+    const ac = new AbortController()
+
+    const apply1m = (rows: OHLCV[]) => {
+      if (cancelled || rows.length === 0) return
+      setNewsAvwap1mCandles(rows)
+      newsAvwap1mRef.current = rows
     }
 
-    const mappedBars: SessionBar[] = list.map((c) => ({
-      time: c.time as number,
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-      volume: c.volume,
-    }))
+    const load1m = async () => {
+      const key = `${instrument}:${NEWS_AVWAP_SOURCE_TIMEFRAME}`
+      if (timeframe === NEWS_AVWAP_SOURCE_TIMEFRAME && candlesRef.current.length > 0) {
+        apply1m(candlesRef.current)
+        return
+      }
+      const cached = takeCachedCandles(key)
+      if (cached?.candles?.length) {
+        apply1m(cached.candles)
+      }
+      try {
+        const days = candleFetchDays(NEWS_AVWAP_SOURCE_TIMEFRAME)
+        const res = await fetch(
+          `/api/trading/candles?instrument=${instrument}&timeframe=${NEWS_AVWAP_SOURCE_TIMEFRAME}&days=${days}&quote=0`,
+          { signal: ac.signal, cache: 'no-store' }
+        )
+        const json = await res.json()
+        if (cancelled || !Array.isArray(json.candles) || json.candles.length === 0) return
+        const mapped: OHLCV[] = json.candles.map((c: any) => ({
+          time: c.time as UTCTimestamp,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          volume: c.volume ?? 0,
+        }))
+        const trimmed = normalizeCandleTimes(
+          toDeskCandles(mapped, instrument, NEWS_AVWAP_SOURCE_TIMEFRAME),
+          NEWS_AVWAP_SOURCE_TIMEFRAME
+        )
+        if (trimmed.length === 0) return
+        saveCachedCandles(key, {
+          candles: trimmed,
+          source: json.source || 'yahoo',
+          livePrice: trimmed[trimmed.length - 1]?.close ?? null,
+          changePct: 0,
+          timestamp: Date.now(),
+        })
+        apply1m(trimmed)
+      } catch {
+        /* keep cache */
+      }
+    }
 
-    const result = computeNewsCatalystVwap(mappedBars, newsEvents)
+    void load1m()
+    return () => {
+      cancelled = true
+      ac.abort()
+    }
+  }, [
+    chartReady,
+    instrument,
+    showNewsAvwap,
+    showNewsOnChart,
+    timeframe,
+    candles,
+    takeCachedCandles,
+    saveCachedCandles,
+  ])
 
-    if (!nvs) return
-
-    if (!showNewsAvwap || !result) {
+  // Repaint News Catalyst Anchored VWAP — values from 1m, slots from the chart timeframe
+  useEffect(() => {
+    const nvs = newsVwapSeriesRef.current
+    const chartList = candlesRef.current
+    const clear = () => {
+      if (!nvs) return
       try { nvs.vwap.setData([]) } catch {}
       try { nvs.upper1.setData([]) } catch {}
       try { nvs.lower1.setData([]) } catch {}
@@ -9773,8 +9853,46 @@ export function TradingChart({
       try { nvs.lower2.setData([]) } catch {}
       try { nvs.upper3.setData([]) } catch {}
       try { nvs.lower3.setData([]) } catch {}
+    }
+
+    if (!showNewsAvwap || !chartList?.length) {
+      clear()
       return
     }
+
+    const source1m =
+      timeframe === NEWS_AVWAP_SOURCE_TIMEFRAME
+        ? chartList
+        : newsAvwap1mCandles.length > 0
+          ? newsAvwap1mCandles
+          : newsAvwap1mRef.current
+    if (!source1m.length) {
+      clear()
+      return
+    }
+
+    const mapped1m: SessionBar[] = source1m.map((c) => ({
+      time: c.time as number,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+      volume: c.volume,
+    }))
+    const chartTimes = chartList.map((c) => c.time as number)
+    const result = computeNewsCatalystVwap(
+      mapped1m,
+      newsEvents,
+      newsCatalystIdRef.current,
+      chartTimes
+    )
+
+    if (!nvs) return
+    if (!result) {
+      clear()
+      return
+    }
+    newsCatalystIdRef.current = result.catalyst.id
 
     const tz = chartTzRef.current
     const shift = <T extends { time: number | UTCTimestamp; value: number }>(rows: T[]) =>
@@ -9800,7 +9918,15 @@ export function TradingChart({
       try { nvs.upper3.setData([]) } catch {}
       try { nvs.lower3.setData([]) } catch {}
     }
-  }, [candles, newsEvents, instrument, timeframe, showNewsAvwap, newsAvwapBandCount])
+  }, [
+    candles,
+    newsEvents,
+    instrument,
+    timeframe,
+    showNewsAvwap,
+    newsAvwapBandCount,
+    newsAvwap1mCandles,
+  ])
 
 
   // ── Session color boxes (cached spans + imperative paint = smooth pan)
