@@ -853,11 +853,14 @@ function renderAuctionLocationBlock(q: PriceCritiqueEvaluation | undefined): str
 ${audit}`
 }
 
-function jnivTelemetry(vol: CrossMarketVolatilityState): string {
-  const quote = vol.nikkei?.jniv
-  if (!quote || !Number.isFinite(quote.value) || !Number.isFinite(quote.changePct)) return 'UNAVAILABLE'
+function gaugeTelemetry(quote: { value: number; changePct: number; sourced?: boolean } | undefined): string {
+  if (!quote?.sourced || !Number.isFinite(quote.value) || !Number.isFinite(quote.changePct)) return 'UNAVAILABLE'
   const sign = quote.changePct >= 0 ? '+' : ''
   return `${quote.value.toFixed(1)} (${sign}${quote.changePct.toFixed(1)}%)`
+}
+
+function jnivTelemetry(vol: CrossMarketVolatilityState): string {
+  return gaugeTelemetry(vol.nikkei?.jniv)
 }
 
 /**
@@ -1250,17 +1253,17 @@ ${
 [CROSS-ASSET VOLATILITY & 5-MARKET SELECTION RADAR]:
 ${
   ctx.crossMarketVolatility
-    ? `- Equities Volatility: VIX1D ${ctx.crossMarketVolatility.equities.vix1d.value.toFixed(1)} (${ctx.crossMarketVolatility.equities.vix1d.changePct >= 0 ? '+' : ''}${ctx.crossMarketVolatility.equities.vix1d.changePct.toFixed(1)}%) | 30D VIX ${ctx.crossMarketVolatility.equities.vix.value.toFixed(1)} [${ctx.crossMarketVolatility.equities.activeRegime}${ctx.crossMarketVolatility.equities.isExpanding ? ' 🔥 EXPANDING' : ''}]
-- Nikkei Volatility: JNIV ${jnivTelemetry(ctx.crossMarketVolatility)} [${ctx.crossMarketVolatility.nikkei ? `${ctx.crossMarketVolatility.nikkei.activeRegime}${ctx.crossMarketVolatility.nikkei.isExpanding ? ' EXPANDING' : ''}` : 'UNAVAILABLE'}]
-- Crude Oil Volatility: OVX ${ctx.crossMarketVolatility.crude.ovx.value.toFixed(1)} (${ctx.crossMarketVolatility.crude.ovx.changePct >= 0 ? '+' : ''}${ctx.crossMarketVolatility.crude.ovx.changePct.toFixed(1)}%) [${ctx.crossMarketVolatility.crude.activeRegime}${ctx.crossMarketVolatility.crude.isExpanding ? ' 🔥 EXPANDING' : ''}]
-- Gold Volatility: GVZ ${ctx.crossMarketVolatility.gold.gvz.value.toFixed(1)} (${ctx.crossMarketVolatility.gold.gvz.changePct >= 0 ? '+' : ''}${ctx.crossMarketVolatility.gold.gvz.changePct.toFixed(1)}%) [${ctx.crossMarketVolatility.gold.activeRegime}${ctx.crossMarketVolatility.gold.isExpanding ? ' 🔥 EXPANDING' : ''}]
+    ? `- Equities Volatility: VIX1D ${gaugeTelemetry(ctx.crossMarketVolatility.equities.vix1d)} | 30D VIX ${gaugeTelemetry(ctx.crossMarketVolatility.equities.vix)} [${ctx.crossMarketVolatility.equities.vix1d.sourced ? ctx.crossMarketVolatility.equities.activeRegime : 'UNAVAILABLE'}${ctx.crossMarketVolatility.equities.isExpanding ? ' EXPANDING' : ''}]
+- Nikkei Volatility: JNIV ${jnivTelemetry(ctx.crossMarketVolatility)} [${ctx.crossMarketVolatility.nikkei?.jniv.sourced ? `${ctx.crossMarketVolatility.nikkei.activeRegime}${ctx.crossMarketVolatility.nikkei.isExpanding ? ' EXPANDING' : ''}` : 'UNAVAILABLE'}]
+- Crude Oil Volatility: OVX ${gaugeTelemetry(ctx.crossMarketVolatility.crude.ovx)} [${ctx.crossMarketVolatility.crude.ovx.sourced ? ctx.crossMarketVolatility.crude.activeRegime : 'UNAVAILABLE'}${ctx.crossMarketVolatility.crude.isExpanding ? ' EXPANDING' : ''}]
+- Gold Volatility: GVZ ${gaugeTelemetry(ctx.crossMarketVolatility.gold.gvz)} [${ctx.crossMarketVolatility.gold.gvz.sourced ? ctx.crossMarketVolatility.gold.activeRegime : 'UNAVAILABLE'}${ctx.crossMarketVolatility.gold.isExpanding ? ' EXPANDING' : ''}]
 - Macro Telemetry: ${ctx.crossMarketVolatility.summary}`
     : '- Volatility Gauges: UNAVAILABLE'
 }
 ${
   ctx.marketRadar
     ? `- 5-Market Ranking Matrix (Participation x Location x Structure):
-${Object.values(ctx.marketRadar.markets).map((m) => `  * [Grade ${m.grade}] ${m.contractLabel} @ ${m.currentPrice.toFixed(2)} (${m.dayChangePct >= 0 ? '+' : ''}${m.dayChangePct.toFixed(1)}%): ${m.summaryLine}`).join('\n')}
+${Object.values(ctx.marketRadar.markets).map((m) => `  * [Grade ${m.grade}] ${m.contractLabel} @ ${m.currentPrice > 0 ? `${m.currentPrice.toFixed(2)} (${m.dayChangePct >= 0 ? '+' : ''}${m.dayChangePct.toFixed(1)}%)` : 'UNAVAILABLE'}: ${m.summaryLine}`).join('\n')}
 - Desk Directive: ${ctx.marketRadar.deskDirective}`
     : ''
 }

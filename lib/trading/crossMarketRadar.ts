@@ -26,6 +26,7 @@
 import {
   type CrossMarketVolatilityState,
   type VolatilitySymbol,
+  fetchYahooLast,
   mapInstrumentToVolatilityGauge,
 } from './crossMarketVolatility'
 
@@ -134,8 +135,8 @@ export function evaluateMarket(
       : volState.equities.vix1d
 
   // 1. PARTICIPATION FACTOR
-  const volExpanding = volQuote.isExpanding
-  const volRegime = volQuote.regime
+  const volExpanding = Boolean(volQuote.sourced && volQuote.isExpanding)
+  const volRegime = volQuote.sourced ? volQuote.regime : 'UNAVAILABLE'
   const rvol = input.recentVolumeRatio ?? 1.0
   const isRvolHigh = rvol >= 1.25
   const cvdActive =
@@ -154,7 +155,9 @@ export function evaluateMarket(
   )
 
   const participationDetails: string[] = [
-    `${volQuote.symbol} (${volQuote.value.toFixed(1)}) is ${volRegime}${volExpanding ? ' [EXPANDING 🔥]' : ''}`,
+    volQuote.sourced
+      ? `${volQuote.symbol} (${volQuote.value.toFixed(1)}) is ${volRegime}${volExpanding ? ' [EXPANDING]' : ''}`
+      : `${volQuote.symbol} is unavailable`,
     `RVOL: ${rvol.toFixed(2)}x ${isRvolHigh ? '(High Institutional Volume)' : '(Average/Low Volume)'}`,
     `CVD: ${input.cvdTrend || 'BALANCED'} ${input.cvdDivergence && input.cvdDivergence !== 'NONE' ? `(${input.cvdDivergence})` : ''}`,
   ]
@@ -197,7 +200,7 @@ export function evaluateMarket(
       input.candlestickPattern.includes('Excess'))
   )
   const hasTrendline = Boolean(input.actionTrendlineBreak)
-  const hasRunway = (input.runwayRatio ?? 2.0) >= 1.5
+  const hasRunway = input.runwayRatio != null && input.runwayRatio >= 1.5
 
   const structurePresent = (hasWyckoff || hasCandleConfirmation || hasTrendline) && hasRunway
   const structureScore = Math.min(
@@ -294,65 +297,36 @@ export function evaluateMarket(
 /**
  * Builds the full 5-market cross-asset radar report and ranks the top pick.
  */
+const RADAR_YAHOO_SYMBOLS: Record<RadarMarket, string> = {
+  NASDAQ: 'MNQ=F',
+  DOW: 'MYM=F',
+  SP500: 'ES=F',
+  GOLD: 'MGC=F',
+  CRUDE: 'CL=F',
+  NIKKEI: 'NKD=F',
+}
+
+/** Live last and day change only. Location and structure stay absent until those prints exist. */
+export async function loadLiveRadarInputs(): Promise<Partial<Record<RadarMarket, MarketInputData>>> {
+  const markets = ALL_RADAR_MARKETS
+  const prints = await Promise.all(markets.map((market) => fetchYahooLast(RADAR_YAHOO_SYMBOLS[market])))
+  const inputs: Partial<Record<RadarMarket, MarketInputData>> = {}
+  markets.forEach((market, index) => {
+    const print = prints[index]
+    if (!print) return
+    inputs[market] = {
+      market,
+      currentPrice: print.price,
+      dayChangePct: print.changePct,
+    }
+  })
+  return inputs
+}
+
 export function buildCrossMarketRadarReport(
   volState: CrossMarketVolatilityState,
   marketInputs: Partial<Record<RadarMarket, MarketInputData>>
 ): CrossMarketRadarReport {
-  const defaultInputs: Record<RadarMarket, MarketInputData> = {
-    NASDAQ: {
-      market: 'NASDAQ',
-      currentPrice: 20150,
-      dayChangePct: -0.2,
-      recentVolumeRatio: 0.9,
-      cvdTrend: 'BALANCED',
-      nearestLevel: { type: '5D_POC', price: 20140, distancePts: 10, thresholdPts: 15 },
-    },
-    DOW: {
-      market: 'DOW',
-      currentPrice: 42100,
-      dayChangePct: -0.7,
-      recentVolumeRatio: 1.1,
-      cvdTrend: 'SELLER_DOMINANT',
-      nearestLevel: { type: '5D_LVN', price: 41980, distancePts: 120, thresholdPts: 30 },
-    },
-    SP500: {
-      market: 'SP500',
-      currentPrice: 5740,
-      dayChangePct: -0.3,
-      recentVolumeRatio: 1.0,
-      cvdTrend: 'BALANCED',
-      nearestLevel: { type: 'Y_VAL', price: 5732, distancePts: 8, thresholdPts: 4 },
-    },
-    GOLD: {
-      market: 'GOLD',
-      currentPrice: 2680,
-      dayChangePct: 0.1,
-      recentVolumeRatio: 0.8,
-      cvdTrend: 'BALANCED',
-      nearestLevel: { type: 'NONE', price: 0, distancePts: 999, thresholdPts: 3.5 },
-    },
-    CRUDE: {
-      market: 'CRUDE',
-      currentPrice: 72.8,
-      dayChangePct: 2.4,
-      recentVolumeRatio: 1.85,
-      cvdTrend: 'BUYER_DOMINANT',
-      cvdDivergence: 'BULLISH_ABSORPTION',
-      nearestLevel: { type: '5D_LVN', price: 72.7, distancePts: 0.1, thresholdPts: 0.35 },
-      wyckoffPattern: 'SPRING',
-      candlestickPattern: 'Bullish Engulfing',
-      runwayRatio: 2.8,
-    },
-    NIKKEI: {
-      market: 'NIKKEI',
-      currentPrice: 38900,
-      dayChangePct: 0.6,
-      recentVolumeRatio: 1.25,
-      cvdTrend: 'BUYER_DOMINANT',
-      nearestLevel: { type: '5D_LVN', price: 38850, distancePts: 50, thresholdPts: 35 },
-    },
-  }
-
   const results: Partial<Record<RadarMarket, MarketOpportunityCard>> = {}
   let topPick: RadarMarket | null = null
   let maxScore = -1
@@ -361,7 +335,7 @@ export function buildCrossMarketRadarReport(
   let cCount = 0
 
   for (const market of ALL_RADAR_MARKETS) {
-    const input = marketInputs[market] || defaultInputs[market]
+    const input = marketInputs[market] ?? { market, currentPrice: 0 }
     const card = evaluateMarket(input, volState)
     results[market] = card
 
@@ -391,7 +365,11 @@ export function buildCrossMarketRadarReport(
   let deskDirective = ''
   if (aCount > 0 && topPick) {
     const pickCard = results[topPick]!
-    deskDirective = `DESK FOCUS: ${topPick} (${pickCard.contractLabel}) is the sole Grade A candidate today. OVX/VIX and profile location align. Ignore Grade B/C chop on peer markets.`
+    const focus =
+      aCount === 1
+        ? `${topPick} (${pickCard.contractLabel}) is the Grade A candidate.`
+        : `${aCount} markets are Grade A. Highest rank is ${topPick} (${pickCard.contractLabel}).`
+    deskDirective = `DESK FOCUS: ${focus} ${pickCard.volatilityGauge} and profile location are both present on that card.`
   } else if (bCount > 0) {
     deskDirective = `DESK DIRECTIVE: No Grade A setups active across the 5 markets. Stand aside or monitor Grade B candidates awaiting location/volume confirmation.`
   } else {
