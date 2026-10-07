@@ -37,13 +37,11 @@ import {
 function isActivePlaybookOverlayLabel(
   mode: string,
   label: string,
-  instrument: string
+  _instrument: string
 ): boolean {
-  const tokyo = instrument === 'NIKKEI'
   if (mode === 'morning') return label === 'OR15' || label === 'Open range'
   if (mode === 'or30') return label === 'OR30'
   if (mode === 'us_range') return label === 'US Range'
-  if (mode === 'ib') return label === (tokyo ? 'Tokyo IB' : 'IB')
   return false
 }
 
@@ -262,17 +260,14 @@ export function activeRangeForPlaybook(args: {
   const {
     or15: or15Shaped,
     or30: or30Shaped,
-    ib: ibShaped,
     usRange: usShaped,
   } = shapedPlaybookRanges(args)
 
   if (mode === 'us_range') return usShaped
   if (mode === 'or30') return or30Shaped
-  if (mode === 'ib') return ibShaped
+  if (mode === 'ib') return null
   if (mode === 'lunch_break') {
-    return tokyo
-      ? ibShaped ?? usShaped ?? or15Shaped
-      : ibShaped ?? or30Shaped ?? or15Shaped
+    return tokyo ? usShaped ?? or15Shaped : or30Shaped ?? or15Shaped
   }
 
   if (tokyo) {
@@ -328,7 +323,6 @@ export function visibleOverlayEntryRanges(args: {
   push('OR15', args.or15, args.showOr15, true)
   push('OR30', args.or30, args.showOr30, true)
   push('US Range', args.usRange, args.showUsRange && tokyo, true)
-  push(tokyo ? 'Tokyo IB' : 'IB', args.ib, args.showIb, false)
   return out
 }
 
@@ -405,7 +399,6 @@ export function entryEligibleOverlayRanges(args: {
   for (const r of toggled) push(r)
   if (args.showOr15) push(shaped.or15)
   if (args.showOr30) push(shaped.or30)
-  if (args.showIb) push(shaped.ib)
   if (args.showUsRange) push(shaped.usRange)
   return [...byKey.values()]
 }

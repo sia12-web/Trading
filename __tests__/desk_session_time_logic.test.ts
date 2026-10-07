@@ -231,11 +231,10 @@ for (const inst of ['DOW', 'NASDAQ'] as const) {
     attemptsUsed: 0,
     stopLossHitCount: 0,
   })
-  // 0 fills → lunch-range unlock message (place blocked while clocked out)
-  assert(gate.phase === 'ENTRY', `${inst} lunch-range phase ENTRY`)
+  assert(gate.phase === 'DONE', `${inst} afternoon is manage-only`)
   assert(gate.canPlaceEntry === false, `${inst} clocked-out blocks place`)
   assert(gate.canManagePosition === false, `${inst} no manage when flat`)
-  assert(!!gate.message?.includes('IB playbook'), `${inst} IB copy`)
+  assert(!gate.message?.includes('IB playbook'), `${inst} no IB copy`)
   // Flat + clocked-out clears rangeStrategy in finish(); re-clock restores unlock
   assert(gate.rangeStrategy === null, `${inst} rangeStrategy cleared while clocked out flat`)
   assert(gate.market === 'NY', `${inst} market NY`)
@@ -253,7 +252,7 @@ for (const inst of ['DOW', 'NASDAQ'] as const) {
   })
   assert(gate.market === 'NY', 'live NIKKEI lock ignored — stays NY')
   assert(gate.lockedInstrument !== 'NIKKEI', 'NIKKEI lock dropped')
-  assert(!gate.allowedInstruments.includes('NIKKEI'), 'no live NIKKEI')
+  assert(gate.allowedInstruments.includes('NIKKEI'), 'NIKKEI stays on the desk list')
 }
 
 // Morning entry still works when clocked in
@@ -295,9 +294,8 @@ for (const inst of ['DOW', 'NASDAQ'] as const) {
     lunchAttempts: 0,
     stopHits: 0,
   })
-  assert(sim.phase === 'ENTRY', 'sim afternoon lunch-range ENTRY')
-  assert(sim.canPlaceEntry === true, 'sim lunch-range can place')
-  assert(sim.rangeStrategy === 'ib', 'lunch_range strategy')
+  assert(sim.canPlaceEntry === false, 'sim afternoon has no Initial Balance entries')
+  assert(sim.rangeStrategy == null, 'no IB strategy')
 }
 
 // Sim afternoon: morning fill does not kill lunch-range (Option B)
@@ -309,8 +307,8 @@ for (const inst of ['DOW', 'NASDAQ'] as const) {
     morningAttempts: 1,
     stopHits: 0,
   })
-  assert(sim.canPlaceEntry === true, 'sim lunch-range still open after morning fill')
-  assert(sim.rangeStrategy === 'ib', 'lunch_range strategy after morning fill')
+  assert(sim.canPlaceEntry === false, 'morning fill does not open an IB window')
+  assert(sim.rangeStrategy == null, 'no IB strategy after morning fill')
 }
 
 // ── VWAP: 5 trading days prior, per-desk cash open ───────────────────────────

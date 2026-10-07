@@ -31,7 +31,8 @@ import {
   NIKKEI_DIVISOR,
   DEFAULT_NIKKEI_CONSTITUENTS,
 } from './nikkeiAnalystConfig'
-import { recordEvaluatedNikkeiEvent } from './nikkeiStateStore'
+import { peekNikkeiFundamentalState, recordEvaluatedNikkeiEvent } from './nikkeiStateStore'
+import { scrubSummary, sourcedImpact } from '@/lib/fundamentals/honesty'
 import { logger } from '@/lib/utils/logger'
 import {
   adaptLegacyFundamentalJson,
@@ -312,7 +313,7 @@ export function evaluateNikkeiEventDeterministic(params: {
         'Sudden Ministry of Finance Yen buying triggered a violent 450-pip USD/JPY collapse, igniting systematic carry-trade unwinding and rapid long-liquidation across Nikkei index futures.',
     }
     summary =
-      'Large-scale MoF currency market intervention sparked violent Yen appreciation, breaking first-hour Initial Balance lows on heavy market sell delta.'
+      'Large-scale MoF currency market intervention sparked violent Yen appreciation, breaking the session low on heavy market sell delta.'
     actionableTakeaway =
       'Respect the automated liquidation cascade; stand aside from long fades until USD/JPY volatility mean-reverts and CVD stabilizes.'
   }
@@ -362,44 +363,63 @@ export function evaluateNikkeiEventDeterministic(params: {
       'Fade the failed opening breakout; target mean reversion toward prior US session VWAP and Tokyo value area high.'
   }
 
-  // General Fallback
+  // Unclassified notes stay neutral. A keyword is not a print.
   else {
     category = 'DOMESTIC_MACRO'
-    eventName = 'GENERAL_NIKKEI_SESSION_UPDATE'
-    importance = 'MEDIUM'
-    intradayStance = 'BULLISH'
-    shortTermStance = 'BULLISH'
-    mediumTermStance = 'BULLISH'
-    summary = 'General macroeconomic and corporate earnings flow evaluated across Tokyo Stock Exchange Prime Market.'
-    actionableTakeaway = 'Maintain discipline with Tokyo session Initial Balance levels and USD/JPY currency trends.'
+    eventName = 'UNCLASSIFIED_NIKKEI_NOTE'
+    importance = 'LOW'
+    intradayStance = 'NEUTRAL'
+    shortTermStance = 'NEUTRAL'
+    mediumTermStance = 'NEUTRAL'
+    estimatedNkdPointImpact = 0
+    confidence = 0
+    summary = ''
+    actionableTakeaway = 'No sourced print was in the note.'
   }
 
+  void intradayStance
+  void shortTermStance
+  void mediumTermStance
+  void bojImpact
+  void fxPassThrough
+  void semiEffect
+  void domesticEffect
+  void abnormalBehavior
+  void confidence
+  void actionableTakeaway
+  const impact = sourcedImpact(rawText, estimatedNkdPointImpact)
+  const cleanSummary = scrubSummary(rawText, summary)
+  const keptNarrative = cleanSummary === summary && summary.length > 0 && !/\d/.test(summary)
   return {
     event: eventName,
     category,
-    importance,
-    confidence,
+    importance: keptNarrative ? importance : 'LOW',
+    confidence: keptNarrative ? 0 : 0,
     market_stance: {
-      intraday: intradayStance,
-      short_term: shortTermStance,
-      medium_term: mediumTermStance,
+      intraday: 'NEUTRAL',
+      short_term: 'NEUTRAL',
+      medium_term: 'NEUTRAL',
     },
     transmission_channels: {
-      boj_policy_impact: bojImpact,
-      fx_pass_through: fxPassThrough,
-      tech_semiconductor_effect: semiEffect,
-      domestic_growth_effect: domesticEffect,
+      boj_policy_impact: 'NEUTRAL',
+      fx_pass_through: 'NEUTRAL',
+      tech_semiconductor_effect: 'NEUTRAL',
+      domestic_growth_effect: 'NEUTRAL',
     },
     market_reaction: {
-      nkd_initial_reaction: estimatedNkdPointImpact >= 0 ? 'UP' : 'DOWN',
-      nkd_5m_continuation: abnormalBehavior.detected ? 'REVERSING' : 'CONTINUING',
-      usdjpy_reaction: fxPassThrough === 'BEARISH_EXPORTERS' ? 'DOWN' : 'UP',
-      jgb10y_reaction: bojImpact === 'HAWKISH_TIGHTENING' ? 'UP' : 'FLAT',
+      nkd_initial_reaction: impact == null ? 'FLAT' : impact >= 0 ? 'UP' : 'DOWN',
+      nkd_5m_continuation: 'STALLED',
+      usdjpy_reaction: 'FLAT',
+      jgb10y_reaction: 'FLAT',
     },
-    abnormal_behavior: abnormalBehavior,
-    estimated_nkd_point_impact: estimatedNkdPointImpact,
-    summary,
-    actionable_takeaway: actionableTakeaway,
+    abnormal_behavior: {
+      detected: false,
+      type: 'NONE',
+      explanation: 'No sourced print was in the note.',
+    },
+    estimated_nkd_point_impact: impact,
+    summary: keptNarrative ? cleanSummary : 'No sourced print was in the note.',
+    actionable_takeaway: 'No sourced print was in the note.',
   }
 }
 
@@ -418,12 +438,12 @@ async function runLlmNikkeiEvaluation(params: {
   const prompt = buildFundamentalEventUserPrompt({
     roleLine: 'You are evaluating a supplied event for CME Nikkei 225 futures (NKD) and the Tokyo cash market.',
     telemetryLines: [
-      datumLine('NKD', telemetry.nkdPrice.toLocaleString(), 'TICK', 'LIVE'),
-      datumLine('USD/JPY', telemetry.usdjpyRate.toFixed(2), 'TICK', 'LIVE'),
-      datumLine('10Y JGB', `${telemetry.jgb10yNominalYield.toFixed(3)}%`, 'INTRADAY', 'RECENT'),
-      datumLine('SOX', String(telemetry.soxIndex), 'INTRADAY', 'RECENT'),
-      datumLine('Advancers', String(telemetry.advancersCount), 'INTRADAY', 'RECENT'),
-      datumLine('Decliners', String(telemetry.declinersCount), 'INTRADAY', 'RECENT'),
+      datumLine('NKD', telemetry.sourced?.nkd ? telemetry.nkdPrice.toLocaleString() : 'UNAVAILABLE', telemetry.sourced?.nkd ? 'TICK' : 'UNAVAILABLE', telemetry.sourced?.nkd ? 'LIVE' : 'STALE'),
+      datumLine('USD/JPY', telemetry.sourced?.usdjpy ? telemetry.usdjpyRate.toFixed(2) : 'UNAVAILABLE', telemetry.sourced?.usdjpy ? 'TICK' : 'UNAVAILABLE', telemetry.sourced?.usdjpy ? 'LIVE' : 'STALE'),
+      datumLine('10Y JGB', 'UNAVAILABLE', 'INTRADAY', 'STALE'),
+      datumLine('SOX', telemetry.sourced?.sox ? String(telemetry.soxIndex) : 'UNAVAILABLE', 'INTRADAY', telemetry.sourced?.sox ? 'RECENT' : 'STALE'),
+      datumLine('Advancers', 'UNAVAILABLE', 'INTRADAY', 'STALE'),
+      datumLine('Decliners', 'UNAVAILABLE', 'INTRADAY', 'STALE'),
       `Tokyo cash session: ${telemetry.tokyoCashSessionActive ? 'OPEN' : 'CLOSED'} (${telemetry.tokyoSessionPhase})`,
       'CURRENT NIKKEI CONTRIBUTORS: UNAVAILABLE. Do not cite memorized weights.',
       'MOF_INTERVENTION_RISK: UNKNOWN. Do not infer it from a spot level.',
@@ -506,33 +526,7 @@ export async function evaluateNikkeiEvent(params: {
 }): Promise<NikkeiEventEvaluation> {
   const { rawText, sourceHint, forcedTelemetry } = params
 
-  const telemetry: NikkeiTelemetry = forcedTelemetry || {
-    nkdPrice: 38900,
-    nkdChange: 350,
-    nkdChangePct: 0.91,
-    contractMultiplier: 5,
-    contractNotionalValue: 194500,
-    usdjpyRate: 152.4,
-    usdjpyChangePct: 0.35,
-    jgb10yNominalYield: 0.965,
-    jgb10yChangeBps: 2.5,
-    soxIndex: 5240,
-    soxChangePct: 1.85,
-    nqPrice: 20350,
-    nqChangePct: 0.72,
-    topixPrice: 2710,
-    topixChangePct: 0.55,
-    advancersCount: 162,
-    declinersCount: 58,
-    unchangedCount: 5,
-    nikkeiDivisor: NIKKEI_DIVISOR,
-    topConstituentsByWeight: DEFAULT_NIKKEI_CONSTITUENTS,
-    tokyoCashSessionActive: true,
-    tokyoSessionPhase: 'MORNING_CASH',
-    timestamp: Date.now(),
-    source: 'CME Globex NKD MDP 3.0 / JPX TSE Arrowhead',
-    updatedAt: new Date().toISOString(),
-  }
+  const telemetry: NikkeiTelemetry = forcedTelemetry || peekNikkeiFundamentalState().nikkeiTelemetry
 
   const anthropicKey = process.env.ANTHROPIC_API_KEY
   const openaiKey = process.env.OPENAI_API_KEY

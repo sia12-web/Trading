@@ -27,17 +27,6 @@ export function TodayNikkeiFundamentalCard({ today }: TodayNikkeiFundamentalCard
         </div>
       </div>
 
-      {/* Narrative Synthesis */}
-      <div className="bg-slate-950/70 border border-slate-800/80 rounded-xl p-4">
-        <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-          <span>🎯</span>
-          <span>Analyst Narrative Synthesis</span>
-        </h3>
-        <p className="text-xs sm:text-sm text-slate-200 leading-relaxed font-sans">
-          {today.summary_narrative}
-        </p>
-      </div>
-
       {/* Grid: Multi-Pillar Dimensions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* FX & Exporter Regime */}
@@ -46,10 +35,10 @@ export function TodayNikkeiFundamentalCard({ today }: TodayNikkeiFundamentalCard
             USD/JPY Currency Regime
           </div>
           <div className="text-xs font-bold text-white">
-            {today.fx_regime}
+            Unavailable
           </div>
           <p className="text-xs text-slate-400 leading-normal">
-            Stable Yen depreciation maintains competitive overseas pricing and repatriated income for Japanese industrials without immediate MoF panic.
+            USD/JPY regime is shown only after a Yahoo quote. BoJ policy is unavailable.
           </p>
         </div>
 
@@ -59,10 +48,10 @@ export function TodayNikkeiFundamentalCard({ today }: TodayNikkeiFundamentalCard
             Semiconductor Cycle Momentum
           </div>
           <div className="text-xs font-bold text-white">
-            {today.semiconductor_tailwind} TAILWIND
+            Unavailable
           </div>
           <p className="text-xs text-slate-400 leading-normal">
-            Advantest and Tokyo Electron benefiting from robust high-bandwidth memory (HBM) and generative AI accelerator manufacturing cycles.
+            Semiconductor order books are unavailable until a company or SOX print is supplied.
           </p>
         </div>
 
@@ -90,6 +79,13 @@ export function TodayNikkeiFundamentalCard({ today }: TodayNikkeiFundamentalCard
         </div>
       </div>
 
+      <div className="bg-slate-950/70 border border-slate-800/80 rounded-xl p-4">
+        <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Session note</h3>
+        <p className="text-xs sm:text-sm text-slate-200 leading-relaxed font-sans">
+          {today.summary_narrative}
+        </p>
+      </div>
+
       {/* Risk Factors & Key Catalysts */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
         <div className="bg-rose-950/20 border border-rose-900/30 rounded-xl p-4">
@@ -98,12 +94,16 @@ export function TodayNikkeiFundamentalCard({ today }: TodayNikkeiFundamentalCard
             <span>Primary Market Risks</span>
           </h4>
           <ul className="space-y-1.5 text-xs text-slate-300">
-            {today.key_risks.map((risk, idx) => (
-              <li key={idx} className="flex items-start gap-2">
-                <span className="text-rose-400 font-mono">•</span>
-                <span>{risk}</span>
-              </li>
-            ))}
+            {today.key_risks.some((risk) => /\d/.test(risk)) ? (
+              <li>Intervention prices and yield thresholds are unavailable.</li>
+            ) : (
+              today.key_risks.map((risk, idx) => (
+                <li key={idx} className="flex items-start gap-2">
+                  <span className="text-rose-400 font-mono">•</span>
+                  <span>{risk}</span>
+                </li>
+              ))
+            )}
           </ul>
         </div>
 
@@ -113,12 +113,16 @@ export function TodayNikkeiFundamentalCard({ today }: TodayNikkeiFundamentalCard
             <span>Upcoming Session Catalysts</span>
           </h4>
           <ul className="space-y-1.5 text-xs text-slate-300">
-            {today.top_catalysts.map((cat, idx) => (
-              <li key={idx} className="flex items-start gap-2">
-                <span className="text-emerald-400 font-mono">•</span>
-                <span>{cat}</span>
-              </li>
-            ))}
+            {today.top_catalysts.some((cat) => /\d/.test(cat)) ? (
+              <li>Named catalysts are unavailable until a calendar feed prints them.</li>
+            ) : (
+              today.top_catalysts.map((cat, idx) => (
+                <li key={idx} className="flex items-start gap-2">
+                  <span className="text-emerald-400 font-mono">•</span>
+                  <span>{cat}</span>
+                </li>
+              ))
+            )}
           </ul>
         </div>
       </div>

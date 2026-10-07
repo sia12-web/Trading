@@ -1,14 +1,17 @@
 import { NextResponse } from 'next/server'
 import { getCrossMarketVolatility } from '@/lib/trading/crossMarketVolatility'
-import { buildCrossMarketRadarReport } from '@/lib/trading/crossMarketRadar'
+import { buildCrossMarketRadarReport, loadLiveRadarInputs } from '@/lib/trading/crossMarketRadar'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 export async function GET() {
   try {
-    const volatility = await getCrossMarketVolatility()
-    const radar = buildCrossMarketRadarReport(volatility, {})
+    const [volatility, inputs] = await Promise.all([
+      getCrossMarketVolatility(),
+      loadLiveRadarInputs(),
+    ])
+    const radar = buildCrossMarketRadarReport(volatility, inputs)
 
     return NextResponse.json({
       success: true,

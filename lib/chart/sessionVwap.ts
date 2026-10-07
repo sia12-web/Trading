@@ -124,13 +124,13 @@ export function sessionInstanceKeyFor(
   unix: number,
   name: SessionName
 ): string {
-  const ymd = dayFormatter('America/New_York').format(new Date(unix * 1000))
+  const ymd = ymdInTz(unix, 'America/New_York')
   const h = hourInTz(unix, 'America/New_York')
   let sessionDate = ymd
   // Asia session starts at 18:00 on day D and ends at 03:00 on day D+1.
   // 00:00–03:00 belongs to the Asia session that started the previous evening.
   if (name === 'Asia' && h < 3) {
-    sessionDate = dayFormatter('America/New_York').format(new Date((unix - 86400) * 1000))
+    sessionDate = ymdInTz(unix - 86400, 'America/New_York')
   }
   return `${sessionDate}_${name}`
 }
@@ -267,6 +267,19 @@ const weekdayFmtCache = new Map<string, Intl.DateTimeFormat>()
 const zonedCivilCache = new Map<string, number>()
 /** Memo: `${ymd}|${tz}` → weekday */
 const weekdayYmdCache = new Map<string, boolean>()
+/**
+ * Minute-bucket clock memos. Session paint classifies every bar, and
+ * `formatToParts` per bar is what made session colors lag behind the candles.
+ */
+const hourValueCache = new Map<string, number>()
+const ymdValueCache = new Map<string, string>()
+const CLOCK_VALUE_CACHE_MAX = 12_000
+
+function rememberClock<T>(map: Map<string, T>, key: string, value: T): T {
+  if (map.size > CLOCK_VALUE_CACHE_MAX) map.clear()
+  map.set(key, value)
+  return value
+}
 
 function hourFormatter(timeZone: string): Intl.DateTimeFormat {
   let fmt = hourFmtCache.get(timeZone)
@@ -309,11 +322,31 @@ function weekdayFormatter(timeZone: string): Intl.DateTimeFormat {
 }
 
 export function hourInTz(unix: number, timeZone: string): number {
-  const parts = hourFormatter(timeZone).formatToParts(new Date(unix * 1000))
-  let hour = parseInt(parts.find((p) => p.type === 'hour')?.value ?? '0', 10)
-  const minute = parseInt(parts.find((p) => p.type === 'minute')?.value ?? '0', 10)
-  if (hour === 24) hour = 0
-  return hour + minute / 60
+  if (!Number.isFinite(unix)) return 0
+  const key = `${timeZone}|${Math.floor(unix / 60)}`
+  const hit = hourValueCache.get(key)
+  if (hit !== undefined) return hit
+  try {
+    const parts = hourFormatter(timeZone).formatToParts(new Date(unix * 1000))
+    let hour = parseInt(parts.find((p) => p.type === 'hour')?.value ?? '0', 10)
+    const minute = parseInt(parts.find((p) => p.type === 'minute')?.value ?? '0', 10)
+    if (hour === 24) hour = 0
+    return rememberClock(hourValueCache, key, hour + minute / 60)
+  } catch {
+    return 0
+  }
+}
+
+function ymdInTz(unix: number, timeZone: string): string {
+  if (!Number.isFinite(unix)) return ''
+  const key = `${timeZone}|${Math.floor(unix / 60)}`
+  const hit = ymdValueCache.get(key)
+  if (hit !== undefined) return hit
+  try {
+    return rememberClock(ymdValueCache, key, dayFormatter(timeZone).format(new Date(unix * 1000)))
+  } catch {
+    return ''
+  }
 }
 
 export function sessionEdgeUnix(
@@ -341,15 +374,22 @@ export function timeToX(
 ): number | null {
   if (candleTimes.length === 0) return null
   const toCoord = (unix: number) => {
-    if (!asBusinessDay) {
-      return timeScale.timeToCoordinate(unix as UTCTimestamp)
+    if (!Number.isFinite(unix)) return null
+    try {
+      if (!asBusinessDay) {
+        return timeScale.timeToCoordinate(unix as UTCTimestamp)
+      }
+      const d = new Date(unix * 1000)
+      return timeScale.timeToCoordinate({
+        year: d.getUTCFullYear(),
+        month: d.getUTCMonth() + 1,
+        day: d.getUTCDate(),
+      })
+    } catch {
+      // Wrong time type (unix vs BusinessDay) throws inside lightweight-charts.
+      // A throw here used to replace the whole desk with the Next.js error page.
+      return null
     }
-    const d = new Date(unix * 1000)
-    return timeScale.timeToCoordinate({
-      year: d.getUTCFullYear(),
-      month: d.getUTCMonth() + 1,
-      day: d.getUTCDate(),
-    })
   }
 
   const first = candleTimes[0]!
@@ -891,7 +931,7 @@ export function paintSessionHighlightOverlay(
     d.style.right = 'auto'
     d.style.backgroundColor = s.color
     d.style.zIndex = String(s.zIndex)
-    d.title = `${s.displayName ?? s.name} session`
+    d.removeAttribute('title')
 
     if (s.isColumn || opts?.hideLabels) {
       d.style.borderLeft = 'none'
@@ -911,11 +951,14 @@ export function paintSessionHighlightOverlay(
 
     // If the session box has scrolled mostly off-screen to the left (small visible width), don't stack labels on the margin
     if (s.width < 45 || s.left + s.width < 40) {
-      d.innerHTML = ''
+      if (d.dataset.labelKey !== '') {
+        d.dataset.labelKey = ''
+        d.innerHTML = ''
+      }
       continue
     }
 
-    // Clean label metadata (Range / Avg / Session) without dashed lines covering the high/low
+    // Range and Avg only — session names stay off the color band.
     const rangeStr =
       s.range != null
         ? Number.isInteger(s.range)
@@ -928,16 +971,22 @@ export function paintSessionHighlightOverlay(
           ? s.avg.toString()
           : s.avg.toFixed(2)
         : ''
-    const sessName = s.displayName ?? (s.name === 'Asia' ? 'Tokyo' : s.name)
-
     const labelTop = s.height + 6
-    d.innerHTML = `
+    // Position changes every pan frame. Label text does not — skip innerHTML
+    // so session colors track the viewport without rebuilding DOM.
+    const labelKey = `${rangeStr}|${avgStr}|${lineColor}|${Math.round(labelTop)}`
+    if (d.dataset.labelKey !== labelKey) {
+      d.dataset.labelKey = labelKey
+      d.innerHTML =
+        rangeStr || avgStr
+          ? `
       <div style="position:absolute;left:8px;top:${labelTop}px;font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;font-size:11px;font-weight:500;line-height:1.35;color:${lineColor};pointer-events:none;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,0.4);">
         ${rangeStr ? `<div>Range: ${rangeStr}</div>` : ''}
         ${avgStr ? `<div>Avg: ${avgStr}</div>` : ''}
-        <div style="font-weight:600;">${sessName}</div>
       </div>
     `
+          : ''
+    }
   }
 }
 
@@ -988,6 +1037,14 @@ export const AVWAP_LOOKBACK_TRADING_DAYS = 5
  * anchor day is missing and AVWAP starts too late.
  */
 export const AVWAP_CANDLE_FETCH_CALENDAR_DAYS = AVWAP_LOOKBACK_TRADING_DAYS + 7 // 12
+
+/**
+ * Yahoo only keeps about 8 calendar days of 1-minute bars.
+ * Eight days still reaches 5 RTH sessions when the tip is a Monday
+ * (the prior Tuesday sits 6 calendar days back). A 3-day pull stops
+ * around Friday and hides the rest of the week.
+ */
+export const ONE_MINUTE_FETCH_CALENDAR_DAYS = 8
 
 function dayKeyInTz(unix: number, timeZone: string): string {
   return dayFormatter(timeZone).format(new Date(unix * 1000))

@@ -19,7 +19,7 @@ export function DowAnalystChat() {
       id: 'init-msg',
       role: 'assistant',
       content:
-        'I am the **Dow Jones Macro, Cyclical Economy, Earnings and Rotation Analyst**. My market is CME E-mini Dow futures (`YM`, $5 multiplier). I continuously monitor price-weighted constituent contributions (Divisor ~0.1517), Treasury yields (differentiating growth-driven vs inflation-driven moves), ISM manufacturing & new orders, corporate credit spreads (HY OAS), and sector rotation. How can I assist your execution desk today?',
+        'I am the Dow analyst for CME E-mini Dow futures (YM, $5 multiplier). I use only quotes and FRED prints that are in the packet. The official divisor, ISM, and unsourced credit levels stay unavailable. How can I assist the desk?',
     },
   ])
   const [input, setInput] = useState('')
@@ -117,9 +117,9 @@ export function DowAnalystChat() {
   }
 
   const promptSuggestions = [
-    'How do UNH ($585) and GS ($535) moves dominate the price-weighted Dow vs lower-priced stocks?',
+    'Which quoted Dow names actually returned a price on this refresh?',
     'Explain why 10Y yield rises are classified as GROWTH_DRIVEN vs INFLATION_DRIVEN for Dow cyclicals.',
-    'What does today\'s ISM New Orders print signal for industrial constituents like CAT and BA?',
+    'ISM new orders are unavailable on this desk. What would you need before using a manufacturing print?',
     'How do corporate credit spreads (HY OAS) signal whether Dow consolidation is healthy or fragile?',
     'How does Wyckoff delta absorption at a 5-day volume profile LVN invalidate a bearish macro headline on YM?',
   ]

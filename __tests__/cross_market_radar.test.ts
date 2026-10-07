@@ -59,6 +59,11 @@ describe('Cross-Asset Volatility & 5-Market Opportunity Radar Tests', () => {
     const highVix1d = classifyVolatilityRegime('VIX1D', 23.5, 8.0)
     assert.strictEqual(highVix1d.regime, 'EXPANDING')
     assert.strictEqual(highVix1d.isExpanding, true)
+
+    // A high print that is falling is elevated, not an expansion.
+    const fallingOvx = classifyVolatilityRegime('OVX', 48.8, -9.2)
+    assert.strictEqual(fallingOvx.regime, 'ELEVATED')
+    assert.strictEqual(fallingOvx.isExpanding, false)
   })
 
   it('awards Grade A ONLY when all 3 factors (Participation, Location, Structure) are present', () => {
@@ -132,7 +137,7 @@ describe('Cross-Asset Volatility & 5-Market Opportunity Radar Tests', () => {
     assert.strictEqual(card.location.present, false)
   })
 
-  it('builds full 5-market radar report and singles out the Grade A top pick', () => {
+  it('does not plant a Grade A crude story when no live market input is supplied', () => {
     const quotes = buildDefaultVolatilityQuotes(new Date())
     const volState = buildCrossMarketVolatilityState(quotes)
 
@@ -142,11 +147,39 @@ describe('Cross-Asset Volatility & 5-Market Opportunity Radar Tests', () => {
     assert.ok(report.markets.SP500)
     assert.ok(report.markets.GOLD)
     assert.ok(report.markets.CRUDE)
+    assert.ok(report.markets.NIKKEI)
 
+    assert.strictEqual(report.markets.CRUDE.currentPrice, 0)
+    assert.strictEqual(report.markets.CRUDE.grade, 'C')
+    assert.strictEqual(report.markets.CRUDE.isTopPick, false)
+    assert.strictEqual(report.gradeACount, 0)
+    assert.ok(Object.values(report.markets).every((card) => card.isTopPick === false))
+    assert.strictEqual(report.markets.NASDAQ.location.present, false)
+    assert.strictEqual(report.markets.NASDAQ.structure.present, false)
+  })
+
+  it('ranks an explicit Grade A input as the top pick', () => {
+    const quotes = buildDefaultVolatilityQuotes(new Date())
+    const volState = buildCrossMarketVolatilityState(quotes)
+    const report = buildCrossMarketRadarReport(volState, {
+      CRUDE: {
+        market: 'CRUDE',
+        currentPrice: 72.8,
+        dayChangePct: 1.8,
+        recentVolumeRatio: 1.6,
+        cvdTrend: 'BUYER_DOMINANT',
+        cvdDivergence: 'BULLISH_ABSORPTION',
+        nearestLevel: { type: '5D_LVN', price: 72.7, distancePts: 0.1, thresholdPts: 0.35 },
+        wyckoffPattern: 'SPRING',
+        candlestickPattern: 'Bullish Engulfing',
+        runwayRatio: 2.5,
+      },
+    })
     assert.strictEqual(report.topPick, 'CRUDE')
     assert.strictEqual(report.markets.CRUDE.grade, 'A')
     assert.strictEqual(report.markets.CRUDE.isTopPick, true)
     assert.ok(report.deskDirective.includes('CRUDE'))
+    assert.notStrictEqual(report.markets.NASDAQ.currentPrice, 20150)
   })
 
   it('infuses Leo system prompt with cross-asset volatility gauges, the 3-factor matrix, and live radar', () => {
@@ -182,6 +215,7 @@ describe('Cross-Asset Volatility & 5-Market Opportunity Radar Tests', () => {
     // Verify live telemetry injection
     assert.ok(prompt.includes('[CROSS-ASSET VOLATILITY & 5-MARKET SELECTION RADAR]'))
     assert.ok(prompt.includes('Crude Oil Volatility: OVX'))
-    assert.ok(prompt.includes('Grade A'))
+    assert.ok(prompt.includes('[Grade C]'))
+    assert.ok(!prompt.includes('20150'))
   })
 })

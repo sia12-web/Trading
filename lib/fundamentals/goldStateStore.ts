@@ -31,24 +31,45 @@ import { getFinnhubClient } from '@/lib/services/finnhubClient'
 import { fetchYahooFinanceHeadlines } from '@/lib/trading/liveEconomicResults'
 import { logger } from '@/lib/utils/logger'
 import { candidateIsMaterial } from '@/lib/fundamentals/outputContract'
+import { blankMetricValues, markFeed, sortByDatetimeDesc, withholdFeeds } from '@/lib/fundamentals/honesty'
 
 // In-memory state singleton for Gold
 let currentGoldState: GoldFundamentalDashboardState = {
   market: 'COMEX_GC',
   analystPersona: 'Gold Macro, Monetary and Physical Demand Analyst',
   updatedAt: new Date().toISOString(),
-  overallBias: 'BULLISH',
-  overallConfidence: 85,
-  biasSummary:
-    'Long-term monetary debasement hedge and structural sovereign central-bank accumulation (>1,000 t/yr) offset elevated US 10Y real yields (2.88%). DXY consolidation and negative CVD absorption at key supports maintain a constructive regime.',
-  goldTelemetry: { ...DEFAULT_GOLD_TELEMETRY },
-  today: { ...DEFAULT_TODAY_GOLD_STATE },
-  drivers: { ...DEFAULT_GOLD_DRIVERS },
+  overallBias: 'NEUTRAL',
+  overallConfidence: 0,
+  biasSummary: 'Gold, yields, and the dollar update from Yahoo and FRED. ETF tonnes, CFTC, COMEX stocks, and central-bank purchases stay unavailable.',
+  goldTelemetry: { ...DEFAULT_GOLD_TELEMETRY, goldCvol: null, goldRealizedVol30d: null, sourced: {} },
+  today: {
+    ...DEFAULT_TODAY_GOLD_STATE,
+    monetary_policy: 'Unavailable',
+    real_rate_regime: 'Unavailable',
+    usd_regime: 'Unavailable',
+    inflation: 'Unavailable',
+    growth: 'Unavailable',
+    financial_stress: 'Unavailable',
+    geopolitical_risk: 'Unavailable',
+    etf_flows: 'Unavailable',
+    central_bank_demand: 'Unavailable',
+    cftc_positioning: 'Unavailable',
+    physical_demand: 'Unavailable',
+    supply: 'Unavailable',
+    comex_inventory_deliveries: 'Unavailable',
+    gold_volatility: 'Unavailable',
+    main_current_driver: 'Unavailable',
+    what_changed_since_yesterday: 'Unavailable',
+    intraday_bias: 'NEUTRAL',
+    short_term_bias: 'NEUTRAL',
+    medium_term_bias: 'NEUTRAL',
+  },
+  drivers: blankMetricValues(DEFAULT_GOLD_DRIVERS),
   etfFlows: { ...DEFAULT_ETF_FLOW_STATE },
   cftcPositioning: { ...DEFAULT_CFTC_POSITIONING_STATE },
   comexInventory: { ...DEFAULT_COMEX_INVENTORY_STATE },
   centralBankDemand: { ...DEFAULT_CENTRAL_BANK_STATE },
-  feeds: [...DEFAULT_GOLD_FEEDS],
+  feeds: withholdFeeds(DEFAULT_GOLD_FEEDS),
   recentEvents: [],
   liveGoldHeadlines: [],
 }
@@ -140,14 +161,20 @@ export async function refreshGoldTelemetry(): Promise<GoldTelemetry> {
     ])
 
     const t = currentGoldState.goldTelemetry
+    t.sourced = { ...(t.sourced || {}) }
+    t.goldCvol = null
+    t.goldRealizedVol30d = null
 
     if (gcYahoo && gcYahoo.price > 0) {
       t.goldPrice = gcYahoo.price
       t.goldChange = gcYahoo.change
       t.goldChangePct = gcYahoo.change_pct
+      t.sourced.gold = true
+      markFeed(currentGoldState.feeds, 'cme_globex_gc', 'ONLINE', new Date().toISOString())
     }
 
     if (siQuote && siQuote.price > 0) {
+      t.sourced.silver = true
       t.silverPrice = siQuote.price
       t.silverChange = +(siQuote.price * (siQuote.changePct / 100)).toFixed(3)
       t.goldSilverRatio = +(t.goldPrice / siQuote.price).toFixed(2)
@@ -156,34 +183,43 @@ export async function refreshGoldTelemetry(): Promise<GoldTelemetry> {
     if (dxyQuote && dxyQuote.price > 0) {
       t.dxyIndex = dxyQuote.price
       t.dxyChangePct = dxyQuote.changePct
+      t.sourced.dxy = true
     }
 
     if (tnxQuote && tnxQuote.price > 0) {
       t.us10yNominalYield = tnxQuote.price
+      t.sourced.us10y = true
     }
 
     if (fvxQuote && fvxQuote.price > 0) {
       t.us5yNominalYield = fvxQuote.price
+      t.sourced.us5y = true
     }
 
     if (eurQuote && eurQuote.price > 0) {
       t.eurUsd = eurQuote.price
+      t.sourced.eurusd = true
     }
 
     if (jpyQuote && jpyQuote.price > 0) {
       t.usdJpy = jpyQuote.price
+      t.sourced.usdjpy = true
     }
 
     if (fred10yReal !== null) {
       t.us10yRealYield = fred10yReal
+      t.sourced.us10yReal = true
+      markFeed(currentGoldState.feeds, 'fred_real_yields', 'ONLINE', new Date().toISOString())
     }
 
     if (fred5yReal !== null) {
       t.us5yRealYield = fred5yReal
+      t.sourced.us5yReal = true
     }
 
     if (fred10yBreakeven !== null) {
       t.us10yBreakeven = fred10yBreakeven
+      t.sourced.breakeven = true
     }
 
     t.timestamp = Math.floor(Date.now() / 1000)
@@ -192,21 +228,30 @@ export async function refreshGoldTelemetry(): Promise<GoldTelemetry> {
     // Sync metrics inside drivers
     if (currentGoldState.drivers.real_interest_rates) {
       const realDriver = currentGoldState.drivers.real_interest_rates
-      if (realDriver.metrics[0]) realDriver.metrics[0].value = `${t.us10yRealYield.toFixed(2)}%`
-      if (realDriver.metrics[1]) realDriver.metrics[1].value = `${t.us5yRealYield.toFixed(2)}%`
-      if (realDriver.metrics[2]) realDriver.metrics[2].value = `${t.us10yBreakeven.toFixed(2)}%`
+      if (realDriver.metrics[0]) realDriver.metrics[0].value = t.sourced.us10yReal ? `${t.us10yRealYield.toFixed(2)}%` : 'Unavailable'
+      if (realDriver.metrics[1]) realDriver.metrics[1].value = t.sourced.us5yReal ? `${t.us5yRealYield.toFixed(2)}%` : 'Unavailable'
+      if (realDriver.metrics[2]) realDriver.metrics[2].value = t.sourced.breakeven ? `${t.us10yBreakeven.toFixed(2)}%` : 'Unavailable'
     }
 
     if (currentGoldState.drivers.us_dollar) {
       const usdDriver = currentGoldState.drivers.us_dollar
-      if (usdDriver.metrics[0]) usdDriver.metrics[0].value = t.dxyIndex.toFixed(2)
-      if (usdDriver.metrics[1]) usdDriver.metrics[1].value = t.eurUsd.toFixed(4)
-      if (usdDriver.metrics[2]) usdDriver.metrics[2].value = t.usdJpy.toFixed(2)
+      if (usdDriver.metrics[0]) usdDriver.metrics[0].value = t.sourced.dxy ? t.dxyIndex.toFixed(2) : 'Unavailable'
+      if (usdDriver.metrics[1]) usdDriver.metrics[1].value = t.sourced.eurusd ? t.eurUsd.toFixed(4) : 'Unavailable'
+      if (usdDriver.metrics[2]) usdDriver.metrics[2].value = t.sourced.usdjpy ? t.usdJpy.toFixed(2) : 'Unavailable'
     }
 
     // Update real rate regime in TODAY'S state
-    currentGoldState.today.real_rate_regime = `10Y TIPS real yield holding at ${t.us10yRealYield.toFixed(2)}% (DFII10), with 10Y Breakeven expectations at ${t.us10yBreakeven.toFixed(2)}%.`
-    currentGoldState.today.usd_regime = `DXY Index at ${t.dxyIndex.toFixed(2)} (${t.dxyChangePct >= 0 ? '+' : ''}${t.dxyChangePct.toFixed(2)}%). EUR/USD at ${t.eurUsd.toFixed(4)}.`
+    currentGoldState.today.real_rate_regime = t.sourced.us10yReal
+      ? `10Y TIPS real yield ${t.us10yRealYield.toFixed(2)}% (FRED DFII10).${t.sourced.breakeven ? ` 10Y breakeven ${t.us10yBreakeven.toFixed(2)}%.` : ''}`
+      : 'Unavailable'
+    currentGoldState.today.usd_regime = t.sourced.dxy
+      ? `DXY ${t.dxyIndex.toFixed(2)} (${t.dxyChangePct >= 0 ? '+' : ''}${t.dxyChangePct.toFixed(2)}%).`
+      : 'Unavailable'
+    currentGoldState.today.gold_volatility = 'Unavailable'
+    currentGoldState.today.etf_flows = 'Unavailable'
+    currentGoldState.today.cftc_positioning = 'Unavailable'
+    currentGoldState.today.central_bank_demand = 'Unavailable'
+    currentGoldState.today.comex_inventory_deliveries = 'Unavailable'
   } catch (err) {
     logger.warn('[GoldStateStore] Failed to update live Gold telemetry', err)
   }
@@ -258,7 +303,8 @@ export async function refreshLiveGoldHeadlines(): Promise<LiveGoldHeadline[]> {
     }
 
     if (headlines.length > 0) {
-      currentGoldState.liveGoldHeadlines = headlines.slice(0, 10)
+      currentGoldState.liveGoldHeadlines = sortByDatetimeDesc(headlines).slice(0, 12)
+      markFeed(currentGoldState.feeds, 'reuters_finnhub_metals_wire', 'ONLINE', new Date().toISOString())
     }
   } catch (err) {
     logger.warn('[GoldStateStore] Failed to fetch live gold headlines', err)
@@ -340,18 +386,38 @@ export function resetGoldFundamentalState(): GoldFundamentalDashboardState {
     market: 'COMEX_GC',
     analystPersona: 'Gold Macro, Monetary and Physical Demand Analyst',
     updatedAt: new Date().toISOString(),
-    overallBias: 'BULLISH',
-    overallConfidence: 85,
-    biasSummary:
-      'Long-term monetary debasement hedge and structural sovereign central-bank accumulation (>1,000 t/yr) offset elevated US 10Y real yields (2.88%). DXY consolidation and negative CVD absorption at key supports maintain a constructive regime.',
-    goldTelemetry: { ...DEFAULT_GOLD_TELEMETRY },
-    today: { ...DEFAULT_TODAY_GOLD_STATE },
-    drivers: { ...DEFAULT_GOLD_DRIVERS },
+    overallBias: 'NEUTRAL',
+    overallConfidence: 0,
+    biasSummary: 'Gold, yields, and the dollar update from Yahoo and FRED. ETF tonnes, CFTC, COMEX stocks, and central-bank purchases stay unavailable.',
+    goldTelemetry: { ...DEFAULT_GOLD_TELEMETRY, goldCvol: null, goldRealizedVol30d: null, sourced: {} },
+    today: {
+      ...DEFAULT_TODAY_GOLD_STATE,
+      monetary_policy: 'Unavailable',
+      real_rate_regime: 'Unavailable',
+      usd_regime: 'Unavailable',
+      inflation: 'Unavailable',
+      growth: 'Unavailable',
+      financial_stress: 'Unavailable',
+      geopolitical_risk: 'Unavailable',
+      etf_flows: 'Unavailable',
+      central_bank_demand: 'Unavailable',
+      cftc_positioning: 'Unavailable',
+      physical_demand: 'Unavailable',
+      supply: 'Unavailable',
+      comex_inventory_deliveries: 'Unavailable',
+      gold_volatility: 'Unavailable',
+      main_current_driver: 'Unavailable',
+      what_changed_since_yesterday: 'Unavailable',
+      intraday_bias: 'NEUTRAL',
+      short_term_bias: 'NEUTRAL',
+      medium_term_bias: 'NEUTRAL',
+    },
+    drivers: blankMetricValues(DEFAULT_GOLD_DRIVERS),
     etfFlows: { ...DEFAULT_ETF_FLOW_STATE },
     cftcPositioning: { ...DEFAULT_CFTC_POSITIONING_STATE },
     comexInventory: { ...DEFAULT_COMEX_INVENTORY_STATE },
     centralBankDemand: { ...DEFAULT_CENTRAL_BANK_STATE },
-    feeds: [...DEFAULT_GOLD_FEEDS],
+    feeds: withholdFeeds(DEFAULT_GOLD_FEEDS),
     recentEvents: [],
     liveGoldHeadlines: [],
   }

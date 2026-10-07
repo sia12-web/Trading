@@ -7,6 +7,7 @@
 
 import React from 'react'
 import type { NasdaqFundamentalDashboardState } from '@/types/fundamentals'
+import { confidencePercent, showNumber } from '@/lib/fundamentals/honesty'
 
 interface NasdaqFundamentalsHeaderProps {
   state: NasdaqFundamentalDashboardState
@@ -104,7 +105,7 @@ export function NasdaqFundamentalsHeader({
             <span className="text-[10px] font-mono text-cyan-400">Front CME</span>
           </div>
           <div className="text-lg font-bold font-mono text-slate-100">
-            {t.nqPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {t.sourced?.nq ? t.nqPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 'Unavailable'}
           </div>
           <div className="flex items-center gap-1.5 mt-0.5 text-xs">
             <span
@@ -112,11 +113,10 @@ export function NasdaqFundamentalsHeader({
                 t.nqChangePct >= 0 ? 'text-emerald-400' : 'text-rose-400'
               }`}
             >
-              {t.nqChangePct >= 0 ? '+' : ''}
-              {t.nqChangePct.toFixed(2)}%
+              {t.sourced?.nq ? `${t.nqChangePct >= 0 ? '+' : ''}${t.nqChangePct.toFixed(2)}%` : 'Unavailable'}
             </span>
             <span className="text-[10px] text-slate-400 font-mono">
-              ({t.nqChange >= 0 ? '+' : ''}{t.nqChange.toFixed(1)} pts)
+              {t.sourced?.nq ? `(${t.nqChange >= 0 ? '+' : ''}${t.nqChange.toFixed(1)} pts)` : ''}
             </span>
           </div>
         </div>
@@ -129,18 +129,20 @@ export function NasdaqFundamentalsHeader({
           </div>
           <div className="flex items-baseline gap-2">
             <span className="text-base font-bold font-mono text-slate-200">
-              {t.us2yNominalYield.toFixed(2)}%
+              {showNumber(t.sourced?.us2y, t.us2yNominalYield, 2, '%')}
             </span>
             <span className="text-xs text-slate-400 font-mono">2Y</span>
             <span className="text-base font-bold font-mono text-slate-200 ml-1">
-              {t.us10yNominalYield.toFixed(2)}%
+              {showNumber(t.sourced?.us10y, t.us10yNominalYield, 2, '%')}
             </span>
             <span className="text-xs text-slate-400 font-mono">10Y</span>
           </div>
           <div className="flex items-center justify-between mt-0.5 text-[11px]">
             <span className="text-slate-400">2s10s Spread:</span>
             <span className={`font-mono font-semibold ${t.yieldCurve2s10sSpreadBps >= 0 ? 'text-cyan-400' : 'text-amber-400'}`}>
-              {t.yieldCurve2s10sSpreadBps >= 0 ? '+' : ''}{t.yieldCurve2s10sSpreadBps.toFixed(1)} bps
+              {t.sourced?.us2y && t.sourced?.us10y
+                ? `${t.yieldCurve2s10sSpreadBps >= 0 ? '+' : ''}${t.yieldCurve2s10sSpreadBps.toFixed(1)} bps`
+                : 'Unavailable'}
             </span>
           </div>
         </div>
@@ -152,7 +154,7 @@ export function NasdaqFundamentalsHeader({
             <span className="text-[10px] font-mono text-emerald-400">FRED DFII10</span>
           </div>
           <div className="text-lg font-bold font-mono text-slate-100">
-            {t.us10yRealYield.toFixed(2)}%
+            {showNumber(t.sourced?.us10yReal, t.us10yRealYield, 2, '%')}
           </div>
           <div className="text-[10px] text-slate-400 mt-0.5">
             Discount rate for growth valuation
@@ -167,16 +169,18 @@ export function NasdaqFundamentalsHeader({
           </div>
           <div className="flex items-baseline gap-2">
             <span className="text-lg font-bold font-mono text-slate-100">
-              {t.vxnIndex.toFixed(2)}
+              {showNumber(t.sourced?.vxn, t.vxnIndex, 2)}
             </span>
             <span className="text-xs text-slate-400 font-mono">VXN</span>
             <span className="text-sm font-semibold font-mono text-slate-300 ml-1">
-              {t.vixIndex.toFixed(2)}
+              {showNumber(t.sourced?.vix, t.vixIndex, 2)}
             </span>
             <span className="text-xs text-slate-400 font-mono">VIX</span>
           </div>
           <div className="text-[10px] text-slate-400 mt-0.5">
-            Spread: +{(t.vxnIndex - t.vixIndex).toFixed(2)} pts (Tech IV Premium)
+            {t.sourced?.vxn && t.sourced?.vix
+              ? `Spread: ${(t.vxnIndex - t.vixIndex >= 0 ? '+' : '')}${(t.vxnIndex - t.vixIndex).toFixed(2)} pts`
+              : 'Spread unavailable'}
           </div>
         </div>
 
@@ -189,11 +193,11 @@ export function NasdaqFundamentalsHeader({
           <div className="flex items-center justify-between text-xs font-mono">
             <span className="text-slate-400">ES:</span>
             <span className={t.esChangePct >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
-              {t.esChangePct >= 0 ? '+' : ''}{t.esChangePct.toFixed(2)}%
+              {showNumber(t.sourced?.es, t.esChangePct, 2, '%')}
             </span>
             <span className="text-slate-400 ml-2">YM:</span>
             <span className={t.ymChangePct >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
-              {t.ymChangePct >= 0 ? '+' : ''}{t.ymChangePct.toFixed(2)}%
+              {showNumber(t.sourced?.ym, t.ymChangePct, 2, '%')}
             </span>
           </div>
           <div className="mt-1">
@@ -212,13 +216,13 @@ export function NasdaqFundamentalsHeader({
           <div className="flex items-center justify-between">
             <span className="text-xs text-slate-400">Semi Basket:</span>
             <span className={`text-xs font-mono font-bold ${t.semiBasketChangePct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {t.semiBasketChangePct >= 0 ? '+' : ''}{t.semiBasketChangePct.toFixed(2)}%
+              Unavailable
             </span>
           </div>
           <div className="flex items-center justify-between mt-1 text-[11px]">
             <span className="text-slate-400">A/D Ratio:</span>
-            <span className={`font-mono font-bold ${t.advanceDeclineRatio >= 1.2 ? 'text-emerald-400' : t.advanceDeclineRatio <= 0.8 ? 'text-rose-400' : 'text-amber-400'}`}>
-              {t.advanceDeclineRatio.toFixed(2)}:1
+            <span className="font-mono font-bold text-slate-400">
+              Unavailable
             </span>
           </div>
         </div>
@@ -246,7 +250,7 @@ export function NasdaqFundamentalsHeader({
           </div>
           <div className="flex items-center gap-1.5">
             <span>Confidence:</span>
-            <span className="font-mono text-slate-200 font-bold">{(state.overallConfidence * 100).toFixed(0)}%</span>
+            <span className="font-mono text-slate-200 font-bold">{confidencePercent(state.overallConfidence)}%</span>
           </div>
           <div className="text-[11px] text-slate-400">
             Updated: {new Date(state.updatedAt).toLocaleTimeString()}

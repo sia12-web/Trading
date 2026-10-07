@@ -196,7 +196,7 @@ test('Drive up + TWO-TF after IB → WAIT (Open and Control disagree)', () => {
     instrument: 'DOW',
     candles: [...friday, ...driveUpSession(mondayOpen, 2, 'flat')],
     asOfUnix: mondayOpen + 60 * 60,
-    playbookMode: 'ib',
+    playbookMode: 'or30',
   })
   assert.ok(
     call.openingType === 'OPEN_DRIVE' || call.openingType === 'OPEN_TEST_DRIVE',
@@ -270,12 +270,12 @@ test('Auction + ONE-TF BUY after IB → CALL from Control', () => {
     instrument: 'DOW',
     candles: [...friday, ...a],
     asOfUnix: mondayOpen + 60 * 60,
-    playbookMode: 'ib',
+    playbookMode: 'or30',
   })
   assert.equal(call.openingType, 'OPEN_AUCTION')
   assert.equal(call.controlLabel, 'ONE-TF BUY')
   assert.equal(call.side, 'LONG')
-  assert.equal(deskCallBadgeText(call), 'IB LONG')
+  assert.equal(deskCallBadgeText(call), 'OR30 LONG')
 })
 
 test('US Range on DOW is not a legal CALL range', () => {
@@ -322,7 +322,7 @@ test('agreeing twin does not veto; bookLocked false omits locked copy', () => {
     instrument: 'DOW',
     candles: [...friday, ...driveUpSession(mondayOpen, 2, 'buy')],
     asOfUnix: mondayOpen + 60 * 60,
-    playbookMode: 'ib',
+    playbookMode: 'or30',
     peerSide: 'LONG',
     bookLocked: false,
   })
@@ -354,7 +354,7 @@ test('OR30/IB/LN never allow mid copy; US Range neither', () => {
   assert.ok(usLine.includes('Tokyo IB') === false)
 })
 
-test('Nikkei IB playLine says Tokyo IB, never NY IB', () => {
+test('IB playLine does not name Initial Balance or Tokyo IB', () => {
   const line = playLineForCall({
     side: 'LONG',
     rangeKey: 'IB',
@@ -362,7 +362,8 @@ test('Nikkei IB playLine says Tokyo IB, never NY IB', () => {
     bookLocked: false,
     midAllowed: false,
   })
-  assert.ok(line.includes('Tokyo IB'))
+  assert.ok(!line.includes('Tokyo IB'))
+  assert.ok(!line.includes('Initial Balance'))
   assert.ok(!line.includes('below IB low'))
 })
 
@@ -421,7 +422,7 @@ test('B is false when the opposite extreme breaks first', () => {
     instrument: 'DOW',
     candles: [...friday, ...driveUpSession(mondayOpen, 2, 'buy')],
     asOfUnix: mondayOpen + 60 * 60,
-    playbookMode: 'ib',
+    playbookMode: 'or30',
   })
   assert.equal(call.side, 'LONG')
   const s = scoreDeskCallWindow({
@@ -447,7 +448,7 @@ test('same-bar both-edge break is inconclusive for B', () => {
     instrument: 'DOW',
     candles: [...friday, ...driveUpSession(mondayOpen, 2, 'buy')],
     asOfUnix: mondayOpen + 60 * 60,
-    playbookMode: 'ib',
+    playbookMode: 'or30',
   })
   const s = scoreDeskCallWindow({
     call,
@@ -467,7 +468,7 @@ test('C is false when the opposite edge prints before named ±10', () => {
     instrument: 'DOW',
     candles: [...friday, ...driveUpSession(mondayOpen, 2, 'buy')],
     asOfUnix: mondayOpen + 60 * 60,
-    playbookMode: 'ib',
+    playbookMode: 'or30',
   })
   const s = scoreDeskCallWindow({
     call,
@@ -514,7 +515,7 @@ test('score window skips NaN bars and non-array later bars', () => {
     instrument: 'DOW',
     candles: [...friday, ...driveUpSession(mondayOpen, 2, 'buy')],
     asOfUnix: mondayOpen + 60 * 60,
-    playbookMode: 'ib',
+    playbookMode: 'or30',
   })
   const s = scoreDeskCallWindow({
     call,
@@ -576,8 +577,8 @@ test('WAIT windows are excluded from B/C tally; strip has no B marks on WAIT', (
     'lunch-break snap must not appear in the scored windows'
   )
   assert.ok(
-    rows.some((r) => r.playbookMode === 'ib'),
-    'IB snap at +60m is expected'
+    !rows.some((r) => r.playbookMode === 'ib'),
+    'Initial Balance is not a scored CALL window'
   )
   const tally = tallyDeskCallScores(rows)
   const waitRows = rows.filter((r) => r.score.leftWait)

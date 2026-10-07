@@ -498,7 +498,9 @@ export function saveRulesForMarket(market: MarketInstrument, rules: ArmedRule[])
   if (typeof window === 'undefined') return
   try {
     localStorage.setItem(`leo_armed_rules_${market}`, JSON.stringify(rules))
-    broadcastRuleUpdate(market)
+    // Never notify listeners in the same turn as a render. Leo seeds rules while
+    // the panel is rendering, and a sync event setStates TradingChart mid-render.
+    queueMicrotask(() => broadcastRuleUpdate(market))
   } catch (err) {
     console.error(`Failed to save rules for ${market}:`, err)
   }

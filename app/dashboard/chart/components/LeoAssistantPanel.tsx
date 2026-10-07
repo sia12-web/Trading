@@ -246,10 +246,17 @@ export function LeoAssistantPanel({
   const [attachedPoints, setAttachedPoints] = useState<LeoDataPoint[]>([])
   const [armedRules, setArmedRulesState] = useState<ArmedDeskRule[]>(() => {
     if (typeof window === 'undefined') return []
+    // Read only. loadRulesForMarket() writes localStorage and broadcasts, and a
+    // listener on TradingChart then setStates during this render — that warning
+    // can escalate into the Next.js "client-side exception" page.
     try {
-      return loadRulesForMarket(context.instrument as MarketInstrument) as any
-    } catch {}
-    return []
+      const raw = window.localStorage.getItem(`leo_armed_rules_${context.instrument}`)
+      if (!raw) return []
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? (parsed as ArmedDeskRule[]) : []
+    } catch {
+      return []
+    }
   })
 
   const setArmedRules = (updater: ArmedDeskRule[] | ((prev: ArmedDeskRule[]) => ArmedDeskRule[])) => {
@@ -1939,42 +1946,14 @@ export function LeoAssistantPanel({
 
   return (
     <>
-      {/* ─── Compact Minimized Dock Button ──────────────────────────────────── */}
       {!isPanelOpen && (
         <button
           type="button"
           onClick={togglePanel}
-          className="group absolute bottom-12 right-3 z-30 flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md bg-neutral-950/85 border border-purple-500/40 text-neutral-200 shadow-xl transition-all duration-200 hover:border-purple-400 hover:bg-neutral-900/90 hover:scale-105 active:scale-95 select-none"
-          title="Open Leo AI Desk Assistant (Click to enable chart reference points)"
+          className="absolute bottom-12 right-3 z-30 px-2 py-0.5 rounded-md bg-neutral-950/90 border border-purple-500/35 text-[10px] font-semibold tracking-wide text-purple-200 hover:border-purple-400 hover:text-white"
+          title="Open Leo AI"
         >
-          <span className="relative flex h-2.5 w-2.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-purple-500" />
-          </span>
-          <span className="font-mono text-xs font-semibold tracking-wide text-purple-200 flex items-center gap-1">
-            <span>🎙️</span>
-            <span>Leo AI</span>
-          </span>
-          {activePos && (
-            <span
-              className={`font-mono text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                activePos.isInProfit
-                  ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700'
-                  : 'bg-rose-950/80 text-rose-300 border border-rose-700'
-              }`}
-            >
-              {activePos.direction} {activePos.unrealizedPnlPoints >= 0 ? '+' : ''}
-              {activePos.unrealizedPnlPoints.toFixed(1)}pt
-            </span>
-          )}
-          {context.shortTermMoney?.ypoc != null && (
-            <span className="hidden sm:inline font-mono text-[10px] text-neutral-400 border-l border-neutral-700 pl-1.5">
-              Y-POC {context.shortTermMoney.ypoc}
-            </span>
-          )}
-          <span className="text-[9px] text-purple-300 font-bold bg-purple-950/60 border border-purple-800/60 rounded px-1.5 py-0.5">
-            AI Live
-          </span>
+          Leo AI
         </button>
       )}
 

@@ -27,7 +27,6 @@ import {
   type DeskRiskProfile,
 } from '@/lib/trading/tradeifyProfile'
 import { SYSTEMATIC_LIVE_DESK } from '@/lib/trading/systematicDesk'
-import { getFeedMetricsSnapshot } from '@/lib/databento/feedLatencySelector'
 import { useInternetLatency } from '@/lib/trading/useInternetLatency'
 
 export interface SessionGateState {
@@ -97,11 +96,10 @@ function formatDeskClock(_market?: 'NY' | 'TOKYO' | null): { time: string; label
 function phaseLabel(
   phase: string,
   rangeStrategy?: 'or30' | 'ib' | 'us_range' | null,
-  instrument?: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | null
+  _instrument?: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | null
 ): string {
   if (rangeStrategy === 'us_range') return 'US-RANGE'
   if (rangeStrategy === 'or30') return 'OR30'
-  if (rangeStrategy === 'ib') return instrument === 'NIKKEI' ? 'TOKYO-IB' : 'IB'
   switch (phase) {
     case 'FLAT':
       return 'MORNING'
@@ -142,16 +140,7 @@ export function SessionBanner({
   const [newsHazard, setNewsHazard] = useState<DeskNewsHazard | null>(null)
   const [newsUnavailable, setNewsUnavailable] = useState(false)
   const [riskProfile, setRiskProfile] = useState<DeskRiskProfile>('tradeify_growth_50k')
-  const [feedSnap, setFeedSnap] = useState(() => getFeedMetricsSnapshot())
   const internetLatency = useInternetLatency()
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if (typeof document !== 'undefined' && document.hidden) return
-      setFeedSnap(getFeedMetricsSnapshot())
-    }, 5000)
-    return () => clearInterval(timer)
-  }, [])
   const [htfStatus, setHtfStatus] = useState<string | null>(null)
   const [htfSummary, setHtfSummary] = useState<string | null>(null)
   const [htfPerf, setHtfPerf] = useState<{
@@ -164,6 +153,9 @@ export function SessionBanner({
     bracketMode: string
     tradeLocationGrade: string
     directiveSummary: string
+    formed?: boolean
+    locationPct?: number
+    swingSessions?: number
   } | null>(null)
   const [htfCorr, setHtfCorr] = useState<{
     type: string
@@ -380,12 +372,17 @@ export function SessionBanner({
                 holdingDirective: data.state.directionalPerformance.dynamicRR?.holdingDirective ?? '',
               })
             }
-            if (data.state.bracket) {
+            if (data.state.bracket && data.state.bracket.formed !== false) {
               setHtfBracket({
                 bracketMode: data.state.bracket.bracketMode,
                 tradeLocationGrade: data.state.bracket.tradeLocationGrade,
                 directiveSummary: data.state.bracket.directiveSummary,
+                formed: data.state.bracket.formed,
+                locationPct: data.state.bracket.locationPct,
+                swingSessions: data.state.bracket.swingSessions,
               })
+            } else {
+              setHtfBracket(null)
             }
             if (data.state.correctiveAction) {
               setHtfCorr({
@@ -584,16 +581,6 @@ export function SessionBanner({
           </span>
         )}
         <span
-          className={`rounded px-2 py-0.5 font-mono text-[10px] font-semibold border ${
-            feedSnap.activeFeed.status === 'HEALTHY'
-              ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-              : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
-          }`}
-          title={`Active Databento CME feed: ${feedSnap.activeFeed.name} (${feedSnap.activeFeed.qualityScore}/100 quality)`}
-        >
-          ⚡ Databento CME · {feedSnap.activeFeed.latencyMs}ms {feedSnap.zeroGapActive ? '(Zero Gap)' : ''}
-        </span>
-        <span
           className={`rounded px-2 py-0.5 font-mono text-[10px] font-semibold border flex items-center gap-1.5 transition-colors ${
             !internetLatency.isOnline || internetLatency.status === 'DISCONNECTED'
               ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse'
@@ -674,17 +661,28 @@ export function SessionBanner({
         )}
         {!SYSTEMATIC_LIVE_DESK && htfBracket && (
           <span
-            className={`rounded px-2 py-0.5 font-semibold text-[10px] uppercase tracking-wide border ${htfBracket.tradeLocationGrade === 'RESPONSIVE_LONG'
+            className={`rounded px-2 py-0.5 font-semibold text-[10px] uppercase tracking-wide border ${htfBracket.bracketMode === 'AUCTION_FAILURE_REVERSAL'
+              ? 'bg-amber-500/30 text-amber-200 border-amber-400/50'
+              : htfBracket.tradeLocationGrade === 'RESPONSIVE_LONG'
               ? 'bg-emerald-500/30 text-emerald-200 border-emerald-400/50'
               : htfBracket.tradeLocationGrade === 'RESPONSIVE_SHORT'
                 ? 'bg-rose-500/30 text-rose-200 border-rose-400/50'
                 : htfBracket.tradeLocationGrade === 'MID_BRACKET_CHOP'
-                  ? 'bg-amber-500/30 text-amber-200 border-amber-400/50 animate-pulse'
+                  ? 'bg-amber-500/30 text-amber-200 border-amber-400/50'
                   : 'bg-indigo-500/25 text-indigo-200 border-indigo-500/40'
               }`}
             title={`Long-Term Bracket: ${htfBracket.bracketMode} | ${htfBracket.directiveSummary}`}
           >
-            Bracket: {String(htfBracket.tradeLocationGrade || '').replace(/_/g, ' ')}
+            Bracket: {(() => {
+              const where = typeof htfBracket.locationPct === 'number' ? ` ${htfBracket.locationPct}%` : ''
+              const span = (htfBracket.swingSessions ?? 0) >= 5 ? '5D ' : htfBracket.swingSessions ? `${htfBracket.swingSessions}D ` : ''
+              if (htfBracket.bracketMode === 'AUCTION_FAILURE_REVERSAL') return `${span}AUCTION FAILURE${where}`
+              if (htfBracket.bracketMode === 'INITIATIVE_TREND') return `${span}BREAKOUT${where}`
+              if (htfBracket.bracketMode === 'TREND_AGING') return `${span}TREND AGING${where}`
+              if (htfBracket.tradeLocationGrade === 'RESPONSIVE_LONG') return `${span}LOWER THIRD${where}`
+              if (htfBracket.tradeLocationGrade === 'RESPONSIVE_SHORT') return `${span}UPPER THIRD${where}`
+              return `${span}MID BRACKET${where}`
+            })()}
           </span>
         )}
         {!SYSTEMATIC_LIVE_DESK && htfCorr && htfCorr.type !== 'NONE' && (
@@ -763,6 +761,13 @@ export function SessionBanner({
           >
             Refresh
           </button>
+          <Link
+            href="/dashboard"
+            className="text-[10px] uppercase tracking-wider text-gray-500 hover:text-white"
+            title="Open desk home"
+          >
+            Dashboard
+          </Link>
         </div>
       </div>
     </>

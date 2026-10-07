@@ -2,6 +2,7 @@
 
 import React from 'react'
 import type { NikkeiFundamentalDashboardState } from '@/types/fundamentals'
+import { confidencePercent, showNumber } from '@/lib/fundamentals/honesty'
 
 interface NikkeiFundamentalsHeaderProps {
   state: NikkeiFundamentalDashboardState | null
@@ -18,7 +19,6 @@ export function NikkeiFundamentalsHeader({
 
   const t = state.nikkeiTelemetry
   const fx = state.fx
-  const boj = state.boj
 
   const biasColor =
     state.overallBias === 'BULLISH'
@@ -60,7 +60,7 @@ export function NikkeiFundamentalsHeader({
               Fundamental Bias:
             </span>
             <span className="text-sm font-extrabold">{state.overallBias}</span>
-            <span className="text-xs opacity-75 font-mono">({state.overallConfidence}%)</span>
+            <span className="text-xs opacity-75 font-mono">({confidencePercent(state.overallConfidence)}%)</span>
           </div>
 
           <button
@@ -82,16 +82,12 @@ export function NikkeiFundamentalsHeader({
             CME NKD Price
           </div>
           <div className="text-sm font-bold text-white font-mono mt-0.5">
-            {t.nkdPrice.toLocaleString()}
+            {t.sourced?.nkd ? t.nkdPrice.toLocaleString() : 'Unavailable'}
           </div>
-          <div
-            className={`text-[10px] font-mono ${
-              t.nkdChange >= 0 ? 'text-emerald-400' : 'text-rose-400'
-            }`}
-          >
-            {t.nkdChange >= 0 ? '+' : ''}
-            {t.nkdChange.toFixed(0)} ({t.nkdChangePct >= 0 ? '+' : ''}
-            {t.nkdChangePct.toFixed(2)}%)
+          <div className="text-[10px] font-mono text-slate-400">
+            {t.sourced?.nkd
+              ? `${t.nkdChange >= 0 ? '+' : ''}${t.nkdChange.toFixed(0)} (${t.nkdChangePct >= 0 ? '+' : ''}${t.nkdChangePct.toFixed(2)}%)`
+              : 'Waiting for a quote'}
           </div>
         </div>
 
@@ -101,15 +97,16 @@ export function NikkeiFundamentalsHeader({
             USD/JPY Spot
           </div>
           <div className="text-sm font-bold text-white font-mono mt-0.5">
-            {fx.usdjpyRate.toFixed(2)}
+            {showNumber(t.sourced?.usdjpy, fx.usdjpyRate, 2)}
           </div>
           <div
             className={`text-[10px] font-mono ${
               fx.usdjpyChangePct >= 0 ? 'text-emerald-400' : 'text-rose-400'
             }`}
           >
-            {fx.usdjpyChangePct >= 0 ? '+' : ''}
-            {fx.usdjpyChangePct.toFixed(2)}% · {fx.mofInterventionZone ? 'ALERT' : 'Normal'}
+            {t.sourced?.usdjpy
+              ? `${fx.usdjpyChangePct >= 0 ? '+' : ''}${fx.usdjpyChangePct.toFixed(2)}%`
+              : 'Waiting for a quote'}
           </div>
         </div>
 
@@ -119,10 +116,10 @@ export function NikkeiFundamentalsHeader({
             BoJ Call / 10Y JGB
           </div>
           <div className="text-sm font-bold text-white font-mono mt-0.5">
-            {boj.uncollateralizedCallRatePct}% / {boj.jgb10yYieldPct}%
+            Unavailable
           </div>
           <div className="text-[10px] font-mono text-cyan-400">
-            {boj.policyStance}
+            Policy print unavailable
           </div>
         </div>
 
@@ -132,15 +129,10 @@ export function NikkeiFundamentalsHeader({
             SOX (US Semis)
           </div>
           <div className="text-sm font-bold text-white font-mono mt-0.5">
-            {t.soxIndex.toLocaleString()}
+            {t.sourced?.sox ? t.soxIndex.toLocaleString() : 'Unavailable'}
           </div>
-          <div
-            className={`text-[10px] font-mono ${
-              t.soxChangePct >= 0 ? 'text-emerald-400' : 'text-rose-400'
-            }`}
-          >
-            {t.soxChangePct >= 0 ? '+' : ''}
-            {t.soxChangePct.toFixed(2)}%
+          <div className="text-[10px] font-mono text-slate-400">
+            {t.sourced?.sox ? `${t.soxChangePct >= 0 ? '+' : ''}${t.soxChangePct.toFixed(2)}%` : 'Waiting for a quote'}
           </div>
         </div>
 
@@ -150,11 +142,10 @@ export function NikkeiFundamentalsHeader({
             TSE 225 Breadth
           </div>
           <div className="text-sm font-bold text-white font-mono mt-0.5">
-            {t.advancersCount} <span className="text-emerald-400 text-xs">▲</span> / {t.declinersCount}{' '}
-            <span className="text-rose-400 text-xs">▼</span>
+            Unavailable
           </div>
           <div className="text-[10px] font-mono text-slate-400">
-            Divisor: {t.nikkeiDivisor.toFixed(2)}
+            Full TSE breadth is not on a live feed
           </div>
         </div>
 

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { evaluateNikkeiEvent } from '@/lib/fundamentals/nikkeiAnalystEngine'
-import { getNikkeiFundamentalState } from '@/lib/fundamentals/nikkeiStateStore'
+import { getNikkeiFundamentalState, peekNikkeiFundamentalState } from '@/lib/fundamentals/nikkeiStateStore'
 import { logger } from '@/lib/utils/logger'
 
 export const dynamic = 'force-dynamic'
@@ -24,13 +24,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Event rawText is required' }, { status: 400 })
     }
 
+    const liveState = await getNikkeiFundamentalState()
     const evaluation = await evaluateNikkeiEvent({
       rawText: body.rawText.trim(),
       sourceHint: body.sourceHint?.trim(),
+      forcedTelemetry: liveState.nikkeiTelemetry,
       autoCommitIfMaterial: body.autoCommitIfMaterial !== false,
     })
 
-    const updatedState = await getNikkeiFundamentalState()
+    const updatedState = peekNikkeiFundamentalState()
     const out = evaluation.structuredOutput
 
     return NextResponse.json({

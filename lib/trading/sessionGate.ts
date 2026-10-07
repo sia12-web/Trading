@@ -1,21 +1,21 @@
 /**
  * Trading desk session state — NY (DOW/NASDAQ) and Tokyo (NIKKEI).
  *
- * LIVE attempt ladder (per-window 2 / 2 / 2, session cap ≤ 3; local cash clock):
- *   DOW/NASDAQ: Open range (OR15) → 30-min (OR30) → IB
- *   NIKKEI:     Open range (OR15) → US Range (prior NYC) → Tokyo IB
+ * LIVE attempt ladder (per-window 2 / 2, session cap ≤ 3; local cash clock):
+ *   DOW/NASDAQ: Open range (OR15) → 30-min (OR30)
+ *   NIKKEI:     Open range (OR15) → US Range (prior NYC)
+ *   Initial Balance is not an entry window.
  *   Next window unlocks when prior clock ends OR attempts are exhausted.
  *   Session (day) total is hard-capped at 3 fills — every window locks once
  *   that cap is hit, even if a window still shows spare probes.
  *   No PM watch — manage-only when locked.
  *
- *   NY:  open 09:30 · OR15 lock 09:45→10:00 · OR30 10:00–10:30 · IB 10:30–15:15 ET
+ *   NY:  open 09:30 · OR15 lock 09:45→10:00 · OR30 10:00–10:30 ET
  *   Tokyo: open 09:00 · OR15 lock 09:15→09:30 · US Range 09:30→10:45 (prior NYC shaped)
- *          · Tokyo IB entries 10:00–15:00 (first-hour lock → cash close; = 21:00–02:00 Montreal)
  *
  * Chart stream: cash open − 30m through marketClose. Morning/slot-2 books are not
  * auto-flattened at lunchClose — trader confirms. Cash close auto-liquidates
- * slot-3 fills and any leftover opens. SIMULATION: same 2/2/2 ladder (no clock-in).
+ * leftover opens. SIMULATION: same ladder (no clock-in).
  */
 
 import { parseTimeToSeconds } from '@/lib/utils/timeUtils'
@@ -105,13 +105,13 @@ export const NY_SESSION: MarketSessionTimes = {
   marketClose: '16:00:00',
 }
 
-/** NY slot 2 — 30-minute range entries after OR15, until first-hour IB locks. */
+/** NY slot 2 — 30-minute range entries after OR15, through 10:30. */
 export const NY_OR30_STRATEGY_START = '10:00:00'
 export const NY_OR30_STRATEGY_END = '10:30:00'
-/** NY slot 3 — IB from first-hour lock through last-entry cutoff. */
+/** Former NY late clock. Not an entry window. */
 export const NY_IB_STRATEGY_START = '10:30:00'
 export const NY_IB_STRATEGY_END = '15:15:00'
-/** @deprecated Slot 3 is IB — alias kept for lunchRangeEntry*Hms import stability. */
+/** @deprecated Alias kept for lunchRangeEntry*Hms import stability. Not an entry window. */
 export const NY_LUNCH_RANGE_ENTRY_START = NY_IB_STRATEGY_START
 export const NY_LUNCH_RANGE_ENTRY_END = NY_IB_STRATEGY_END
 
@@ -151,11 +151,7 @@ export const TOKYO_US_RANGE_STRATEGY_END = '10:45:00'
 export const TOKYO_IB_STRATEGY_START = TOKYO_US_RANGE_STRATEGY_START
 /** @deprecated Use TOKYO_US_RANGE_STRATEGY_END — this is US Range, not Tokyo IB. */
 export const TOKYO_IB_STRATEGY_END = TOKYO_US_RANGE_STRATEGY_END
-/**
- * Tokyo IB (slot 3) entry window — unlocks when first-hour IB locks (10:00),
- * same moment the range is shaped. Runs through cash close (15:00).
- * Trader-facing: 21:00–02:00 Montreal. Overlaps US Range for 10:00–10:45.
- */
+/** Former Tokyo late clock. Not an entry window. */
 export const TOKYO_LUNCH_RANGE_ENTRY_START = '10:00:00'
 export const TOKYO_LUNCH_RANGE_ENTRY_END = '15:00:00'
 
@@ -260,7 +256,7 @@ export function ibStrategyEndHms(market: DeskMarket): string {
   return market === 'TOKYO' ? TOKYO_US_RANGE_STRATEGY_END : NY_OR30_STRATEGY_END
 }
 
-/** Desk-local late-slot entry start (NY IB · Tokyo IB at first-hour lock). */
+/** Desk-local former late-slot clock. Not an entry window. */
 export function lunchRangeEntryStartHms(market: DeskMarket): string {
   return market === 'TOKYO' ? TOKYO_LUNCH_RANGE_ENTRY_START : NY_IB_STRATEGY_START
 }
@@ -1071,8 +1067,6 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
 
   const ibStartHms = ibStrategyStartHms(market)
   const ibEndHms = ibStrategyEndHms(market)
-  const lnStartHms = lunchRangeEntryStartHms(market)
-  const lnEndHms = lunchRangeEntryEndHms(market)
   const analyzeEt = deskLocalHmsAsTraderDisplay(s.analyzeStart, s.tz, now)
   const nextDesk = `Next NY desk: clock in from ${analyzeEt} ${TRADER_DISPLAY_LABEL}.`
 
@@ -1117,17 +1111,13 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     const openBookHint =
       ladder.morningAttempts > 0
         ? market === 'TOKYO'
-          ? 'Morning (Open range) book open — manage only (one book at a time). Confirm close at lunch (11:30) or ride until cash-close flatten. US Range / IB still unlock on the clock after you flatten (up to 2 probes each (progressive risk)).'
-          : 'Morning (Open range) book open — manage only (one book at a time). Confirm close at lunch (11:30) or ride until cash-close flatten. OR30 / IB still unlock on the clock after you flatten (up to 2 probes each (progressive risk)).'
+          ? 'Morning (Open range) book open — manage only (one book at a time). Confirm close at lunch (11:30) or ride until cash-close flatten. US Range still unlocks on the clock after you flatten (up to 2 probes (progressive risk)).'
+          : 'Morning (Open range) book open — manage only (one book at a time). Confirm close at lunch (11:30) or ride until cash-close flatten. OR30 still unlocks on the clock after you flatten (up to 2 probes (progressive risk)).'
         : ladder.ibAttempts > 0
           ? market === 'TOKYO'
-            ? 'US Range book open — manage only. Tokyo IB still unlocks on the clock after you flatten (up to 2 probes (progressive risk)).'
-            : 'OR30 book open — manage only. IB still unlocks on the clock after you flatten (up to 2 probes (progressive risk)).'
-          : ladder.lunchAttempts > 0
-            ? market === 'TOKYO'
-              ? 'Tokyo IB book open. Manage only — no new entries while this book is open.'
-              : 'IB book open. Manage only — no new entries while this book is open.'
-            : 'Position open. Manage only — no new entries.'
+            ? 'US Range book open — manage only. No further entry window after you flatten.'
+            : 'OR30 book open — manage only. No further entry window after you flatten.'
+          : 'Position open. Manage only — no new entries.'
     return finish({
       ...base,
       rangeStrategy: null,
@@ -1226,17 +1216,8 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
     )
     const ibUntil = `${deskLocalHmsAsTraderDisplay(ibEndHms, s.tz, now)} ${TRADER_DISPLAY_LABEL}`
     const ibRange = deskLocalRangeAsTraderDisplay(ibStartHms, ibEndHms, s.tz, now)
-    const lunchRangeLabel = deskLocalRangeAsTraderDisplay(
-      lnStartHms,
-      lnEndHms,
-      s.tz,
-      now
-    )
     const ladderHint = formatAttemptLadderShort(ladder, locked)
     const midLabel = market === 'TOKYO' ? 'US Range' : 'OR30'
-    const lateLabel = market === 'TOKYO' ? 'Tokyo IB' : 'IB'
-    const prepAfterMid =
-      market === 'TOKYO' ? 'IB prep playbook' : 'IB opens next'
 
     if (inEntryWindow && canMorningAttempt) {
       return finish({
@@ -1285,22 +1266,8 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
         canManagePosition: false,
         message:
           market === 'TOKYO'
-            ? `${midLabel} playbook unlocked — up to 2 probes (progressive risk) ${ibRange}. ${ladderHint}. After ${ibUntil} → ${prepAfterMid}. Working limits do not count until filled.`
-            : `${midLabel} playbook unlocked — up to 2 probes (progressive risk) ${ibRange} (open until IB locks). ${ladderHint}. Working limits do not count until filled.`,
-      })
-    }
-
-    if (rangeStrategy === 'ib') {
-      const ladderHintIb = formatAttemptLadderShort(ladder, locked)
-      return finish({
-        ...base,
-        rangeStrategy,
-        phase: 'ENTRY',
-        canViewLiveChart: canView || clockedIn,
-        canFetchLiveBars: clockedIn,
-        canPlaceEntry: clockedIn && ladder.lunchEligible && !hasOpen,
-        canManagePosition: false,
-        message: `${lateLabel} playbook unlocked — up to 2 probes (progressive risk) ${lunchRangeLabel}. ${ladderHintIb}. Working limits do not count until filled.`,
+            ? `${midLabel} playbook unlocked — up to 2 probes (progressive risk) ${ibRange}. ${ladderHint}. After ${ibUntil} entry windows are done. Working limits do not count until filled.`
+            : `${midLabel} playbook unlocked — up to 2 probes (progressive risk) ${ibRange}. ${ladderHint}. Working limits do not count until filled.`,
       })
     }
 
@@ -1323,43 +1290,14 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
             ? `Morning entry closed (${entryUntil}). Prior NYC US Range is shaped — ±10 entries unlock ${ibRange} (up to 2 probes). ${ladderHint}`
             : `Morning entry closed (${entryUntil}). ${midLabel} playbook ${ibRange} (up to 2 probes). ${ladderHint}`
           : midEnded
-            ? `${midLabel} entry closed (${ibUntil}). ${prepAfterMid} — ${lateLabel} unlocks ${lunchRangeLabel}. ${ladderHint}`
+            ? `${midLabel} entry closed (${ibUntil}). Entry windows done for today — manage only. ${ladderHint}`
             : `Morning entry closed (${entryUntil}). Next is ${midLabel} ${ibRange}. ${ladderHint}`,
     })
   }
 
-  // Lunch → cash close: NY/Tokyo slot-3 IB (NY from 10:30, continues past 11:30)
+  // After lunch confirm through cash close — manage only. No Initial Balance entries.
   if (t >= lunch && t < close) {
-    if (rangeStrategy === 'ib') {
-      const lnUntil = `${deskLocalHmsAsTraderDisplay(lnEndHms, s.tz, now)} ${TRADER_DISPLAY_LABEL}`
-      const ladderHint = formatAttemptLadderShort(ladder, locked)
-      const lateLabel = market === 'TOKYO' ? 'Tokyo IB' : 'IB'
-      return finish({
-        ...base,
-        rangeStrategy,
-        phase: 'ENTRY',
-        canViewLiveChart: !!locked && (clockedIn || attendedToday),
-        canFetchLiveBars: clockedIn || attendedToday,
-        canPlaceEntry: clockedIn && ladder.lunchEligible && !hasOpen,
-        canManagePosition: false,
-        message: `${lateLabel} playbook unlocked — up to 2 probes (progressive risk) ${deskLocalHmsAsTraderDisplay(lnStartHms, s.tz, now)}–${lnUntil}. ${ladderHint}. After that manage-only until cash close.`,
-      })
-    }
-
-    const waitingLunchRange =
-      ladder.lunchEligible && t < parseTimeToSeconds(lnStartHms)
-    const lunchRangeEnded =
-      ladder.lunchEligible && t >= parseTimeToSeconds(lnEndHms)
     const ladderHint = formatAttemptLadderShort(ladder, locked)
-    const lunchRangeLabel = deskLocalRangeAsTraderDisplay(
-      lnStartHms,
-      lnEndHms,
-      s.tz,
-      now
-    )
-    const lateLabel = market === 'TOKYO' ? 'Tokyo IB' : 'IB'
-    const prepLabel =
-      market === 'TOKYO' ? 'IB prep playbook' : 'IB playbook'
 
     return finish({
       ...base,
@@ -1371,11 +1309,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       canManagePosition: false,
       message: ladderLock
         ? `${ladderLock} ${ladderHint}`
-        : waitingLunchRange
-          ? `${prepLabel} — ${lateLabel} opens ${lunchRangeLabel}. ${ladderHint}`
-          : lunchRangeEnded || !ladder.lunchEligible
-            ? `Entry windows done for today. Manage if open until cash close — no new entries. ${ladderHint}`
-            : `Manage if open until cash close — no new entries. ${ladderHint}`,
+        : `Entry windows done for today. Manage if open until cash close — no new entries. ${ladderHint}`,
     })
   }
 
@@ -1392,10 +1326,10 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
 }
 
 /**
- * SIMULATION full-day desk gate — same 2/2/2 ladder as live (no clock-in).
+ * SIMULATION full-day desk gate — same ladder as live (no clock-in).
  *
- *   DOW/NASDAQ: Open range (OR15) → 30-min (OR30) → IB
- *   NIKKEI:     Open range (OR15) → US Range → Tokyo IB
+ *   DOW/NASDAQ: Open range (OR15) → 30-min (OR30)
+ *   NIKKEI:     Open range (OR15) → US Range
  *
  * Next window unlocks when prior clock ends or attempts are exhausted.
  * Chart continues to cash close. Live-only still: clock-in / attendance / broker flatten.
@@ -1474,13 +1408,8 @@ export function resolveSimMorningGate(input: {
 
   const ibStartHms = ibStrategyStartHms(market)
   const ibEndHms = ibStrategyEndHms(market)
-  const lnStartHms = lunchRangeEntryStartHms(market)
-  const lnEndHms = lunchRangeEntryEndHms(market)
 
   const midLabel = market === 'TOKYO' ? 'US Range' : 'OR30'
-  const lateLabel = market === 'TOKYO' ? 'Tokyo IB' : 'IB'
-  const prepAfterMid =
-    market === 'TOKYO' ? 'IB prep playbook' : 'IB opens next'
 
   const entryRange = deskLocalRangeAsTraderDisplay(
     s.marketOpen,
@@ -1502,12 +1431,6 @@ export function resolveSimMorningGate(input: {
     deskLocalHmsAsTraderDisplay(ibEndHms, s.tz, input.now) +
     ' ' +
     TRADER_DISPLAY_LABEL
-  const lunchRangeLabel = deskLocalRangeAsTraderDisplay(
-    lnStartHms,
-    lnEndHms,
-    s.tz,
-    input.now
-  )
   const cashCloseEt =
     deskLocalHmsAsTraderDisplay(s.marketClose, s.tz, input.now) +
     ' ' +
@@ -1519,9 +1442,7 @@ export function resolveSimMorningGate(input: {
       : rangeStrategy === 'us_range' ||
         (market === 'NY' && rangeStrategy === 'or30')
         ? 2
-        : rangeStrategy === 'ib'
-          ? 3
-          : null
+        : null
 
   const base = {
     timeEst: timeInTraderDisplay(input.now),
@@ -1647,31 +1568,13 @@ export function resolveSimMorningGate(input: {
             ladderHint +
             '. After ' +
             ibUntil +
-            ' → ' +
-            prepAfterMid +
-            '.'
+            ' entry windows are done.'
             : midLabel +
             ' playbook unlocked — up to 2 probes (progressive risk) ' +
             ibRange +
-            ' (open until IB locks). ' +
+            '. ' +
             ladderHint +
             '.',
-      }
-    }
-
-    if (rangeStrategy === 'ib') {
-      return {
-        ...base,
-        phase: 'ENTRY',
-        canPlaceEntry: ladder.lunchEligible,
-        canManagePosition: false,
-        message:
-          lateLabel +
-          ' playbook unlocked — up to 2 probes (progressive risk) ' +
-          lunchRangeLabel +
-          '. ' +
-          ladderHint +
-          '.',
       }
     }
 
@@ -1696,13 +1599,7 @@ export function resolveSimMorningGate(input: {
           ? midLabel +
           ' entry closed (' +
           ibUntil +
-          '). ' +
-          prepAfterMid +
-          ' — ' +
-          lateLabel +
-          ' unlocks ' +
-          lunchRangeLabel +
-          '. ' +
+          '). Entry windows done for today — manage only. ' +
           ladderHint
           : 'Morning entry closed (' +
           entryUntil +
@@ -1715,34 +1612,6 @@ export function resolveSimMorningGate(input: {
     }
   }
 
-  // Afternoon: lunch → cash close (slot-3 IB continues)
-  if (rangeStrategy === 'ib') {
-    const lnUntil =
-      deskLocalHmsAsTraderDisplay(lnEndHms, s.tz, input.now) +
-      ' ' +
-      TRADER_DISPLAY_LABEL
-    return {
-      ...base,
-      phase: 'ENTRY',
-      canPlaceEntry: ladder.lunchEligible,
-      canManagePosition: false,
-      message:
-        lateLabel +
-        ' playbook unlocked — up to 2 probes (progressive risk) ' +
-        deskLocalHmsAsTraderDisplay(lnStartHms, s.tz, input.now) +
-        '–' +
-        lnUntil +
-        '. ' +
-        ladderHint +
-        '.',
-    }
-  }
-
-  const waitingLunchRange =
-    ladder.lunchEligible && t < parseTimeToSeconds(lnStartHms)
-  const lunchRangeEnded =
-    ladder.lunchEligible && t >= parseTimeToSeconds(lnEndHms)
-
   return {
     ...base,
     rangeStrategy: null,
@@ -1751,26 +1620,10 @@ export function resolveSimMorningGate(input: {
     canManagePosition: false,
     message: ladder.dayLocked
       ? 'Session attempt cap reached. Chart continues until cash close. ' + ladderHint
-      : waitingLunchRange
-        ? prepAfterMid +
-        ' — ' +
-        lateLabel +
-        ' unlocks ' +
-        lunchRangeLabel +
-        '. ' +
-        ladderHint
-        : lunchRangeEnded || !ladder.lunchEligible
-          ? lateLabel +
-          ' entry closed. Manage-only until cash close (' +
-          cashCloseEt +
-          '). ' +
-          ladderHint
-          : 'Afternoon watch — ' +
-          lateLabel +
-          ' ' +
-          lunchRangeLabel +
-          ' if still eligible. ' +
-          ladderHint,
+      : 'Entry windows done. Manage-only until cash close (' +
+        cashCloseEt +
+        '). ' +
+        ladderHint,
   }
 }
 

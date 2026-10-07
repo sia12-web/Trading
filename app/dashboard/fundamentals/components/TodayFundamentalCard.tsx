@@ -48,15 +48,15 @@ What would invalidate this view: ${today.what_would_invalidate_this_view}`
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-surface-700 pb-3">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-brand-600/20 border border-brand-500/30 flex items-center justify-center text-brand-300 font-bold text-xs">
-            V1
+            CL
           </div>
           <div>
             <h2 className="text-sm font-bold text-white tracking-wide uppercase flex items-center gap-2">
               TODAY&apos;S OIL FUNDAMENTAL STATE
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-slate-500" />
             </h2>
             <p className="text-[11px] text-gray-400">
-              Pragmatic physical snapshot across 8 core dimensions + invalidation thresholds.
+              Physical, curve, and positioning fields stay unavailable until a feed prints them.
             </p>
           </div>
         </div>
@@ -161,7 +161,7 @@ What would invalidate this view: ${today.what_would_invalidate_this_view}`
                 </div>
               </div>
               <div className="mt-3 pt-2 border-t border-surface-700/80 text-[11px] text-gray-400 font-mono">
-                CME WTI tip: ${telemetry.promptPrice.toFixed(2)} · Prompt spread: +${telemetry.promptSpread.toFixed(2)}/bbl ({telemetry.spreadRegime})
+                CME WTI tip: {telemetry.sourced?.prompt ? `$${telemetry.promptPrice.toFixed(2)}` : 'Unavailable'} · M1-M2 spread: {telemetry.promptSpread == null ? 'Unavailable' : `${telemetry.promptSpread >= 0 ? '+' : ''}$${telemetry.promptSpread.toFixed(2)}/bbl`} ({telemetry.spreadRegime})
               </div>
             </div>
 

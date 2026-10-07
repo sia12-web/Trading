@@ -45,7 +45,7 @@ export function MorningLunchFlatConfirm({
 
         <p className="text-xs text-gray-300 leading-relaxed">
           Open {instrument} {direction.toUpperCase()} @ {entryPrice.toLocaleString()} is still live.
-          Morning/IB books are <span className="text-amber-200 font-semibold">not</span> auto-flattened
+          Morning books are <span className="text-amber-200 font-semibold">not</span> auto-flattened
           at lunch — confirm to close now, or keep it open until cash close (
           <span className="font-mono text-amber-100">{cashCloseLabel}</span>), when the system
           liquidates lunch-range and any leftover positions.

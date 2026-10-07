@@ -49,7 +49,7 @@ export type MarketConfirmationVerdict =
   | 'DIVERGENT'
   | 'UNCONFIRMED_PENDING_FLOW'
 
-export type CurveRegime = 'BACKWARDATION' | 'CONTANGO' | 'FLAT'
+export type CurveRegime = 'BACKWARDATION' | 'CONTANGO' | 'FLAT' | 'UNKNOWN'
 
 // ==========================================
 // 1. STRICT MACHINE-READABLE EVENT EVALUATION
@@ -78,8 +78,8 @@ export interface StructuredOilEventOutput {
   drivers: EventDriver[]
 
   market_confirmation: {
-    cl_5m_return: number // % return in 5m (e.g. 0.8)
-    front_spread_change: number // $/bbl change (e.g. 0.06)
+    cl_5m_return: number | null // % return in 5m, null when the tape was not measured
+    front_spread_change: number | null // $/bbl change, null when no calendar spread feed exists
     confirmation: ConfirmationStrength
   }
 
@@ -124,7 +124,7 @@ export interface FiveFeedStatus {
   id: FeedId
   name: string
   source: string
-  status: 'ONLINE' | 'ACTIVE' | 'FALLBACK'
+  status: 'ONLINE' | 'ACTIVE' | 'FALLBACK' | 'UNAVAILABLE'
   lastSync: string
   details: string
 }
@@ -155,6 +155,7 @@ export interface FundamentalPillarState {
   lastUpdated: string
   primarySource: string
   isMateriallyShifted?: boolean
+  sourced?: boolean
 }
 
 export interface ScheduledDataComparison {
@@ -194,7 +195,7 @@ export interface MarketConfirmation {
   wtiPrice: number
   wtiChange: number
   wtiChangePct: number
-  calendarSpread: number // M1 - M2 spread ($/bbl)
+  calendarSpread: number | null // M1 - M2 spread ($/bbl), null when no curve feed exists
   spreadRegime: CurveRegime
   verdict: MarketConfirmationVerdict
   priceReactionDetail: string
@@ -248,8 +249,9 @@ export interface WtiTelemetry {
   high: number
   low: number
   previousClose: number
-  promptSpread: number // e.g. +0.45 (backwardation) or -0.30 (contango)
+  promptSpread: number | null // calendar M1-M2. Null until a curve feed prints it.
   spreadRegime: CurveRegime
+  sourced?: Record<string, boolean | undefined>
   brentPrice?: number
   brentWtiSpread?: number
   crackSpread321?: number
@@ -493,8 +495,9 @@ export interface GoldTelemetry {
   dxyChangePct: number
   eurUsd: number // e.g. 1.1257
   usdJpy: number // e.g. 153.40
-  goldCvol: number // e.g. 16.4% (CME Gold CVOL index)
-  goldRealizedVol30d: number
+  goldCvol: number | null // CME Gold CVOL. Null until an options feed prints it.
+  sourced?: Record<string, boolean | undefined>
+  goldRealizedVol30d: number | null
   cvdAggressionStance?: 'AGGRESSIVE_BUYING' | 'AGGRESSIVE_SELLING' | 'ABSORPTION' | 'NEUTRAL'
   timestamp: number
   source: string
@@ -561,7 +564,7 @@ export interface GoldFeedStatus {
   name: string
   subtitle: string
   category: 'MACRO_CALENDAR' | 'CENTRAL_BANK' | 'REAL_RATES' | 'CME_GLOBEX' | 'CFTC' | 'WORLD_GOLD_COUNCIL' | 'NEWS_WIRE' | 'COMEX_STOCKS'
-  status: 'ONLINE' | 'ACTIVE' | 'POLLING' | 'DEGRADED' | 'CONFIG_REQUIRED'
+  status: 'ONLINE' | 'ACTIVE' | 'POLLING' | 'DEGRADED' | 'CONFIG_REQUIRED' | 'UNAVAILABLE'
   latency: string
   lastSync: string
   primarySource: string
@@ -664,12 +667,12 @@ export interface StructuredNasdaqEventOutput {
   }>
 
   market_confirmation: {
-    cl_5m_return: number // or nq_5m_return %
+    cl_5m_return: number | null // or nq_5m_return %
     us2y_bps_change?: number
     us10y_bps_change?: number
     vxn_point_change?: number
     advance_decline_ratio?: number
-    confirmation: 'STRONG' | 'MODERATE' | 'WEAK' | 'CONTRADICTED'
+    confirmation: 'STRONG' | 'MODERATE' | 'WEAK' | 'CONTRADICTED' | 'INCONCLUSIVE'
     market_state?: string
   }
 
@@ -790,6 +793,7 @@ export interface NdxConstituentWeight {
   changePct: number
   lastEpsSurprise?: string
   forwardGuidanceStance?: 'RAISED' | 'LOWERED' | 'MAINTAINED'
+  quoteLive?: boolean
 }
 
 export interface NdxBreadthState {
@@ -801,6 +805,7 @@ export interface NdxBreadthState {
   pctAbove200dMa: number
   pctAboveVwap: number
   qqqVsQqqeRatio: number // cap-weighted vs equal-weighted
+  breadthLive?: boolean
   marketParticipationStance:
     | 'BROAD_EXPANSION'
     | 'CONCENTRATED_MEGA_CAP_RALLY'
@@ -856,6 +861,7 @@ export interface NasdaqTelemetry {
   topConstituents: NdxConstituentWeight[]
   advanceDeclineRatio: number
   cvdAggressionStance?: 'AGGRESSIVE_BUYING' | 'AGGRESSIVE_SELLING' | 'ABSORPTION' | 'NEUTRAL'
+  sourced?: Record<string, boolean | undefined>
   timestamp: number
   source: string
   updatedAt: string
@@ -888,7 +894,7 @@ export interface NasdaqFeedStatus {
     | 'VOLATILITY_CBOE'
     | 'CFTC'
     | 'NEWS_WIRE'
-  status: 'ONLINE' | 'ACTIVE' | 'POLLING' | 'DEGRADED' | 'CONFIG_REQUIRED'
+  status: 'ONLINE' | 'ACTIVE' | 'POLLING' | 'DEGRADED' | 'CONFIG_REQUIRED' | 'UNAVAILABLE'
   latency: string
   lastSync: string
   primarySource: string
@@ -1003,6 +1009,7 @@ export interface DjiaConstituent {
   pointContribution: number // dayChange / divisor
   lastEpsSurprise?: string
   forwardGuidance?: 'RAISED' | 'LOWERED' | 'MAINTAINED'
+  quoteLive?: boolean
 }
 
 export interface DjiaContributionState {
@@ -1069,7 +1076,7 @@ export interface StructuredDowEventOutput {
     surprise: string
     raw_surprise?: number
     standardized_surprise?: number
-    estimated_dow_point_impact?: number
+    estimated_dow_point_impact?: number | null
     affected_constituents?: string[]
     affected_sectors?: string[]
   }
@@ -1116,16 +1123,16 @@ export interface StructuredDowEventOutput {
   }
 
   market_confirmation?: {
-    cl_5m_return: number // or ym_5m_return %
-    ym_points_change?: number
+    cl_5m_return: number | null // or ym_5m_return %
+    ym_points_change?: number | null
     us2y_bps_change?: number
     us10y_bps_change?: number
     confirmation: 'STRONG' | 'MODERATE' | 'WEAK' | 'CONTRADICTED'
   }
 
   breadth: {
-    advancers: number
-    decliners: number
+    advancers: number | null
+    decliners: number | null
     contribution_concentration: 'LOW' | 'MODERATE' | 'HIGH' | 'EXTREME'
     top3_contribution_pct?: number
   }
@@ -1210,6 +1217,7 @@ export interface DowTelemetry {
   ymPrice: number // e.g. 46500.00
   ymChange: number
   ymChangePct: number
+  ymPriceSource?: 'CME_YM' | 'CASH_DJI' | 'UNAVAILABLE'
   contractMultiplier: 5 // $5 per index point
   contractNotionalValue: number // ymPrice * 5
   esPrice: number
@@ -1234,6 +1242,7 @@ export interface DowTelemetry {
   dowDivisor: number
   topConstituentsByWeight: DjiaConstituent[]
   cvdAggressionStance?: 'AGGRESSIVE_BUYING' | 'AGGRESSIVE_SELLING' | 'ABSORPTION' | 'NEUTRAL'
+  sourced?: Record<string, boolean | undefined>
   timestamp: number
   source: string
   updatedAt: string
@@ -1268,7 +1277,7 @@ export interface DowFeedStatus {
     | 'SECTOR_ROTATION'
     | 'CFTC'
     | 'NEWS_WIRE'
-  status: 'ONLINE' | 'ACTIVE' | 'POLLING' | 'DEGRADED' | 'CONFIG_REQUIRED'
+  status: 'ONLINE' | 'ACTIVE' | 'POLLING' | 'DEGRADED' | 'CONFIG_REQUIRED' | 'UNAVAILABLE'
   latency: string
   lastSync: string
   primarySource: string
@@ -1415,7 +1424,7 @@ export interface StructuredNikkeiEventOutput {
     jgb10y_reaction: 'UP' | 'DOWN' | 'FLAT'
   }
   abnormal_behavior: NikkeiAbnormalBehavior
-  estimated_nkd_point_impact?: number
+  estimated_nkd_point_impact?: number | null
   summary: string
   actionable_takeaway: string
 }
@@ -1495,6 +1504,7 @@ export interface NikkeiTelemetry {
   topConstituentsByWeight: NikkeiConstituent[]
   tokyoCashSessionActive: boolean
   tokyoSessionPhase: 'PREP' | 'MORNING_CASH' | 'LUNCH_BREAK' | 'AFTERNOON_CASH' | 'CLOSED'
+  sourced?: Record<string, boolean | undefined>
   timestamp: number
   source: string
   updatedAt: string
@@ -1528,7 +1538,7 @@ export interface NikkeiFeedStatus {
     | 'MACRO_JAPAN'
     | 'FOREIGN_FLOWS'
     | 'NEWS_WIRE'
-  status: 'ONLINE' | 'ACTIVE' | 'POLLING' | 'DEGRADED' | 'CONFIG_REQUIRED'
+  status: 'ONLINE' | 'ACTIVE' | 'POLLING' | 'DEGRADED' | 'CONFIG_REQUIRED' | 'UNAVAILABLE'
   latency: string
   lastSync: string
   primarySource: string

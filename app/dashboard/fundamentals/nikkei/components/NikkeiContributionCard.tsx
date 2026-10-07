@@ -2,7 +2,7 @@
 
 import React from 'react'
 import type { NikkeiContributionState } from '@/types/fundamentals'
-import { DEFAULT_NIKKEI_CONSTITUENTS, NIKKEI_DIVISOR } from '@/lib/fundamentals/nikkeiAnalystConfig'
+import { DEFAULT_NIKKEI_CONSTITUENTS } from '@/lib/fundamentals/nikkeiAnalystConfig'
 
 interface NikkeiContributionCardProps {
   contribution: NikkeiContributionState | null
@@ -20,13 +20,13 @@ export function NikkeiContributionCard({ contribution }: NikkeiContributionCardP
             <span>Price-Weighted Point Leverage & Stock Concentration</span>
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Nikkei 225 Divisor ({NIKKEI_DIVISOR}) mathematics and constituent point sensitivity
+            Official divisor, prices, and weights stay unavailable until a live index feed prints them.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs text-slate-400">Concentration Regime:</span>
           <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono font-bold">
-            {contribution.weightingConcentration}
+            Unavailable
           </span>
         </div>
       </div>
@@ -39,12 +39,12 @@ export function NikkeiContributionCard({ contribution }: NikkeiContributionCardP
             <span>The Nikkei Price-Weighting Rule</span>
           </div>
           <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
-            Unlike cap-weighted indices (TOPIX, S&P 500), the Nikkei 225 divides the simple sum of stock prices by the Divisor (~30.15). A ¥1,000 price move in <strong className="text-white">Fast Retailing (9983)</strong> moves the Nikkei by <strong className="text-amber-400 font-mono">+33.2 points</strong>, whereas a ¥1,000 move in <strong className="text-white">Toyota (7203)</strong> requires a massive +36% surge.
+            The Nikkei 225 is price-weighted. Official divisor, share prices, and index weights are unavailable until a live index feed prints them.
           </p>
         </div>
         <div className="bg-slate-900/90 px-4 py-2.5 rounded-xl border border-slate-800 text-center shrink-0">
           <div className="text-[10px] uppercase font-mono text-slate-400">Top 3 Index Concentration</div>
-          <div className="text-xl font-bold text-amber-400 font-mono mt-0.5">{contribution.top3ContributionPct}%</div>
+          <div className="text-xl font-bold text-amber-400 font-mono mt-0.5">Unavailable</div>
           <div className="text-[10px] text-slate-400">Fast Retailing + Tokyo Electron + Advantest</div>
         </div>
       </div>
@@ -53,25 +53,25 @@ export function NikkeiContributionCard({ contribution }: NikkeiContributionCardP
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800">
           <div className="text-[10px] uppercase font-mono text-slate-400">Fast Retailing (Uniqlo)</div>
-          <div className="text-base font-bold text-white font-mono mt-1">{contribution.fastRetailingWeightPct}%</div>
+          <div className="text-base font-bold text-white font-mono mt-1">Unavailable</div>
           <div className="text-[10px] text-cyan-400 mt-0.5">Highest-priced constituent</div>
         </div>
 
         <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800">
           <div className="text-[10px] uppercase font-mono text-slate-400">Tokyo Electron</div>
-          <div className="text-base font-bold text-white font-mono mt-1">{contribution.tokyoElectronWeightPct}%</div>
+          <div className="text-base font-bold text-white font-mono mt-1">Unavailable</div>
           <div className="text-[10px] text-emerald-400 mt-0.5">Semiconductor equipment</div>
         </div>
 
         <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800">
           <div className="text-[10px] uppercase font-mono text-slate-400">Advantest</div>
-          <div className="text-base font-bold text-white font-mono mt-1">{contribution.advantestWeightPct}%</div>
+          <div className="text-base font-bold text-white font-mono mt-1">Unavailable</div>
           <div className="text-[10px] text-amber-400 mt-0.5">AI GPU test equipment</div>
         </div>
 
         <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800">
           <div className="text-[10px] uppercase font-mono text-slate-400">Total Semi Cluster</div>
-          <div className="text-base font-bold text-indigo-400 font-mono mt-1">{contribution.semiconductorSharePct}%</div>
+          <div className="text-base font-bold text-indigo-400 font-mono mt-1">Unavailable</div>
           <div className="text-[10px] text-slate-400 mt-0.5">SOX beta correlation</div>
         </div>
       </div>
@@ -100,15 +100,9 @@ export function NikkeiContributionCard({ contribution }: NikkeiContributionCardP
                   </div>
                 </td>
                 <td className="py-2.5 px-3 text-slate-400 font-sans">{c.sector}</td>
-                <td className="py-2.5 px-3 text-right text-slate-200">
-                  ¥{c.priceJpy.toLocaleString()}
-                </td>
-                <td className="py-2.5 px-3 text-right font-bold text-amber-400">
-                  {c.weightPct}%
-                </td>
-                <td className="py-2.5 px-3 text-right text-slate-300">
-                  {c.betaToUsdJpy >= 0 ? '+' : ''}{c.betaToUsdJpy.toFixed(2)}
-                </td>
+                <td className="py-2.5 px-3 text-right text-slate-200">Unavailable</td>
+                <td className="py-2.5 px-3 text-right font-bold text-amber-400">Unavailable</td>
+                <td className="py-2.5 px-3 text-right text-slate-300">Unavailable</td>
               </tr>
             ))}
           </tbody>

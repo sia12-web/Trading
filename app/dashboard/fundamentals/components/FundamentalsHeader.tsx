@@ -107,25 +107,26 @@ export function FundamentalsHeader({
           <div className="flex items-center justify-between text-xs text-gray-400">
             <span>Prompt WTI ({telemetry.symbol})</span>
             <span className="inline-flex items-center gap-1 text-[10px] text-gray-400">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Live CME
+              <span className={`w-1.5 h-1.5 rounded-full ${telemetry.sourced?.prompt ? 'bg-emerald-500' : 'bg-slate-500'}`} />
+              {telemetry.sourced?.prompt ? 'Quote in' : 'No quote'}
             </span>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-xl sm:text-2xl font-bold font-mono text-white tracking-tight">
-              ${telemetry.promptPrice.toFixed(2)}
+              {telemetry.sourced?.prompt ? `$${telemetry.promptPrice.toFixed(2)}` : 'Unavailable'}
             </span>
             <span
               className={`text-xs font-semibold font-mono ${
                 isUp ? 'text-emerald-400' : 'text-red-400'
               }`}
             >
-              {isUp ? '+' : ''}${telemetry.change.toFixed(2)} ({isUp ? '+' : ''}
-              {telemetry.changePct.toFixed(2)}%)
+              {telemetry.sourced?.prompt
+                ? `${isUp ? '+' : ''}$${telemetry.change.toFixed(2)} (${isUp ? '+' : ''}${telemetry.changePct.toFixed(2)}%)`
+                : 'Change unavailable'}
             </span>
           </div>
           <div className="text-[11px] text-gray-500 mt-1 font-mono">
-            Day: ${telemetry.low.toFixed(2)} – ${telemetry.high.toFixed(2)}
+            Day: {telemetry.sourced?.prompt ? `$${telemetry.low.toFixed(2)} – $${telemetry.high.toFixed(2)}` : 'Unavailable'}
           </div>
         </div>
 
@@ -158,7 +159,7 @@ export function FundamentalsHeader({
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-xl sm:text-2xl font-bold font-mono text-white tracking-tight">
-              {telemetry.crackSpread321 !== undefined ? `$${telemetry.crackSpread321.toFixed(2)}` : '$22.40'}
+              {telemetry.crackSpread321 != null ? `$${telemetry.crackSpread321.toFixed(2)}` : 'Unavailable'}
             </span>
             <span className="text-xs text-gray-400">/ bbl</span>
           </div>
@@ -183,12 +184,12 @@ export function FundamentalsHeader({
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-xl sm:text-2xl font-bold font-mono text-white tracking-tight">
-              {telemetry.promptSpread >= 0 ? '+' : ''}${telemetry.promptSpread.toFixed(2)}
+              {telemetry.promptSpread == null ? 'Unavailable' : `${telemetry.promptSpread >= 0 ? '+' : ''}$${telemetry.promptSpread.toFixed(2)}`}
             </span>
             <span className="text-xs text-gray-400">/ bbl prompt</span>
           </div>
           <div className="text-[11px] text-gray-500 mt-1">
-            {isBackwardation ? '🔥 Bullish spot physical tightness' : '❄️ Contango storage incentive'}
+            {telemetry.promptSpread == null ? 'No M1-M2 feed is connected.' : isBackwardation ? 'Backwardation on the supplied spread.' : 'Spread is not in backwardation.'}
           </div>
         </div>
 

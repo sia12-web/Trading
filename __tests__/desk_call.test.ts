@@ -256,17 +256,9 @@ function auctionThenBuy(openU: number): DeskCallBar[] {
     asOfUnix: mondayOpen + 60 * 60,
     playbookMode: 'ib',
   })
-  assert.equal(call.openingType, 'OPEN_AUCTION')
-  assert.equal(call.controlLabel, 'ONE-TF BUY')
-  assert.equal(call.side, 'LONG', 'Auction + ONE-TF BUY → CALL from Control')
-  assert.equal(deskCallBadgeText(call), 'IB LONG')
-  const hover = deskCallHoverText(call)
-  assert.ok(hover.includes('CALL IB LONG — ticket allowed'))
-  assert.ok(hover.includes('ADVISE Open: AUCTION'))
-  assert.ok(hover.includes('does not gate CALL'))
-  assert.ok(hover.includes('OK     Ctrl:'))
-  assert.ok(hover.includes('CALL from Control'))
-  assert.ok(hover.includes('No Leo. No Level Finder fills.'))
+  assert.equal(call.side, 'WAIT', 'Initial Balance is not a CALL range')
+  assert.ok(!deskCallBadgeText(call).includes('IB'))
+  assert.ok(!deskCallHoverText(call).includes('CALL IB'))
 }
 
 {
@@ -295,11 +287,11 @@ function auctionThenBuy(openU: number): DeskCallBar[] {
     asOfUnix: mondayOpen + 60 * 60,
     playbookMode: 'ib',
   })
-  assert.equal(call.side, 'LONG')
-  assert.equal(call.rangeKey, 'IB')
-  assert.equal(deskCallBadgeText(call), 'IB LONG')
-  assert.equal(call.controlLabel, 'ONE-TF BUY')
-  assert.ok(call.playLine.includes('below IB low'))
+  assert.equal(call.side, 'WAIT', 'Initial Balance is not a CALL range')
+  assert.notEqual(call.rangeKey, 'IB')
+  assert.ok(!deskCallBadgeText(call).includes('IB'))
+  assert.ok(!call.playLine.includes('below IB low'))
+  assert.ok(!call.playLine.includes('Initial Balance'))
 }
 
 {
@@ -323,7 +315,7 @@ function auctionThenBuy(openU: number): DeskCallBar[] {
     playbookMode: 'ib',
     peerSide: 'WAIT',
   })
-  assert.equal(call.side, 'LONG', 'twin WAIT does not veto')
+  assert.equal(call.side, 'WAIT', 'Initial Balance does not produce a call')
 }
 
 {
@@ -335,8 +327,8 @@ function auctionThenBuy(openU: number): DeskCallBar[] {
     playbookMode: 'ib',
     bookLocked: true,
   })
-  assert.equal(call.side, 'LONG')
-  assert.ok(call.playLine.includes('CALL is the read, not a fill — book is locked.'))
+  assert.equal(call.side, 'WAIT', 'Initial Balance does not produce a call')
+  assert.ok(!call.playLine.includes('IB'))
 }
 
 {
@@ -366,10 +358,9 @@ function auctionThenBuy(openU: number): DeskCallBar[] {
     asOfUnix: mondayOpen + 70 * 60,
     playbookMode: 'ib',
   })
-  assert.equal(locked.rangeKey, 'IB')
-  assert.equal(locked.side, 'LONG')
-  assert.equal(deskCallBadgeText(locked), 'IB LONG')
-  assert.ok(locked.playLine.includes('IB'))
+  assert.equal(locked.side, 'WAIT', 'Initial Balance is not a CALL range')
+  assert.notEqual(locked.rangeKey, 'IB')
+  assert.ok(!deskCallBadgeText(locked).includes('IB'))
 }
 
 {
@@ -430,7 +421,7 @@ function auctionThenBuy(openU: number): DeskCallBar[] {
     instrument: 'DOW',
     candles: [...friday, ...bars],
     asOfUnix: mondayOpen + 60 * 60,
-    playbookMode: 'ib',
+    playbookMode: 'or30',
   })
   const withCall = scoreDeskCallWindow({
     call,
@@ -690,7 +681,7 @@ function auctionThenBuy(openU: number): DeskCallBar[] {
     instrument: 'DOW',
     candles: [...fridayHigh, ...bars],
     asOfUnix: mondayOpen + 60 * 60,
-    playbookMode: 'ib',
+    playbookMode: 'or30',
   })
   assert.equal(call.side, 'WAIT', 'WEAK after OR30 VA vetoes CALL')
   assert.equal(call.perfVeto, true)

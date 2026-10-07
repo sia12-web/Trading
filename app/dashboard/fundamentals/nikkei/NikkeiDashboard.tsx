@@ -32,6 +32,8 @@ export function NikkeiDashboard() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [selectedHeadline, setSelectedHeadline] = useState<LiveNikkeiHeadline | null>(null)
+  const [prefillNonce, setPrefillNonce] = useState(0)
 
   const loadState = useCallback(async () => {
     try {
@@ -57,7 +59,11 @@ export function NikkeiDashboard() {
     setRefreshing(false)
   }
 
-  const handleEventEvaluated = (evaluation: NikkeiEventEvaluation) => {
+  const handleEventEvaluated = (evaluation: NikkeiEventEvaluation, nextState?: NikkeiFundamentalDashboardState) => {
+    if (nextState) {
+      setState(nextState)
+      return
+    }
     if (state) {
       setState({
         ...state,
@@ -66,7 +72,9 @@ export function NikkeiDashboard() {
     }
   }
 
-  const handleSelectHeadline = (_headline: LiveNikkeiHeadline) => {
+  const handleSelectHeadline = (headline: LiveNikkeiHeadline) => {
+    setSelectedHeadline(headline)
+    setPrefillNonce((n) => n + 1)
     setTab('evaluator')
   }
 
@@ -108,28 +116,6 @@ export function NikkeiDashboard() {
         </button>
 
         <button
-          onClick={() => setTab('evaluator')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
-            tab === 'evaluator'
-              ? 'bg-red-500 text-white shadow-md'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-          }`}
-        >
-          🧠 Event Evaluator
-        </button>
-
-        <button
-          onClick={() => setTab('wire')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
-            tab === 'wire'
-              ? 'bg-red-500 text-white shadow-md'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-          }`}
-        >
-          📰 Live Wire
-        </button>
-
-        <button
           onClick={() => setTab('boj_fx')}
           className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
             tab === 'boj_fx'
@@ -159,7 +145,29 @@ export function NikkeiDashboard() {
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
           }`}
         >
-          🧩 Drivers Matrix
+          🧩 Drivers
+        </button>
+
+        <button
+          onClick={() => setTab('wire')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
+            tab === 'wire'
+              ? 'bg-red-500 text-white shadow-md'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+          }`}
+        >
+          📰 Live Wire
+        </button>
+
+        <button
+          onClick={() => setTab('evaluator')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
+            tab === 'evaluator'
+              ? 'bg-red-500 text-white shadow-md'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+          }`}
+        >
+          🧠 Event Evaluator
         </button>
 
         <button
@@ -181,20 +189,33 @@ export function NikkeiDashboard() {
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
           }`}
         >
-          💬 NIKKEI_AGENT
+          💬 Analyst Chat
         </button>
       </div>
 
       {/* Tab Panels */}
       {tab === 'today' && <TodayNikkeiFundamentalCard today={state?.today || null} />}
-      {tab === 'evaluator' && <NikkeiEventEvaluatorCard onEventEvaluated={handleEventEvaluated} />}
+      {tab === 'evaluator' && (
+        <NikkeiEventEvaluatorCard
+          onEventEvaluated={handleEventEvaluated}
+          prefillText={selectedHeadline ? `${selectedHeadline.headline}\n${selectedHeadline.summary || ''}` : ''}
+          prefillSource={selectedHeadline?.source}
+          prefillNonce={prefillNonce}
+        />
+      )}
       {tab === 'wire' && (
         <LiveNikkeiNewsWire
           headlines={state?.liveHeadlines || []}
           onSelectHeadline={handleSelectHeadline}
         />
       )}
-      {tab === 'boj_fx' && <NikkeiBojFxCard boj={state?.boj || null} fx={state?.fx || null} />}
+      {tab === 'boj_fx' && (
+        <NikkeiBojFxCard
+          boj={state?.boj || null}
+          fx={state?.fx || null}
+          usdjpyLive={Boolean(state?.nikkeiTelemetry?.sourced?.usdjpy)}
+        />
+      )}
       {tab === 'contributions' && (
         <NikkeiContributionCard contribution={state?.contribution || null} />
       )}

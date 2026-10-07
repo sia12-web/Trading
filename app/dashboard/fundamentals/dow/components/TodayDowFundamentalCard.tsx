@@ -36,34 +36,22 @@ export function TodayDowFundamentalCard({
 
   const unifiedProtocolData: UnifiedAgentProtocolOutput = {
     market: 'YM',
-    regime: `2Y ${telemetry.us2yNominalYield.toFixed(2)}% | 10Y ${telemetry.us10yNominalYield.toFixed(2)}% | Yield Move: ${telemetry.yieldMoveDriver} | HY OAS ${credit.highYieldSpreadBps}bp | Rotation: ${rotation.rotationRegime} | DJIA Divisor: ${telemetry.dowDivisor}`,
+    regime: [
+      telemetry.sourced?.us2y ? `2Y ${telemetry.us2yNominalYield.toFixed(2)}%` : '2Y unavailable',
+      telemetry.sourced?.us10y ? `10Y ${telemetry.us10yNominalYield.toFixed(2)}%` : '10Y unavailable',
+      telemetry.sourced?.hyOas ? `HY OAS ${credit.highYieldSpreadBps} bp` : 'HY OAS unavailable',
+      telemetry.sourced?.ym && telemetry.sourced?.nq ? `YM vs NQ ${rotation.ymVsNqSpreadPct}%` : 'rotation unavailable',
+    ].join(' | '),
     catalyst: today.primary_current_driver,
     expected_direction: today.short_term_bias,
-    magnitude: 'HIGH',
+    magnitude: 'LOW',
     horizon: 'SHORT_TERM',
-    confidence: 0.85,
-    market_confirmation: 'CONFIRMED',
+    confidence: 0,
+    market_confirmation: 'INCONCLUSIVE',
     key_drivers: [
-      {
-        factor: 'INDUSTRIAL_MANUFACTURING',
-        impact: `ISM headline and New Orders expanding; heavy machinery order books solid`,
-        effect: 'BULLISH',
-      },
-      {
-        factor: 'SECTOR_ROTATION',
-        impact: `Cyclical outperformance (Industrials XLI / Financials XLF over Tech XLK); YM vs NQ spread +${rotation.ymVsNqSpreadPct}%`,
-        effect: 'BULLISH',
-      },
-      {
-        factor: 'CREDIT_CONDITIONS',
-        impact: `High-yield OAS at ${credit.highYieldSpreadBps} bps; HYG resilient at $${credit.hygPrice.toFixed(2)}`,
-        effect: 'BULLISH',
-      },
-      {
-        factor: 'PRICE_WEIGHTING_LEVERAGE',
-        impact: `Top high-priced constituents (UNH, GS, CAT) trading positively above 50d moving averages`,
-        effect: 'BULLISH',
-      },
+      ...(telemetry.sourced?.hyOas
+        ? [{ factor: 'CREDIT_CONDITIONS', impact: `High-yield OAS ${credit.highYieldSpreadBps} bp`, effect: 'NEUTRAL' as const }]
+        : []),
     ],
     invalidation: today.what_would_invalidate_the_current_interpretation,
   }
@@ -121,7 +109,7 @@ export function TodayDowFundamentalCard({
               Today&apos;s Dow Fundamental State
             </h2>
             <span className="text-[11px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-mono">
-              YM · 24 Dimensions (Item 35)
+              YM · sourced prints only
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-1">
@@ -134,7 +122,7 @@ export function TodayDowFundamentalCard({
             onClick={() => setShowUnified(!showUnified)}
             className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition"
           >
-            {showUnified ? 'Hide Protocol' : 'Show Unified Protocol (Item 39)'}
+            {showUnified ? 'Hide Protocol' : 'Unified Protocol'}
           </button>
           <button
             onClick={handleCopy}
@@ -155,7 +143,7 @@ export function TodayDowFundamentalCard({
         <div className="mt-4 p-4 rounded-lg bg-slate-950/80 border border-blue-500/30 text-xs">
           <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-800">
             <span className="font-semibold text-blue-400 font-mono">
-              UNIFIED MULTI-AGENT PROTOCOL · YM DOW COMPATIBLE (Item 39)
+              UNIFIED PROTOCOL · YM
             </span>
             <span className="text-slate-400 font-mono text-[10px]">
               Ready for Automated Cross-Market Bots

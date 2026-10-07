@@ -10,7 +10,7 @@
  */
 
 import React, { useState, useEffect } from 'react'
-import type { CrossMarketVolatilityState } from '@/lib/trading/crossMarketVolatility'
+import type { CrossMarketVolatilityState, VolatilityQuote } from '@/lib/trading/crossMarketVolatility'
 import type {
   CrossMarketRadarReport,
   MarketOpportunityCard,
@@ -159,7 +159,7 @@ export function CrossMarketRadarStrip({
     }
 
     fetchRadarData()
-    const timer = setInterval(fetchRadarData, 30_000)
+    const timer = setInterval(fetchRadarData, 15_000)
     const sessionTimer = setInterval(() => {
       setSessionStatus(getGlobexSessionStatus())
     }, 10_000)
@@ -171,6 +171,14 @@ export function CrossMarketRadarStrip({
     }
   }, [])
 
+  useEffect(() => {
+    if (!radar || !selectedCard) return
+    const next = radar.markets[selectedCard.market]
+    if (next && next.summaryLine !== selectedCard.summaryLine) {
+      setSelectedCard(next)
+    }
+  }, [radar, selectedCard])
+
   if (isLoading && !radar) {
     return (
       <div className="flex items-center justify-between px-3 py-1.5 bg-surface-950/80 border-b border-surface-800 text-[10px] text-gray-400 font-mono">
@@ -181,6 +189,12 @@ export function CrossMarketRadarStrip({
 
   const vol = volatility
   const markets = radar?.markets ? Object.values(radar.markets) : []
+
+  const gaugeText = (quote: VolatilityQuote | undefined) => {
+    if (!quote?.sourced || !Number.isFinite(quote.value)) return 'Unavailable'
+    const sign = quote.changePct >= 0 ? '+' : ''
+    return `${quote.value.toFixed(1)} ${sign}${quote.changePct.toFixed(1)}%`
+  }
 
   return (
     <div className="relative border-b border-surface-800 bg-surface-950/90 text-xs select-none backdrop-blur-sm">
@@ -202,8 +216,8 @@ export function CrossMarketRadarStrip({
             title="VIX1D: 1-Day Intraday Expected Equity Volatility (SPX 0DTE/1DTE)"
           >
             <span className="text-[9px] text-gray-400">EQ (VIX1D):</span>
-            <span className="font-bold">{vol?.equities.vix1d.value.toFixed(1) ?? '15.2'}</span>
-            {vol?.equities.isExpanding && (
+            <span className="font-bold">{gaugeText(vol?.equities.vix1d)}</span>
+            {vol?.equities.vix1d.sourced && vol.equities.isExpanding && (
               <span className="text-[9px] text-red-400 font-extrabold animate-pulse">EXPANDING 🔥</span>
             )}
           </div>
@@ -218,8 +232,8 @@ export function CrossMarketRadarStrip({
             title="OVX: Cboe Crude Oil Volatility Index (USO options)"
           >
             <span className="text-[9px] text-gray-400">OIL (OVX):</span>
-            <span className="font-bold">{vol?.crude.ovx.value.toFixed(1) ?? '36.4'}</span>
-            {vol?.crude.isExpanding && (
+            <span className="font-bold">{gaugeText(vol?.crude.ovx)}</span>
+            {vol?.crude.ovx.sourced && vol.crude.isExpanding && (
               <span className="text-[9px] text-amber-400 font-extrabold animate-pulse">EXPANDING 🔥</span>
             )}
           </div>
@@ -234,8 +248,8 @@ export function CrossMarketRadarStrip({
             title="JNIV: Nikkei 225 Volatility Index (Nikkei VI)"
           >
             <span className="text-[9px] text-gray-400">NIKKEI (JNIV):</span>
-            <span className="font-bold">{vol?.nikkei?.jniv.value.toFixed(1) ?? '18.5'}</span>
-            {vol?.nikkei?.isExpanding && (
+            <span className="font-bold">{gaugeText(vol?.nikkei?.jniv)}</span>
+            {vol?.nikkei?.jniv?.sourced && vol.nikkei.isExpanding && (
               <span className="text-[9px] text-fuchsia-400 font-extrabold animate-pulse">EXPANDING 🔥</span>
             )}
           </div>
@@ -250,8 +264,8 @@ export function CrossMarketRadarStrip({
             title="GVZ: Cboe Gold Volatility Index (GLD options)"
           >
             <span className="text-[9px] text-gray-400">GOLD (GVZ):</span>
-            <span className="font-bold">{vol?.gold.gvz.value.toFixed(1) ?? '15.1'}</span>
-            {vol?.gold.isExpanding && (
+            <span className="font-bold">{gaugeText(vol?.gold.gvz)}</span>
+            {vol?.gold.gvz.sourced && vol.gold.isExpanding && (
               <span className="text-[9px] text-yellow-400 font-extrabold animate-pulse">EXPANDING 🔥</span>
             )}
           </div>
@@ -307,11 +321,10 @@ export function CrossMarketRadarStrip({
                 type="button"
                 onClick={() => {
                   setSelectedCard(m)
-                  if (onSelectInstrument) {
-                    const instMap: Record<RadarMarket, string> = {
+                  if (onSelectInstrument && m.market !== 'SP500') {
+                    const instMap: Record<Exclude<RadarMarket, 'SP500'>, string> = {
                       NASDAQ: 'NASDAQ',
                       DOW: 'DOW',
-                      SP500: 'NASDAQ', // route to desk instrument if S&P not separate chart tab
                       GOLD: 'GOLD',
                       CRUDE: 'CRUDE',
                       NIKKEI: 'NIKKEI',
@@ -332,6 +345,12 @@ export function CrossMarketRadarStrip({
                   <span className="text-[9px] text-amber-300 font-extrabold animate-bounce">★</span>
                 )}
                 <span className="font-bold text-white">{m.tickerRoot}</span>
+                {m.currentPrice > 0 && (
+                  <span className={m.dayChangePct >= 0 ? 'text-emerald-300' : 'text-rose-300'}>
+                    {m.dayChangePct >= 0 ? '+' : ''}
+                    {m.dayChangePct.toFixed(1)}%
+                  </span>
+                )}
                 <span
                   className={`text-[9px] font-extrabold px-1 rounded ${
                     isGradeA
@@ -409,8 +428,10 @@ export function CrossMarketRadarStrip({
                 GRADE {selectedCard.grade} ({selectedCard.verdict.replace(/_/g, ' ')})
               </span>
               <span className="text-[10px] text-gray-400 font-mono">
-                {selectedCard.volatilityGauge}: {selectedCard.volatilityValue.toFixed(1)} (
-                {selectedCard.volatilityRegime})
+                {selectedCard.volatilityGauge}:{' '}
+                {selectedCard.volatilityRegime === 'UNAVAILABLE' || !(selectedCard.volatilityValue > 0)
+                  ? 'Unavailable'
+                  : `${selectedCard.volatilityValue.toFixed(1)} (${selectedCard.volatilityRegime})`}
               </span>
             </div>
             <p className="text-gray-300 text-[11px] leading-snug">

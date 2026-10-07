@@ -53,7 +53,7 @@ export function GoldDriversMatrix({ drivers }: GoldDriversMatrixProps) {
               The 7 Major Gold Drivers Matrix
             </h2>
             <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-              Item 1 Hierarchy
+              Sourced metrics only
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">

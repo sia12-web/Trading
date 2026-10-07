@@ -145,10 +145,10 @@ function dayKey(unix: number, timeZone: string): string {
 }
 
 
-function speakRange(key: DeskCallRangeKey, tokyo: boolean): string {
+function speakRange(key: DeskCallRangeKey, _tokyo: boolean): string {
   if (key === 'US') return 'US Range'
   if (key === 'OR15') return 'Open range'
-  if (key === 'IB') return tokyo ? 'Tokyo IB' : 'IB'
+  if (key === 'IB') return 'range'
   return 'OR30'
 }
 
@@ -285,13 +285,7 @@ function resolveActiveRange(args: {
     if (!r) return null
     return { key: 'OR30', high: r.high, low: r.low }
   }
-  if (playbookMode === 'ib') {
-    const endU = openU + 60 * 60
-    if (asOfUnix < endU) return null
-    const r = rangeHighLow(candles, openU, endU)
-    if (!r) return null
-    return { key: 'IB', high: r.high, low: r.low }
-  }
+  if (playbookMode === 'ib') return null
   if (playbookMode === 'us_range') {
     if (args.instrument !== 'NIKKEI') return null
     const priorBars = candles.filter((c) => c && typeof c.time === 'number' && c.time < openU)
@@ -759,7 +753,6 @@ export function scoreDeskCallSession(args: {
     tokyo
       ? { playbookMode: 'us_range', asOfUnix: openU + 30 * 60 }
       : { playbookMode: 'or30', asOfUnix: openU + 30 * 60 },
-    { playbookMode: 'ib', asOfUnix: openU + 60 * 60 },
   ]
   const rows: DeskCallScoreRow[] = []
   for (const snap of snaps) {

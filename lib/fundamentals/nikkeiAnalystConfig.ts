@@ -289,13 +289,13 @@ export const NIKKEI_DRIVERS_INITIAL: Record<NikkeiDriverId, NikkeiDriverState> =
   fast_retailing_retail: {
     id: 'fast_retailing_retail',
     name: 'Fast Retailing (9983.T) Price-Weight Leverage',
-    subtitle: 'Uniqlo parent company accounting for ~10.4% of total index value',
+    subtitle: 'Uniqlo parent. Its index weight stays unavailable until price and the official divisor are both on the feed.',
     category: 'PRICE_WEIGHTED',
     intradayStars: 4,
     longTermStars: 4,
     stance: 'BULLISH',
     transmissionRole:
-      'Because Nikkei is price-weighted, a ¥1,000 move in Fast Retailing moves the Nikkei ~33.2 index points alone.',
+      'Because the Nikkei is price-weighted, a move in Fast Retailing changes the index by that price change divided by the official divisor. The divisor is unavailable.',
     summary:
       'Robust international same-store sales in North America and Europe offsetting domestic weather swings.',
     metrics: [
@@ -440,7 +440,7 @@ export const NIKKEI_EVALUATION_PRESETS = [
     title: 'Ministry of Finance Direct Currency Intervention: Yen Surges 400 Pips',
     category: 'FX_USD_JPY',
     source: 'Ministry of Finance (MoF) & Tokyo Foreign Exchange Desk',
-    rawText: `TOKYO - Japan's Ministry of Finance conducted large-scale currency market intervention after USD/JPY crossed 156.50. The currency plummeted over 450 pips in under 15 minutes down to 151.90. CME Nikkei 225 futures (NKD) experienced severe automated liquidation, diving 920 points as algorithmic carry trade and currency-hedged equity funds dumped index futures contracts. CVD turned sharply negative with heavy delta selling at market, breaking through the Tokyo first-hour Initial Balance low.`,
+    rawText: `TOKYO - Japan's Ministry of Finance conducted large-scale currency market intervention after USD/JPY crossed 156.50. The currency plummeted over 450 pips in under 15 minutes down to 151.90. CME Nikkei 225 futures (NKD) experienced severe automated liquidation, diving 920 points as algorithmic carry trade and currency-hedged equity funds dumped index futures contracts. CVD turned sharply negative with heavy delta selling at market, breaking through the Tokyo session low.`,
   },
   {
     id: 'preset_4_fast_retailing_earnings_distortion',

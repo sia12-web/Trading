@@ -139,7 +139,7 @@ export function playLineFor(
   testedRef: OpeningTestedRef | null
 ): string {
   const ticket =
-    'Ticket stays $400→$250→$150, TP = 1.5R, and ±10 of the shaped playbook range. Opening type does not unlock off-band entries — “early” means pick a side before IB locks, then hunt the first legal window (OR30 / IB).'
+    'Ticket stays $400→$250→$150, TP = 1.5R, and ±10 of the shaped playbook range. Opening type does not unlock off-band entries — “early” means pick a side, then hunt the first legal window (OR30 / US Range).'
   const arrow = direction === 'up' ? 'up' : direction === 'down' ? 'down' : ''
   if (type === 'WAITING') {
     return `OPENING TYPE waiting — do not invent conviction. ${ticket}`

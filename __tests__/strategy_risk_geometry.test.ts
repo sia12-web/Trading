@@ -176,7 +176,7 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       or30: { high: 100, low: 90, complete: true },
       ib: { high: 110, low: 95 },
     })?.label,
-    'IB'
+    undefined
   )
   assert.equal(
     activeRangeForPlaybook({
@@ -267,7 +267,7 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       instrument: 'NIKKEI',
       ib: { high: 40_100, low: 39_900 },
     })?.label,
-    'Tokyo IB'
+    undefined
   )
   assert.equal(
     activeRangeForPlaybook({
@@ -275,7 +275,7 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       instrument: 'NASDAQ',
       ib: { high: 18_500, low: 18_400, complete: true },
     })?.label,
-    'IB'
+    undefined
   )
   assert.equal(
     activeRangeForPlaybook({
@@ -283,7 +283,7 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       instrument: 'NASDAQ',
       ib: { high: 18_500, low: 18_400 },
     })?.label,
-    'IB'
+    undefined
   )
 
   const overlays = visibleOverlayEntryRanges({
@@ -299,8 +299,8 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
   })
   assert.deepEqual(
     overlays.map((o) => o.label),
-    ['OR30', 'US Range', 'Tokyo IB'],
-    'Nikkei overlays paint OR30 + US + Tokyo IB when toggled (no NYC lunch)'
+    ['OR30', 'US Range'],
+    'Nikkei overlays paint OR30 + US Range; Initial Balance is not an overlay'
   )
   assert.deepEqual(
     visibleOverlayEntryRanges({
@@ -312,8 +312,8 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       ib: { high: 40_100, low: 39_900 },
       usRange: { high: 40_000, low: 39_500, complete: true },
     }).map((o) => o.label),
-    ['Tokyo IB'],
-    'toggling OR30/US off leaves only Tokyo IB ±10'
+    [],
+    'toggling OR30/US off leaves no Initial Balance ±10'
   )
   assert.deepEqual(
     visibleOverlayEntryRanges({
@@ -338,7 +338,7 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       ib: { high: 18_250, low: 18_050 },
       lunchRange: { high: 18_500, low: 18_400, complete: true },
     }).map((o) => o.label),
-    ['OR30', 'IB']
+    ['OR30']
   )
   assert.deepEqual(
     visibleOverlayEntryRanges({
@@ -348,8 +348,8 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       showLunchRange: false,
       ib: { high: 18_250, low: 18_050 },
     }).map((o) => o.label),
-    ['IB'],
-    'NY desks paint IB ±10 whenever showIb + shaped IB (independent of OR30/lunch)'
+    [],
+    'NY desks do not paint Initial Balance ±10'
   )
 
   const usActive = { label: 'US Range', high: 40_000, low: 39_500 }
@@ -423,8 +423,8 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       ...shaped,
       morningAttempts: 0,
     }).map((o) => o.label),
-    ['US Range', 'Tokyo IB'],
-    'Nikkei at IB lock: US + Tokyo IB ±10 both paint (overlap to 21:45 Montreal)'
+    ['US Range'],
+    'Nikkei at the former IB lock still paints US Range only'
   )
 
   const nikkeiDuringUsAfterIbLock = new Date('2026-07-28T01:19:00.000Z') // 10:19 JST
@@ -439,8 +439,8 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       ...shaped,
       morningAttempts: 1,
     }).map((o) => o.label),
-    ['US Range', 'Tokyo IB'],
-    'Nikkei 21:19 Montreal: Tokyo IB ±10 is hot after first-hour lock'
+    ['US Range'],
+    'Nikkei 21:19 Montreal paints US Range only'
   )
 
   assert.ok(
@@ -491,8 +491,8 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       morningAttempts: 0,
     })
       .map((o) => o.label)
-      .includes('IB'),
-    'NY IB playbook keeps IB ±10 after OR30 window'
+      .includes('IB') === false,
+    'NY must not paint Initial Balance ±10 after OR30'
   )
 
   assert.ok(
@@ -509,8 +509,8 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       morningAttempts: 2,
     })
       .map((o) => o.label)
-      .includes('IB'),
-    'NY IB playbook paints IB ±10; OR30 stay out'
+      .includes('IB') === false,
+    'NY does not paint Initial Balance ±10'
   )
   assert.ok(
     !entryEligibleOverlayRanges({
@@ -561,8 +561,8 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       lunchRange: shaped.lunchRange,
       morningAttempts: 0,
     }).map((o) => o.label),
-    ['IB'],
-    'IB B toggle ON paints IB ±10 while IB bucket is open'
+    [],
+    'IB toggle does not paint Initial Balance ±10'
   )
   assert.deepEqual(
     entryEligibleOverlayRanges({
@@ -589,8 +589,8 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       ...shaped,
       morningAttempts: 0,
     }).map((o) => o.label),
-    ['Tokyo IB'],
-    'Nikkei after IB lock: B toggle ON paints Tokyo IB ±10; US stays dark without U'
+    [],
+    'Nikkei does not paint Tokyo IB ±10'
   )
   assert.deepEqual(
     entryEligibleOverlayRanges({
@@ -669,8 +669,8 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       ...shaped,
       morningAttempts: 0,
     }).map((o) => o.label),
-    ['Tokyo IB'],
-    'Tokyo IB ±10 paints in its 10:00–15:00 desk / 21:00–02:00 Montreal window'
+    [],
+    'Tokyo IB ±10 does not paint'
   )
   assert.ok(
     entryEligibleOverlayRanges({
@@ -686,8 +686,8 @@ const or30 = { label: 'OR30', high: 42_200, low: 42_000 }
       morningAttempts: 2,
     })
       .map((o) => o.label)
-      .includes('IB'),
-    'NY IB ±10 paints at 11:30 ET while IB bucket is open'
+      .includes('IB') === false,
+    'NY does not paint Initial Balance ±10 at 11:30 ET'
   )
   assert.ok(
     !entryEligibleOverlayRanges({

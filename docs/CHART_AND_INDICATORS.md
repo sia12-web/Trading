@@ -92,18 +92,18 @@ Seven AVWAP bands make the chart look scientific while quietly giving traders se
 TradePulse implements Peter Steidlmayer and Jim Dalton's Auction Market Theory:
 
 ```
-[Initial Balance: 09:30 - 10:30 EDT]
-┌──────────────────────────────────────┐ <- Initial Balance High (IBH)
+[Opening ranges]
+┌──────────────────────────────────────┐ <- OR30 High
 │                                      │
 │               [Day POC]              │ <- Point of Control (Highest Volume)
 │                                      │
-└──────────────────────────────────────┘ <- Initial Balance Low (IBL)
+└──────────────────────────────────────┘ <- OR30 Low
 ```
 
-### 3.1 Initial Balance (`IB`) & Opening Ranges (`OR15`, `OR30`)
+### 3.1 Opening Ranges (`OR15`, `OR30`)
 - **OR15 (09:30 - 09:45 EDT)**: Captures opening order imbalances. Breakouts confirmed by volume indicate trend days.
 - **OR30 (09:30 - 10:00 EDT)**: Secondary filter separating false opening drives from sustained expansion.
-- **Initial Balance (09:30 - 10:30 EDT)**: The benchmark range against which morning extension (`IB Ext 1.5x`, `2.0x`) is measured.
+- Initial Balance is not a chart overlay and not a Leo level.
 
 ### 3.2 5-Day Fixed Range Volume Profile (FRVP)
 - **Point of Control (POC)**: The price level with the highest traded volume across the last 5 sessions. Rendered as a prominent horizontal line that **terminates precisely at the current candle** without extending into the empty chart margin.

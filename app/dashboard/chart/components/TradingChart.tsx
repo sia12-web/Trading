@@ -53,12 +53,17 @@ import {
   zonedCivilToUnix,
   computeAnchoredVwap,
   lastNTradingSessions as trimDeskCandles,
+  ONE_MINUTE_FETCH_CALENDAR_DAYS,
   type SessionBar,
 } from '@/lib/chart/sessionVwap'
 import { parseCalendarEventMs } from '@/lib/trading/deskNewsHazard'
 import AtrSubPane from './AtrSubPane'
 import type { DeskCalendarEvent } from '@/lib/trading/deskNews'
-import { computeNewsCatalystVwap } from '@/lib/chart/newsCatalystVwap'
+import {
+  computeNewsCatalystVwap,
+  newsAvwapPointsFrom1m,
+  NEWS_AVWAP_SOURCE_TIMEFRAME,
+} from '@/lib/chart/newsCatalystVwap'
 import {
   detect5DaySessionExtremes,
   detectDailyExtremes,
@@ -674,6 +679,102 @@ interface OHLCV {
   volume: number
 }
 
+type DeskCandleCacheEntry = {
+  candles: OHLCV[]
+  source: string
+  livePrice: number | null
+  changePct: number
+  timestamp: number
+}
+
+const DESK_CANDLE_STORE_PREFIX = 'desk.candles.v2:'
+const PREFETCH_INSTRUMENTS: Instrument[] = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'NIKKEI']
+
+function candleFetchDays(tf: DeskTimeframe): number {
+  return tf === '1D' ? 730 : tf === '1m' ? ONE_MINUTE_FETCH_CALENDAR_DAYS : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
+}
+
+function deskCandleSignature(
+  list: Array<{ time: number | UTCTimestamp; high: number; low: number; close: number }>,
+  instrument: string,
+  timeframe: string
+): string {
+  const a = list[0]
+  const b = list[list.length - 1]
+  return `${instrument}:${timeframe}:${list.length}:${a?.time ?? 0}:${b?.time ?? 0}:${b?.high ?? 0}:${b?.low ?? 0}:${b?.close ?? 0}`
+}
+
+function readDeskCandleCache(key: string): DeskCandleCacheEntry | null {
+  if (typeof sessionStorage === 'undefined') return null
+  try {
+    const raw = sessionStorage.getItem(DESK_CANDLE_STORE_PREFIX + key)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as {
+      candles?: number[][]
+      source?: string
+      livePrice?: number | null
+      changePct?: number
+      timestamp?: number
+    }
+    if (!Array.isArray(parsed.candles) || parsed.candles.length === 0) return null
+    const candles: OHLCV[] = []
+    for (const row of parsed.candles) {
+      if (!Array.isArray(row) || row.length < 5) continue
+      const time = row[0]
+      const open = row[1]
+      const high = row[2]
+      const low = row[3]
+      const close = row[4]
+      if (
+        typeof time !== 'number' ||
+        typeof open !== 'number' ||
+        typeof high !== 'number' ||
+        typeof low !== 'number' ||
+        typeof close !== 'number'
+      ) {
+        continue
+      }
+      candles.push({
+        time: time as UTCTimestamp,
+        open,
+        high,
+        low,
+        close,
+        volume: typeof row[5] === 'number' ? row[5] : 0,
+      })
+    }
+    if (candles.length === 0) return null
+    return {
+      candles,
+      source: parsed.source || 'yahoo',
+      livePrice: typeof parsed.livePrice === 'number' ? parsed.livePrice : null,
+      changePct: typeof parsed.changePct === 'number' ? parsed.changePct : 0,
+      timestamp: typeof parsed.timestamp === 'number' ? parsed.timestamp : 0,
+    }
+  } catch {
+    return null
+  }
+}
+
+function writeDeskCandleCache(key: string, entry: DeskCandleCacheEntry) {
+  if (typeof sessionStorage === 'undefined' || entry.candles.length === 0) return
+  try {
+    const compact = entry.candles.map((c) => [c.time, c.open, c.high, c.low, c.close, c.volume ?? 0])
+    sessionStorage.setItem(
+      DESK_CANDLE_STORE_PREFIX + key,
+      JSON.stringify({
+        candles: compact,
+        source: entry.source,
+        livePrice: entry.livePrice,
+        changePct: entry.changePct,
+        timestamp: entry.timestamp,
+      })
+    )
+  } catch {
+    /* quota — the in-memory map still covers this tab */
+  }
+}
+
 interface LevelLine {
   price: number
   type: 'support' | 'resistance' | 'vwap' | string
@@ -1258,6 +1359,24 @@ export interface RenderedSessionExtremeHit {
   }
 }
 
+function finiteDrawingPoint(p: { time?: number; price?: number } | null | undefined): boolean {
+  return !!p && Number.isFinite(p.time) && Number.isFinite(p.price)
+}
+
+/** Drop saved drawings that would throw while the chart is rendering. */
+function loadStoredDrawings<T>(key: string, ok: (row: T) => boolean): T[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const saved = localStorage.getItem(key)
+    if (!saved) return []
+    const parsed = JSON.parse(saved) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((row): row is T => ok(row as T))
+  } catch {
+    return []
+  }
+}
+
 // ─── Main TradingChart component ──────────────────────────────────────────────
 
 export function TradingChart({
@@ -1324,13 +1443,24 @@ export function TradingChart({
   const paintUserDrawingsRef = useRef<() => void>(() => {})
 
   // ── High-Performance Precomputed Analytics & Cache ─────────────────────────
-  const candleCacheRef = useRef<Map<string, {
-    candles: OHLCV[]
-    source: string
-    livePrice: number | null
-    changePct: number
-    timestamp: number
-  }>>(new Map())
+  const candleCacheRef = useRef<Map<string, DeskCandleCacheEntry>>(new Map())
+  const chartPaintGenRef = useRef(0)
+  const vwapBandsKeyRef = useRef('')
+  const takeCachedCandles = useCallback((key: string): DeskCandleCacheEntry | null => {
+    let cached = candleCacheRef.current.get(key)
+    if (!cached || cached.candles.length === 0) {
+      const stored = readDeskCandleCache(key)
+      if (stored && stored.candles.length > 0) {
+        candleCacheRef.current.set(key, stored)
+        cached = stored
+      }
+    }
+    return cached && cached.candles.length > 0 ? cached : null
+  }, [])
+  const saveCachedCandles = useCallback((key: string, entry: DeskCandleCacheEntry) => {
+    candleCacheRef.current.set(key, entry)
+    writeDeskCandleCache(key, entry)
+  }, [])
   const candleTimesRef = useRef<any[]>([])
   const rawBarsRef = useRef<ContextBar[]>([])
   const sessionExtremesRef = useRef<any[]>([])
@@ -1352,16 +1482,12 @@ export function TradingChart({
   // ── User Interactive Drawing Tools (Wyckoff Structure Line, Range, Manual FRVP, Measure) ────────
   type DrawingToolType = 'NONE' | 'TRENDLINE' | 'RANGE' | 'FRVP' | 'MEASURE'
   const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingToolType>('NONE')
-  const [trendlines, setTrendlines] = useState<UserTrendline[]>(() => {
-    if (typeof window === 'undefined') return []
-    try {
-      const saved = localStorage.getItem('trading_desk_trendlines_v1')
-      if (!saved) return []
-      return JSON.parse(saved)
-    } catch {
-      return []
-    }
-  })
+  const [trendlines, setTrendlines] = useState<UserTrendline[]>(() =>
+    loadStoredDrawings<UserTrendline>('trading_desk_trendlines_v1', (row) => {
+      const t = row as UserTrendline
+      return finiteDrawingPoint(t?.p1) && finiteDrawingPoint(t?.p2)
+    })
+  )
   const [selectedTrendlineId, setSelectedTrendlineId] = useState<string | null>(null)
   const selectedTrendlineIdRef = useRef<string | null>(null)
   selectedTrendlineIdRef.current = selectedTrendlineId
@@ -1372,33 +1498,24 @@ export function TradingChart({
     p2: { time: number; price: number }
     direction?: 'BEARISH' | 'BULLISH'
   } | null>(null)
-  const [rangeBoxes, setRangeBoxes] = useState<UserRangeBox[]>(() => {
-    if (typeof window === 'undefined') return []
-    try {
-      const saved = localStorage.getItem('trading_desk_ranges_v1')
-      return saved ? JSON.parse(saved) : []
-    } catch {
-      return []
-    }
-  })
-  const [manualFrvps, setManualFrvps] = useState<UserManualFRVP[]>(() => {
-    if (typeof window === 'undefined') return []
-    try {
-      const saved = localStorage.getItem('trading_desk_frvps_v1')
-      return saved ? JSON.parse(saved) : []
-    } catch {
-      return []
-    }
-  })
-  const [measures, setMeasures] = useState<UserMeasure[]>(() => {
-    if (typeof window === 'undefined') return []
-    try {
-      const saved = localStorage.getItem('trading_desk_measures_v1')
-      return saved ? JSON.parse(saved) : []
-    } catch {
-      return []
-    }
-  })
+  const [rangeBoxes, setRangeBoxes] = useState<UserRangeBox[]>(() =>
+    loadStoredDrawings<UserRangeBox>('trading_desk_ranges_v1', (row) => {
+      const r = row as UserRangeBox
+      return finiteDrawingPoint(r?.p1) && finiteDrawingPoint(r?.p2)
+    })
+  )
+  const [manualFrvps, setManualFrvps] = useState<UserManualFRVP[]>(() =>
+    loadStoredDrawings<UserManualFRVP>('trading_desk_frvps_v1', (row) => {
+      const f = row as UserManualFRVP
+      return Number.isFinite(f?.timeStart) && Number.isFinite(f?.timeEnd) && Number.isFinite(f?.poc)
+    })
+  )
+  const [measures, setMeasures] = useState<UserMeasure[]>(() =>
+    loadStoredDrawings<UserMeasure>('trading_desk_measures_v1', (row) => {
+      const m = row as UserMeasure
+      return finiteDrawingPoint(m?.p1) && finiteDrawingPoint(m?.p2)
+    })
+  )
   const measureBadgeHitsRef = useRef<Map<string, { x: number; y: number; w: number; h: number }>>(new Map())
 
   // ── Leo Long-Term Memory Architecture & TradingView Alarms ────────────────
@@ -1494,10 +1611,8 @@ export function TradingChart({
   const [ibShaped, setIbShaped] = useState(false)
   /** Mirrored IB H/L for ±10 band effect deps (refs alone do not re-render). */
   const [ibLevels, setIbLevels] = useState<{ high: number; low: number } | null>(null)
-  /** IB H/L + BRK/REJ markers + ±10 bands — remembered across refresh. */
-  const [showIbBreakouts] = useState(() =>
-    SYSTEMATIC_LIVE_DESK ? true : loadDeskOverlayToggles().ib
-  )
+  /** Initial Balance overlay is off. */
+  const showIbBreakouts = false
   /** Open range (first 15m) H/L + volume BRK/REJ */
   const or15SeriesRef = useRef<{
     high: ISeriesApi<'Line'>
@@ -1578,6 +1693,11 @@ export function TradingChart({
   // News Catalyst Anchored VWAP (News AVWAP) state
   const [showNewsAvwap, setShowNewsAvwap] = useState(false)
   const [newsAvwapBandCount, setNewsAvwapBandCount] = useState<2 | 3>(3)
+  /** 1m book for News AVWAP — timeframe switches only re-paint, they do not recompute. */
+  const [newsAvwap1mCandles, setNewsAvwap1mCandles] = useState<OHLCV[]>([])
+  const newsAvwap1mRef = useRef<OHLCV[]>([])
+  newsAvwap1mRef.current = newsAvwap1mCandles
+  const newsCatalystIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     try {
@@ -1615,6 +1735,7 @@ export function TradingChart({
   const [cvdSubPaneHeight, setCvdSubPaneHeight] = useState(185)
   // ATR (Average True Range) sub-pane — TradingView built-in ATR, persisted on/off
   const [showAtrSubPane, setShowAtrSubPane] = useState(false)
+  const [atrWarmed, setAtrWarmed] = useState(false)
   useEffect(() => {
     try {
       if (window.localStorage.getItem('desk.atr.paneOpen.v1') === '1') setShowAtrSubPane(true)
@@ -1626,6 +1747,9 @@ export function TradingChart({
     } catch {}
   }, [showAtrSubPane])
   const closeAtrSubPane = useCallback(() => setShowAtrSubPane(false), [])
+  useEffect(() => {
+    if (showAtrSubPane) setAtrWarmed(true)
+  }, [showAtrSubPane])
   const cvdContainerRef = useRef<HTMLDivElement>(null)
   const cvdChartRef = useRef<IChartApi | null>(null)
   const cvdCandleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -1760,7 +1884,7 @@ export function TradingChart({
   const sessionExitKeyRef = useRef('')
   const [ibExtendBadge, setIbExtendBadge] = useState('—')
   const [, setIbExtendHover] = useState(
-    'IB extend vs revert — advice only after IB locks. First tag is not the entry.'
+    'Range advice only. First tag is not the entry.'
   )
   const ibExtendRef = useRef<IbExtendAdvice | null>(null)
   const ibLiqLinesRef = useRef<IPriceLine[]>([])
@@ -2907,7 +3031,24 @@ export function TradingChart({
           (isVeryImportantMacroEvent(m.eventName, m.country) || m.impact === 'High') &&
           nowSec - m.reactionEndTime <= 36 * 3600
       )
-      newsMovesRef.current = significant.length > 0 ? [significant[significant.length - 1]!] : []
+      const latest = significant.length > 0 ? significant[significant.length - 1]! : null
+      if (latest && shouldAnchorVwapToNews(latest)) {
+        const source1m =
+          timeframe === NEWS_AVWAP_SOURCE_TIMEFRAME
+            ? rawBars
+            : newsAvwap1mRef.current.map((c) => ({
+                time: c.time as number,
+                open: c.open,
+                high: c.high,
+                low: c.low,
+                close: c.close,
+                volume: c.volume,
+              }))
+        const chartTimes = rawBars.map((b) => b.time)
+        const pts = newsAvwapPointsFrom1m(source1m, latest.newsTime, chartTimes)
+        if (pts) latest.avwapPoints = pts
+      }
+      newsMovesRef.current = latest ? [latest] : []
     } else {
       spikesRef.current = []
       distRefsRef.current = []
@@ -2919,7 +3060,7 @@ export function TradingChart({
     paintExcessesAndRoundedRef.current?.()
     paintUserDrawingsRef.current?.()
     paintNewsMarkersRef.current?.()
-  }, [candles, timeframe, instrument, yesterdayNyc, newsEvents])
+  }, [candles, timeframe, instrument, yesterdayNyc, newsEvents, newsAvwap1mCandles])
 
   // ─── Multi-Timeframe Money Fixed Range Volume Profiles (Canvas) ─────────────
   const paintFrvpHistogram = useCallback(() => {
@@ -5178,8 +5319,8 @@ export function TradingChart({
       sessionName = 'NYC Cash Session (RTH)'
       sessionElapsedMinutes = Math.floor((nyDec - 9.5) * 60)
       if (nyDec < 10.5) {
-        sessionPhase = 'Initial Balance (IB)'
-        nextCheckpoint = `${Math.floor((10.5 - nyDec) * 60)}m to IB Close (10:30 ET)`
+        sessionPhase = 'Cash open'
+        nextCheckpoint = `${Math.floor((10.5 - nyDec) * 60)}m to 10:30 ET`
       } else if (nyDec < 12) {
         sessionPhase = 'Morning Trend / Extension'
         nextCheckpoint = `${Math.floor((12 - nyDec) * 60)}m to NY Lunch (12:00 ET)`
@@ -6711,6 +6852,11 @@ export function TradingChart({
   // Voice stays closed on refresh / clock-in — user opens via toolbar (V).
   const showLevelsRef = useRef(false)
   const [chartReady, setChartReady] = useState(false)
+  useEffect(() => {
+    if (!chartReady) return
+    const id = window.setTimeout(() => setAtrWarmed(true), 1200)
+    return () => window.clearTimeout(id)
+  }, [chartReady])
 
   /**
    * Overlay pills / brackets / highlight boxes are placed imperatively so a pan
@@ -7182,7 +7328,7 @@ export function TradingChart({
         let title = 'Off-band entry'
         if (snapRanges.length === 0) {
           title = 'No entry bands'
-          body = 'No live ±10 entry bands — wait for OR30 / IB to unlock.'
+          body = 'No live ±10 entry bands — wait for OR30 to unlock.'
         } else if (hit) {
           if (hit.range.label === 'OR15' || hit.range.label === 'OR30') {
             title = `${hit.range.label} entry closed`
@@ -7349,6 +7495,25 @@ export function TradingChart({
 
   const setInstrument = useCallback((inst: Instrument) => {
     if (!visibleInstruments.includes(inst)) return
+    const cached = takeCachedCandles(`${inst}:${timeframe}`)
+    didFitRef.current = false
+    priceLineHostSeededRef.current = false
+    lastCandleRef.current = null
+    sessionSpansRef.current = null
+    if (cached) {
+      candlesRef.current = cached.candles
+      setCandles(cached.candles)
+      if (cached.livePrice != null && Date.now() - cached.timestamp < CACHED_PRICE_FRESH_MS) {
+        setLivePrice(cached.livePrice)
+        publishPriceTick(cached.livePrice, cached.changePct)
+      }
+    } else {
+      candlesRef.current = []
+      setCandles([])
+      try { candleRef.current?.setData([]) } catch { /* ignore */ }
+      try { volumeSeriesRef.current?.setData([]) } catch { /* ignore */ }
+      try { priceLineHostRef.current?.setData([]) } catch { /* ignore */ }
+    }
     setInstrumentState(inst)
     // Free-switch: remember any board tab (indexes + gold/crude/nikkei).
     if (
@@ -7361,7 +7526,7 @@ export function TradingChart({
       setDeskInstrumentPreference(inst)
     }
     onInstrumentChange?.(inst)
-  }, [onInstrumentChange, visibleInstruments])
+  }, [onInstrumentChange, publishPriceTick, takeCachedCandles, timeframe, visibleInstruments])
 
   useEffect(() => {
     setInstrumentState((prev) => {
@@ -7520,9 +7685,7 @@ export function TradingChart({
           ? 'US · '
           : playbookMode === 'or30'
             ? '30 · '
-            : playbookMode === 'ib' || playbookMode === 'lunch_break'
-              ? 'IB · '
-              : ''
+            : ''
       byPrice.set(l.level, {
         price: l.level,
         type: isRes ? 'resistance' : 'support',
@@ -7690,23 +7853,29 @@ export function TradingChart({
     if (!containerRef.current) return
 
     const themeOpts = getDeskChartThemeOptions(chartThemeMode)
-    const chart = createChart(containerRef.current, {
-      ...CHART_THEME,
-      ...themeOpts,
-      width: containerRef.current.clientWidth,
-      height: containerRef.current.clientHeight,
-      localization: {
-        timeFormatter: (time: Time) =>
-          chartFmtRef.current.timeFormatter(time),
-      },
-      timeScale: {
-        ...CHART_THEME.timeScale,
-        tickMarkFormatter: (
-          time: Time,
-          tickMarkType: TickMarkType,
-        ) => chartFmtRef.current.tickMarkFormatter(time, tickMarkType),
-      },
-    })
+    let chart: IChartApi
+    try {
+      chart = createChart(containerRef.current, {
+        ...CHART_THEME,
+        ...themeOpts,
+        width: containerRef.current.clientWidth,
+        height: containerRef.current.clientHeight,
+        localization: {
+          timeFormatter: (time: Time) =>
+            chartFmtRef.current.timeFormatter(time),
+        },
+        timeScale: {
+          ...CHART_THEME.timeScale,
+          tickMarkFormatter: (
+            time: Time,
+            tickMarkType: TickMarkType,
+          ) => chartFmtRef.current.tickMarkFormatter(time, tickMarkType),
+        },
+      })
+    } catch (err) {
+      console.error('[chart] create failed', err)
+      return
+    }
 
     // ─── 1. Candlestick series on the main 'right' price scale ────────────────
     // Autoscale from VISIBLE candles on screen ONLY — distantly historical bars or orphan level lines
@@ -8165,7 +8334,11 @@ export function TradingChart({
         paintExcessesAndRoundedRef.current?.()
         paintUserDrawingsRef.current?.()
         paintNewsMarkersRef.current?.()
-        refreshSessionHighlights()
+        try {
+          refreshSessionHighlightsRef.current?.()
+        } catch {
+          /* session paint must not take down the page */
+        }
       }
     })
     ro.observe(containerRef.current)
@@ -8534,6 +8707,7 @@ export function TradingChart({
     if (!chartReady) return
     // Free-switch NY board: load CME bars for the viewed book even if clock preference differs.
     let cancelled = false
+    const ac = new AbortController()
 
     const load = async () => {
       const meta = INSTRUMENT_META[instrument]
@@ -8541,9 +8715,10 @@ export function TradingChart({
       const tradeLive = isLiveBarsAllowed(instrument)
 
       const cacheKey = `${instrument}:${timeframe}`
-      const cached = candleCacheRef.current.get(cacheKey)
-      // Instant switch: display cached bars immediately if fresh
-      if (cached && Date.now() - cached.timestamp < CANDLE_CACHE_FRESH_MS && cached.candles.length > 0) {
+      const cached = takeCachedCandles(cacheKey)
+      // Paint whatever we already have — a few-minute-old book is better than a blank
+      // chart. The request below replaces it as soon as the server answers.
+      if (cached) {
         setCandles(cached.candles)
         candlesRef.current = cached.candles
         setDataMode('live')
@@ -8555,15 +8730,8 @@ export function TradingChart({
         loadLevelsRef.current(instrument, cached.candles)
       }
 
-      // Full continuum including afternoon — clipAfternoonBars is a no-op while freeze is off
-      try {
-        // Must cover cash open of 5 trading days prior (weekends truncate a plain 5d fetch; 1m is 3d — enough for 5 sessions Mon-Fri while keeping candle count low; 1D is 730d / 2 years)
-        const days = timeframe === '1D' ? 730 : timeframe === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
-        const res = await fetch(
-          `/api/trading/candles?instrument=${instrument}&timeframe=${timeframe}&days=${days}`
-        )
-        const json = await res.json()
-        if (!cancelled && Array.isArray(json.candles) && json.candles.length > 0) {
+      const applyPayload = (json: { candles?: unknown; source?: string; quote?: { price?: number; change_pct?: number } }) => {
+        if (cancelled || !Array.isArray(json.candles) || json.candles.length === 0) return false
           const mapped: OHLCV[] = json.candles.map((c: any) => ({
             time: c.time as UTCTimestamp,
             open: c.open,
@@ -8592,16 +8760,40 @@ export function TradingChart({
           loadLevelsRef.current(instrument, trimmed)
 
           // Store in client-side candle cache for instant switching
-          candleCacheRef.current.set(cacheKey, {
+          saveCachedCandles(cacheKey, {
             candles: trimmed,
             source: feedSource,
             livePrice: loadedPrice,
             changePct: json.quote?.change_pct ?? 0,
             timestamp: Date.now(),
           })
-          return
+        return true
+      }
+
+      // Full continuum including afternoon — clipAfternoonBars is a no-op while freeze is off
+      const loadOnce = async (attempt: number) => {
+        const days = candleFetchDays(timeframe)
+        const res = await fetch(
+          `/api/trading/candles?instrument=${instrument}&timeframe=${timeframe}&days=${days}`,
+          { signal: ac.signal, cache: 'no-store' }
+        )
+        const tailPending = res.headers.get('X-Candle-Tail') === 'pending'
+        const json = await res.json()
+        if (cancelled) return
+        applyPayload(json)
+        if (tailPending && attempt < 3 && !cancelled) {
+          window.setTimeout(() => {
+            if (!cancelled) void loadOnce(attempt + 1).catch(() => {})
+          }, 700)
         }
-      } catch {
+      }
+
+      try {
+        await loadOnce(0)
+        if (cancelled) return
+        if (candlesRef.current.length > 0) return
+      } catch (err) {
+        if (cancelled || (err as Error)?.name === 'AbortError') return
         // fall through
       }
 
@@ -8632,8 +8824,77 @@ export function TradingChart({
     load()
     return () => {
       cancelled = true
+      ac.abort()
     }
-  }, [instrument, chartReady, publishPriceTick, timeframe])
+  }, [instrument, chartReady, publishPriceTick, saveCachedCandles, takeCachedCandles, timeframe])
+
+  // Warm the other markets and timeframes so the next click paints from memory.
+  useEffect(() => {
+    if (!chartReady) return
+    let cancelled = false
+    const ac = new AbortController()
+    const queue: Array<{ inst: Instrument; tf: DeskTimeframe }> = []
+    for (const tf of DESK_TIMEFRAMES) {
+      if (tf !== timeframe) queue.push({ inst: instrument, tf })
+    }
+    for (const inst of PREFETCH_INSTRUMENTS) {
+      if (inst !== instrument) queue.push({ inst, tf: timeframe })
+    }
+    for (const inst of PREFETCH_INSTRUMENTS) {
+      for (const tf of DESK_TIMEFRAMES) {
+        if (inst === instrument || tf === timeframe) continue
+        queue.push({ inst, tf })
+      }
+    }
+
+    let index = 0
+    let timer = 0
+    const step = async () => {
+      if (cancelled || index >= queue.length) return
+      const item = queue[index++]!
+      const key = `${item.inst}:${item.tf}`
+      const cached = takeCachedCandles(key)
+      if (!cached || Date.now() - cached.timestamp > CANDLE_CACHE_FRESH_MS) {
+        try {
+          const res = await fetch(
+            `/api/trading/candles?instrument=${item.inst}&timeframe=${item.tf}&days=${candleFetchDays(item.tf)}&quote=0`,
+            { signal: ac.signal, cache: 'no-store' }
+          )
+          const json = await res.json()
+          if (!cancelled && Array.isArray(json.candles) && json.candles.length > 0) {
+            const mapped: OHLCV[] = json.candles.map((c: any) => ({
+              time: c.time as UTCTimestamp,
+              open: c.open,
+              high: c.high,
+              low: c.low,
+              close: c.close,
+              volume: c.volume ?? 0,
+            }))
+            const trimmed = normalizeCandleTimes(toDeskCandles(mapped, item.inst, item.tf), item.tf)
+            if (trimmed.length > 0) {
+              const last = trimmed[trimmed.length - 1]
+              saveCachedCandles(key, {
+                candles: trimmed,
+                source: json.source || 'yahoo',
+                livePrice: last?.close ?? null,
+                changePct: 0,
+                timestamp: Date.now(),
+              })
+            }
+          }
+        } catch {
+          /* the visible chart owns the network; a prefetch miss is fine */
+        }
+      }
+      if (!cancelled) timer = window.setTimeout(() => void step(), 120)
+    }
+    timer = window.setTimeout(() => void step(), 500)
+    return () => {
+      cancelled = true
+      ac.abort()
+      window.clearTimeout(timer)
+    }
+  }, [chartReady, instrument, saveCachedCandles, takeCachedCandles, timeframe])
 
   // Mid-morning: re-grade levels against candles every 2 minutes (rule engine only)
   useEffect(() => {
@@ -8663,18 +8924,20 @@ export function TradingChart({
     sessionSpansRef.current = null
     setStreamArmed(false)
 
-    // Paint cached bars to avoid a blank flash, but only while they are recent enough to
-    // still be the same tape. The price is held to a much tighter window than the bars:
-    // it marks open positions, so a stale mark is worse than showing none.
+    // Any cached book paints immediately. Price stays on a tight window because it
+    // marks open positions — a stale mark is worse than showing none.
     const cacheKey = `${instrument}:${timeframe}`
-    const cached = candleCacheRef.current.get(cacheKey)
+    const cached = takeCachedCandles(cacheKey)
     const cacheAge = cached ? Date.now() - cached.timestamp : Infinity
-    if (cached && cached.candles.length > 0 && cacheAge < CANDLE_CACHE_FRESH_MS) {
+    if (cached) {
       setCandles(cached.candles)
       candlesRef.current = cached.candles
     } else {
       setCandles([])
       candlesRef.current = []
+      try { candleRef.current?.setData([]) } catch { /* ignore */ }
+      try { volumeSeriesRef.current?.setData([]) } catch { /* ignore */ }
+      try { priceLineHostRef.current?.setData([]) } catch { /* ignore */ }
     }
     if (cached?.livePrice != null && cacheAge < CACHED_PRICE_FRESH_MS) {
       setLivePrice(cached.livePrice)
@@ -8710,11 +8973,6 @@ export function TradingChart({
       jumpMarkerRef.current = null
     }
 
-    try {
-      candleRef.current?.setData([])
-    } catch {
-      /* ignore */
-    }
     const vs = vwapSeriesRef.current
     if (vs) {
       try {
@@ -8958,11 +9216,10 @@ export function TradingChart({
     if (newsMarkersOverlayRef.current) {
       newsMarkersOverlayRef.current.innerHTML = ''
     }
-    // Check if target timeframe already has fresh cached candles
-    const cached = candleCacheRef.current.get(`${instrument}:${timeframe}`)
-    // Same window the loader uses, otherwise bars are wiped here and immediately
-    // repainted from the very same cache entry, which reads as a flash.
-    if (!cached || Date.now() - cached.timestamp >= CANDLE_CACHE_FRESH_MS || cached.candles.length === 0) {
+    // Only blank the series when this timeframe has never been loaded. A cached
+    // book — even a few minutes old — stays on screen until the refresh lands.
+    const cached = takeCachedCandles(`${instrument}:${timeframe}`)
+    if (!cached) {
       setCandles([])
       candlesRef.current = []
       try { candleRef.current?.setData([]) } catch {}
@@ -9059,7 +9316,9 @@ export function TradingChart({
   }, [])
 
   // ── Push candle data to chart ─────────────────────────────────────────────────
-  useEffect(() => {
+  // Layout so the new book is on the canvas before the browser paints the switch.
+  useLayoutEffect(() => {
+    try {
     if (!candleRef.current || !chartRef.current || candles.length === 0) return
 
     const ordered = normalizeCandleTimes(candles, timeframe)
@@ -9067,19 +9326,6 @@ export function TradingChart({
     const seenTimes = new Set<string>()
     const candleData: CandlestickData[] = []
     const volumeData: { time: Time; value: number; color: string }[] = []
-    const cvdRaw = computeCvdCandleBars(
-      ordered.map((c) => ({
-        time: c.time as number,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-        volume: c.volume,
-      }))
-    )
-    const cvdByUnix = new Map<number, (typeof cvdRaw)[number]>()
-    for (const b of cvdRaw) cvdByUnix.set(b.time, b)
-    const shiftedCvd: CandlestickData[] = []
     for (const c of ordered) {
       const t = toSeriesTime(c.time as number, timeframe, tz)
       const key = isBusinessDay(t) ? `${t.year}-${t.month}-${t.day}` : String(t)
@@ -9098,19 +9344,10 @@ export function TradingChart({
           value: Number.isFinite(c.volume) ? (c.volume ?? 0) : 0,
           color: isUp ? 'rgba(8, 153, 129, 0.7)' : 'rgba(242, 54, 69, 0.7)',
         })
-        const d = cvdByUnix.get(c.time as number)
-        shiftedCvd.push({
-          time: t,
-          open: d?.open ?? 0,
-          high: d?.high ?? 0,
-          low: d?.low ?? 0,
-          close: d?.close ?? 0,
-        })
       }
     }
     candleData.sort((a, b) => chartTimeToUnix(a.time) - chartTimeToUnix(b.time))
     volumeData.sort((a, b) => chartTimeToUnix(a.time) - chartTimeToUnix(b.time))
-    shiftedCvd.sort((a, b) => chartTimeToUnix(a.time) - chartTimeToUnix(b.time))
 
     const ts = chartRef.current.timeScale()
     let savedRange: { from: number; to: number } | null = null
@@ -9138,6 +9375,42 @@ export function TradingChart({
       }
     }
 
+    // Session colors are painted on the next frame (see below). Doing it here, before
+    // the time scale has a range, throws inside lightweight-charts and the Next.js
+    // error boundary replaces the whole desk with "a client-side exception".
+    const paintGen = ++chartPaintGenRef.current
+    requestAnimationFrame(() => {
+      if (paintGen !== chartPaintGenRef.current) return
+      const cvdRaw = computeCvdCandleBars(
+        ordered.map((c) => ({
+          time: c.time as number,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          volume: c.volume,
+        }))
+      )
+      const cvdByUnix = new Map<number, (typeof cvdRaw)[number]>()
+      for (const b of cvdRaw) cvdByUnix.set(b.time, b)
+      const shiftedCvd: CandlestickData[] = []
+      const seenCvd = new Set<string>()
+      for (const c of ordered) {
+        const t = toSeriesTime(c.time as number, timeframe, tz)
+        const key = isBusinessDay(t) ? `${t.year}-${t.month}-${t.day}` : String(t)
+        if (seenCvd.has(key)) continue
+        seenCvd.add(key)
+        const d = cvdByUnix.get(c.time as number)
+        shiftedCvd.push({
+          time: t,
+          open: d?.open ?? 0,
+          high: d?.high ?? 0,
+          low: d?.low ?? 0,
+          close: d?.close ?? 0,
+        })
+      }
+      shiftedCvd.sort((a, b) => chartTimeToUnix(a.time) - chartTimeToUnix(b.time))
+
     // 5-Month Anchored VWAP on 1D; Dynamic Session/5D Anchored VWAP with bands on intraday
     const clock = deskClockFor(instrument)
     const mappedBars = ordered.map((c) => ({
@@ -9157,6 +9430,7 @@ export function TradingChart({
           })
         : computeAnchoredVwap(mappedBars, clock)
     latestVwapBandsRef.current = bands
+    vwapBandsKeyRef.current = deskCandleSignature(ordered, instrument, timeframe)
     if (bands?.vwap?.length) {
       const last = bands.vwap[bands.vwap.length - 1]
       avwapLastRef.current =
@@ -9261,6 +9535,7 @@ export function TradingChart({
     try { paintExcessesAndRoundedRef.current?.() } catch {}
     try { paintNewsMarkersRef.current?.() } catch {}
     try { paintUserDrawingsRef.current?.() } catch {}
+    })
 
     const host = priceLineHostRef.current
     if (host && !priceLineHostSeededRef.current && ordered.length > 0) {
@@ -9392,8 +9667,15 @@ export function TradingChart({
       })
     }
     requestAnimationFrame(() => {
-      refreshSessionHighlightsRef.current?.()
+      try {
+        refreshSessionHighlightsRef.current?.()
+      } catch (err) {
+        console.error('[chart] session paint failed', err)
+      }
     })
+    } catch (err) {
+      console.error('[chart] paint failed', err)
+    }
   }, [candles, instrument, paintLevelLines, avwap5mBenchmark, timeframe, show5mAvwapOnChart]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Repaint VWAP series data when avwap5mBenchmark changes or on instrument switch
@@ -9403,24 +9685,29 @@ export function TradingChart({
     const list = candlesRef.current
     if (!list || list.length === 0) return
 
-    const clock = deskClockFor(instrument)
-    const mappedBars = list.map((c) => ({
-      time: c.time as number,
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-      volume: c.volume,
-    }))
-    const bands =
-      timeframe === '1D'
-        ? compute5MonthAnchoredVwap({
-            bars: mappedBars,
-            instrument,
-            baseline: null,
-          })
-        : computeAnchoredVwap(mappedBars, clock)
-    latestVwapBandsRef.current = bands
+    const bandKey = deskCandleSignature(list, instrument, timeframe)
+    let bands = latestVwapBandsRef.current
+    if (vwapBandsKeyRef.current !== bandKey || !bands) {
+      const clock = deskClockFor(instrument)
+      const mappedBars = list.map((c) => ({
+        time: c.time as number,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      }))
+      bands =
+        timeframe === '1D'
+          ? compute5MonthAnchoredVwap({
+              bars: mappedBars,
+              instrument,
+              baseline: null,
+            })
+          : computeAnchoredVwap(mappedBars, clock)
+      latestVwapBandsRef.current = bands
+      vwapBandsKeyRef.current = bandKey
+    }
     if (bands?.vwap?.length) {
       const last = bands.vwap[bands.vwap.length - 1]
       avwapLastRef.current = last && last.value > 0 ? last.value : null
@@ -9474,37 +9761,91 @@ export function TradingChart({
     }
   }, [avwap5mBenchmark, instrument, timeframe, show5mAvwapOnChart, showSdBands])
 
-  // Repaint News Catalyst Anchored VWAP series and standard deviation bands
+  // Keep a 1m book for News AVWAP. Chart timeframe never feeds the math.
   useEffect(() => {
-    const nvs = newsVwapSeriesRef.current
-    const list = candlesRef.current
-    if (!list || list.length === 0) {
-      if (nvs) {
-        try { nvs.vwap.setData([]) } catch {}
-        try { nvs.upper1.setData([]) } catch {}
-        try { nvs.lower1.setData([]) } catch {}
-        try { nvs.upper2.setData([]) } catch {}
-        try { nvs.lower2.setData([]) } catch {}
-        try { nvs.upper3.setData([]) } catch {}
-        try { nvs.lower3.setData([]) } catch {}
-      }
-      return
+    newsCatalystIdRef.current = null
+    setNewsAvwap1mCandles([])
+    newsAvwap1mRef.current = []
+  }, [instrument])
+
+  useEffect(() => {
+    if (!chartReady) return
+    if (!showNewsAvwap && !showNewsOnChart) return
+    let cancelled = false
+    const ac = new AbortController()
+
+    const apply1m = (rows: OHLCV[]) => {
+      if (cancelled || rows.length === 0) return
+      setNewsAvwap1mCandles(rows)
+      newsAvwap1mRef.current = rows
     }
 
-    const mappedBars: SessionBar[] = list.map((c) => ({
-      time: c.time as number,
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-      volume: c.volume,
-    }))
+    const load1m = async () => {
+      const key = `${instrument}:${NEWS_AVWAP_SOURCE_TIMEFRAME}`
+      if (timeframe === NEWS_AVWAP_SOURCE_TIMEFRAME && candlesRef.current.length > 0) {
+        apply1m(candlesRef.current)
+        return
+      }
+      const cached = takeCachedCandles(key)
+      if (cached?.candles?.length) {
+        apply1m(cached.candles)
+      }
+      try {
+        const days = candleFetchDays(NEWS_AVWAP_SOURCE_TIMEFRAME)
+        const res = await fetch(
+          `/api/trading/candles?instrument=${instrument}&timeframe=${NEWS_AVWAP_SOURCE_TIMEFRAME}&days=${days}&quote=0`,
+          { signal: ac.signal, cache: 'no-store' }
+        )
+        const json = await res.json()
+        if (cancelled || !Array.isArray(json.candles) || json.candles.length === 0) return
+        const mapped: OHLCV[] = json.candles.map((c: any) => ({
+          time: c.time as UTCTimestamp,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          volume: c.volume ?? 0,
+        }))
+        const trimmed = normalizeCandleTimes(
+          toDeskCandles(mapped, instrument, NEWS_AVWAP_SOURCE_TIMEFRAME),
+          NEWS_AVWAP_SOURCE_TIMEFRAME
+        )
+        if (trimmed.length === 0) return
+        saveCachedCandles(key, {
+          candles: trimmed,
+          source: json.source || 'yahoo',
+          livePrice: trimmed[trimmed.length - 1]?.close ?? null,
+          changePct: 0,
+          timestamp: Date.now(),
+        })
+        apply1m(trimmed)
+      } catch {
+        /* keep cache */
+      }
+    }
 
-    const result = computeNewsCatalystVwap(mappedBars, newsEvents)
+    void load1m()
+    return () => {
+      cancelled = true
+      ac.abort()
+    }
+  }, [
+    chartReady,
+    instrument,
+    showNewsAvwap,
+    showNewsOnChart,
+    timeframe,
+    candles,
+    takeCachedCandles,
+    saveCachedCandles,
+  ])
 
-    if (!nvs) return
-
-    if (!showNewsAvwap || !result) {
+  // Repaint News Catalyst Anchored VWAP — values from 1m, slots from the chart timeframe
+  useEffect(() => {
+    const nvs = newsVwapSeriesRef.current
+    const chartList = candlesRef.current
+    const clear = () => {
+      if (!nvs) return
       try { nvs.vwap.setData([]) } catch {}
       try { nvs.upper1.setData([]) } catch {}
       try { nvs.lower1.setData([]) } catch {}
@@ -9512,8 +9853,46 @@ export function TradingChart({
       try { nvs.lower2.setData([]) } catch {}
       try { nvs.upper3.setData([]) } catch {}
       try { nvs.lower3.setData([]) } catch {}
+    }
+
+    if (!showNewsAvwap || !chartList?.length) {
+      clear()
       return
     }
+
+    const source1m =
+      timeframe === NEWS_AVWAP_SOURCE_TIMEFRAME
+        ? chartList
+        : newsAvwap1mCandles.length > 0
+          ? newsAvwap1mCandles
+          : newsAvwap1mRef.current
+    if (!source1m.length) {
+      clear()
+      return
+    }
+
+    const mapped1m: SessionBar[] = source1m.map((c) => ({
+      time: c.time as number,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+      volume: c.volume,
+    }))
+    const chartTimes = chartList.map((c) => c.time as number)
+    const result = computeNewsCatalystVwap(
+      mapped1m,
+      newsEvents,
+      newsCatalystIdRef.current,
+      chartTimes
+    )
+
+    if (!nvs) return
+    if (!result) {
+      clear()
+      return
+    }
+    newsCatalystIdRef.current = result.catalyst.id
 
     const tz = chartTzRef.current
     const shift = <T extends { time: number | UTCTimestamp; value: number }>(rows: T[]) =>
@@ -9539,11 +9918,20 @@ export function TradingChart({
       try { nvs.upper3.setData([]) } catch {}
       try { nvs.lower3.setData([]) } catch {}
     }
-  }, [candles, newsEvents, instrument, timeframe, showNewsAvwap, newsAvwapBandCount])
+  }, [
+    candles,
+    newsEvents,
+    instrument,
+    timeframe,
+    showNewsAvwap,
+    newsAvwapBandCount,
+    newsAvwap1mCandles,
+  ])
 
 
   // ── Session color boxes (cached spans + imperative paint = smooth pan)
   const refreshSessionHighlights = useCallback(() => {
+    try {
     const chart = chartRef.current
     const series = candleRef.current
     const list = candlesRef.current
@@ -9559,13 +9947,29 @@ export function TradingChart({
     }
 
     const tz = chartTzRef.current
+    const firstT = (list[0]?.time as number) || 0
     const lastBar = list[list.length - 1]
     const tip = (lastBar?.time as number) || 0
     const tipH = lastBar?.high != null ? Number(lastBar.high.toFixed(2)) : 0
     const tipL = lastBar?.low != null ? Number(lastBar.low.toFixed(2)) : 0
-    const cacheKey = `${instrument}:${timeframe}:${tip}:${tipH}:${tipL}:${list.length}:${tz}`
+    const structuralKey = `${instrument}:${timeframe}:${list.length}:${firstT}:${tip}:${tz}:${barSeconds}`
+    const tipKey = `${tipH}:${tipL}`
     let cached = sessionSpansRef.current
-    if (!cached || cached.key !== cacheKey) {
+    if (cached && cached.key === structuralKey) {
+      // Forming-bar wicks only move the active session box. Don't rescan history.
+      if (cached.tipKey !== tipKey && lastBar) {
+        const lastUnix = lastBar.time as number
+        for (const span of cached.spans) {
+          if (lastUnix >= span.startT && lastUnix < span.endT) {
+            if (lastBar.high > span.high) span.high = lastBar.high
+            if (lastBar.low < span.low) span.low = lastBar.low
+            span.range = Number((span.high - span.low).toFixed(2))
+            span.avg = Number(((span.high + span.low) / 2).toFixed(2))
+          }
+        }
+        cached.tipKey = tipKey
+      }
+    } else {
       const built = computeSessionHighlightSpans({
         candles: list.map((c) => ({
           time: c.time as number,
@@ -9578,7 +9982,7 @@ export function TradingChart({
         instrument,
         barSeconds,
       })
-      cached = { key: cacheKey, spans: built.spans, candleTimes: built.candleTimes }
+      cached = { key: structuralKey, tipKey, spans: built.spans, candleTimes: built.candleTimes }
       sessionSpansRef.current = cached
     }
 
@@ -9653,7 +10057,10 @@ export function TradingChart({
     paintExcessesAndRoundedRef.current()
     paintNewsMarkersRef.current()
     paintUserDrawingsRef.current()
-  }, [instrument])
+    } catch (err) {
+      console.error('[chart] session paint failed', err)
+    }
+  }, [instrument, timeframe])
 
   useEffect(() => {
     paintFrvpHistogramRef.current = paintFrvpHistogram
@@ -9763,10 +10170,10 @@ export function TradingChart({
     }
     ts.subscribeVisibleLogicalRangeChange(onRangeChange)
 
-    const t1 = window.setTimeout(() => refreshSessionHighlights(), 200)
+    const t1 = window.requestAnimationFrame(() => refreshSessionHighlights())
 
     return () => {
-      window.clearTimeout(t1)
+      window.cancelAnimationFrame(t1)
       window.clearTimeout(settleTimer)
       if (rafPending) cancelAnimationFrame(rafPending)
       interactingRef.current = false
@@ -10139,7 +10546,7 @@ export function TradingChart({
 
     const refreshCandles = async () => {
       try {
-        const days = timeframe === '1D' ? 730 : timeframe === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
+        const days = candleFetchDays(timeframe)
         const res = await fetch(
           `/api/trading/candles?instrument=${instrument}&timeframe=${timeframe}&days=${days}&quote=0&_=${Date.now()}`,
           { cache: 'no-store' }
@@ -12741,37 +13148,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           low: r.low,
           atrLine: atrSnap ? formatRangeAtrAdviceLine(atrSnap) : null,
           nextHint:
-            'Optional morning probe (±10 H / L). If unused when IB locks → hand off to IB.',
+            'Optional morning probe (±10 H / L). OR30 is the next entry window.',
         })
         onDeskAlert({
           ...note,
           instrument,
           dedupeKey: deskNoteClaimKey('range_or30', instrument),
-        })
-      }
-    }
-    if (next.ib && !prev.ib) {
-      const r = ibRangeRef.current
-      if (r && claimDeskNoteOnce('range_ib', instrument)) {
-        const label = 'IB'
-        const atrSnap = buildRangeAtrSnapshot({
-          rangeLabel: label,
-          high: r.high,
-          low: r.low,
-          bars: candlesRef.current,
-        })
-        const note = formatRangeShapedNote({
-          instrument,
-          rangeLabel: label,
-          high: r.high,
-          low: r.low,
-          atrLine: atrSnap ? formatRangeAtrAdviceLine(atrSnap) : null,
-          nextHint: 'IB entry window is open (±10 of locked H / L).',
-        })
-        onDeskAlert({
-          ...note,
-          instrument,
-          dedupeKey: deskNoteClaimKey('range_ib', instrument),
         })
       }
     }
@@ -12974,15 +13356,21 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   type="button"
                   onClick={() => {
                     if (timeframe === tf) return
+                    const cached = takeCachedCandles(`${instrument}:${tf}`)
                     didFitRef.current = false
                     priceLineHostSeededRef.current = false
                     lastCandleRef.current = null
                     sessionSpansRef.current = null
-                    setCandles([])
-                    candlesRef.current = []
-                    try { candleRef.current?.setData([]) } catch {}
-                    try { volumeSeriesRef.current?.setData([]) } catch {}
-                    try { priceLineHostRef.current?.setData([]) } catch {}
+                    if (cached) {
+                      candlesRef.current = cached.candles
+                      setCandles(cached.candles)
+                    } else {
+                      setCandles([])
+                      candlesRef.current = []
+                      try { candleRef.current?.setData([]) } catch {}
+                      try { volumeSeriesRef.current?.setData([]) } catch {}
+                      try { priceLineHostRef.current?.setData([]) } catch {}
+                    }
                     setTimeframe(tf)
                   }}
                   className={`rounded px-2.5 py-1 text-xs font-semibold transition-all ${
@@ -13468,12 +13856,14 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         </div>
 
         {/* ATR (Average True Range) Sub-Pane — TradingView built-in, 1:1 linked with price */}
-        {showAtrSubPane && (
-          <AtrSubPane
-            mainChart={chartReady ? chartRef.current : null}
-            mainSeries={chartReady ? candleRef.current : null}
-            onClose={closeAtrSubPane}
-          />
+        {(showAtrSubPane || atrWarmed) && (
+          <div className={showAtrSubPane ? 'contents' : 'hidden'}>
+            <AtrSubPane
+              mainChart={chartReady ? chartRef.current : null}
+              mainSeries={chartReady ? candleRef.current : null}
+              onClose={closeAtrSubPane}
+            />
+          </div>
         )}
 
         {/* Synchronized TradingView Crosshair Guide & Column Beam across Main & CVD Panes */}
@@ -13481,10 +13871,18 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
             {/* Full-height Vertical Beam Highlight connecting price candle to CVD candle */}
             <div
-              style={{
-                left: `${syncCrosshair.x - Math.round(((chartRef.current?.timeScale() as any)?.options?.()?.barSpacing ?? 10) * 0.42)}px`,
-                width: `${Math.max(4, Math.round(((chartRef.current?.timeScale() as any)?.options?.()?.barSpacing ?? 10) * 0.84))}px`,
-              }}
+              style={(() => {
+                let spacing = 10
+                try {
+                  spacing = chartRef.current?.timeScale().options().barSpacing ?? 10
+                } catch {
+                  /* a disposed chart must not blank the desk */
+                }
+                return {
+                  left: `${syncCrosshair.x - Math.round(spacing * 0.42)}px`,
+                  width: `${Math.max(4, Math.round(spacing * 0.84))}px`,
+                }
+              })()}
               className="absolute top-0 bottom-0 bg-cyan-400/[0.12] transition-none pointer-events-none"
             />
             {/* Full-height Vertical Crosshair Hairline */}

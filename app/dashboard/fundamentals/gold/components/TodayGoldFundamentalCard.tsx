@@ -53,29 +53,25 @@ export function TodayGoldFundamentalCard({ today, telemetry }: TodayGoldFundamen
 
   const unifiedProtocolData: UnifiedAgentProtocolOutput = {
     market: 'GC',
-    regime: `10Y Real TIPS ${telemetry.us10yRealYield.toFixed(2)}% | Breakeven ${telemetry.us10yBreakeven.toFixed(2)}% | DXY ${telemetry.dxyIndex.toFixed(2)} | Official CB ~1,080t/yr`,
+    regime: [
+      telemetry.sourced?.us10yReal ? `10Y real ${telemetry.us10yRealYield.toFixed(2)}%` : '10Y real unavailable',
+      telemetry.sourced?.breakeven ? `breakeven ${telemetry.us10yBreakeven.toFixed(2)}%` : 'breakeven unavailable',
+      telemetry.sourced?.dxy ? `DXY ${telemetry.dxyIndex.toFixed(2)}` : 'DXY unavailable',
+      'central-bank tonnes unavailable',
+    ].join(' | '),
     catalyst: today.main_current_driver,
     expected_direction: today.short_term_bias,
-    magnitude: 'HIGH',
+    magnitude: 'LOW',
     horizon: 'SHORT_TERM',
-    confidence: 0.85,
-    market_confirmation: 'CONFIRMED',
+    confidence: 0,
+    market_confirmation: 'INCONCLUSIVE',
     key_drivers: [
-      {
-        factor: 'REAL_YIELDS_TIPS',
-        impact: `10Y TIPS real yield holding at ${telemetry.us10yRealYield.toFixed(2)}%`,
-        effect: telemetry.us10yRealYield > 3.0 ? 'BEARISH' : 'NEUTRAL',
-      },
-      {
-        factor: 'USD_DXY',
-        impact: `DXY at ${telemetry.dxyIndex.toFixed(2)} (EUR/USD ${telemetry.eurUsd.toFixed(4)})`,
-        effect: telemetry.dxyChangePct > 0.5 ? 'BEARISH' : 'BULLISH',
-      },
-      {
-        factor: 'CENTRAL_BANK_DEMAND',
-        impact: `Sovereign reserve de-dollarization pacing record >1,000t/yr`,
-        effect: 'BULLISH',
-      },
+      ...(telemetry.sourced?.us10yReal
+        ? [{ factor: 'REAL_YIELDS_TIPS', impact: `10Y TIPS real yield ${telemetry.us10yRealYield.toFixed(2)}%`, effect: 'NEUTRAL' as const }]
+        : []),
+      ...(telemetry.sourced?.dxy
+        ? [{ factor: 'USD_DXY', impact: `DXY ${telemetry.dxyIndex.toFixed(2)}`, effect: 'NEUTRAL' as const }]
+        : []),
     ],
     invalidation: today.what_would_invalidate_this_view,
   }
@@ -121,7 +117,7 @@ export function TodayGoldFundamentalCard({ today, telemetry }: TodayGoldFundamen
             onClick={() => setShowUnified(!showUnified)}
             className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition"
           >
-            {showUnified ? 'Hide Unified Protocol' : 'Unified Protocol (Item 39)'}
+            {showUnified ? 'Hide Unified Protocol' : 'Unified Protocol'}
           </button>
           <button
             onClick={handleCopy}

@@ -26,6 +26,8 @@ export interface VolatilityQuote {
   isExpanding: boolean
   description: string
   asOfIso: string
+  /** False when this print was not returned by a feed. */
+  sourced: boolean
 }
 
 export interface CrossMarketVolatilityState {
@@ -98,15 +100,20 @@ export function classifyVolatilityRegime(
   }
 
   const { elevated, high } = baselines[symbol] || { elevated: 18.0, high: 24.0 }
-  const isSurging = changePct >= 4.0 // >= 4% intraday jump indicates expansion
+  const isSurging = changePct >= 4.0
+  const isFalling = changePct <= -3.0
 
-  if (value >= high || (value >= elevated && isSurging)) {
+  // A high print that is falling is elevated, not an expansion.
+  if (value >= high && changePct > 0) {
     return { regime: 'EXPANDING', isExpanding: true }
   }
-  if (value >= elevated || isSurging) {
+  if (isSurging && value >= elevated) {
+    return { regime: 'EXPANDING', isExpanding: true }
+  }
+  if (isSurging || value >= elevated) {
     return { regime: 'ELEVATED', isExpanding: isSurging }
   }
-  if (value <= elevated * 0.75 && changePct <= -3.0) {
+  if (value <= elevated * 0.75 && isFalling) {
     return { regime: 'COMPRESSED', isExpanding: false }
   }
   return { regime: 'NORMAL', isExpanding: false }
@@ -131,6 +138,7 @@ export function buildDefaultVolatilityQuotes(now: Date = new Date()): Record<Vol
       isExpanding: false,
       description: 'Measures expected 1-day equity volatility using 0DTE/1DTE SPX options. Ideal for intraday timing.',
       asOfIso: nowIso,
+      sourced: true,
     },
     VIX: {
       symbol: 'VIX',
@@ -145,6 +153,7 @@ export function buildDefaultVolatilityQuotes(now: Date = new Date()): Record<Vol
       isExpanding: false,
       description: 'Measures expected 30-day equity volatility. Macro risk-off benchmark.',
       asOfIso: nowIso,
+      sourced: true,
     },
     JNIV: {
       symbol: 'JNIV',
@@ -159,6 +168,7 @@ export function buildDefaultVolatilityQuotes(now: Date = new Date()): Record<Vol
       isExpanding: false,
       description: 'Measures expected 30-day Nikkei 225 volatility (Nikkei VI / JNIV).',
       asOfIso: nowIso,
+      sourced: true,
     },
     OVX: {
       symbol: 'OVX',
@@ -173,6 +183,7 @@ export function buildDefaultVolatilityQuotes(now: Date = new Date()): Record<Vol
       isExpanding: true,
       description: 'Measures expected 30-day crude oil volatility derived from USO options pricing.',
       asOfIso: nowIso,
+      sourced: true,
     },
     GVZ: {
       symbol: 'GVZ',
@@ -187,6 +198,7 @@ export function buildDefaultVolatilityQuotes(now: Date = new Date()): Record<Vol
       isExpanding: false,
       description: 'Measures expected 30-day gold volatility derived from GLD options pricing.',
       asOfIso: nowIso,
+      sourced: true,
     },
   }
 }
@@ -257,12 +269,124 @@ export function buildCrossMarketVolatilityState(
   }
 }
 
+const YAHOO_VOL_SYMBOLS: Record<VolatilitySymbol, string> = {
+  VIX: '^VIX',
+  VIX1D: '^VIX1D',
+  OVX: '^OVX',
+  GVZ: '^GVZ',
+  // Nikkei VI is not on the Yahoo chart API. Leave it unsourced until a feed prints it.
+  JNIV: '',
+}
+
+const VOL_META: Record<VolatilitySymbol, Pick<VolatilityQuote, 'name' | 'assetClass' | 'targetMarkets' | 'description'>> = {
+  VIX1D: {
+    name: 'Cboe 1-Day Volatility Index',
+    assetClass: 'EQUITIES',
+    targetMarkets: ['NASDAQ', 'DOW', 'SP500'],
+    description: 'Measures expected 1-day equity volatility using 0DTE/1DTE SPX options.',
+  },
+  VIX: {
+    name: 'Cboe Volatility Index',
+    assetClass: 'EQUITIES',
+    targetMarkets: ['NASDAQ', 'DOW', 'SP500'],
+    description: 'Measures expected 30-day equity volatility.',
+  },
+  JNIV: {
+    name: 'Nikkei 225 Volatility Index',
+    assetClass: 'NIKKEI',
+    targetMarkets: ['NIKKEI'],
+    description: 'Measures expected 30-day Nikkei 225 volatility.',
+  },
+  OVX: {
+    name: 'Cboe Crude Oil Volatility Index',
+    assetClass: 'CRUDE',
+    targetMarkets: ['CRUDE'],
+    description: 'Measures expected 30-day crude oil volatility derived from USO options.',
+  },
+  GVZ: {
+    name: 'Cboe Gold Volatility Index',
+    assetClass: 'GOLD',
+    targetMarkets: ['GOLD'],
+    description: 'Measures expected 30-day gold volatility derived from GLD options.',
+  },
+}
+
+export interface YahooLast {
+  price: number
+  previousClose: number
+  change: number
+  changePct: number
+}
+
+export async function fetchYahooLast(symbol: string): Promise<YahooLast | null> {
+  if (!symbol) return null
+  const url =
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}` +
+    '?interval=1d&range=5d'
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(4000),
+    })
+    if (!res.ok) return null
+    const json = await res.json()
+    const meta = json?.chart?.result?.[0]?.meta
+    const price = Number(meta?.regularMarketPrice)
+    const previousClose = Number(meta?.chartPreviousClose ?? meta?.previousClose)
+    if (!(price > 0)) return null
+    const prev = previousClose > 0 ? previousClose : price
+    const change = price - prev
+    const changePct = prev ? (change / prev) * 100 : 0
+    return {
+      price,
+      previousClose: prev,
+      change: +change.toFixed(4),
+      changePct: +changePct.toFixed(2),
+    }
+  } catch {
+    return null
+  }
+}
+
+function unsourcedQuote(symbol: VolatilitySymbol, nowIso: string): VolatilityQuote {
+  const meta = VOL_META[symbol]
+  return {
+    symbol,
+    ...meta,
+    value: 0,
+    previousClose: 0,
+    change: 0,
+    changePct: 0,
+    regime: 'NORMAL',
+    isExpanding: false,
+    asOfIso: nowIso,
+    sourced: false,
+  }
+}
+
+function quoteFromPrint(symbol: VolatilitySymbol, print: YahooLast, nowIso: string): VolatilityQuote {
+  const classified = classifyVolatilityRegime(symbol, print.price, print.changePct)
+  return {
+    symbol,
+    ...VOL_META[symbol],
+    value: print.price,
+    previousClose: print.previousClose,
+    change: print.change,
+    changePct: print.changePct,
+    regime: classified.regime,
+    isExpanding: classified.isExpanding,
+    asOfIso: nowIso,
+    sourced: true,
+  }
+}
+
 let cachedVolState: CrossMarketVolatilityState | null = null
 let lastVolFetchMs = 0
-const VOL_CACHE_TTL_MS = 60_000 // 60 seconds cache
+const VOL_CACHE_TTL_MS = 15_000
 
 /**
- * Fetches or returns cached cross-market volatility.
+ * Live Cboe gauges. A symbol that does not print stays unsourced.
  */
 export async function getCrossMarketVolatility(): Promise<CrossMarketVolatilityState> {
   const now = Date.now()
@@ -270,15 +394,19 @@ export async function getCrossMarketVolatility(): Promise<CrossMarketVolatilityS
     return cachedVolState
   }
 
-  // Attempt live Yahoo/Finnhub fetch, fallback to robust defaults
-  try {
-    const quotes = buildDefaultVolatilityQuotes(new Date())
-    // If live provider returns values, merge them here
-    cachedVolState = buildCrossMarketVolatilityState(quotes)
+  const nowIso = new Date(now).toISOString()
+  const symbols = Object.keys(YAHOO_VOL_SYMBOLS) as VolatilitySymbol[]
+  const prints = await Promise.all(symbols.map((symbol) => fetchYahooLast(YAHOO_VOL_SYMBOLS[symbol])))
+  const quotes = {} as Record<VolatilitySymbol, VolatilityQuote>
+  symbols.forEach((symbol, index) => {
+    const print = prints[index]
+    quotes[symbol] = print ? quoteFromPrint(symbol, print, nowIso) : unsourcedQuote(symbol, nowIso)
+  })
+
+  const state = buildCrossMarketVolatilityState(quotes)
+  if (symbols.some((symbol) => quotes[symbol].sourced)) {
+    cachedVolState = state
     lastVolFetchMs = now
-    return cachedVolState
-  } catch {
-    const quotes = buildDefaultVolatilityQuotes(new Date())
-    return buildCrossMarketVolatilityState(quotes)
   }
+  return state
 }

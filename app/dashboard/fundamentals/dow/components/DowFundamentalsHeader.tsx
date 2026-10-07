@@ -24,8 +24,6 @@ export function DowFundamentalsHeader({
   const t = state.dowTelemetry
   const rot = state.rotation
   const cred = state.credit
-  const contrib = state.contribution
-
   const getStanceColor = (bias: string) => {
     switch (bias) {
       case 'BULLISH':
@@ -107,7 +105,7 @@ export function DowFundamentalsHeader({
             </span>
           </div>
           <p className="text-xs text-slate-400">
-            Price-weighted DJIA 30 analyst engine ($5/pt, Divisor: {t.dowDivisor}). Fundamental context informs the desk; Volume Profile + Wyckoff + CVD decides the trade.
+            Price-weighted Dow analyst. The official divisor is unavailable. Quotes and FRED prints appear after refresh.
           </p>
         </div>
 
@@ -136,11 +134,13 @@ export function DowFundamentalsHeader({
         {/* 1. Prompt YM Futures Price */}
         <div className="bg-slate-950/70 border border-slate-800/90 rounded-lg p-3">
           <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
-            <span>E-mini Dow (YM)</span>
+            <span>{t.ymPriceSource === 'CASH_DJI' ? 'Cash DJIA' : t.sourced?.ym ? 'E-mini Dow (YM)' : 'E-mini Dow (YM)'}</span>
             <span className="text-[10px] font-mono text-blue-400">$5 / pt</span>
           </div>
           <div className="text-lg font-bold font-mono text-slate-100">
-            {t.ymPrice.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            {t.sourced?.ym || t.ymPriceSource === 'CASH_DJI'
+              ? t.ymPrice.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+              : 'Unavailable'}
           </div>
           <div className="flex items-center gap-1.5 mt-0.5 text-xs">
             <span
@@ -148,15 +148,18 @@ export function DowFundamentalsHeader({
                 t.ymChangePct >= 0 ? 'text-emerald-400' : 'text-rose-400'
               }`}
             >
-              {t.ymChangePct >= 0 ? '+' : ''}
-              {t.ymChangePct.toFixed(2)}%
+              {t.sourced?.ym || t.ymPriceSource === 'CASH_DJI'
+                ? `${t.ymChangePct >= 0 ? '+' : ''}${t.ymChangePct.toFixed(2)}%`
+                : 'Unavailable'}
             </span>
             <span className="text-[10px] text-slate-400 font-mono">
-              ({t.ymChange >= 0 ? '+' : ''}{t.ymChange.toFixed(0)} pts)
+              {t.sourced?.ym || t.ymPriceSource === 'CASH_DJI'
+                ? `(${t.ymChange >= 0 ? '+' : ''}${t.ymChange.toFixed(0)} pts)`
+                : ''}
             </span>
           </div>
           <div className="text-[10px] text-slate-400 mt-1 font-mono">
-            Notional: ${(t.contractNotionalValue / 1000).toFixed(1)}k
+            {t.ymPriceSource === 'CASH_DJI' ? 'Cash index, not the future' : 'Notional waits for a YM quote'}
           </div>
         </div>
 
@@ -168,18 +171,16 @@ export function DowFundamentalsHeader({
           </div>
           <div className="flex items-baseline gap-2">
             <span className="text-base font-bold font-mono text-slate-200">
-              {t.us10yNominalYield.toFixed(2)}%
+              {t.sourced?.us10y ? `${t.us10yNominalYield.toFixed(2)}%` : 'Unavailable'}
             </span>
             <span className="text-xs text-slate-400 font-mono">10Y</span>
-            <span className="text-xs font-mono text-emerald-400 ml-1">
-              +{t.yieldCurve2s10sSpreadBps}bp
+            <span className="text-xs font-mono text-slate-300 ml-1">
+              {t.sourced?.us2y && t.sourced?.us10y ? `${t.yieldCurve2s10sSpreadBps >= 0 ? '+' : ''}${t.yieldCurve2s10sSpreadBps}bp` : 'curve unavailable'}
             </span>
           </div>
           <div className="mt-1">
-            <span
-              className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-mono border ${yieldDriverMeta.color}`}
-            >
-              {yieldDriverMeta.label}
+            <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-mono border text-slate-300 border-slate-700">
+              {t.sourced?.us2y && t.sourced?.us10y ? yieldDriverMeta.label : 'Yield driver unavailable'}
             </span>
           </div>
         </div>
@@ -192,16 +193,13 @@ export function DowFundamentalsHeader({
           </div>
           <div className="flex items-baseline gap-1 text-sm font-mono font-bold">
             <span className={rot.ymVsNqSpreadPct >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
-              {rot.ymVsNqSpreadPct >= 0 ? '+' : ''}{rot.ymVsNqSpreadPct}%
+              {t.sourced?.ym && t.sourced?.nq ? `${rot.ymVsNqSpreadPct >= 0 ? '+' : ''}${rot.ymVsNqSpreadPct}%` : 'Unavailable'}
             </span>
             <span className="text-[10px] text-slate-400 font-normal">spread</span>
           </div>
           <div className="mt-1">
-            <span
-              className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-mono border truncate max-w-full ${rotMeta.color}`}
-              title={rotMeta.label}
-            >
-              {rotMeta.label}
+            <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-mono border truncate max-w-full text-slate-300 border-slate-700">
+              {t.sourced?.ym && t.sourced?.es && t.sourced?.nq && t.sourced?.rty ? rotMeta.label : 'Rotation unavailable'}
             </span>
           </div>
         </div>
@@ -213,14 +211,12 @@ export function DowFundamentalsHeader({
             <span className="text-[10px] font-mono text-slate-400">HY OAS</span>
           </div>
           <div className="flex items-baseline gap-1 text-sm font-mono font-bold text-slate-200">
-            <span>{cred.highYieldSpreadBps} bps</span>
-            <span className="text-[10px] text-slate-400 font-normal">(HYG ${cred.hygPrice.toFixed(1)})</span>
+            <span>{t.sourced?.hyOas ? `${cred.highYieldSpreadBps} bps` : 'Unavailable'}</span>
+            <span className="text-[10px] text-slate-400 font-normal">{t.sourced?.hyg ? `(HYG $${cred.hygPrice.toFixed(1)})` : ''}</span>
           </div>
           <div className="mt-1">
-            <span
-              className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-mono border ${credMeta.color}`}
-            >
-              {credMeta.label}
+            <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-mono border text-slate-300 border-slate-700">
+              {t.sourced?.hyOas ? credMeta.label : 'Credit regime unavailable'}
             </span>
           </div>
         </div>
@@ -232,15 +228,10 @@ export function DowFundamentalsHeader({
             <span className="text-[10px] font-mono text-blue-400">Top 3</span>
           </div>
           <div className="flex items-baseline gap-1.5 text-sm font-mono font-bold text-slate-200">
-            <span className="text-emerald-400">{t.advancersCount}A</span>
-            <span className="text-slate-500">/</span>
-            <span className="text-rose-400">{t.declinersCount}D</span>
-            <span className="text-[10px] text-slate-400 font-normal font-sans ml-1">
-              ({contrib.top3ContributionPct.toFixed(0)}% top3)
-            </span>
+            <span className="text-slate-200">Quoted names only</span>
           </div>
           <div className="text-[10px] text-slate-400 mt-1 font-mono">
-            Equal: {contrib.equalWeight30ReturnPct >= 0 ? '+' : ''}{contrib.equalWeight30ReturnPct}% vs DJIA: {contrib.priceWeightedDjiaReturnPct >= 0 ? '+' : ''}{contrib.priceWeightedDjiaReturnPct}%
+            Full 30-name breadth and top-3 concentration are unavailable
           </div>
         </div>
 

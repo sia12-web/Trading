@@ -9,15 +9,12 @@ import { NextResponse } from 'next/server'
 import { getYahooCandles, getYahooCandlesRange } from '@/lib/yahoo/candles'
 import { getOandaCandles, getOandaCandlesRange } from '@/lib/oanda/candles'
 import { isOandaConfigured } from '@/lib/oanda/config'
-import { getOandaPrice } from '@/lib/oanda/pricing'
-import { getDayPreviousClose, getYahooQuote } from '@/lib/yahoo/quote'
+import { getDayPreviousClose } from '@/lib/yahoo/quote'
 import {
-  applyCmeBasis,
   applyCmeBasisToCandles,
   getCmeBasis,
   getLastKnownCmeBasis,
   warmCmeBasis,
-  CME_BASIS_REFRESH_MS,
 } from '@/lib/trading/cmeBasis'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import {
@@ -29,11 +26,14 @@ import {
   dropImplausibleDeskBars,
   liveQuoteDisagreesWithReference,
 } from '@/lib/chart/liveFormingBar'
-import { AVWAP_CANDLE_FETCH_CALENDAR_DAYS } from '@/lib/chart/sessionVwap'
+import {
+  AVWAP_CANDLE_FETCH_CALENDAR_DAYS,
+  ONE_MINUTE_FETCH_CALENDAR_DAYS,
+} from '@/lib/chart/sessionVwap'
 import { nyDateTimeToUnix, tokyoDateTimeToUnix } from '@/lib/utils/dateUtils'
 import type { Instrument } from '@/types/price-feed'
 import { getDatabentoCandles, getDatabentoRecent1m, isDatabentoConfigured } from '@/lib/databento/client'
-import { fetchDatabentoLiveBars, resolveDatabentoLiveQuote } from '@/lib/databento/liveHub'
+import { fetchDatabentoLiveBars, getLatestDatabentoLiveQuote, resolveDatabentoLiveQuote } from '@/lib/databento/liveHub'
 import { liveTapeHasVendorGap, mergeTapeBars, overlayVendorWithTape } from '@/lib/databento/liveOverlay'
 import { fillCandleGaps } from '@/lib/chart/candleGapFiller'
 import { logger } from '@/lib/utils/logger'
@@ -67,7 +67,60 @@ function resolutionSeconds(resolution: string, timeframe: string): number {
 
 interface CachedCandleEntry {
   data: any
-  expiresAt: number
+  freshUntil: number
+  staleUntil: number
+}
+
+type CandleRow = {
+  time: number
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+}
+
+/** One background rebuild per key so a burst of chart switches shares a single fetch. */
+const candleRefreshInflight = new Set<string>()
+
+function candleCacheWindows(
+  isDaily: boolean,
+  historical: boolean,
+  source: string
+): { fresh: number; stale: number } {
+  if (historical) return { fresh: 600_000, stale: 1_800_000 }
+  if (isDaily) return { fresh: 60_000, stale: 600_000 }
+  // The chart stream owns the forming bar. This window is so a market or
+  // timeframe switch paints the last book instead of waiting on Yahoo again.
+  if (source === 'databento') return { fresh: 20_000, stale: 120_000 }
+  return { fresh: 15_000, stale: 120_000 }
+}
+
+/**
+ * Splice the lagged vendor tail with CME prints. Returns null when there is
+ * nothing newer to apply (or the contracts disagree).
+ */
+async function overlayLiveTape(
+  candles: CandleRow[],
+  instrument: Instrument,
+  resolution: string,
+  timeframe: string
+): Promise<CandleRow[] | null> {
+  const stepSec = resolutionSeconds(resolution, timeframe)
+  const vendorLast = candles[candles.length - 1]!.time
+  const liveBars = await fetchDatabentoLiveBars(instrument, vendorLast)
+  let histTail = null
+  if (liveTapeHasVendorGap(liveBars, vendorLast, stepSec)) {
+    histTail = await getDatabentoRecent1m(instrument, vendorLast)
+  }
+  const tape = mergeTapeBars(histTail || [], liveBars || [])
+  if (!tape.length) return null
+  const spliced = overlayVendorWithTape(candles, tape, stepSec, instrument)
+  if (!spliced.applied) {
+    logger.warn(`[Candles] Skipping Databento overlay for ${instrument}: same-bar contract mismatch`)
+    return null
+  }
+  return spliced.candles
 }
 
 const candleMemoryCache = new Map<string, CachedCandleEntry>()
@@ -79,7 +132,7 @@ const CANDLE_CACHE_MAX_ENTRIES = 200
 function pruneCandleCache() {
   const now = Date.now()
   for (const [key, entry] of candleMemoryCache.entries()) {
-    if (entry.expiresAt < now) {
+    if (entry.staleUntil < now) {
       candleMemoryCache.delete(key)
     }
   }
@@ -89,6 +142,16 @@ function pruneCandleCache() {
     if (oldest.done) break
     candleMemoryCache.delete(oldest.value)
   }
+}
+
+function scheduleCandleRefresh(cacheKey: string, request: Request) {
+  if (candleRefreshInflight.has(cacheKey)) return
+  candleRefreshInflight.add(cacheKey)
+  const headers = new Headers(request.headers)
+  headers.set('x-candle-revalidate', '1')
+  void GET(new Request(request.url, { headers, method: 'GET' })).finally(() => {
+    candleRefreshInflight.delete(cacheKey)
+  })
 }
 
 export async function GET(request: Request) {
@@ -111,15 +174,26 @@ export async function GET(request: Request) {
     const asOf = asOfParam ? parseInt(asOfParam, 10) : null
     const includeQuote = searchParams.get('quote') !== '0'
 
-    // Server-side fast cache check (instant response on timeframe/instrument switching)
-    const cacheKey = `${instrument}:${timeframe}:${days}:${endDate || 'live'}:${asOfParam || 'none'}:${includeQuote ? '1' : '0'}`
+    // Quote is derived from the last bar (or an already-warm print), so quote=0
+    // and quote=1 share one book. Switches must not miss just because the flag differs.
+    const cacheKey = `${instrument}:${timeframe}:${days}:${endDate || 'live'}:${asOfParam || 'none'}`
     const now = Date.now()
+    const revalidate = request.headers.get('x-candle-revalidate') === '1'
     const cached = candleMemoryCache.get(cacheKey)
-    if (cached && cached.expiresAt > now) {
+    if (!revalidate && cached && cached.freshUntil > now) {
       return NextResponse.json(cached.data, {
         headers: {
           'Cache-Control': 'no-store, no-cache, must-revalidate',
           'X-Candle-Cache': 'HIT',
+        },
+      })
+    }
+    if (!revalidate && cached && cached.staleUntil > now) {
+      scheduleCandleRefresh(cacheKey, request)
+      return NextResponse.json(cached.data, {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'X-Candle-Cache': 'STALE',
         },
       })
     }
@@ -135,16 +209,9 @@ export async function GET(request: Request) {
     const sess = sessionFor(instrument)
     const toUnix = instrument === 'NIKKEI' ? tokyoDateTimeToUnix : nyDateTimeToUnix
 
-    type CandleRow = {
-      time: number
-      open: number
-      high: number
-      low: number
-      close: number
-      volume: number
-    }
     let candles: CandleRow[] | null = null
     let source: 'databento' | 'oanda' | 'yahoo' | 'empty' = 'empty'
+    let overlayLate: Promise<CandleRow[] | null> | null = null
 
     if (endDate && /^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
       // Sim / dated: full cash session (open → close) so afternoon chart keeps printing.
@@ -177,13 +244,13 @@ export async function GET(request: Request) {
           source = 'yahoo'
         }
       } else {
-        // Intraday (1m, 5m, 15m, 30m, 1H, 4H):
-        // For 1m, 3 calendar days guarantees at least 5 full RTH sessions Mon-Fri.
-        // Previously 8 days caused ~11,520 raw bars to be fetched; 3 days = ~4,320 bars,
-        // trimmed to ~1,950 (5 × 6.5h × 60min) by lastNTradingSessions.
+        // Intraday (1m, 5m, 15m, 30m, 1H, 4H).
+        // 1m is capped at Yahoo's ~8 calendar days, which is what it takes to
+        // keep 5 RTH sessions when the week starts on Monday. 3 days stops at
+        // the prior Friday and the chart cannot scroll the rest of the week.
         const fetchDays =
           timeframe === '1m'
-            ? Math.max(days, 3)
+            ? Math.max(days, ONE_MINUTE_FETCH_CALENDAR_DAYS)
             : Math.max(days, AVWAP_CANDLE_FETCH_CALENDAR_DAYS)
 
         // 1. Direct CME Globex futures candles (MYM=F, MNQ=F, NKD=F, MGC=F, CL=F) matching Tradovate & TradingView
@@ -232,30 +299,26 @@ export async function GET(request: Request) {
         }
 
         // 4. Overlay the tail with real CME Globex 1m prints. Yahoo/OANDA lag the
-        //    tape by several minutes. The sidecar is empty after a restart, so we
-        //    splice Databento Historical 1m into that window and let live win on
-        //    overlap. Skipping overlay because live *now* differs from delayed
-        //    Yahoo is what painted holes and late bars.
+        //    tape by several minutes. A fast sidecar splice stays on the response.
+        //    A slow historical backfill must not hold the bars the chart is waiting on.
         if (candles?.length && !isDaily && isDatabentoConfigured()) {
           try {
-            const stepSec = resolutionSeconds(resolution, timeframe)
-            const vendorLast = candles[candles.length - 1]!.time
-            const liveBars = await fetchDatabentoLiveBars(instrument, vendorLast)
-            let histTail = null
-            if (liveTapeHasVendorGap(liveBars, vendorLast, stepSec)) {
-              histTail = await getDatabentoRecent1m(instrument, vendorLast)
-            }
-            const tape = mergeTapeBars(histTail || [], liveBars || [])
-            if (tape.length) {
-              const spliced = overlayVendorWithTape(candles, tape, stepSec, instrument)
-              if (spliced.applied) {
-                candles = spliced.candles
-                source = 'databento'
-              } else {
-                logger.warn(
-                  `[Candles] Skipping Databento overlay for ${instrument}: same-bar contract mismatch`
-                )
-              }
+            const work = overlayLiveTape(candles, instrument, resolution, timeframe)
+            let overlayTimer: ReturnType<typeof setTimeout> | undefined
+            const raced = await Promise.race([
+              work.then((rows) => {
+                if (overlayTimer) clearTimeout(overlayTimer)
+                return { timedOut: false as const, rows }
+              }),
+              new Promise<{ timedOut: true; rows: null }>((resolve) => {
+                overlayTimer = setTimeout(() => resolve({ timedOut: true, rows: null }), 700)
+              }),
+            ])
+            if (!raced.timedOut && raced.rows) {
+              candles = raced.rows
+              source = 'databento'
+            } else if (raced.timedOut) {
+              overlayLate = work
             }
           } catch (err) {
             logger.warn(`[Candles] Databento live bar overlay failed for ${instrument}`, err)
@@ -293,12 +356,20 @@ export async function GET(request: Request) {
       change_pct: number
       previous_close?: number
     } | null = null
-    if (includeQuote) {
-      // Real CME Globex print first, matching /api/trading/quote. Anything below is a
-      // basis-shifted proxy, so preferring them here would hand the chart a different
-      // opening tip than the stream it is about to attach to.
-      if (!endDate && isDatabentoConfigured()) {
-        const dbLive = await resolveDatabentoLiveQuote(instrument)
+    // The chart has its own quote stream. Do not hold the bars for OANDA or
+    // Yahoo quote round-trips — last close paints immediately, and a print that
+    // is already in memory (or returns within 180ms) replaces it.
+    {
+      const last = candles[candles.length - 1]!
+      quote = { price: last.close, change: 0, change_pct: 0 }
+      if (includeQuote && !endDate && isDatabentoConfigured()) {
+        let dbLive = getLatestDatabentoLiveQuote(instrument)
+        if (!dbLive) {
+          dbLive = await Promise.race([
+            resolveDatabentoLiveQuote(instrument),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 180)),
+          ])
+        }
         const bookTip = candles[candles.length - 1]
         const bookClose = bookTip?.close
         if (
@@ -325,60 +396,6 @@ export async function GET(request: Request) {
           }
         }
       }
-      // Only reached without a live exchange print — skipping it also saves a round trip.
-      if (!quote) {
-        try {
-          // Live tip on CME scale (same path as /quote) so painted ±10 bands
-          // and the streaming last share one book.
-          const o = await getOandaPrice(instrument)
-          const basis =
-            getCmeBasis(instrument) ?? getLastKnownCmeBasis(instrument)
-          if (!endDate && (basis == null || getCmeBasis(instrument, CME_BASIS_REFRESH_MS) == null)) {
-            void warmCmeBasis(instrument)
-          }
-          if (!endDate && o?.price && o.price > 0 && (basis != null || (instrument !== 'GOLD' && instrument !== 'CRUDE'))) {
-            const price = applyCmeBasis(o.price, basis)
-            const previous_close = getDayPreviousClose(instrument) ?? price
-            const change = price - previous_close
-            quote = {
-              price,
-              change,
-              change_pct: previous_close ? (change / previous_close) * 100 : 0,
-              previous_close,
-            }
-          }
-        } catch {
-          /* fallback to CME */
-        }
-      }
-
-      // Direct CME futures fallback from exchange feed (Tradovate / CME MYM, MNQ, NKD, MGC, CL)
-      if (!quote && !endDate) {
-        try {
-          const yq = await getYahooQuote(instrument)
-          if (yq?.price && yq.price > 0) {
-            const price = yq.price
-            const previous_close = yq.previous_close || price
-            const change = yq.change || (price - previous_close)
-            quote = {
-              price,
-              change,
-              change_pct: yq.change_pct || (previous_close ? (change / previous_close) * 100 : 0),
-              previous_close,
-            }
-          }
-        } catch {
-          /* fallback to last candle */
-        }
-      }
-
-      if (!quote) {
-        const last = candles[candles.length - 1]!
-        quote = { price: last.close, change: 0, change_pct: 0 }
-      }
-    } else {
-      const last = candles[candles.length - 1]!
-      quote = { price: last.close, change: 0, change_pct: 0 }
     }
 
     const payload = {
@@ -396,21 +413,78 @@ export async function GET(request: Request) {
       quote,
     }
 
-    // Cache TTL: 60s for daily, 600s for historical replay dates, 1s for a delayed
-    // vendor book that still needs a Databento overlay, 2s once the tape is spliced.
-    const ttlMs = isDaily ? 60_000 : endDate ? 600_000 : source === 'databento' ? 2_000 : 1_000
+    const windows = candleCacheWindows(isDaily, Boolean(endDate), source)
+    // A tail that is still splicing must not be served as fresh for the full window.
+    const freshMs = overlayLate ? 2_000 : windows.fresh
     candleMemoryCache.set(cacheKey, {
       data: payload,
-      expiresAt: now + ttlMs,
+      freshUntil: now + freshMs,
+      staleUntil: now + windows.stale,
     })
     if (candleMemoryCache.size > CANDLE_CACHE_MAX_ENTRIES) {
       pruneCandleCache()
     }
 
+    if (overlayLate) {
+      const lateKey = cacheKey
+      const lateInstrument = instrument
+      const lateTimeframe = timeframe
+      const lateAsOf = asOf
+      const latePayload = payload
+      void overlayLate.then((rows) => {
+        if (!rows?.length) return
+        let next = rows
+        if (lateAsOf != null && Number.isFinite(lateAsOf)) {
+          next = next.filter((c) => c.time <= lateAsOf)
+        }
+        next = dropImplausibleDeskBars(next, lateInstrument, lateTimeframe)
+        next = fillCandleGaps(next, lateTimeframe, lateInstrument)
+        if (!next.length) return
+        const held = candleMemoryCache.get(lateKey)
+        if (
+          held?.data?.source === 'databento' &&
+          held.freshUntil > Date.now() &&
+          Array.isArray(held.data.candles) &&
+          held.data.candles.length >= next.length
+        ) {
+          return
+        }
+        const tip = next[next.length - 1]!
+        const upgraded = {
+          ...latePayload,
+          source: 'databento' as const,
+          candles: next.map((c) => ({
+            time: c.time,
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: c.volume,
+          })),
+          quote: {
+            price: tip.close,
+            change: latePayload.quote?.change ?? 0,
+            change_pct: latePayload.quote?.change_pct ?? 0,
+            previous_close: latePayload.quote?.previous_close,
+          },
+        }
+        const t = Date.now()
+        const w = candleCacheWindows(false, false, 'databento')
+        candleMemoryCache.set(lateKey, {
+          data: upgraded,
+          freshUntil: t + w.fresh,
+          staleUntil: t + w.stale,
+        })
+      }).catch((err) => {
+        logger.warn(`[Candles] Late Databento tail splice failed for ${lateInstrument}`, err)
+      })
+    }
+
     return NextResponse.json(payload, {
       headers: {
         'Cache-Control': 'no-store, no-cache, must-revalidate',
-        'X-Candle-Cache': 'MISS',
+        'X-Candle-Cache': revalidate ? 'REFRESH' : 'MISS',
+        ...(overlayLate ? { 'X-Candle-Tail': 'pending' } : {}),
       },
     })
   } catch (error) {

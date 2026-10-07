@@ -11,7 +11,7 @@
 
 ## 1. High-Level Architecture & System Topology
 
-TradePulse is an event-driven institutional day and swing trading workstation. It integrates multi-source market data pipelines (CME Globex MDP 3.0 via Databento, OANDA continuous CFDs with CME basis adjustments, and Yahoo Finance Daily macro history), proprietary auction market analytics (5-Month Anchored VWAP with SD bands, 5-Day FRVP, Initial Balance, Dalton Spikes), broker portfolio tracking (Questrade live OAuth & TopstepX prop firm challenge), and an intelligent trading copilot (Leo AI with the 22-Rule Wyckoff Playbook and persistent Long-Term Memory zones).
+TradePulse is an event-driven institutional day and swing trading workstation. It integrates multi-source market data pipelines (CME Globex MDP 3.0 via Databento, OANDA continuous CFDs with CME basis adjustments, and Yahoo Finance Daily macro history), proprietary auction market analytics (5-Month Anchored VWAP with SD bands, 5-Day FRVP, opening ranges, Dalton Spikes), broker portfolio tracking (Questrade live OAuth & TopstepX prop firm challenge), and an intelligent trading copilot (Leo AI with the 22-Rule Wyckoff Playbook and persistent Long-Term Memory zones).
 
 ```mermaid
 graph TD

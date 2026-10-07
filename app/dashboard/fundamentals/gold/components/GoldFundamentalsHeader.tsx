@@ -87,10 +87,10 @@ export function GoldFundamentalsHeader({
             <span className="text-[10px] font-mono text-amber-400">Prompt</span>
           </div>
           <div className="text-lg font-bold font-mono text-slate-100">
-            ${t.goldPrice.toFixed(2)}
+            {t.sourced?.gold ? `$${t.goldPrice.toFixed(2)}` : 'Unavailable'}
           </div>
           <div className={`text-xs font-mono font-medium ${t.goldChange >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-            {t.goldChange >= 0 ? '+' : ''}${t.goldChange.toFixed(2)} ({t.goldChangePct >= 0 ? '+' : ''}{t.goldChangePct.toFixed(2)}%)
+            {t.sourced?.gold ? `${t.goldChange >= 0 ? '+' : ''}$${t.goldChange.toFixed(2)} (${t.goldChangePct >= 0 ? '+' : ''}${t.goldChangePct.toFixed(2)}%)` : 'Change unavailable'}
           </div>
         </div>
 
@@ -101,7 +101,7 @@ export function GoldFundamentalsHeader({
             <span className="text-[10px] font-mono text-sky-400">DFII10</span>
           </div>
           <div className="text-lg font-bold font-mono text-sky-300">
-            {t.us10yRealYield.toFixed(2)}%
+            {t.sourced?.us10yReal ? `${t.us10yRealYield.toFixed(2)}%` : 'Unavailable'}
           </div>
           <div className="text-[10px] text-slate-400 truncate" title="Real Yield = Nominal - Inflation Expectation">
             Opportunity Cost Anchor
@@ -115,10 +115,10 @@ export function GoldFundamentalsHeader({
             <span className="text-[10px] font-mono text-slate-400">^TNX</span>
           </div>
           <div className="text-lg font-bold font-mono text-slate-200">
-            {t.us10yNominalYield.toFixed(2)}%
+            {t.sourced?.us10y ? `${t.us10yNominalYield.toFixed(2)}%` : 'Unavailable'}
           </div>
           <div className="text-[10px] font-mono text-emerald-400 truncate">
-            BE: {t.us10yBreakeven.toFixed(2)}% (T10YIE)
+            BE: {t.sourced?.breakeven ? `${t.us10yBreakeven.toFixed(2)}%` : 'Unavailable'}
           </div>
         </div>
 
@@ -129,10 +129,12 @@ export function GoldFundamentalsHeader({
             <span className="text-[10px] font-mono text-amber-300">DXY</span>
           </div>
           <div className="text-lg font-bold font-mono text-slate-100">
-            {t.dxyIndex.toFixed(2)}
+            {t.sourced?.dxy ? t.dxyIndex.toFixed(2) : 'Unavailable'}
           </div>
-          <div className={`text-[10px] font-mono ${t.dxyChangePct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-            {t.dxyChangePct >= 0 ? '+' : ''}{t.dxyChangePct.toFixed(2)}% · EUR {t.eurUsd.toFixed(4)}
+          <div className="text-[10px] font-mono text-slate-400">
+            {t.sourced?.dxy ? `${t.dxyChangePct >= 0 ? '+' : ''}${t.dxyChangePct.toFixed(2)}%` : 'Change unavailable'}
+            {' · EUR '}
+            {t.sourced?.eurusd ? t.eurUsd.toFixed(4) : 'Unavailable'}
           </div>
         </div>
 
@@ -143,10 +145,10 @@ export function GoldFundamentalsHeader({
             <span className="text-[10px] font-mono text-slate-400">GSR</span>
           </div>
           <div className="text-lg font-bold font-mono text-slate-200">
-            ${t.silverPrice.toFixed(2)}
+            {t.sourced?.silver ? `$${t.silverPrice.toFixed(2)}` : 'Unavailable'}
           </div>
           <div className="text-[10px] font-mono text-amber-300">
-            GSR: {t.goldSilverRatio.toFixed(1)}:1
+            GSR: {t.sourced?.gold && t.sourced?.silver ? `${t.goldSilverRatio.toFixed(1)}:1` : 'Unavailable'}
           </div>
         </div>
 
@@ -157,10 +159,10 @@ export function GoldFundamentalsHeader({
             <span className="text-[10px] font-mono text-purple-400">Options</span>
           </div>
           <div className="text-lg font-bold font-mono text-purple-300">
-            {t.goldCvol.toFixed(1)}%
+            {t.goldCvol == null ? 'Unavailable' : `${t.goldCvol.toFixed(1)}%`}
           </div>
           <div className="text-[10px] text-slate-400">
-            Realized: {t.goldRealizedVol30d.toFixed(1)}%
+            Realized: {t.goldRealizedVol30d == null ? 'Unavailable' : `${t.goldRealizedVol30d.toFixed(1)}%`}
           </div>
         </div>
       </div>

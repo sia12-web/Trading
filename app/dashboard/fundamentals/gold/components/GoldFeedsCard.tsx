@@ -35,10 +35,10 @@ export function GoldFeedsCard({ feeds }: GoldFeedsCardProps) {
           <div className="flex items-center gap-2">
             <span className="text-xl">🔌</span>
             <h2 className="text-lg font-bold text-slate-100">
-              V1 Pragmatic Data Feeds Architecture
+              Gold data feeds
             </h2>
             <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-              Item 38 Architecture
+              Live or not probed
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">

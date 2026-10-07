@@ -9,6 +9,7 @@
 
 
 import { useState, useRef, useCallback, useEffect } from 'react'
+import { RecoverableBoundary } from '@/components/ui/RecoverableBoundary'
 import { TradingChart } from './components/TradingChart'
 import { SessionBanner, type SessionGateState } from './components/SessionBanner'
 import { CrossMarketRadarStrip } from './components/CrossMarketRadarStrip'
@@ -172,11 +173,27 @@ const ACTIVE_POS_STORAGE_KEY = 'tradepulse.desk.managePos'
 const POSITION_OVERLAY_STORAGE_KEY = 'tradepulse.desk.positionOverlay'
 const PENDING_LIMIT_STORAGE_KEY = 'tradepulse.desk.pendingLimit'
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
 function loadStoredManagePos(): ManagePosition | null {
   if (typeof window === 'undefined') return null
   try {
     const raw = localStorage.getItem(ACTIVE_POS_STORAGE_KEY)
-    return raw ? JSON.parse(raw) : null
+    if (!raw) return null
+    const pos = JSON.parse(raw) as ManagePosition
+    if (
+      !pos ||
+      typeof pos.id !== 'string' ||
+      typeof pos.instrument !== 'string' ||
+      !isFiniteNumber(pos.entryPrice) ||
+      !isFiniteNumber(pos.stopLoss) ||
+      !isFiniteNumber(pos.profitTarget)
+    ) {
+      return null
+    }
+    return pos
   } catch {
     return null
   }
@@ -186,7 +203,17 @@ function loadStoredPositionOverlay(): PositionOverlay | null {
   if (typeof window === 'undefined') return null
   try {
     const raw = localStorage.getItem(POSITION_OVERLAY_STORAGE_KEY)
-    return raw ? JSON.parse(raw) : null
+    if (!raw) return null
+    const pos = JSON.parse(raw) as PositionOverlay
+    if (
+      !pos ||
+      !isFiniteNumber(pos.entryPrice) ||
+      !isFiniteNumber(pos.stopLoss) ||
+      !isFiniteNumber(pos.profitTarget)
+    ) {
+      return null
+    }
+    return pos
   } catch {
     return null
   }
@@ -196,7 +223,10 @@ function loadStoredPendingLimit(): PendingLimitOrder | null {
   if (typeof window === 'undefined') return null
   try {
     const raw = localStorage.getItem(PENDING_LIMIT_STORAGE_KEY)
-    return raw ? JSON.parse(raw) : null
+    if (!raw) return null
+    const order = JSON.parse(raw) as PendingLimitOrder
+    if (!order || !isFiniteNumber(order.level) || !isFiniteNumber(order.stopLoss)) return null
+    return order
   } catch {
     return null
   }
@@ -837,9 +867,7 @@ export default function ChartPage() {
             ? 'US Range'
             : g.rangeStrategy === 'or30'
               ? 'OR30'
-              : g.rangeStrategy === 'ib'
-                ? 'IB'
-                : 'Morning (Open range)'
+              : 'Morning (Open range)'
         lastUnlockKeyRef.current = `${g.lockedInstrument}:${g.rangeStrategy ?? 'morning'}:${windowLabel}`
       }
       // Still allow regime fetch below — only Telegram rising-edges are suppressed.
@@ -850,9 +878,7 @@ export default function ChartPage() {
             ? 'US Range'
             : g.rangeStrategy === 'or30'
               ? 'OR30'
-              : g.rangeStrategy === 'ib'
-                ? 'IB'
-                : 'Morning (Open range)'
+              : 'Morning (Open range)'
         const key = `${g.lockedInstrument}:${g.rangeStrategy ?? 'morning'}:${windowLabel}`
         const claimKind = `entry_${g.rangeStrategy ?? 'morning'}`
         if (
@@ -1841,7 +1867,7 @@ export default function ChartPage() {
             ) {
               return
             }
-            // Confirm against Live Positions SoT + working — never false-close on null alone
+            // Confirm against management-status SoT + working — never false-close on null alone
             let hasFilledOpen = false
             let hasWorkingLimit = false
             try {
@@ -2091,24 +2117,28 @@ export default function ChartPage() {
   return (
     <div className="flex h-screen w-full max-w-full overflow-hidden relative flex-col bg-[#0d1117] overscroll-none">
       <div className="px-2 pt-1 pb-0.5 shrink-0 z-20 overscroll-none">
-        <SessionBanner
-          onGate={handleGate}
-          refreshKey={gateTick}
-          lastQuoteAt={lastQuoteAt}
-          dataMode={dataMode}
-          viewingInstrument={instrument}
-          asiaOrderLive={
-            isAsiaLiveOrderOverlay(asiaOverlays.GOLD) ||
-            isAsiaLiveOrderOverlay(asiaOverlays.DOW)
-          }
-          onRefreshReady={(fn) => {
-            bannerRefreshRef.current = fn
-          }}
-        />
-        <CrossMarketRadarStrip
-          currentInstrument={instrument}
-          onSelectInstrument={(next) => setInstrument(next)}
-        />
+        <RecoverableBoundary label="Session banner">
+          <SessionBanner
+            onGate={handleGate}
+            refreshKey={gateTick}
+            lastQuoteAt={lastQuoteAt}
+            dataMode={dataMode}
+            viewingInstrument={instrument}
+            asiaOrderLive={
+              isAsiaLiveOrderOverlay(asiaOverlays.GOLD) ||
+              isAsiaLiveOrderOverlay(asiaOverlays.DOW)
+            }
+            onRefreshReady={(fn) => {
+              bannerRefreshRef.current = fn
+            }}
+          />
+        </RecoverableBoundary>
+        <RecoverableBoundary label="Cross-market radar">
+          <CrossMarketRadarStrip
+            currentInstrument={instrument}
+            onSelectInstrument={(next) => setInstrument(next)}
+          />
+        </RecoverableBoundary>
       </div>
 
       <div className="flex-1 w-full max-w-full min-h-0 min-w-0 relative p-1 flex flex-col gap-1 overflow-hidden overscroll-none">
@@ -2189,6 +2219,7 @@ export default function ChartPage() {
 
         <div className="relative flex-1 w-full max-w-full min-h-0 overflow-hidden overscroll-none">
           {chartBooted && (
+            <RecoverableBoundary label="Chart">
             <TradingChart
               initialInstrument={instrument}
               onInstrumentChange={setInstrument}
@@ -2331,6 +2362,7 @@ export default function ChartPage() {
               levelsRefreshKey={levelsRefreshKey}
               onPlaceOrder={handleLeoPlaceOrder}
             />
+            </RecoverableBoundary>
           )}
         </div>
       </div>

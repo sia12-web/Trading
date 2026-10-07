@@ -72,11 +72,13 @@ export function DowDashboard() {
         body: JSON.stringify({ action: 'refresh_telemetry' }),
       })
       const data = await res.json()
-      if (data.ok && data.state) {
-        setState(data.state)
+      if (!res.ok || !data.ok || !data.state) {
+        throw new Error(data.error || `Refresh failed (${res.status})`)
       }
-    } catch {
-      await loadState()
+      setState(data.state)
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Refresh failed')
     } finally {
       setRefreshing(false)
     }
@@ -92,11 +94,13 @@ export function DowDashboard() {
         body: JSON.stringify({ action: 'reset' }),
       })
       const data = await res.json()
-      if (data.ok && data.state) {
-        setState(data.state)
+      if (!res.ok || !data.ok || !data.state) {
+        throw new Error(data.error || `HTTP ${res.status}`)
       }
-    } catch {
-      await loadState()
+      setState(data.state)
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Reset failed')
     } finally {
       setRefreshing(false)
     }
@@ -156,15 +160,15 @@ export function DowDashboard() {
   }
 
   const tabs: Array<{ key: DowTabKey; label: string; icon: string }> = [
-    { key: 'today', label: "Today's State (24 Dims)", icon: '📋' },
-    { key: 'evaluator', label: '14-Step Evaluator', icon: '⚡' },
-    { key: 'wire', label: 'Live Dow Wire', icon: '📡' },
-    { key: 'contributions', label: 'Price Weights & DJIA 30', icon: '⚖️' },
+    { key: 'today', label: "Today's State", icon: '📋' },
+    { key: 'contributions', label: 'Quoted Dow Names', icon: '⚖️' },
     { key: 'rotation_credit', label: 'Rotation & Credit', icon: '🔄' },
-    { key: 'industrial', label: 'Industrial Cycle & 4-Quadrant', icon: '🏭' },
-    { key: 'drivers', label: '11 Drivers Matrix', icon: '🧭' },
-    { key: 'feeds', label: '9 V1 Feeds', icon: '🔌' },
-    { key: 'terminal', label: 'Analyst Terminal', icon: '💬' },
+    { key: 'drivers', label: 'Drivers', icon: '🧭' },
+    { key: 'industrial', label: 'Industrial Cycle', icon: '🏭' },
+    { key: 'wire', label: 'Live Dow Wire', icon: '📡' },
+    { key: 'evaluator', label: 'Event Evaluator', icon: '⚡' },
+    { key: 'feeds', label: 'Feeds', icon: '🔌' },
+    { key: 'terminal', label: 'Analyst Chat', icon: '💬' },
   ]
 
   return (

@@ -28,6 +28,7 @@ import {
 } from './goldAnalystConfig'
 import { refreshGoldTelemetry, recordEvaluatedGoldEvent } from './goldStateStore'
 import { logger } from '@/lib/utils/logger'
+import { scrubSummary, textContainsNumber } from '@/lib/fundamentals/honesty'
 import {
   adaptLegacyFundamentalJson,
   buildFundamentalEventUserPrompt,
@@ -252,9 +253,11 @@ function runDeterministicEvaluation(params: {
       fundamentalState.short_term = 'NEUTRAL'
       fundamentalState.medium_term = 'BULLISH'
 
-      const stdRes = computeStandardizedSurprise('CORE_CPI_MOM', 0.4, 0.2)
-      rawSurprise = stdRes.rawSurprise
-      standardizedSurprise = stdRes.standardizedSurprise
+      if (textContainsNumber(rawText, 0.4) && textContainsNumber(rawText, 0.2)) {
+        const stdRes = computeStandardizedSurprise('CORE_CPI_MOM', 0.4, 0.2)
+        rawSurprise = stdRes.rawSurprise
+        standardizedSurprise = stdRes.standardizedSurprise
+      }
 
       marketResponse.real_yield_confirmation = 'BEARISH_GOLD'
       marketResponse.usd_confirmation = 'BEARISH_GOLD'
@@ -461,8 +464,8 @@ function runDeterministicEvaluation(params: {
     transmission,
     fundamental_state: fundamentalState,
     market_response: marketResponse,
-    confidence,
-    summary,
+    confidence: scrubSummary(rawText, summary) === summary ? confidence : 0,
+    summary: scrubSummary(rawText, summary),
   }
 }
 
@@ -483,13 +486,13 @@ async function runLlmEvaluation(params: {
   const prompt = buildFundamentalEventUserPrompt({
     roleLine: 'You are evaluating a supplied event for COMEX Gold futures (GC).',
     telemetryLines: [
-      datumLine('GC price', `$${telemetry.goldPrice.toFixed(2)}/oz`, 'TICK', 'LIVE'),
-      datumLine('10Y nominal', `${telemetry.us10yNominalYield.toFixed(2)}%`, 'INTRADAY', 'RECENT'),
-      datumLine('10Y real', `${telemetry.us10yRealYield.toFixed(2)}%`, 'DAILY', 'RECENT'),
-      datumLine('10Y breakeven', `${telemetry.us10yBreakeven.toFixed(2)}%`, 'DAILY', 'RECENT'),
-      datumLine('DXY', telemetry.dxyIndex.toFixed(2), 'TICK', 'LIVE'),
-      datumLine('Silver', `$${telemetry.silverPrice.toFixed(3)}`, 'TICK', 'LIVE'),
-      datumLine('Gold CVOL', `${telemetry.goldCvol.toFixed(1)}%`, 'DAILY', 'RECENT'),
+      datumLine('GC price', telemetry.sourced?.gold ? `$${telemetry.goldPrice.toFixed(2)}/oz` : 'UNAVAILABLE', telemetry.sourced?.gold ? 'TICK' : 'UNAVAILABLE', telemetry.sourced?.gold ? 'LIVE' : 'STALE'),
+      datumLine('10Y nominal', telemetry.sourced?.us10y ? `${telemetry.us10yNominalYield.toFixed(2)}%` : 'UNAVAILABLE', 'INTRADAY', telemetry.sourced?.us10y ? 'RECENT' : 'STALE'),
+      datumLine('10Y real', telemetry.sourced?.us10yReal ? `${telemetry.us10yRealYield.toFixed(2)}%` : 'UNAVAILABLE', 'DAILY', telemetry.sourced?.us10yReal ? 'RECENT' : 'STALE'),
+      datumLine('10Y breakeven', telemetry.sourced?.breakeven ? `${telemetry.us10yBreakeven.toFixed(2)}%` : 'UNAVAILABLE', 'DAILY', telemetry.sourced?.breakeven ? 'RECENT' : 'STALE'),
+      datumLine('DXY', telemetry.sourced?.dxy ? telemetry.dxyIndex.toFixed(2) : 'UNAVAILABLE', telemetry.sourced?.dxy ? 'TICK' : 'UNAVAILABLE', telemetry.sourced?.dxy ? 'LIVE' : 'STALE'),
+      datumLine('Silver', telemetry.sourced?.silver ? `$${telemetry.silverPrice.toFixed(3)}` : 'UNAVAILABLE', telemetry.sourced?.silver ? 'TICK' : 'UNAVAILABLE', telemetry.sourced?.silver ? 'LIVE' : 'STALE'),
+      datumLine('Gold CVOL', telemetry.goldCvol == null ? 'UNAVAILABLE' : `${telemetry.goldCvol.toFixed(1)}%`, 'DAILY', telemetry.goldCvol == null ? 'STALE' : 'RECENT'),
       'CVD, volume, and profile: not supplied.',
     ],
     rawText,

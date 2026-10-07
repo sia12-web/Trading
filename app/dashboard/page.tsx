@@ -55,12 +55,6 @@ export default function DashboardHomePage() {
           Open Chart →
         </Link>
         <Link
-          href="/dashboard/positions"
-          className="rounded-lg border border-surface-600 px-4 py-2.5 text-sm font-semibold text-gray-300 hover:border-surface-500 hover:text-white"
-        >
-          Positions
-        </Link>
-        <Link
           href="/dashboard/journal"
           className="rounded-lg border border-surface-600 px-4 py-2.5 text-sm font-semibold text-gray-300 hover:border-surface-500 hover:text-white"
         >
@@ -87,7 +81,7 @@ export default function DashboardHomePage() {
 
       <p className="mt-10 text-xs text-gray-600 leading-relaxed max-w-md">
         Clock in from prep (15 minutes before cash open) through cash close. Late join after the
-        open keeps remaining probes only — dead OR30/IB books stay closed. Tip and desk unlock 30
+        open keeps remaining probes only. Tip and desk unlock 30
         minutes before the next open. All desk clocks show Montreal time ({TRADER_DISPLAY_LABEL}).
       </p>
     </div>

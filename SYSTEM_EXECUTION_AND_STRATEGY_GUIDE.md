@@ -115,14 +115,8 @@ The system scans 4 distinct structural market setups across the daily auction:
 * **Stop Loss**: Below OR30 50% midpoint (20 pts on MNQ).
 * **Take Profit**: **`2.00 R`** (2.0x risk distance targeting macro 20-day VPOC/VAH).
 
-### 4️⃣ Strategy #4: Initial Balance 60-Minute Range Rotation (`IB`)
-* **Execution Window**: **10:30 AM – 11:30 AM ET**
-* **Establishment Window**: 09:30 AM – 10:30 AM ET (First hour range).
-* **Strategy Mechanics**:
-  - Identifies responsive buyers at IB Low or responsive sellers at IB High when auction shows value area acceptance.
-  - Fades extreme when Point of Control (POC) rejects expansion.
-* **Stop Loss**: Beyond IB structural extreme + buffer (e.g. 4 pts Gold, 40 pips Euro FX, $0.40 Silver).
-* **Take Profit**: **`2.00 R`** (2.0x risk distance targeting IB midpoint / opposite extreme).
+### 4️⃣ Initial Balance
+Initial Balance is not a strategy on this desk. After OR30 (or US Range on Nikkei), the desk is manage-only. Leo does not cite IB high, IB low, or a first-hour balance.
 
 ---
 

@@ -45,17 +45,16 @@ ${NASDAQ_ANALYST_CHAT_PROMPT}
 SUPPLIED NASDAQ STATE (not a live monitor; interpret only this packet):
 - Market: CME E-mini Nasdaq-100 Futures (NQ)
 - Current Date & Server Time: ${new Date().toUTCString()}
-- Prompt NQ Live Price: ${t.nqPrice.toFixed(2)} (${t.nqChange >= 0 ? '+' : ''}${t.nqChange.toFixed(2)}, ${t.nqChangePct >= 0 ? '+' : ''}${t.nqChangePct.toFixed(2)}%)
-- S&P 500 (ES): ${t.esPrice.toFixed(2)} (${t.esChangePct >= 0 ? '+' : ''}${t.esChangePct.toFixed(2)}%) | Dow (YM): ${t.ymPrice.toFixed(0)} (${t.ymChangePct >= 0 ? '+' : ''}${t.ymChangePct.toFixed(2)}%)
-- Relative Strength Stance: ${t.relativeStrengthStance}
-- US 2Y Yield: ${t.us2yNominalYield.toFixed(2)}% | US 10Y Yield: ${t.us10yNominalYield.toFixed(2)}% (2s10s Spread: +${t.yieldCurve2s10sSpreadBps} bps)
-- 10Y Real TIPS Yield (DFII10): ${t.us10yRealYield.toFixed(2)}%
-- CBOE Volatility: VXN (Nasdaq-100 Vol) ${t.vxnIndex.toFixed(1)} | VIX ${t.vixIndex.toFixed(1)}
-- Semiconductor Basket: ${t.semiBasketChangePct >= 0 ? '+' : ''}${t.semiBasketChangePct.toFixed(2)}%
-- Market Breadth: ${state.breadth.advancingCount} Advancing vs ${state.breadth.decliningCount} Declining (Ratio ${state.breadth.advanceDeclineRatio.toFixed(2)}:1) | Stance: ${state.breadth.marketParticipationStance}
-- AI / Semi Capex: Hyperscalers pacing ~$${state.semiCycle.hyperscalerCapexRunRateBillions}B/yr | Accelerator Trend: ${state.semiCycle.acceleratorDemandTrend}
-- Constituent weights below are supplied state, freshness=STALE_FOR_INTRADAY unless a live index feed replaced the baseline. If a weight is missing, say UNAVAILABLE. Do not substitute a memorized Nasdaq-100 weight.
-- Supplied constituents: ${t.topConstituents.slice(0, 5).map((c) => `${c.symbol} (${c.weight}% wt: $${c.price} ${c.changePct >= 0 ? '+' : ''}${c.changePct}%)`).join(', ') || 'UNAVAILABLE'}
+- Prompt NQ Live Price: ${t.sourced?.nq ? `${t.nqPrice.toFixed(2)} (${t.nqChange >= 0 ? '+' : ''}${t.nqChange.toFixed(2)}, ${t.nqChangePct >= 0 ? '+' : ''}${t.nqChangePct.toFixed(2)}%)` : 'Unavailable'}
+- S&P 500 (ES): ${t.sourced?.es ? `${t.esPrice.toFixed(2)} (${t.esChangePct >= 0 ? '+' : ''}${t.esChangePct.toFixed(2)}%)` : 'Unavailable'} | Dow (YM): ${t.sourced?.ym ? `${t.ymPrice.toFixed(0)} (${t.ymChangePct >= 0 ? '+' : ''}${t.ymChangePct.toFixed(2)}%)` : 'Unavailable'}
+- Relative Strength Stance: ${t.sourced?.nq && t.sourced?.es && t.sourced?.ym ? t.relativeStrengthStance : 'Unavailable'}
+- US 2Y Yield: ${t.sourced?.us2y ? `${t.us2yNominalYield.toFixed(2)}%` : 'Unavailable'} | US 10Y Yield: ${t.sourced?.us10y ? `${t.us10yNominalYield.toFixed(2)}%` : 'Unavailable'}${t.sourced?.us2y && t.sourced?.us10y ? ` (2s10s Spread: ${t.yieldCurve2s10sSpreadBps >= 0 ? '+' : ''}${t.yieldCurve2s10sSpreadBps} bps)` : ''}
+- 10Y Real TIPS Yield (DFII10): ${t.sourced?.us10yReal ? `${t.us10yRealYield.toFixed(2)}%` : 'Unavailable'}
+- CBOE Volatility: VXN ${t.sourced?.vxn ? t.vxnIndex.toFixed(1) : 'Unavailable'} | VIX ${t.sourced?.vix ? t.vixIndex.toFixed(1) : 'Unavailable'}
+- Semiconductor basket: Unavailable
+- Market breadth: Unavailable
+- AI / semi capex: Unavailable
+- Constituent index weights: Unavailable. Quoted prices: ${t.topConstituents.filter((c) => c.quoteLive).map((c) => `${c.symbol} $${c.price.toFixed(2)} (${c.changePct >= 0 ? '+' : ''}${c.changePct.toFixed(2)}%)`).join(', ') || 'Unavailable'}
 - Stance: Intraday=${state.today.intraday_bias} | Short-Term=${state.today.short_term_bias} | Medium-Term=${state.today.medium_term_bias}
 - Invalidation Criteria: ${state.today.what_would_invalidate_the_current_interpretation}
 
@@ -73,16 +72,16 @@ Never invent missing data. Never treat an earnings beat as automatically bullish
       const fallbackText = `### NASDAQ-100 FUNDAMENTAL ANALYST BRIEFING (CME NQ)
 
 #### 1. Rates & Growth Valuation Discounting
-- **Treasury Rates Transmission**: US 2Y yield is at **${t.us2yNominalYield.toFixed(2)}%** and 10Y yield is at **${t.us10yNominalYield.toFixed(2)}%** (curve spread: **+${t.yieldCurve2s10sSpreadBps} bps**).
-- **Real Yield Anchor**: 10Y Real TIPS yield (DFII10) is holding at **${t.us10yRealYield.toFixed(2)}%**, providing a stable equity risk premium backdrop for long-duration cash flows.
+- **Treasury Rates Transmission**: US 2Y is **${t.sourced?.us2y ? `${t.us2yNominalYield.toFixed(2)}%` : 'Unavailable'}** and 10Y is **${t.sourced?.us10y ? `${t.us10yNominalYield.toFixed(2)}%` : 'Unavailable'}**.
+- **Real Yield Anchor**: 10Y real TIPS is **${t.sourced?.us10yReal ? `${t.us10yRealYield.toFixed(2)}%` : 'Unavailable'}**.
 
-#### 2. Cross-Market Leadership & Breadth
-- **Relative Strength**: Currently **${t.relativeStrengthStance}** (NQ: ${t.nqChangePct >= 0 ? '+' : ''}${t.nqChangePct.toFixed(2)}% vs ES: ${t.esChangePct >= 0 ? '+' : ''}${t.esChangePct.toFixed(2)}%, YM: ${t.ymChangePct >= 0 ? '+' : ''}${t.ymChangePct.toFixed(2)}%).
-- **Market Breadth**: **${state.breadth.advancingCount} advancing vs ${state.breadth.decliningCount} declining** (${state.breadth.marketParticipationStance}).
-- **Semiconductor Cycle**: Semi basket trading **${t.semiBasketChangePct >= 0 ? '+' : ''}${t.semiBasketChangePct.toFixed(2)}%**, confirming enterprise AI capex momentum.
+#### 2. Cross-market
+- **Relative strength**: **${t.sourced?.nq && t.sourced?.es && t.sourced?.ym ? t.relativeStrengthStance : 'Unavailable'}**.
+- **Market breadth**: Unavailable.
+- **Semiconductor cycle**: Unavailable.
 
-#### 3. Volatility & Positioning
-- **CBOE Volatility**: VXN is at **${t.vxnIndex.toFixed(2)}** (VIX at **${t.vixIndex.toFixed(2)}**), signaling normal dealer options gamma conditions.
+#### 3. Volatility
+- **CBOE Volatility**: VXN **${t.sourced?.vxn ? t.vxnIndex.toFixed(2) : 'Unavailable'}**, VIX **${t.sourced?.vix ? t.vixIndex.toFixed(2) : 'Unavailable'}**.
 - **Current Bias**: Intraday **${state.today.intraday_bias}** | Short-Term **${state.today.short_term_bias}** | Medium-Term **${state.today.medium_term_bias}**.
 - **Invalidation**: ${state.today.what_would_invalidate_the_current_interpretation}
 
