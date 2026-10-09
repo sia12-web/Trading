@@ -1157,10 +1157,9 @@ export function classifyMarketDayType(args: {
   const elapsedSec = Math.max(0, tipTime - todayOpenUnix)
 
   if (!todayBars || todayBars.length === 0 || elapsedSec < 15 * 60) {
-    const invNote = overnightInventory ? ` (${overnightInventory.summaryBadge})` : ''
     return {
       type: 'WAITING',
-      badgeText: `Day Type Waiting${invNote}`,
+      badgeText: 'WAIT',
       title: 'Day Type Waiting',
       description: `Establishing initial session range; day structure forming.${overnightInventory ? ` ${overnightInventory.description}` : ''}`,
     }

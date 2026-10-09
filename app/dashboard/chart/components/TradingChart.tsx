@@ -13094,7 +13094,170 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               </button>
             </div>
 
+            {/* Chart Analysis Tools — All on top without scrolling */}
+            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-surface-900/90 border border-neutral-700/60 shadow-sm text-xs">
+              {/* 5-Month Anchored VWAP (5M AVWAP) Button with SD Bands */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShow5mAvwapOnChart((prev) => {
+                    const next = !prev
+                    try {
+                      window.localStorage.setItem('desk.avwap5m.open.v1', next ? '1' : '0')
+                    } catch {}
+                    return next
+                  })
+                }}
+                className={`flex items-center gap-1.5 select-none px-2 py-1 rounded font-bold transition shadow-sm active:scale-95 cursor-pointer ${
+                  show5mAvwapOnChart
+                    ? 'bg-emerald-500/25 text-emerald-200 border border-emerald-400/60 shadow-sm font-semibold'
+                    : 'bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 text-neutral-300 hover:text-white'
+                }`}
+                title="Toggle 5-Month Anchored VWAP benchmark & ±1σ/±2σ/±3σ bands on chart"
+              >
+                <span className="leading-none">🌐</span>
+                <span className="leading-none">5M AVWAP:</span>
+                <span className={`font-mono font-bold leading-none ${show5mAvwapOnChart ? 'text-emerald-300' : 'text-zinc-400'}`}>
+                  {show5mAvwapOnChart ? 'ON' : 'OFF'}
+                </span>
+              </button>
 
+              {/* Interactive CVD Sub-Chart Pane Button */}
+              <button
+                type="button"
+                onClick={() => setShowCvdSubPane((prev) => !prev)}
+                className={`flex items-center gap-1.5 select-none px-2 py-1 rounded font-bold transition shadow-sm active:scale-95 cursor-pointer ${
+                  showCvdSubPane
+                    ? 'bg-cyan-500/25 text-cyan-200 border border-cyan-400/60 shadow-sm font-semibold'
+                    : 'bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 text-neutral-300 hover:text-white'
+                }`}
+                title="Click to toggle CVD Sub-Chart Pane"
+              >
+                <span className="leading-none">📊</span>
+                <span className="leading-none">CVD:</span>
+                <span className={`font-mono font-bold leading-none ${showCvdSubPane ? 'text-cyan-300' : 'text-zinc-400'}`}>
+                  {showCvdSubPane ? 'ON' : 'OFF'}
+                </span>
+                {sessionOrderFlow?.divergence !== 'NONE' && (
+                  <span className="relative flex h-2 w-2">
+                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                      sessionOrderFlow?.divergence === 'BULLISH_ABSORPTION' ? 'bg-emerald-400' : 'bg-rose-400'
+                    }`} />
+                    <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                      sessionOrderFlow?.divergence === 'BULLISH_ABSORPTION' ? 'bg-emerald-500' : 'bg-rose-500'
+                    }`} />
+                  </span>
+                )}
+              </button>
+
+              {/* News Events Markers Toggle Button */}
+              <button
+                type="button"
+                onClick={() => setShowNewsOnChart((prev) => !prev)}
+                className={`flex items-center gap-1.5 select-none px-2 py-1 rounded font-bold transition shadow-sm active:scale-95 cursor-pointer ${
+                  showNewsOnChart
+                    ? 'bg-purple-500/25 text-purple-200 border border-purple-400/60 shadow-sm font-semibold'
+                    : 'bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 text-neutral-300 hover:text-white'
+                }`}
+                title="Toggle upcoming economic news event markers on chart time-axis"
+              >
+                <span className="leading-none">⚡</span>
+                <span className="leading-none">News:</span>
+                <span className={`font-mono font-bold leading-none ${showNewsOnChart ? 'text-purple-300' : 'text-zinc-400'}`}>
+                  {showNewsOnChart ? 'ON' : 'OFF'}
+                </span>
+              </button>
+
+              {/* Previous & All News Archive Button */}
+              <button
+                type="button"
+                onClick={() => setShowNewsHistoryModal((prev) => !prev)}
+                className={`flex items-center gap-1.5 select-none px-2 py-1 rounded font-bold transition shadow-sm active:scale-95 cursor-pointer ${
+                  showNewsHistoryModal
+                    ? 'bg-purple-600/30 text-purple-200 border border-purple-400/80 shadow-sm font-semibold'
+                    : 'bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 text-neutral-300 hover:text-white'
+                }`}
+                title="View complete historical & upcoming economic news events archive"
+              >
+                <span className="leading-none">📰</span>
+                <span className="text-gray-300 font-semibold leading-none">All News</span>
+                {newsEvents.length > 0 && (
+                  <span className="px-1 py-0.5 rounded text-[10px] bg-purple-900/80 text-purple-200 font-mono font-bold leading-none">
+                    {newsEvents.length}
+                  </span>
+                )}
+              </button>
+
+              {/* News Catalyst Anchored VWAP (News AVWAP) Button */}
+              <button
+                type="button"
+                onClick={() => setShowNewsAvwap((prev) => !prev)}
+                className={`flex items-center gap-1.5 select-none px-2 py-1 rounded font-bold transition shadow-sm active:scale-95 cursor-pointer ${
+                  showNewsAvwap
+                    ? 'bg-amber-500/25 text-amber-200 border border-amber-400/60 shadow-sm font-semibold'
+                    : 'bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 text-neutral-300 hover:text-white'
+                }`}
+                title="Toggle News Catalyst Anchored VWAP & standard deviation bands on chart"
+              >
+                <span className="leading-none">⚡</span>
+                <span className="leading-none">News AVWAP:</span>
+                <span className={`font-mono font-bold leading-none ${showNewsAvwap ? 'text-amber-300' : 'text-zinc-400'}`}>
+                  {showNewsAvwap ? 'ON' : 'OFF'}
+                </span>
+              </button>
+
+              {/* ATR (Average True Range) Sub-Pane Button */}
+              <button
+                type="button"
+                onClick={() => setShowAtrSubPane((prev) => !prev)}
+                className={`flex items-center gap-1.5 select-none px-2 py-1 rounded font-bold transition shadow-sm active:scale-95 cursor-pointer ${
+                  showAtrSubPane
+                    ? 'bg-red-500/20 text-red-200 border border-red-400/60 shadow-sm font-semibold'
+                    : 'bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 text-neutral-300 hover:text-white'
+                }`}
+                title="Toggle ATR (Average True Range) pane — TradingView built-in, 14 RMA"
+              >
+                <span className="leading-none">〽️</span>
+                <span className="leading-none">ATR:</span>
+                <span className={`font-mono font-bold leading-none ${showAtrSubPane ? 'text-red-300' : 'text-zinc-400'}`}>
+                  {showAtrSubPane ? 'ON' : 'OFF'}
+                </span>
+              </button>
+
+              {isCritiqueSessionActiveState && (
+                <button
+                  type="button"
+                  onClick={() => setShowQuestioningModal((prev) => !prev)}
+                  className={`flex items-center gap-1.5 select-none px-2 py-1 rounded font-bold transition shadow-sm active:scale-95 cursor-pointer ${
+                    showQuestioningModal
+                      ? 'bg-amber-500/25 text-amber-200 border border-amber-400/60 shadow-sm font-semibold'
+                      : 'bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 text-neutral-300 hover:text-white'
+                  }`}
+                  title="Auction Price Critique & Questioning Desk (Hotkey: Q) — Question the price before doing business!"
+                >
+                  <span className="leading-none">⚖️</span>
+                  <span className="leading-none">Critique:</span>
+                  <span
+                    className={`font-mono font-bold leading-none ${
+                      !livePriceCritique
+                        ? 'text-gray-400'
+                        : livePriceCritique.valuationState.includes('DISCOUNT')
+                        ? 'text-emerald-400'
+                        : livePriceCritique.valuationState.includes('PREMIUM')
+                        ? 'text-rose-400'
+                        : 'text-cyan-300'
+                    }`}
+                  >
+                    {livePriceCritique ? livePriceCritique.valuationState.replace('_', ' ') : 'STANDBY'}
+                  </span>
+                  {livePriceCritique?.weakHandTrap.isTrapRisk && (
+                    <span className="px-1 py-0.5 rounded bg-rose-500/20 text-rose-300 text-[9px] font-bold border border-rose-500/40 animate-pulse leading-none">
+                      TRAP RISK
+                    </span>
+                  )}
+                </button>
+              )}
+            </div>
 
             {/* Live price ticker */}
             <div className="ml-auto flex items-center gap-3">
@@ -13137,8 +13300,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </div>
 
           {/* ── Compact Evaluators & OHLCV Tooltip Row ─────────────────────────── */}
-          <div className="flex flex-nowrap items-center justify-between gap-x-2 px-1.5 py-1 text-[11px] text-gray-400 min-h-[30px] h-[30px] shrink-0 select-none">
-            <div className="flex flex-nowrap items-center gap-x-2 overflow-x-auto scrollbar-none min-w-0 flex-1 py-0.5">
+          <div className="flex flex-nowrap items-center justify-between gap-x-2 px-1.5 py-1 text-[11px] text-gray-400 min-h-[26px] h-[26px] shrink-0 select-none">
+            <div className="flex flex-nowrap items-center gap-x-2 min-w-0 py-0.5">
               {/* Structural Evaluators: Day Type, Opening, and Overnight Inventory (Active Session Only) */}
               {(() => {
                 const nycActive = isNycSessionActive()
@@ -13196,169 +13359,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                         {invText}
                       </span>
                     </div>
-                    <span className="text-gray-600 text-[10px] shrink-0">|</span>
                   </>
                 )
               })()}
-              {/* 5-Month Anchored VWAP (5M AVWAP) Button with SD Bands */}
-              <button
-                type="button"
-                onClick={() => {
-                  setShow5mAvwapOnChart((prev) => {
-                    const next = !prev
-                    try {
-                      window.localStorage.setItem('desk.avwap5m.open.v1', next ? '1' : '0')
-                    } catch {}
-                    return next
-                  })
-                }}
-                className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer shrink-0 whitespace-nowrap leading-none ${
-                  show5mAvwapOnChart
-                    ? 'bg-emerald-500/25 text-emerald-200 border border-emerald-400/60 shadow-sm font-semibold'
-                    : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
-                }`}
-                title="Toggle 5-Month Anchored VWAP benchmark & ±1σ/±2σ/±3σ bands on chart"
-              >
-                <span className="text-[11px] leading-none">🌐</span>
-                <span className="text-gray-400 font-semibold leading-none">5M AVWAP:</span>
-                <span className={`font-mono font-bold leading-none ${show5mAvwapOnChart ? 'text-emerald-300' : 'text-zinc-400'}`}>
-                  {show5mAvwapOnChart ? 'ON' : 'OFF'}
-                </span>
-              </button>
-              {/* Interactive CVD Sub-Chart Pane Button */}
-              <button
-                type="button"
-                onClick={() => setShowCvdSubPane((prev) => !prev)}
-                className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer shrink-0 whitespace-nowrap leading-none ${
-                  showCvdSubPane
-                    ? 'bg-cyan-500/25 text-cyan-200 border border-cyan-400/60 shadow-sm font-semibold'
-                    : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
-                }`}
-                title="Click to toggle CVD Sub-Chart Pane"
-              >
-                <span className="text-[11px] leading-none">📊</span>
-                <span className="text-gray-400 font-semibold leading-none">CVD:</span>
-                <span className={`font-mono font-bold leading-none ${showCvdSubPane ? 'text-cyan-300' : 'text-zinc-400'}`}>
-                  {showCvdSubPane ? 'ON' : 'OFF'}
-                </span>
-                {sessionOrderFlow?.divergence !== 'NONE' && (
-                  <span className="relative flex h-2 w-2">
-                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                      sessionOrderFlow?.divergence === 'BULLISH_ABSORPTION' ? 'bg-emerald-400' : 'bg-rose-400'
-                    }`} />
-                    <span className={`relative inline-flex rounded-full h-2 w-2 ${
-                      sessionOrderFlow?.divergence === 'BULLISH_ABSORPTION' ? 'bg-emerald-500' : 'bg-rose-500'
-                    }`} />
-                  </span>
-                )}
-              </button>
-              {/* News Events Markers Toggle Button */}
-              <button
-                type="button"
-                onClick={() => setShowNewsOnChart((prev) => !prev)}
-                className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer shrink-0 whitespace-nowrap leading-none ${
-                  showNewsOnChart
-                    ? 'bg-purple-500/25 text-purple-200 border border-purple-400/60 shadow-sm font-semibold'
-                    : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
-                }`}
-                title="Toggle upcoming economic news event markers on chart time-axis"
-              >
-                <span className="text-[11px] leading-none">⚡</span>
-                <span className="text-gray-400 font-semibold leading-none">News:</span>
-                <span className={`font-mono font-bold leading-none ${showNewsOnChart ? 'text-purple-300' : 'text-zinc-400'}`}>
-                  {showNewsOnChart ? 'ON' : 'OFF'}
-                </span>
-              </button>
-              {/* Previous & All News Archive Button */}
-              <button
-                type="button"
-                onClick={() => setShowNewsHistoryModal((prev) => !prev)}
-                className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer shrink-0 whitespace-nowrap leading-none ${
-                  showNewsHistoryModal
-                    ? 'bg-purple-600/30 text-purple-200 border border-purple-400/80 shadow-sm font-semibold'
-                    : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
-                }`}
-                title="View complete historical & upcoming economic news events archive"
-              >
-                <span className="leading-none">📰</span>
-                <span className="text-gray-300 font-semibold text-xs leading-none">All News</span>
-                {newsEvents.length > 0 && (
-                  <span className="px-1 py-0.5 rounded text-[10px] bg-purple-900/80 text-purple-200 font-mono font-bold leading-none">
-                    {newsEvents.length}
-                  </span>
-                )}
-              </button>
-              {/* News Catalyst Anchored VWAP (News AVWAP) Button */}
-              <button
-                type="button"
-                onClick={() => setShowNewsAvwap((prev) => !prev)}
-                className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer shrink-0 whitespace-nowrap leading-none ${
-                  showNewsAvwap
-                    ? 'bg-amber-500/25 text-amber-200 border border-amber-400/60 shadow-sm font-semibold'
-                    : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
-                }`}
-                title="Toggle News Catalyst Anchored VWAP & standard deviation bands on chart"
-              >
-                <span className="text-[11px] leading-none">⚡</span>
-                <span className="text-gray-400 font-semibold leading-none">News AVWAP:</span>
-                <span className={`font-mono font-bold leading-none ${showNewsAvwap ? 'text-amber-300' : 'text-zinc-400'}`}>
-                  {showNewsAvwap ? 'ON' : 'OFF'}
-                </span>
-              </button>
-              {/* ATR (Average True Range) Sub-Pane Button */}
-              <button
-                type="button"
-                onClick={() => setShowAtrSubPane((prev) => !prev)}
-                className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer shrink-0 whitespace-nowrap leading-none ${
-                  showAtrSubPane
-                    ? 'bg-red-500/20 text-red-200 border border-red-400/60 shadow-sm font-semibold'
-                    : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
-                }`}
-                title="Toggle ATR (Average True Range) pane — TradingView built-in, 14 RMA"
-              >
-                <span className="text-[11px] leading-none">〽️</span>
-                <span className="text-gray-400 font-semibold leading-none">ATR:</span>
-                <span className={`font-mono font-bold leading-none ${showAtrSubPane ? 'text-red-300' : 'text-zinc-400'}`}>
-                  {showAtrSubPane ? 'ON' : 'OFF'}
-                </span>
-              </button>
-              {isCritiqueSessionActiveState && (
-                <>
-                  <span className="text-gray-600 text-[10px] shrink-0">|</span>
-                  {/* Questioning / Price Critique Desk Button */}
-                  <button
-                    type="button"
-                    onClick={() => setShowQuestioningModal((prev) => !prev)}
-                    className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer shrink-0 whitespace-nowrap leading-none ${
-                      showQuestioningModal
-                        ? 'bg-amber-500/25 text-amber-200 border border-amber-400/60 shadow-sm font-semibold'
-                        : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
-                    }`}
-                    title="Auction Price Critique & Questioning Desk (Hotkey: Q) — Question the price before doing business!"
-                  >
-                    <span className="text-[11px] leading-none">⚖️</span>
-                    <span className="text-gray-400 font-semibold leading-none">Critique:</span>
-                    <span
-                      className={`font-mono font-bold leading-none ${
-                        !livePriceCritique
-                          ? 'text-gray-400'
-                          : livePriceCritique.valuationState.includes('DISCOUNT')
-                          ? 'text-emerald-400'
-                          : livePriceCritique.valuationState.includes('PREMIUM')
-                          ? 'text-rose-400'
-                          : 'text-cyan-300'
-                      }`}
-                    >
-                      {livePriceCritique ? livePriceCritique.valuationState.replace('_', ' ') : 'STANDBY'}
-                    </span>
-                    {livePriceCritique?.weakHandTrap.isTrapRisk && (
-                      <span className="px-1 py-0.5 rounded bg-rose-500/20 text-rose-300 text-[9px] font-bold border border-rose-500/40 animate-pulse leading-none">
-                        TRAP RISK
-                      </span>
-                    )}
-                  </button>
-                </>
-              )}
             </div>
 
             {/* OHLCV Hover Tooltip inline on the right */}
