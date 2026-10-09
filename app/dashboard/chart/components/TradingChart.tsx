@@ -1311,6 +1311,9 @@ export function TradingChart({
     x: number
     y: number
   } | null>(null)
+  const [showNewsHistoryModal, setShowNewsHistoryModal] = useState(false)
+  const [newsFilterTab, setNewsFilterTab] = useState<'all' | 'released' | 'upcoming'>('all')
+  const [newsSearchTerm, setNewsSearchTerm] = useState('')
   const paintFrvpHistogramRef = useRef<() => void>(() => {})
   const paintExcessesAndRoundedRef = useRef<() => void>(() => {})
   const paintNewsMarkersRef = useRef<() => void>(() => {})
@@ -13061,13 +13064,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               >
                 🏛️ Fundamentals
               </Link>
-              <Link
-                href="/dashboard/positions"
-                className="flex items-center gap-1 px-2 py-1 rounded font-bold bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 text-neutral-300 hover:text-white transition shadow-sm active:scale-95 cursor-pointer"
-                title="Go to Live Positions Monitor"
-              >
-                ⚡ Positions
-              </Link>
             </div>
 
             {/* Live price ticker */}
@@ -13242,6 +13238,25 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 <span className={`font-mono font-bold ${showNewsOnChart ? 'text-purple-300' : 'text-zinc-400'}`}>
                   {showNewsOnChart ? 'ON' : 'OFF'}
                 </span>
+              </button>
+              {/* Previous & All News Archive Button */}
+              <button
+                type="button"
+                onClick={() => setShowNewsHistoryModal((prev) => !prev)}
+                className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer ${
+                  showNewsHistoryModal
+                    ? 'bg-purple-600/30 text-purple-200 border border-purple-400/80 shadow-sm font-semibold'
+                    : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
+                }`}
+                title="View complete historical & upcoming economic news events archive"
+              >
+                <span>📰</span>
+                <span className="text-gray-300 font-semibold text-xs">All News</span>
+                {newsEvents.length > 0 && (
+                  <span className="px-1 py-0.2 rounded text-[10px] bg-purple-900/80 text-purple-200 font-mono font-bold">
+                    {newsEvents.length}
+                  </span>
+                )}
               </button>
               {/* News Catalyst Anchored VWAP (News AVWAP) Button */}
               <button
@@ -14314,13 +14329,23 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 <span>⚡</span>
                 <span className="truncate">{activeNewsTooltip.event.country} Release</span>
               </div>
-              <button
-                type="button"
-                onClick={() => setActiveNewsTooltip(null)}
-                className="text-slate-400 hover:text-white text-xs font-bold px-1"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setShowNewsHistoryModal(true)}
+                  className="px-1.5 py-0.5 rounded bg-violet-600/30 hover:bg-violet-600/50 text-violet-200 border border-violet-500/40 text-[10px] font-semibold transition"
+                  title="View all previous news events"
+                >
+                  All News
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveNewsTooltip(null)}
+                  className="text-slate-400 hover:text-white text-xs font-bold px-1"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
             <div className="mt-2 space-y-1 text-xs">
               <div className="font-bold text-sm text-white">{activeNewsTooltip.event.event}</div>
@@ -14373,6 +14398,251 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   </div>
                 )
               })()}
+              <div className="mt-2.5 pt-2 border-t border-slate-800 flex justify-between items-center text-[10px]">
+                <span className="text-slate-400">Desk news events: {newsEvents.length}</span>
+                <button
+                  type="button"
+                  onClick={() => setShowNewsHistoryModal(true)}
+                  className="text-violet-300 hover:text-violet-100 font-semibold underline underline-offset-2 cursor-pointer"
+                >
+                  Browse all previous news →
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Complete Previous & Historical News Archive Modal */}
+        {showNewsHistoryModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+            <div
+              className="relative w-full max-w-2xl max-h-[85vh] rounded-2xl border border-violet-500/40 bg-[#0d1117] p-5 shadow-2xl text-slate-100 flex flex-col overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-lg">📰</span>
+                  <div>
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                      Economic News & Historical Catalysts
+                      <span className="px-2 py-0.5 text-[10px] rounded-full bg-violet-900/60 border border-violet-500/40 text-violet-200 font-mono">
+                        {instrument} Desk
+                      </span>
+                    </h3>
+                    <p className="text-[11px] text-slate-400">
+                      Chronological log of past releases, outcome prints, and upcoming desk hazards ({newsEvents.length} events loaded).
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowNewsHistoryModal(false)}
+                  className="rounded-lg p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 transition text-sm font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Filter Tabs & Search */}
+              <div className="pt-3 pb-2 flex flex-col sm:flex-row gap-2 shrink-0">
+                <div className="flex items-center gap-1 bg-slate-900/80 p-1 rounded-lg border border-slate-800 text-xs font-mono">
+                  <button
+                    type="button"
+                    onClick={() => setNewsFilterTab('all')}
+                    className={`px-2.5 py-1 rounded transition ${
+                      newsFilterTab === 'all'
+                        ? 'bg-violet-600 text-white font-bold'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    All ({newsEvents.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewsFilterTab('released')}
+                    className={`px-2.5 py-1 rounded transition ${
+                      newsFilterTab === 'released'
+                        ? 'bg-emerald-600 text-white font-bold'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    🎯 Previous / Released ({newsEvents.filter((e) => e.isReleased || e.actual != null).length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewsFilterTab('upcoming')}
+                    className={`px-2.5 py-1 rounded transition ${
+                      newsFilterTab === 'upcoming'
+                        ? 'bg-purple-600 text-white font-bold'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    ⏳ Upcoming ({newsEvents.filter((e) => !e.isReleased && e.actual == null).length})
+                  </button>
+                </div>
+
+                <div className="flex-1 relative">
+                  <input
+                    type="text"
+                    value={newsSearchTerm}
+                    onChange={(e) => setNewsSearchTerm(e.target.value)}
+                    placeholder="Search past news, CPI, Fed, Jobless, PMI..."
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-500 font-mono"
+                  />
+                  {newsSearchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setNewsSearchTerm('')}
+                      className="absolute right-2.5 top-1.5 text-slate-400 hover:text-white text-xs"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Event List */}
+              <div className="flex-1 overflow-y-auto space-y-2 pr-1 pt-1">
+                {(() => {
+                  const term = newsSearchTerm.toLowerCase().trim()
+                  const filtered = newsEvents
+                    .filter((e) => {
+                      if (newsFilterTab === 'released') return !!(e.isReleased || e.actual != null)
+                      if (newsFilterTab === 'upcoming') return !e.isReleased && e.actual == null
+                      return true
+                    })
+                    .filter((e) => {
+                      if (!term) return true
+                      return (
+                        e.event.toLowerCase().includes(term) ||
+                        e.country.toLowerCase().includes(term) ||
+                        (e.deskNote && e.deskNote.toLowerCase().includes(term)) ||
+                        (e.impact && e.impact.toLowerCase().includes(term))
+                      )
+                    })
+                    .sort((a, b) => {
+                      const am = parseCalendarEventMs(a.time, Date.now()) ?? 0
+                      const bm = parseCalendarEventMs(b.time, Date.now()) ?? 0
+                      return bm - am
+                    })
+
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="py-12 text-center text-slate-400 text-xs">
+                        No previous or upcoming economic events matching criteria.
+                      </div>
+                    )
+                  }
+
+                  return filtered.map((ev) => {
+                    const isHigh = ev.impact?.toLowerCase().includes('high')
+                    const isMed = ev.impact?.toLowerCase().includes('med')
+                    const isRel = !!(ev.isReleased || ev.actual != null)
+                    const parsedMs = parseCalendarEventMs(ev.time, Date.now())
+                    const timeFormatted = parsedMs
+                      ? new Intl.DateTimeFormat('en-US', {
+                          timeZone: 'America/Toronto',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: false,
+                        }).format(new Date(parsedMs))
+                      : ev.time
+
+                    return (
+                      <div
+                        key={ev.id}
+                        className={`rounded-xl border p-3 transition ${
+                          isRel
+                            ? 'bg-slate-900/70 border-slate-800 hover:border-slate-700'
+                            : 'bg-purple-950/20 border-purple-900/40 hover:border-purple-800/60'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[10px] text-violet-300 px-1.5 py-0.5 rounded bg-violet-950/60 border border-violet-800/40">
+                              {ev.country}
+                            </span>
+                            <span className="font-semibold text-xs text-white">{ev.event}</span>
+                            <span
+                              className={`px-1.5 py-0.2 text-[9px] font-bold uppercase rounded border ${
+                                isHigh
+                                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                                  : isMed
+                                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                  : 'bg-slate-700/30 text-slate-300 border-slate-600/40'
+                              }`}
+                            >
+                              {ev.impact || 'MEDIUM'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-[11px] font-mono text-slate-400">{timeFormatted} ET</span>
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
+                                isRel
+                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                  : 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+                              }`}
+                            >
+                              {isRel ? '🎯 RELEASED' : '⏳ UPCOMING'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Numbers line */}
+                        {(ev.actual != null || ev.estimate != null || ev.prev != null) && (
+                          <div className="mt-2 flex items-center gap-4 text-[11px] font-mono bg-slate-950/60 px-2.5 py-1 rounded border border-slate-800/60">
+                            {ev.actual != null && (
+                              <div>
+                                <span className="text-slate-400">Actual: </span>
+                                <strong className="text-emerald-400">{ev.actual}</strong>
+                              </div>
+                            )}
+                            {ev.estimate != null && (
+                              <div>
+                                <span className="text-slate-400">Estimate: </span>
+                                <span className="text-amber-300">{ev.estimate}</span>
+                              </div>
+                            )}
+                            {ev.prev != null && (
+                              <div>
+                                <span className="text-slate-400">Prior: </span>
+                                <span className="text-slate-300">{ev.prev}</span>
+                              </div>
+                            )}
+                            {ev.outcome && (
+                              <span className="ml-auto text-[10px] font-bold text-violet-300 px-1.5 py-0.2 rounded bg-violet-900/40 border border-violet-700/50">
+                                {ev.outcome}
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {ev.deskNote && (
+                          <p className="mt-1.5 text-[11px] text-slate-300/90 leading-relaxed">
+                            {ev.deskNote}
+                          </p>
+                        )}
+                      </div>
+                    )
+                  })
+                })()}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="mt-3 pt-2.5 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400 shrink-0">
+                <span>Context and hazard awareness only — not a trade signal.</span>
+                <Link
+                  href="/dashboard/news"
+                  className="text-violet-300 hover:text-white font-semibold underline underline-offset-2"
+                >
+                  Open Full Desk News Hub →
+                </Link>
+              </div>
             </div>
           </div>
         )}

@@ -72,22 +72,38 @@ Never invent missing data. Never claim COMEX inventory shifts prove a physical s
 
     // If neither key is configured, output the grounded fallback telemetry
     if (!anthropicKey && !openaiKey) {
+      const gcHasLive = Number.isFinite(t.goldPrice) && t.goldPrice > 0
+      const goldPriceStr = gcHasLive
+        ? `$${t.goldPrice.toFixed(2)} (${t.goldChange >= 0 ? '+' : ''}$${t.goldChange.toFixed(2)}, ${t.goldChangePct >= 0 ? '+' : ''}${t.goldChangePct.toFixed(2)}%)`
+        : 'UNAVAILABLE'
+      const realYieldStr = Number.isFinite(t.us10yRealYield) ? `${t.us10yRealYield.toFixed(2)}%` : 'UNAVAILABLE'
+      const breakevenStr = Number.isFinite(t.us10yBreakeven) ? `${t.us10yBreakeven.toFixed(2)}%` : 'UNAVAILABLE'
+      const dxyStr = Number.isFinite(t.dxyIndex)
+        ? `${t.dxyIndex.toFixed(2)} (${t.dxyChangePct >= 0 ? '+' : ''}${t.dxyChangePct.toFixed(2)}%)`
+        : 'UNAVAILABLE'
+      const gsrStr = Number.isFinite(t.goldSilverRatio) ? `${t.goldSilverRatio.toFixed(1)}:1` : 'UNAVAILABLE'
+
       const fallbackText = `### GOLD FUNDAMENTAL ANALYST BRIEFING (COMEX GC)
 
-#### 1. Real Interest Rates & Treasury Breakevens
-- **10Y Real TIPS Yield**: Holding at **${t.us10yRealYield.toFixed(2)}%** (FRED DFII10). Elevated real yields exert structural opportunity cost pressure on gold, but long-term monetary debasement premiums have blunted traditional sensitivity.
-- **10Y Breakeven Inflation**: **${t.us10yBreakeven.toFixed(2)}%** (FRED T10YIE). Core inflation sticky at 3.2% YoY keeps currency debasement hedging active.
+**Market**: COMEX Gold Futures (GC) | Live Telemetry: **${goldPriceStr}**  
+**Real Rates & Inflation**: 10Y TIPS Real: **${realYieldStr}** | 10Y Breakeven: **${breakevenStr}**  
+**FX / Dollar**: DXY: **${dxyStr}** | Gold/Silver Ratio: **${gsrStr}**
 
-#### 2. U.S. Dollar & Cross-Market Decoupling
-- **DXY Index**: Trading at **${t.dxyIndex.toFixed(2)}** (${t.dxyChangePct >= 0 ? '+' : ''}${t.dxyChangePct.toFixed(2)}%).
-- **Relative Strength**: Gold has repeatedly absorbed USD rallies at key supports, signaling sovereign accumulation under the surface.
-- **Gold/Silver Ratio**: **${t.goldSilverRatio.toFixed(1)}:1**, reflecting precious-metals monetary outperformance.
+---
+
+#### 1. Real Interest Rates & Treasury Breakevens
+- **10Y Real TIPS Yield**: ${realYieldStr} (FRED DFII10). Opportunity cost anchor for non-yielding bullion.
+- **10Y Breakeven Inflation**: ${breakevenStr} (FRED T10YIE).
+
+#### 2. U.S. Dollar & Precious Metals Crosses
+- **DXY Index**: ${dxyStr}.
+- **Gold/Silver Ratio**: ${gsrStr}.
 
 #### 3. Institutional Demand & Positioning
-- **Central-Bank Accumulation**: Official sector purchases pace **~${state.centralBankDemand.annualNetPurchasesTonnes} t/yr** (PBOC: ${(state.centralBankDemand.pbocReportedOunces / 1e6).toFixed(1)}M oz), establishing a structural macro floor.
-- **CFTC Managed Money**: Net longs at **${state.cftcPositioning.netManagedMoney.toLocaleString()} contracts** (Crowding: ${state.cftcPositioning.crowdingIndex}/100). Watch for absorption vs flush at key Volume Profile levels.
+- **Official Central Bank Demand**: ${state.centralBankDemand ? `Reported pacing: ~${state.centralBankDemand.annualNetPurchasesTonnes} t/yr` : 'UNAVAILABLE'}.
+- **CFTC Managed Money**: ${state.cftcPositioning ? `Net contracts: ${state.cftcPositioning.netManagedMoney.toLocaleString()} (Crowding: ${state.cftcPositioning.crowdingIndex}/100)` : 'UNAVAILABLE'}.
 
-*Trading Guidance: Use this fundamental context alongside Volume Profile levels and CVD delta absorption to identify high-probability setups.*`
+*Notice: Zero-placeholder policy active. Unverified fields are strictly marked UNAVAILABLE.*`
 
       return new Response(`data: ${JSON.stringify({ text: fallbackText })}\n\ndata: [DONE]\n\n`, {
         headers: {

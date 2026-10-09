@@ -70,23 +70,43 @@ Never invent missing data. Never treat an earnings beat as automatically bullish
     const openaiKey = process.env.OPENAI_API_KEY
 
     if (!anthropicKey && !openaiKey) {
+      const nqHasLive = Number.isFinite(t.nqPrice) && t.nqPrice > 0
+      const nqPriceStr = nqHasLive
+        ? `${t.nqPrice.toLocaleString()} (${t.nqChange >= 0 ? '+' : ''}${t.nqChange.toFixed(2)} pts, ${t.nqChangePct >= 0 ? '+' : ''}${t.nqChangePct.toFixed(2)}%)`
+        : 'UNAVAILABLE'
+      const yieldStr =
+        Number.isFinite(t.us2yNominalYield) && Number.isFinite(t.us10yNominalYield)
+          ? `2Y: ${t.us2yNominalYield.toFixed(2)}% | 10Y: ${t.us10yNominalYield.toFixed(2)}% (2s10s spread: +${t.yieldCurve2s10sSpreadBps} bps)`
+          : 'UNAVAILABLE'
+      const realYieldStr = Number.isFinite(t.us10yRealYield) ? `${t.us10yRealYield.toFixed(2)}%` : 'UNAVAILABLE'
+      const volStr =
+        Number.isFinite(t.vxnIndex) && Number.isFinite(t.vixIndex)
+          ? `VXN: ${t.vxnIndex.toFixed(2)} | VIX: ${t.vixIndex.toFixed(2)}`
+          : 'UNAVAILABLE'
+
       const fallbackText = `### NASDAQ-100 FUNDAMENTAL ANALYST BRIEFING (CME NQ)
 
+**Market**: CME E-mini Nasdaq-100 (NQ) | Live Telemetry: **${nqPriceStr}**  
+**Treasury Rates**: **${yieldStr}**  
+**Volatility Environment**: **${volStr}**
+
+---
+
 #### 1. Rates & Growth Valuation Discounting
-- **Treasury Rates Transmission**: US 2Y yield is at **${t.us2yNominalYield.toFixed(2)}%** and 10Y yield is at **${t.us10yNominalYield.toFixed(2)}%** (curve spread: **+${t.yieldCurve2s10sSpreadBps} bps**).
-- **Real Yield Anchor**: 10Y Real TIPS yield (DFII10) is holding at **${t.us10yRealYield.toFixed(2)}%**, providing a stable equity risk premium backdrop for long-duration cash flows.
+- **Treasury Transmission**: ${yieldStr}.
+- **10Y Real TIPS Yield**: ${realYieldStr} (FRED DFII10).
 
 #### 2. Cross-Market Leadership & Breadth
-- **Relative Strength**: Currently **${t.relativeStrengthStance}** (NQ: ${t.nqChangePct >= 0 ? '+' : ''}${t.nqChangePct.toFixed(2)}% vs ES: ${t.esChangePct >= 0 ? '+' : ''}${t.esChangePct.toFixed(2)}%, YM: ${t.ymChangePct >= 0 ? '+' : ''}${t.ymChangePct.toFixed(2)}%).
-- **Market Breadth**: **${state.breadth.advancingCount} advancing vs ${state.breadth.decliningCount} declining** (${state.breadth.marketParticipationStance}).
-- **Semiconductor Cycle**: Semi basket trading **${t.semiBasketChangePct >= 0 ? '+' : ''}${t.semiBasketChangePct.toFixed(2)}%**, confirming enterprise AI capex momentum.
+- **Relative Strength**: **${t.relativeStrengthStance || 'UNAVAILABLE'}** (NQ vs ES vs YM).
+- **Market Breadth**: Advancing: ${state.breadth?.advancingCount ?? 'UNAVAILABLE'} vs Declining: ${state.breadth?.decliningCount ?? 'UNAVAILABLE'} (${state.breadth?.marketParticipationStance || 'UNAVAILABLE'}).
+- **Semiconductor Cycle Basket**: ${Number.isFinite(t.semiBasketChangePct) ? `${t.semiBasketChangePct >= 0 ? '+' : ''}${t.semiBasketChangePct.toFixed(2)}%` : 'UNAVAILABLE'}.
 
-#### 3. Volatility & Positioning
-- **CBOE Volatility**: VXN is at **${t.vxnIndex.toFixed(2)}** (VIX at **${t.vixIndex.toFixed(2)}**), signaling normal dealer options gamma conditions.
-- **Current Bias**: Intraday **${state.today.intraday_bias}** | Short-Term **${state.today.short_term_bias}** | Medium-Term **${state.today.medium_term_bias}**.
-- **Invalidation**: ${state.today.what_would_invalidate_the_current_interpretation}
+#### 3. Volatility & Bias
+- **Implied Volatility**: ${volStr}.
+- **Active Fundamental Bias**: Intraday: **${state.today.intraday_bias || 'UNAVAILABLE'}** | Short-Term: **${state.today.short_term_bias || 'UNAVAILABLE'}**.
+- **Invalidation Trigger**: ${state.today.what_would_invalidate_the_current_interpretation || 'UNAVAILABLE'}
 
-*Trading Guidance: Use this fundamental context alongside Volume Profile levels and CVD delta absorption to identify high-probability setups.*`
+*Notice: Zero-placeholder policy active. Unverified fields are strictly marked UNAVAILABLE.*`
 
       return new Response(`data: ${JSON.stringify({ text: fallbackText })}\n\ndata: [DONE]\n\n`, {
         headers: {

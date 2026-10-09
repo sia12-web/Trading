@@ -753,7 +753,15 @@ export function SessionBanner({
                   : '📰 '}
             {newsHazard.chip || ''}
           </Link>
-        ) : null}
+        ) : (
+          <Link
+            href="/dashboard/news"
+            className="rounded bg-surface-800 border border-neutral-700/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 hover:text-white hover:bg-neutral-700 transition-colors"
+            title="View complete Desk News & Economic Calendar"
+          >
+            📰 News
+          </Link>
+        )}
 
         <div className="ml-auto flex items-center gap-2">
           <Link
@@ -769,13 +777,6 @@ export function SessionBanner({
             title="Go to Fundamentals Multi-Agent Analysis"
           >
             🏛️ Fundamentals
-          </Link>
-          <Link
-            href="/dashboard/positions"
-            className="rounded bg-surface-800 border border-neutral-700/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-300 hover:bg-neutral-700 hover:text-white transition-colors"
-            title="Go to Live Positions Monitor"
-          >
-            ⚡ Live Positions
           </Link>
           <button
             type="button"

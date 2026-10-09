@@ -310,9 +310,9 @@ export function instrumentsForCalendarEvent(country: string, event: string): Des
     return /\b(Silver|XAG)\b/i.test(text) ? ['SILVER'] : ['GOLD', 'SILVER']
   }
   if (/\b(JP|Japan|BoJ|Tokyo|Yen)\b/i.test(text)) {
-    return ['DOW', 'NASDAQ', 'GOLD', 'SILVER']
+    return ['NIKKEI', 'DOW', 'NASDAQ', 'GOLD', 'SILVER']
   }
-  return ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'SILVER']
+  return ['DOW', 'NASDAQ', 'NIKKEI', 'GOLD', 'CRUDE', 'SILVER']
 }
 
 export function deskNoteForCalendar(

@@ -76,24 +76,43 @@ Answer in prose. Describe what to watch. Do not give a trade instruction. Do not
     const openaiKey = process.env.OPENAI_API_KEY
 
     if (!anthropicKey && !openaiKey) {
+      const nkdHasLive = Number.isFinite(t.nkdPrice) && t.nkdPrice > 0
+      const nkdPriceStr = nkdHasLive
+        ? `¥${t.nkdPrice.toLocaleString()} (${t.nkdChange >= 0 ? '+' : ''}${t.nkdChange} pts, ${t.nkdChangePct >= 0 ? '+' : ''}${t.nkdChangePct.toFixed(2)}%)`
+        : 'UNAVAILABLE'
+      const fxStr =
+        Number.isFinite(fx.usdjpyRate) && fx.usdjpyRate > 0
+          ? `USD/JPY: ${fx.usdjpyRate.toFixed(2)} (${fx.fxRegime})`
+          : 'UNAVAILABLE'
+      const bojStr = Number.isFinite(boj.uncollateralizedCallRatePct)
+        ? `Call Rate: ${boj.uncollateralizedCallRatePct}% | 10Y JGB: ${boj.jgb10yYieldPct}% (${boj.policyStance})`
+        : 'UNAVAILABLE'
+
       const fallbackText = `### NIKKEI 225 INSTITUTIONAL BRIEFING (CME NKD / JPX CASH)
 
+**Market**: CME Nikkei 225 Futures (NKD) | Live Telemetry: **${nkdPriceStr}**  
+**FX Channel**: **${fxStr}**  
+**BoJ Policy Stance**: **${bojStr}**
+
+---
+
 #### 1. Price-Weighted Index Structure & Tech Concentration
-- **Nikkei Divisor**: Using divisor **${NIKKEI_DIVISOR}**, a ¥1,000 price change in any constituent creates **~33.17 Nikkei points** ($165.84 per NKD contract).
-- **Concentration**: Top 3 movers (Fast Retailing ${contrib.fastRetailingWeightPct}%, Tokyo Electron ${contrib.tokyoElectronWeightPct}%, Advantest ${contrib.advantestWeightPct}%) command **${contrib.top3ContributionPct}%** of index leverage (**${contrib.weightingConcentration}** regime).
-- **Semiconductors**: SOX Index is at **${t.soxIndex}** (+${t.soxChangePct}%), driving positive opening gap momentum for Tokyo Electron fab equipment and Advantest testing hardware.
+- **Nikkei Divisor Constant**: JPX divisor **${NIKKEI_DIVISOR}** (¥1,000 price change in constituent creates **~33.17 Nikkei points**).
+- **Concentration**: ${contrib.top3ContributionPct != null ? `Top 3 movers command **${contrib.top3ContributionPct}%** of index leverage (${contrib.weightingConcentration || 'UNAVAILABLE'} regime).` : 'Concentration metrics: UNAVAILABLE.'}
+- **Semiconductors**: SOX Index: ${Number.isFinite(t.soxIndex) ? `${t.soxIndex} (${t.soxChangePct >= 0 ? '+' : ''}${t.soxChangePct}%)` : 'UNAVAILABLE'}.
 
-#### 2. USD/JPY Currency Pass-Through & MoF Danger Zone
-- **Spot FX**: USD/JPY holding at **${fx.usdjpyRate.toFixed(2)}** (**${fx.fxRegime}**).
-- **MOF_INTERVENTION_RISK**: ${fx.mofInterventionZone ? 'HIGH (supplied proxy). Not a fixed intervention price.' : 'LOW (supplied proxy).'}
+#### 2. USD/JPY Currency Pass-Through & Intervention Risk
+- **Spot FX**: ${fxStr}.
+- **MOF_INTERVENTION_RISK**: ${fx.mofInterventionZone != null ? (fx.mofInterventionZone ? 'HIGH (supplied proxy). Not a fixed intervention price.' : 'LOW (supplied proxy).') : 'UNAVAILABLE'}.
 
-#### 3. Bank of Japan Monetary Normalization
-- **Policy Target**: Overnight call rate at **${boj.uncollateralizedCallRatePct}%**, 10Y JGB at **${boj.jgb10yYieldPct}%** (**${boj.policyStance}**).
-- **Sector Rotation**: Rate hikes provide net interest margin expansion for Mega Banks (MUFG 8306) while Shunto wage growth (+5.1%) cements the domestic virtuous wage-inflation loop.
+#### 3. Bank of Japan Monetary Policy
+- **Policy Rates**: ${bojStr}.
 
 #### 4. Active Fundamental Bias
-- **Intraday Bias**: **${state.today.intraday_bias}** | **Short-Term**: **${state.today.short_term_bias}**
-- **Tokyo Session Focus**: 09:00-10:00 JST first-hour Initial Balance. Watch for absorption on large overnight US gap opens.`
+- **Intraday Bias**: **${state.today.intraday_bias || 'UNAVAILABLE'}** | **Short-Term**: **${state.today.short_term_bias || 'UNAVAILABLE'}**
+- **Tokyo Session Focus**: 09:00-10:00 JST first-hour Initial Balance.
+
+*Notice: Zero-placeholder policy active. Unverified fields are strictly marked UNAVAILABLE.*`
 
       return new Response(`data: ${JSON.stringify({ text: fallbackText })}\n\ndata: [DONE]\n\n`, {
         headers: {

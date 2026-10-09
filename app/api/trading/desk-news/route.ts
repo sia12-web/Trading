@@ -161,10 +161,15 @@ export async function GET(request: Request) {
         }
       })
 
+    let deskEvents = mapped
+    if (desk !== 'ALL') {
+      deskEvents = deskEvents.filter((e) => e.instruments.includes(desk))
+    }
+
     // Prefer recently released high-impact events (within 45m) and upcoming HIGH impact first
     // so a dense low-impact flood never drops FOMC/CPI/NFP/BoJ.
-    const high = mapped.filter((e) => isHighImpact(e.impact))
-    const rest = mapped.filter((e) => !isHighImpact(e.impact))
+    const high = deskEvents.filter((e) => isHighImpact(e.impact))
+    const rest = deskEvents.filter((e) => !isHighImpact(e.impact))
     const byTime = (a: DeskCalendarEvent, b: DeskCalendarEvent) => {
       const am = parseCalendarEventMs(a.time, nowMs) ?? Number.POSITIVE_INFINITY
       const bm = parseCalendarEventMs(b.time, nowMs) ?? Number.POSITIVE_INFINITY
@@ -179,12 +184,8 @@ export async function GET(request: Request) {
     releasedRecent.sort(byTime)
     otherHigh.sort(byTime)
     rest.sort(byTime)
-    let calendar = [...releasedRecent, ...otherHigh, ...rest].slice(0, 100)
-
-    // Optional desk filter for chart banner polls
-    if (desk !== 'ALL') {
-      calendar = calendar.filter((e) => e.instruments.includes(desk))
-    }
+    const calLimit = calendarOnly ? 300 : 100
+    const calendar = [...releasedRecent, ...otherHigh, ...rest].slice(0, calLimit)
 
     return NextResponse.json(
       {

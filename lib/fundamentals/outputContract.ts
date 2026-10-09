@@ -49,8 +49,9 @@ export type FundamentalEnvelope = {
 }
 
 export const FUNDAMENTAL_SHARED_RULES = `SHARED RULES (all fundamental agents):
+- ZERO PLACEHOLDER & ZERO HALLUCINATION POLICY: Never invent, fabricate, or output placeholder mock figures, weights, surprises, point contributions, spread changes, breadth figures, or reactions.
+- If data, telemetry, or a source is missing, unsupplied, or unverified, mark it null or UNAVAILABLE explicitly. Do not invent estimates or substitute static placeholder numbers.
 - Analyze only events and telemetry that were supplied. You do not continuously monitor markets. The backend supplies data. You interpret that packet.
-- Never invent a missing number, weight, surprise, point contribution, spread change, breadth figure, or reaction.
 - Almost every observation may be null or UNKNOWN. If a field was not supplied, set it null and data_status UNAVAILABLE. Do not guess UP, DOWN, or FLAT.
 - Every supplied datum should be read with its freshness: LIVE, RECENT, SLOW_MOVING, STALE, or STALE_FOR_INTRADAY. Weekly and monthly figures are background regime evidence. They are not information from the last minute.
 - Do not calculate statistics or index points. If standardized_surprise, index point impact, breadth, or spread change is absent, leave it null. Code computes those before the prompt.
@@ -83,7 +84,7 @@ Direction values are BULLISH, BEARISH, NEUTRAL, MIXED, or UNKNOWN, or null.`
 
 export const FUNDAMENTAL_CHAT_RULES = `FUNDAMENTALS CHAT:
 Answer the human in concise prose. Do not emit the event JSON envelope.
-Say when a figure is stale or missing. Do not give an order. Do not invent CVD, profile, or reclaim behavior.
+Say when a figure is stale, missing, or UNAVAILABLE. Zero hallucination: NEVER invent numbers, CVD, volume profile, or reclaim behavior. Never use placeholder estimations.
 If the trader asks what to do, describe what the supplied fundamental context supports or contradicts, then stop.`
 
 export function composeAnalystPrompts(core: string, specialistNotes: string): {

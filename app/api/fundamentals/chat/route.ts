@@ -68,28 +68,36 @@ STRICT ANALYST DIRECTIVES:
 
     // If no LLM keys are configured, provide an institutional fallback stream
     if (!anthropicKey && !openaiKey) {
+      const hasTelemetry = Number.isFinite(state.wtiTelemetry.promptPrice) && state.wtiTelemetry.promptPrice > 0
+      const promptStr = hasTelemetry
+        ? `$${state.wtiTelemetry.promptPrice.toFixed(2)} (${state.wtiTelemetry.change >= 0 ? '+' : ''}$${state.wtiTelemetry.change.toFixed(2)})`
+        : 'UNAVAILABLE'
+      const spreadStr = hasTelemetry
+        ? `${formatSignedDollars(state.wtiTelemetry.promptSpread)}/bbl (${state.wtiTelemetry.spreadRegime})`
+        : 'UNAVAILABLE'
+
       const fallbackText = `### 🛢️ Oil Fundamental Analyst Executive Assessment
 
-**Market**: NYMEX WTI Crude Oil (${state.wtiTelemetry.symbol}) | Live Prompt: **$${state.wtiTelemetry.promptPrice.toFixed(2)}** (${state.wtiTelemetry.change >= 0 ? '+' : ''}$${state.wtiTelemetry.change.toFixed(2)})  
-**Curve Structure**: **${state.wtiTelemetry.spreadRegime}** (Prompt Spread M1-M2: **${formatSignedDollars(state.wtiTelemetry.promptSpread)}/bbl**)  
-**Macro Physical Balance**: **${state.physicalBalance}** | Fundamental Stance: **${state.overallBias}** (${state.overallConfidence}/10 confidence)
+**Market**: NYMEX WTI Crude Oil (${state.wtiTelemetry.symbol}) | Live Prompt: **${promptStr}**  
+**Curve Structure**: **${spreadStr}**  
+**Macro Physical Balance**: **${state.physicalBalance || 'UNAVAILABLE'}** | Fundamental Stance: **${state.overallBias}** (${state.overallConfidence}/10 confidence)
 
 ---
 
 #### 1. Physical Supply & Inventories Balance
-- **Cushing OK Storage**: Holding critically low near ~23.4M bbl. Operational tank bottoms at Cushing restrict physical prompt availability, maintaining the **${formatSignedDollars(state.wtiTelemetry.promptSpread)}/bbl** front spread level.
-- **U.S. Commercial Crude**: Commercial crude stocks (~423.8M bbl) remain ~4% below 5-year seasonal norms.
-- **Domestic Supply Resilience**: U.S. crude output remains robust at ~13.40M bpd, acting as a structural ceiling preventing runaway supply-side spikes.
+- **Prompt Cash Spread**: Front calendar spread level is **${spreadStr}**.
+- **Commercial Stocks & Storage**: Official inventory telemetry status: ${state.today.inventories || 'UNAVAILABLE'}. Zero placeholder policy: no speculative estimates fabricated.
+- **Domestic Supply**: Physical supply status: ${state.today.supply || 'UNAVAILABLE'}.
 
 #### 2. OPEC+ Policy & Geopolitical Supply Risks
-- **OPEC+ Voluntary Rollover**: The 2.2M bpd voluntary curbs remain active, establishing an institutional price floor between $70-$75/bbl.
-- **Geopolitical Risk Premium**: Maritime rerouting around the Cape of Good Hope continues to inflate freight and bunker spreads, adding a persistent ~$3.50/bbl logistical premium.
+- **OPEC+ Policy**: ${state.today.opec || 'UNAVAILABLE'}.
+- **Geopolitical Hazard**: ${state.today.geopolitical_risk || 'UNAVAILABLE'}.
 
-#### 3. Curve Structure & Speculative Positioning
-- **Curve Structure Confirmation**: The prompt M1-M2 spread holding positive in backwardation confirms active physical absorption by refiners running at 91.8% capacity.
-- **CFTC Positioning**: Managed Money net longs remain uncrowded (~148k contracts), leaving room for discretionary capital expansion without immediate risk of crowded liquidation.
+#### 3. Curve Structure & Positioning
+- **Curve Structure**: ${state.today.curve || 'UNAVAILABLE'}.
+- **Speculative Positioning**: ${state.today.positioning || 'UNAVAILABLE'}.
 
-*Mandate Reminder: Never trade solely from a headline. Front calendar spread confirmation and inventory trajectory must validate any directional thesis.*`
+*Notice: Strict anti-hallucination policy active. Telemetry not supplied by live verified feeds is explicitly reported as UNAVAILABLE.*`
 
       return new Response(`data: ${JSON.stringify({ text: fallbackText })}\n\ndata: [DONE]\n\n`, {
         headers: {

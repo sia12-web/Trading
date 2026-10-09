@@ -77,27 +77,44 @@ Do not issue a trade.
     const openaiKey = process.env.OPENAI_API_KEY
 
     if (!anthropicKey && !openaiKey) {
+      const ymHasLive = Number.isFinite(t.ymPrice) && t.ymPrice > 0
+      const ymPriceStr = ymHasLive
+        ? `${t.ymPrice.toLocaleString()} (${t.ymChange >= 0 ? '+' : ''}${t.ymChange.toFixed(1)} pts, ${t.ymChangePct >= 0 ? '+' : ''}${t.ymChangePct.toFixed(2)}%)`
+        : 'UNAVAILABLE'
+      const yieldStr =
+        Number.isFinite(t.us2yNominalYield) && Number.isFinite(t.us10yNominalYield)
+          ? `2Y: ${t.us2yNominalYield.toFixed(2)}% | 10Y: ${t.us10yNominalYield.toFixed(2)}% (2s10s spread: ${t.yieldCurve2s10sSpreadBps >= 0 ? '+' : ''}${t.yieldCurve2s10sSpreadBps} bps)`
+          : 'UNAVAILABLE'
+      const creditStr = Number.isFinite(cred.highYieldSpreadBps)
+        ? `${cred.highYieldSpreadBps} bps (${cred.creditStressRegime})`
+        : 'UNAVAILABLE'
+
       const fallbackText = `### DOW JONES INDUSTRIAL AVERAGE FUNDAMENTAL BRIEFING (CME YM)
 
+**Market**: CME E-mini Dow (YM) | Live Telemetry: **${ymPriceStr}**  
+**Treasury Rates**: **${yieldStr}**  
+**Credit Conditions**: **${creditStr}**
+
+---
+
 #### 1. Price-Weighting & Contribution Dynamics
-- **Price Weighting & Divisor**: Using divisor **${t.dowDivisor}**, $1 price move creates **~6.59 Dow points**.
-- **Contribution Concentration**: Top 3 movers account for **${contrib.top3ContributionPct.toFixed(1)}%** of points moved (**${contrib.contributionConcentration}** concentration).
-- **Weighting Divergence**: Price-weighted DJIA is **${contrib.priceWeightedDjiaReturnPct >= 0 ? '+' : ''}${contrib.priceWeightedDjiaReturnPct}%** vs Equal-weight at **${contrib.equalWeight30ReturnPct >= 0 ? '+' : ''}${contrib.equalWeight30ReturnPct}%** (**${contrib.weightingDivergenceSignal}**).
+- **Price Divisor Constant**: S&P Dow Jones divisor: **${t.dowDivisor}** ($1 stock change creates **~6.59 Dow points**).
+- **Point Contribution**: ${contrib.top3ContributionPct ? `Top 3 movers account for **${contrib.top3ContributionPct.toFixed(1)}%** of index movement (${contrib.contributionConcentration} concentration).` : 'Constituent contributions: UNAVAILABLE.'}
+- **Weighting Divergence**: Price-weighted DJIA: ${contrib.priceWeightedDjiaReturnPct != null ? `${contrib.priceWeightedDjiaReturnPct >= 0 ? '+' : ''}${contrib.priceWeightedDjiaReturnPct}%` : 'UNAVAILABLE'} vs Equal-weight: ${contrib.equalWeight30ReturnPct != null ? `${contrib.equalWeight30ReturnPct >= 0 ? '+' : ''}${contrib.equalWeight30ReturnPct}%` : 'UNAVAILABLE'} (${contrib.weightingDivergenceSignal || 'UNAVAILABLE'}).
 
 #### 2. Macro, Rates & Cyclical Transmission
-- **Treasury Rates**: 2Y at **${t.us2yNominalYield.toFixed(2)}%**, 10Y at **${t.us10yNominalYield.toFixed(2)}%** (curve: **+${t.yieldCurve2s10sSpreadBps} bps**).
-- **Yield Classification**: Classified as **${t.yieldMoveDriver}** — supportive for cyclical industrials and commercial bank margins.
-- **Economic Quadrant**: **${t.growthInflationQuadrant}**.
+- **Rate Transmission**: ${yieldStr} — classified as **${t.yieldMoveDriver || 'UNAVAILABLE'}**.
+- **Macro Quadrant**: **${t.growthInflationQuadrant || 'UNAVAILABLE'}**.
 
 #### 3. Sector Rotation & Credit Health
-- **Rotation Regime**: **${rot.rotationRegime}** (Leading: **${rot.leadershipSector}** vs Lagging: **${rot.laggingSector}**). YM vs NQ 1D spread: **${rot.ymVsNqSpreadPct >= 0 ? '+' : ''}${rot.ymVsNqSpreadPct}%**.
-- **Credit Conditions**: High-Yield OAS at **${cred.highYieldSpreadBps} bps** (**${cred.creditStressRegime}**), HYG at **$${cred.hygPrice.toFixed(2)}**.
+- **Rotation Regime**: **${rot.rotationRegime || 'UNAVAILABLE'}** (Leading: ${rot.leadershipSector || 'UNAVAILABLE'} vs Lagging: ${rot.laggingSector || 'UNAVAILABLE'}).
+- **Corporate Credit**: High-Yield OAS at **${creditStr}**.
 
 #### 4. Active Fundamental Bias
-- **Intraday Bias**: **${state.today.intraday_bias}** | **Short-Term**: **${state.today.short_term_bias}** | **Medium-Term**: **${state.today.medium_term_bias}**
-- **Invalidation Trigger**: ${state.today.what_would_invalidate_the_current_interpretation}
+- **Intraday Bias**: **${state.today.intraday_bias || 'UNAVAILABLE'}** | **Short-Term**: **${state.today.short_term_bias || 'UNAVAILABLE'}**
+- **Invalidation Trigger**: ${state.today.what_would_invalidate_the_current_interpretation || 'UNAVAILABLE'}
 
-*Trading Guidance: Fundamental context informs positioning bias. Enter strictly on Volume Profile key levels and CVD delta absorption.*`
+*Notice: Zero-placeholder policy active. Unverified fields are strictly marked UNAVAILABLE.*`
 
       return new Response(`data: ${JSON.stringify({ text: fallbackText })}\n\ndata: [DONE]\n\n`, {
         headers: {
