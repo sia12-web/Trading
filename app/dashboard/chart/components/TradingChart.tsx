@@ -13049,23 +13049,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               </button>
             </div>
 
-            {/* Quick Navigation Links */}
-            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-surface-900/90 border border-neutral-700/60 shadow-sm text-xs font-mono">
-              <Link
-                href="/dashboard"
-                className="flex items-center gap-1 px-2 py-1 rounded font-bold bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 text-neutral-300 hover:text-white transition shadow-sm active:scale-95 cursor-pointer"
-                title="Go to Dashboard Overview"
-              >
-                📊 Dashboard
-              </Link>
-              <Link
-                href="/dashboard/fundamentals"
-                className="flex items-center gap-1 px-2 py-1 rounded font-bold bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 text-neutral-300 hover:text-white transition shadow-sm active:scale-95 cursor-pointer"
-                title="Go to Fundamentals Multi-Agent Analysis"
-              >
-                🏛️ Fundamentals
-              </Link>
-            </div>
+
 
             {/* Live price ticker */}
             <div className="ml-auto flex items-center gap-3">
