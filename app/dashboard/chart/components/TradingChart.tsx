@@ -7831,14 +7831,14 @@ export function TradingChart({
         ...bandOpts,
         lineStyle: LineStyle.Dashed,
         color: 'rgba(239, 68, 68, 0.35)',
-        title: '+3σ Ext',
+        title: '5M +3σ Ext',
       }),
       upper2: chart.addLineSeries({
         ...bandOpts,
         color: 'rgba(59, 130, 246, 0.5)',
-        title: '+2σ',
+        title: '5M +2σ',
       }),
-      upper1: chart.addLineSeries({ ...bandOpts, color: '#3b82f6', lineWidth: 2, lastValueVisible: false, title: '+1σ' }),
+      upper1: chart.addLineSeries({ ...bandOpts, color: '#3b82f6', lineWidth: 2, lastValueVisible: false, title: '5M +1σ' }),
       vwap: chart.addLineSeries({
         color: '#10b981',
         lineWidth: 2,
@@ -7846,20 +7846,20 @@ export function TradingChart({
         lastValueVisible: true,
         pointMarkersVisible: false,
         crosshairMarkerVisible: false,
-        title: 'AVWAP',
+        title: '5M AVWAP',
         ...ignoreScale,
       }),
-      lower1: chart.addLineSeries({ ...bandOpts, color: '#b8a04a', lineWidth: 2, lastValueVisible: false, title: '-1σ' }),
+      lower1: chart.addLineSeries({ ...bandOpts, color: '#b8a04a', lineWidth: 2, lastValueVisible: false, title: '5M -1σ' }),
       lower2: chart.addLineSeries({
         ...bandOpts,
         color: 'rgba(184, 160, 74, 0.5)',
-        title: '-2σ',
+        title: '5M -2σ',
       }),
       lower3: chart.addLineSeries({
         ...bandOpts,
         lineStyle: LineStyle.Dashed,
         color: 'rgba(16, 185, 129, 0.35)',
-        title: '-3σ Ext',
+        title: '5M -3σ Ext',
       }),
     }
 
@@ -9179,7 +9179,7 @@ export function TradingChart({
 
     const vs = vwapSeriesRef.current
     if (vs) {
-      const shouldRenderBands = show5mAvwapOnChart
+      const shouldRenderBands = show5mAvwapOnChart && timeframe === '1D'
       if (shouldRenderBands && bands) {
         const shift = (rows: Array<{ time: number; value: number }>) =>
           timeframe === '1D'
@@ -9437,7 +9437,7 @@ export function TradingChart({
       }
     }
 
-    const shouldRenderBands = show5mAvwapOnChart
+    const shouldRenderBands = show5mAvwapOnChart && timeframe === '1D'
     if (bands && bands.vwap && shouldRenderBands) {
       const tz = chartTzRef.current
       const shift = <T extends { time: number | UTCTimestamp; value: number }>(rows: T[]) =>
