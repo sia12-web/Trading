@@ -7833,14 +7833,14 @@ export function TradingChart({
         ...bandOpts,
         lineStyle: LineStyle.Dashed,
         color: 'rgba(239, 68, 68, 0.35)',
-        title: '5M +3σ Ext',
+        title: '+3σ Ext',
       }),
       upper2: chart.addLineSeries({
         ...bandOpts,
         color: 'rgba(59, 130, 246, 0.5)',
-        title: '5M +2σ',
+        title: '+2σ',
       }),
-      upper1: chart.addLineSeries({ ...bandOpts, color: '#3b82f6', lineWidth: 2, lastValueVisible: false, title: '5M +1σ' }),
+      upper1: chart.addLineSeries({ ...bandOpts, color: '#3b82f6', lineWidth: 2, lastValueVisible: false, title: '+1σ' }),
       vwap: chart.addLineSeries({
         color: '#10b981',
         lineWidth: 2,
@@ -7848,20 +7848,20 @@ export function TradingChart({
         lastValueVisible: true,
         pointMarkersVisible: false,
         crosshairMarkerVisible: false,
-        title: '5M AVWAP',
+        title: 'AVWAP',
         ...ignoreScale,
       }),
-      lower1: chart.addLineSeries({ ...bandOpts, color: '#b8a04a', lineWidth: 2, lastValueVisible: false, title: '5M -1σ' }),
+      lower1: chart.addLineSeries({ ...bandOpts, color: '#b8a04a', lineWidth: 2, lastValueVisible: false, title: '-1σ' }),
       lower2: chart.addLineSeries({
         ...bandOpts,
         color: 'rgba(184, 160, 74, 0.5)',
-        title: '5M -2σ',
+        title: '-2σ',
       }),
       lower3: chart.addLineSeries({
         ...bandOpts,
         lineStyle: LineStyle.Dashed,
         color: 'rgba(16, 185, 129, 0.35)',
-        title: '5M -3σ Ext',
+        title: '-3σ Ext',
       }),
     }
 
@@ -9181,7 +9181,7 @@ export function TradingChart({
 
     const vs = vwapSeriesRef.current
     if (vs) {
-      const shouldRenderBands = show5mAvwapOnChart && timeframe === '1D'
+      const shouldRenderBands = show5mAvwapOnChart
       if (shouldRenderBands && bands) {
         const shift = (rows: Array<{ time: number; value: number }>) =>
           timeframe === '1D'
@@ -9439,7 +9439,7 @@ export function TradingChart({
       }
     }
 
-    const shouldRenderBands = show5mAvwapOnChart && timeframe === '1D'
+    const shouldRenderBands = show5mAvwapOnChart
     if (bands && bands.vwap && shouldRenderBands) {
       const tz = chartTzRef.current
       const shift = <T extends { time: number | UTCTimestamp; value: number }>(rows: T[]) =>
@@ -13137,8 +13137,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           </div>
 
           {/* ── Compact Evaluators & OHLCV Tooltip Row ─────────────────────────── */}
-          <div className="flex flex-nowrap items-center justify-between gap-x-2 px-1 py-0.5 text-[10.5px] text-gray-400 h-[24px] min-h-[24px] max-h-[24px] shrink-0 overflow-hidden select-none">
-            <div className="flex flex-nowrap items-center gap-x-2 overflow-x-auto scrollbar-none min-w-0 flex-1">
+          <div className="flex flex-nowrap items-center justify-between gap-x-2 px-1.5 py-1 text-[11px] text-gray-400 min-h-[30px] h-[30px] shrink-0 select-none">
+            <div className="flex flex-nowrap items-center gap-x-2 overflow-x-auto scrollbar-none min-w-0 flex-1 py-0.5">
               {/* Structural Evaluators: Day Type, Opening, and Overnight Inventory (Active Session Only) */}
               {(() => {
                 const nycActive = isNycSessionActive()
@@ -13160,7 +13160,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
                 return (
                   <>
-                    <div className="flex items-center gap-1 select-none">
+                    <div className="flex items-center gap-1 select-none shrink-0 whitespace-nowrap">
                       <span className="text-gray-500">Day: </span>
                       <span className="text-purple-300 font-semibold">
                         {dayTypeOverride ? '🤖 ' : ''}{dayTypeEval.badgeText}{dayTypeOverride ? ' (AI Overwrite)' : ''}
@@ -13173,22 +13173,22 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                           e.stopPropagation()
                           setDayTypeOverride(null)
                         }}
-                        className="text-[9px] text-amber-400/80 hover:text-amber-300 hover:underline px-1 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 font-mono transition cursor-pointer"
+                        className="text-[9px] text-amber-400/80 hover:text-amber-300 hover:underline px-1 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 font-mono transition cursor-pointer shrink-0 whitespace-nowrap leading-none"
                         title="Revert AI Overwrite back to mathematical Day Type"
                       >
                         Reset Math
                       </button>
                     )}
-                    <span className="text-gray-600 text-[10px]">|</span>
-                    <div className="flex items-center gap-1 select-none">
+                    <span className="text-gray-600 text-[10px] shrink-0">|</span>
+                    <div className="flex items-center gap-1 select-none shrink-0 whitespace-nowrap">
                       <span className="text-gray-500">Open: </span>
                       <span className="text-cyan-300 font-semibold">
                         {openingBadge}
                       </span>
                     </div>
-                    <span className="text-gray-600 text-[10px]">|</span>
+                    <span className="text-gray-600 text-[10px] shrink-0">|</span>
                     <div
-                      className="flex items-center gap-1 select-none cursor-default"
+                      className="flex items-center gap-1 select-none cursor-default shrink-0 whitespace-nowrap"
                       title={invTitle}
                     >
                       <span className="text-gray-500">Inventory: </span>
@@ -13196,7 +13196,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                         {invText}
                       </span>
                     </div>
-                    <span className="text-gray-600 text-[10px]">|</span>
+                    <span className="text-gray-600 text-[10px] shrink-0">|</span>
                   </>
                 )
               })()}
@@ -13212,16 +13212,16 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     return next
                   })
                 }}
-                className={`transition flex items-center gap-1.5 select-none px-1.5 py-0.5 rounded cursor-pointer ${
+                className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer shrink-0 whitespace-nowrap leading-none ${
                   show5mAvwapOnChart
                     ? 'bg-emerald-500/25 text-emerald-200 border border-emerald-400/60 shadow-sm font-semibold'
                     : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
                 }`}
                 title="Toggle 5-Month Anchored VWAP benchmark & ±1σ/±2σ/±3σ bands on chart"
               >
-                <span className="text-[11px]">🌐</span>
-                <span className="text-gray-400 font-semibold">5M AVWAP:</span>
-                <span className={`font-mono font-bold ${show5mAvwapOnChart ? 'text-emerald-300' : 'text-zinc-400'}`}>
+                <span className="text-[11px] leading-none">🌐</span>
+                <span className="text-gray-400 font-semibold leading-none">5M AVWAP:</span>
+                <span className={`font-mono font-bold leading-none ${show5mAvwapOnChart ? 'text-emerald-300' : 'text-zinc-400'}`}>
                   {show5mAvwapOnChart ? 'ON' : 'OFF'}
                 </span>
               </button>
@@ -13229,16 +13229,16 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               <button
                 type="button"
                 onClick={() => setShowCvdSubPane((prev) => !prev)}
-                className={`transition flex items-center gap-1.5 select-none px-1.5 py-0.5 rounded cursor-pointer ${
+                className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer shrink-0 whitespace-nowrap leading-none ${
                   showCvdSubPane
                     ? 'bg-cyan-500/25 text-cyan-200 border border-cyan-400/60 shadow-sm font-semibold'
                     : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
                 }`}
                 title="Click to toggle CVD Sub-Chart Pane"
               >
-                <span className="text-[11px]">📊</span>
-                <span className="text-gray-400 font-semibold">CVD:</span>
-                <span className={`font-mono font-bold ${showCvdSubPane ? 'text-cyan-300' : 'text-zinc-400'}`}>
+                <span className="text-[11px] leading-none">📊</span>
+                <span className="text-gray-400 font-semibold leading-none">CVD:</span>
+                <span className={`font-mono font-bold leading-none ${showCvdSubPane ? 'text-cyan-300' : 'text-zinc-400'}`}>
                   {showCvdSubPane ? 'ON' : 'OFF'}
                 </span>
                 {sessionOrderFlow?.divergence !== 'NONE' && (
@@ -13256,16 +13256,16 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               <button
                 type="button"
                 onClick={() => setShowNewsOnChart((prev) => !prev)}
-                className={`transition flex items-center gap-1.5 select-none px-1.5 py-0.5 rounded cursor-pointer ${
+                className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer shrink-0 whitespace-nowrap leading-none ${
                   showNewsOnChart
                     ? 'bg-purple-500/25 text-purple-200 border border-purple-400/60 shadow-sm font-semibold'
                     : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
                 }`}
                 title="Toggle upcoming economic news event markers on chart time-axis"
               >
-                <span className="text-[11px]">⚡</span>
-                <span className="text-gray-400 font-semibold">News:</span>
-                <span className={`font-mono font-bold ${showNewsOnChart ? 'text-purple-300' : 'text-zinc-400'}`}>
+                <span className="text-[11px] leading-none">⚡</span>
+                <span className="text-gray-400 font-semibold leading-none">News:</span>
+                <span className={`font-mono font-bold leading-none ${showNewsOnChart ? 'text-purple-300' : 'text-zinc-400'}`}>
                   {showNewsOnChart ? 'ON' : 'OFF'}
                 </span>
               </button>
@@ -13273,17 +13273,17 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               <button
                 type="button"
                 onClick={() => setShowNewsHistoryModal((prev) => !prev)}
-                className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer ${
+                className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer shrink-0 whitespace-nowrap leading-none ${
                   showNewsHistoryModal
                     ? 'bg-purple-600/30 text-purple-200 border border-purple-400/80 shadow-sm font-semibold'
                     : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
                 }`}
                 title="View complete historical & upcoming economic news events archive"
               >
-                <span>📰</span>
-                <span className="text-gray-300 font-semibold text-xs">All News</span>
+                <span className="leading-none">📰</span>
+                <span className="text-gray-300 font-semibold text-xs leading-none">All News</span>
                 {newsEvents.length > 0 && (
-                  <span className="px-1 py-0.2 rounded text-[10px] bg-purple-900/80 text-purple-200 font-mono font-bold">
+                  <span className="px-1 py-0.5 rounded text-[10px] bg-purple-900/80 text-purple-200 font-mono font-bold leading-none">
                     {newsEvents.length}
                   </span>
                 )}
@@ -13292,16 +13292,16 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               <button
                 type="button"
                 onClick={() => setShowNewsAvwap((prev) => !prev)}
-                className={`transition flex items-center gap-1.5 select-none px-1.5 py-0.5 rounded cursor-pointer ${
+                className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer shrink-0 whitespace-nowrap leading-none ${
                   showNewsAvwap
                     ? 'bg-amber-500/25 text-amber-200 border border-amber-400/60 shadow-sm font-semibold'
                     : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
                 }`}
                 title="Toggle News Catalyst Anchored VWAP & standard deviation bands on chart"
               >
-                <span className="text-[11px]">⚡</span>
-                <span className="text-gray-400 font-semibold">News AVWAP:</span>
-                <span className={`font-mono font-bold ${showNewsAvwap ? 'text-amber-300' : 'text-zinc-400'}`}>
+                <span className="text-[11px] leading-none">⚡</span>
+                <span className="text-gray-400 font-semibold leading-none">News AVWAP:</span>
+                <span className={`font-mono font-bold leading-none ${showNewsAvwap ? 'text-amber-300' : 'text-zinc-400'}`}>
                   {showNewsAvwap ? 'ON' : 'OFF'}
                 </span>
               </button>
@@ -13309,37 +13309,37 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               <button
                 type="button"
                 onClick={() => setShowAtrSubPane((prev) => !prev)}
-                className={`transition flex items-center gap-1.5 select-none px-1.5 py-0.5 rounded cursor-pointer ${
+                className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer shrink-0 whitespace-nowrap leading-none ${
                   showAtrSubPane
                     ? 'bg-red-500/20 text-red-200 border border-red-400/60 shadow-sm font-semibold'
                     : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
                 }`}
                 title="Toggle ATR (Average True Range) pane — TradingView built-in, 14 RMA"
               >
-                <span className="text-[11px]">〽️</span>
-                <span className="text-gray-400 font-semibold">ATR:</span>
-                <span className={`font-mono font-bold ${showAtrSubPane ? 'text-red-300' : 'text-zinc-400'}`}>
+                <span className="text-[11px] leading-none">〽️</span>
+                <span className="text-gray-400 font-semibold leading-none">ATR:</span>
+                <span className={`font-mono font-bold leading-none ${showAtrSubPane ? 'text-red-300' : 'text-zinc-400'}`}>
                   {showAtrSubPane ? 'ON' : 'OFF'}
                 </span>
               </button>
               {isCritiqueSessionActiveState && (
                 <>
-                  <span className="text-gray-600 text-[10px]">|</span>
+                  <span className="text-gray-600 text-[10px] shrink-0">|</span>
                   {/* Questioning / Price Critique Desk Button */}
                   <button
                     type="button"
                     onClick={() => setShowQuestioningModal((prev) => !prev)}
-                    className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer ${
+                    className={`transition flex items-center gap-1.5 select-none px-2 py-0.5 rounded cursor-pointer shrink-0 whitespace-nowrap leading-none ${
                       showQuestioningModal
                         ? 'bg-amber-500/25 text-amber-200 border border-amber-400/60 shadow-sm font-semibold'
                         : 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 border border-zinc-700/40'
                     }`}
                     title="Auction Price Critique & Questioning Desk (Hotkey: Q) — Question the price before doing business!"
                   >
-                    <span className="text-[11px]">⚖️</span>
-                    <span className="text-gray-400 font-semibold">Critique:</span>
+                    <span className="text-[11px] leading-none">⚖️</span>
+                    <span className="text-gray-400 font-semibold leading-none">Critique:</span>
                     <span
-                      className={`font-mono font-bold ${
+                      className={`font-mono font-bold leading-none ${
                         !livePriceCritique
                           ? 'text-gray-400'
                           : livePriceCritique.valuationState.includes('DISCOUNT')
@@ -13352,7 +13352,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                       {livePriceCritique ? livePriceCritique.valuationState.replace('_', ' ') : 'STANDBY'}
                     </span>
                     {livePriceCritique?.weakHandTrap.isTrapRisk && (
-                      <span className="px-1 py-0.2 rounded bg-rose-500/20 text-rose-300 text-[9px] font-bold border border-rose-500/40 animate-pulse">
+                      <span className="px-1 py-0.5 rounded bg-rose-500/20 text-rose-300 text-[9px] font-bold border border-rose-500/40 animate-pulse leading-none">
                         TRAP RISK
                       </span>
                     )}
@@ -13362,7 +13362,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             </div>
 
             {/* OHLCV Hover Tooltip inline on the right */}
-            <div className="ml-auto flex-shrink-0">
+            <div className="ml-auto flex-shrink-0 whitespace-nowrap">
               <OHLCVTooltip data={tooltip} color={meta.color} />
             </div>
           </div>
