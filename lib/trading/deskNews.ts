@@ -162,16 +162,39 @@ export function instrumentsForHeadline(
   if (origin === 'SLV') hit.add('SILVER')
 
   // Broad US risk-on/off market news → both US desks
-  if (hit.size === 0 && /\b(stock|equity|wall street|s&p|spx|futures)\b/i.test(text)) {
+  if (hit.size === 0 && /\b(stock|equity|wall street|s&p|spx|futures|market rally|selloff|treasury|rate cut|rate hike)\b/i.test(text)) {
     hit.add('DOW')
     hit.add('NASDAQ')
   }
 
-  if (hit.size === 0) {
-    // Unscoped general → all active trader desks so All-tab stays useful
-    return ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'SILVER']
-  }
+  // Only return instruments if there was a verified relevant match (no spamming all desks)
   return Array.from(hit)
+}
+
+/**
+ * Institutional filter: Is this headline truly market-moving and relevant to CME futures?
+ * Rejects clickbait, lifestyle, retail consumer fluff, and irrelevant noise.
+ */
+export function isReallyImportantHeadline(headline: string, summary?: string | null): boolean {
+  if (!headline || typeof headline !== 'string') return false
+  const text = `${headline} ${summary || ''}`.toLowerCase()
+
+  if (/\b(horoscope|celebrity|entertainment|lifestyle|recipe|lottery|giveaway|sponsored|top deals|best buys|black friday|shopping)\b/i.test(text)) {
+    return false
+  }
+
+  return (
+    MACRO_KEYS.test(text) ||
+    GEO_KEYS.test(text) ||
+    DOW_KEYS.test(text) ||
+    NASDAQ_KEYS.test(text) ||
+    NIKKEI_KEYS.test(text) ||
+    GOLD_KEYS.test(text) ||
+    CRUDE_KEYS.test(text) ||
+    SILVER_KEYS.test(text) ||
+    EARNINGS_KEYS.test(text) ||
+    /\b(yield|treasury|recession|deficit|dollar|dxy|wall street|equities|futures|rally|selloff|market rout|rate cut|rate hike|central bank|inflation|liquidity|absorption|tightening|easing|crude|opec)\b/i.test(text)
+  )
 }
 
 export function deskNoteFor(
@@ -251,6 +274,10 @@ export function buildDeskNewsCards(
     if (!item.headline) continue
     const datetime = normalizeNewsDatetime(item.datetime, nowUnix)
     if (datetime == null || datetime < cutoff) continue
+
+    // Check market importance
+    if (!isReallyImportantHeadline(item.headline, item.summary)) continue
+
     const key = normalizeHeadlineKey(item.headline)
     if (!key || seen.has(key)) continue
     seen.add(key)
@@ -261,6 +288,7 @@ export function buildDeskNewsCards(
       item.related,
       item.origin
     )
+    if (instruments.length === 0) continue
 
     const tag = tagDeskNews(item.headline, item.summary)
     const source = (item.source || 'Finnhub').trim() || 'Finnhub'
@@ -301,18 +329,97 @@ export function filterCardsForDesk(
   return list.slice(0, limit)
 }
 
+/**
+ * Institutional filter: Is this economic calendar event truly market-moving and important for day trading CME futures?
+ * Rejects low-impact minor indicators, irrelevant foreign countries, and noise prints.
+ */
+export function isReallyImportantCalendarEvent(event: {
+  country?: string | null
+  event?: string | null
+  impact?: string | null
+}): boolean {
+  if (!event || !event.event) return false
+  const evText = event.event.trim().toLowerCase()
+  const country = (event.country || '').trim().toUpperCase()
+  const impact = (event.impact || '').trim().toLowerCase()
+
+  // 1. Noise Filter: Discard minor, low-volatility statistical reports
+  const isNoise = /\b(car registration|vehicle sales|wholesale inventory|wholesale price|mortgage application|mba|redbook|consumer credit|tertiary|leading indicator|economic tendency|trade balance|current account|building permit|housing start|nahb|richmond fed|kansas fed|dallas fed|construction spending|house price index|bci|import price|export price)\b/i.test(
+    `${country} ${evText}`
+  )
+  if (isNoise && !/\b(cpi|fomc|payrolls|gdp|ism)\b/i.test(evText)) {
+    return false
+  }
+
+  // 2. Country Relevance Filter:
+  // CME US futures react primarily to US data, Japan (Nikkei/USDJPY carry), China (commodities), or major ECB/BoE rate decisions.
+  const isRelevantCountry =
+    country === 'US' ||
+    country === 'USA' ||
+    country === 'UNITED STATES' ||
+    country === 'JP' ||
+    country === 'JAPAN' ||
+    country === 'CN' ||
+    country === 'CHINA' ||
+    ((country === 'EU' || country === 'EZ' || country === 'DE' || country === 'GERMANY' || country === 'GB' || country === 'UK') &&
+      /\b(rate decision|interest rate|ecb|boe|flash pmi)\b/i.test(evText))
+
+  if (!isRelevantCountry) {
+    // Only accept OPEC / crude inventory events from other origins
+    if (/\b(opec|crude oil|eia|petroleum)\b/i.test(evText)) {
+      return true
+    }
+    return false
+  }
+
+  // 3. Core Market-Moving Catalysts:
+  const isMarketMover =
+    // Federal Reserve & Central Banks
+    /\b(fomc|federal reserve|fed interest rate|fed funds|rate decision|rate statement|powell|dot plot|fomc minutes|bank of japan|boj|ueda|ecb|boe)\b/i.test(evText) ||
+    // Inflation & Price Pressures
+    /\b(cpi|consumer price index|core cpi|pce|core pce|personal consumption expenditures|ppi|producer price index|tokyo cpi)\b/i.test(evText) ||
+    // Employment & Labor Market
+    /\b(nonfarm payroll|non-farm payroll|nfp|unemployment rate|average hourly earnings|jobless claims|initial claims|jolts|adp employment)\b/i.test(evText) ||
+    // Economic Growth & Consumption
+    /\b(gdp|gross domestic product|retail sales|core retail sales|durable goods)\b/i.test(evText) ||
+    // Activity PMIs & Consumer Sentiment
+    /\b(ism manufacturing|ism services|ism non-manufacturing|flash pmi|michigan consumer sentiment|cb consumer confidence|tankan)\b/i.test(evText) ||
+    // Energy & Inventories
+    /\b(eia|crude oil inventories|crude inventories|gasoline stocks|cushing|opec)\b/i.test(evText) ||
+    // US Treasury Auctions
+    /\b(10-year note auction|30-year bond auction|treasury quarterly refunding)\b/i.test(evText)
+
+  if (isMarketMover) {
+    if (impact === 'low') {
+      // For low-rated items, only keep critical catalysts like Initial Jobless Claims, EIA, or core prints
+      return /\b(jobless claims|initial claims|crude oil|eia|cpi|fomc|payrolls)\b/i.test(evText)
+    }
+    return true
+  }
+
+  // 4. Officially high impact from primary economic centers
+  if ((impact === 'high' || impact === '3' || impact === 'red') && (country === 'US' || country === 'USA' || country === 'JP')) {
+    return true
+  }
+
+  return false
+}
+
 export function instrumentsForCalendarEvent(country: string, event: string): DeskNewsInstrument[] {
   const text = `${country} ${event}`
-  if (/\b(Crude|Oil|EIA|Petroleum|Gasoline|OPEC|Natural Gas)\b/i.test(text)) {
+  if (/\b(Crude|Oil|EIA|Petroleum|Gasoline|OPEC|Natural Gas|Distillate)\b/i.test(text)) {
     return ['CRUDE']
   }
-  if (/\b(Gold|Silver|Bullion|Precious)\b/i.test(text)) {
+  if (/\b(Gold|Silver|Bullion|Precious|TIPS|10-Year Note|30-Year Bond)\b/i.test(text)) {
     return /\b(Silver|XAG)\b/i.test(text) ? ['SILVER'] : ['GOLD', 'SILVER']
   }
-  if (/\b(JP|Japan|BoJ|Tokyo|Yen)\b/i.test(text)) {
-    return ['NIKKEI', 'DOW', 'NASDAQ', 'GOLD', 'SILVER']
+  if (/\b(JP|Japan|BoJ|Tokyo|Yen|Tankan)\b/i.test(text)) {
+    return ['NIKKEI', 'DOW', 'NASDAQ']
   }
-  return ['DOW', 'NASDAQ', 'NIKKEI', 'GOLD', 'CRUDE', 'SILVER']
+  if (/\b(FOMC|Fed|CPI|PCE|NFP|Nonfarm|Payrolls|Jobless|GDP|ISM|Retail Sales)\b/i.test(text)) {
+    return ['DOW', 'NASDAQ', 'NIKKEI', 'GOLD', 'SILVER']
+  }
+  return ['DOW', 'NASDAQ', 'GOLD', 'SILVER']
 }
 
 export function deskNoteForCalendar(

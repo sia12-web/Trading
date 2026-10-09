@@ -58,7 +58,7 @@ import {
 } from '@/lib/chart/sessionVwap'
 import { parseCalendarEventMs } from '@/lib/trading/deskNewsHazard'
 import AtrSubPane from './AtrSubPane'
-import type { DeskCalendarEvent } from '@/lib/trading/deskNews'
+import { type DeskCalendarEvent, isReallyImportantCalendarEvent } from '@/lib/trading/deskNews'
 import { computeNewsCatalystVwap } from '@/lib/chart/newsCatalystVwap'
 import {
   detect5DaySessionExtremes,
@@ -4767,6 +4767,7 @@ export function TradingChart({
     const seenX = new Set<number>()
 
     for (const e of newsEvents) {
+      if (!isReallyImportantCalendarEvent(e)) continue
       const ms = parseCalendarEventMs(e.time, nowMs)
       if (!ms || !Number.isFinite(ms)) continue
 
@@ -14446,41 +14447,48 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
               {/* Filter Tabs & Search */}
               <div className="pt-3 pb-2 flex flex-col sm:flex-row gap-2 shrink-0">
-                <div className="flex items-center gap-1 bg-slate-900/80 p-1 rounded-lg border border-slate-800 text-xs font-mono">
-                  <button
-                    type="button"
-                    onClick={() => setNewsFilterTab('all')}
-                    className={`px-2.5 py-1 rounded transition ${
-                      newsFilterTab === 'all'
-                        ? 'bg-violet-600 text-white font-bold'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    All ({newsEvents.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNewsFilterTab('released')}
-                    className={`px-2.5 py-1 rounded transition ${
-                      newsFilterTab === 'released'
-                        ? 'bg-emerald-600 text-white font-bold'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    🎯 Previous / Released ({newsEvents.filter((e) => e.isReleased || e.actual != null).length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNewsFilterTab('upcoming')}
-                    className={`px-2.5 py-1 rounded transition ${
-                      newsFilterTab === 'upcoming'
-                        ? 'bg-purple-600 text-white font-bold'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    ⏳ Upcoming ({newsEvents.filter((e) => !e.isReleased && e.actual == null).length})
-                  </button>
-                </div>
+                {(() => {
+                  const importantEvents = newsEvents.filter((e) => isReallyImportantCalendarEvent(e))
+                  const releasedCount = importantEvents.filter((e) => e.isReleased || e.actual != null).length
+                  const upcomingCount = importantEvents.filter((e) => !e.isReleased && e.actual == null).length
+                  return (
+                    <div className="flex items-center gap-1 bg-slate-900/80 p-1 rounded-lg border border-slate-800 text-xs font-mono">
+                      <button
+                        type="button"
+                        onClick={() => setNewsFilterTab('all')}
+                        className={`px-2.5 py-1 rounded transition ${
+                          newsFilterTab === 'all'
+                            ? 'bg-violet-600 text-white font-bold'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        All Important ({importantEvents.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewsFilterTab('released')}
+                        className={`px-2.5 py-1 rounded transition ${
+                          newsFilterTab === 'released'
+                            ? 'bg-emerald-600 text-white font-bold'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        🎯 Previous / Released ({releasedCount})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewsFilterTab('upcoming')}
+                        className={`px-2.5 py-1 rounded transition ${
+                          newsFilterTab === 'upcoming'
+                            ? 'bg-purple-600 text-white font-bold'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        ⏳ Upcoming ({upcomingCount})
+                      </button>
+                    </div>
+                  )
+                })()}
 
                 <div className="flex-1 relative">
                   <input
@@ -14507,6 +14515,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 {(() => {
                   const term = newsSearchTerm.toLowerCase().trim()
                   const filtered = newsEvents
+                    .filter((e) => isReallyImportantCalendarEvent(e))
                     .filter((e) => {
                       if (newsFilterTab === 'released') return !!(e.isReleased || e.actual != null)
                       if (newsFilterTab === 'upcoming') return !e.isReleased && e.actual == null

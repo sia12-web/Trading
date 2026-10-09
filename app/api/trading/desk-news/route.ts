@@ -13,6 +13,7 @@ import {
   deskNoteForCalendar,
   filterCardsForDesk,
   instrumentsForCalendarEvent,
+  isReallyImportantCalendarEvent,
   type DeskCalendarEvent,
   type DeskNewsInstrument,
   type DeskNewsWindowHours,
@@ -131,6 +132,7 @@ export async function GET(request: Request) {
     const nowMs = now.getTime()
     const mapped: DeskCalendarEvent[] = calendarRows
       .filter((e) => e.event && e.time)
+      .filter((e) => isReallyImportantCalendarEvent(e))
       .map((e, idx) => {
         const instrumentsHit = instrumentsForCalendarEvent(e.country, e.event)
         const isReleased = !!(e.isReleased || (e.actual != null && String(e.actual).trim() !== ''))

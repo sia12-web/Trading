@@ -6,6 +6,7 @@
 import {
   type DeskCalendarEvent,
   type DeskNewsInstrument,
+  isReallyImportantCalendarEvent,
 } from '@/lib/trading/deskNews'
 
 export const NEWS_CAREFUL_MS = 60 * 60 * 1000
@@ -187,7 +188,7 @@ export function buildDeskNewsHazards(args: {
   const out: DeskNewsHazard[] = []
 
   for (const ev of args.calendar) {
-    if (!isHighImpact(ev.impact)) continue
+    if (!isHighImpact(ev.impact) && !isReallyImportantCalendarEvent(ev)) continue
     if (!eventTouchesInstrument(ev, args.instrument)) continue
     const atMs = parseCalendarEventMs(ev.time, nowMs)
     const isReleased = !!(ev.isReleased || (ev.actual != null && String(ev.actual).trim() !== ''))
