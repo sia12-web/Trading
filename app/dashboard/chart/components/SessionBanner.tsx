@@ -26,7 +26,6 @@ import {
   type DeskRiskProfile,
 } from '@/lib/trading/deskRiskProfile'
 import { SYSTEMATIC_LIVE_DESK } from '@/lib/trading/systematicDesk'
-import { getFeedMetricsSnapshot } from '@/lib/databento/feedLatencySelector'
 import { useInternetLatency } from '@/lib/trading/useInternetLatency'
 import type { DeskInstrument } from '@/lib/trading/sessionGate'
 
@@ -142,16 +141,7 @@ export function SessionBanner({
   const [newsHazard, setNewsHazard] = useState<DeskNewsHazard | null>(null)
   const [newsUnavailable, setNewsUnavailable] = useState(false)
   const [riskProfile, setRiskProfile] = useState<DeskRiskProfile>('personal_futures')
-  const [feedSnap, setFeedSnap] = useState(() => getFeedMetricsSnapshot())
   const internetLatency = useInternetLatency()
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if (typeof document !== 'undefined' && document.hidden) return
-      setFeedSnap(getFeedMetricsSnapshot())
-    }, 5000)
-    return () => clearInterval(timer)
-  }, [])
   const [htfStatus, setHtfStatus] = useState<string | null>(null)
   const [htfSummary, setHtfSummary] = useState<string | null>(null)
   const [htfPerf, setHtfPerf] = useState<{
@@ -583,16 +573,6 @@ export function SessionBanner({
             {liveDeskContractLabel(gate.lockedInstrument)}
           </span>
         )}
-        <span
-          className={`rounded px-2 py-0.5 font-mono text-[10px] font-semibold border ${
-            feedSnap.activeFeed.status === 'HEALTHY'
-              ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-              : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
-          }`}
-          title={`Active Databento CME feed: ${feedSnap.activeFeed.name} (${feedSnap.activeFeed.qualityScore}/100 quality)`}
-        >
-          ⚡ Databento CME · {feedSnap.activeFeed.latencyMs}ms {feedSnap.zeroGapActive ? '(Zero Gap)' : ''}
-        </span>
         <span
           className={`rounded px-2 py-0.5 font-mono text-[10px] font-semibold border flex items-center gap-1.5 transition-colors ${
             !internetLatency.isOnline || internetLatency.status === 'DISCONNECTED'
