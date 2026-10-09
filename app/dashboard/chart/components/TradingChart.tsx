@@ -77,6 +77,8 @@ import {
   mergeHistoryWithLiveTip,
   closedHistoryOhlcChanged,
   isPlausibleRealtimeTick,
+  isPlausibleDeskTick,
+  LIVE_MAX_TIP_JUMP_PCT,
   quoteUnixForBucket,
 } from '@/lib/chart/liveFormingBar'
 import { fillCandleGaps } from '@/lib/chart/candleGapFiller'
@@ -9902,14 +9904,24 @@ export function TradingChart({
         const now = Date.now()
         if (now - lastMarkerPaintAt >= 1000) {
           lastMarkerPaintAt = now
-          paintDeskMarkersRef.current(next)
+          try {
+            paintDeskMarkersRef.current(next)
+          } catch {
+            /* ignore */
+          }
         }
       }
       if (isNewBar || fills.length > 0) {
-        refreshSessionHighlightsRef.current?.()
-        paintUserDrawingsRef.current?.()
+        try {
+          refreshSessionHighlightsRef.current?.()
+          paintUserDrawingsRef.current?.()
+        } catch {
+          /* ignore */
+        }
       }
     }
+
+    let outlierCandidate: { price: number; ts: number } | null = null
 
     const applyQuote = (
       price: number,
@@ -9940,16 +9952,48 @@ export function TradingChart({
         // it; publishing it as the current quote would make the ticker jump back.
         return
       }
-      if (
-        tip &&
-        !isPlausibleRealtimeTick(
-          tip.close,
-          price,
-          instrument,
-          trustedExchange
-        )
-      ) {
-        return
+
+      const incomingBucket = Math.floor(quoteTs / barSeconds) * barSeconds
+      const isNewBucket = timeframe !== '1D' && tip && incomingBucket > (tip.time as number)
+
+      let isPlausible = true
+      let forceAccept = false
+
+      if (tip) {
+        if (isNewBucket) {
+          // Advancing to a new candle bucket: allow standard market opening gap up to LIVE_MAX_TIP_JUMP_PCT (8%)
+          isPlausible = isPlausibleDeskTick(tip.close, price, LIVE_MAX_TIP_JUMP_PCT)
+        } else {
+          isPlausible = isPlausibleRealtimeTick(
+            tip.close,
+            price,
+            instrument,
+            trustedExchange
+          )
+        }
+      }
+
+      if (!isPlausible && tip) {
+        const now = Date.now()
+        // Consecutive tick confirmation:
+        // If consecutive quotes arrive at this new price level within 5 seconds,
+        // this is genuine high-volatility market velocity (momentum plunge, inventory breakout, CPI spike),
+        // NOT an isolated single-tick glitch. Immediately validate and accept.
+        if (
+          outlierCandidate &&
+          now - outlierCandidate.ts < 5000 &&
+          Math.abs(price - outlierCandidate.price) / outlierCandidate.price <= 0.04
+        ) {
+          outlierCandidate = null
+          isPlausible = true
+          forceAccept = true
+        } else {
+          // Stage candidate outlier and await confirmation on the next print
+          outlierCandidate = { price, ts: now }
+          return
+        }
+      } else {
+        outlierCandidate = null
       }
 
       onPriceUpdate?.(price)
@@ -10068,7 +10112,8 @@ export function TradingChart({
         bucketTs,
         tfSec,
         instrument,
-        trustedExchange
+        trustedExchange,
+        forceAccept
       )
       const fills: OHLCV[] = stepped.gapFills.map((g) => ({
         time: g.time as UTCTimestamp,
@@ -10128,7 +10173,7 @@ export function TradingChart({
             json.change_pct ?? 0,
             ts,
             streamLive,
-            json.feed === 'databento',
+            json.feed === 'databento' || json.source === 'cme' || json.source === 'databento' || json.feed === 'cme',
             json.bar
           )
         }
@@ -10320,7 +10365,7 @@ export function TradingChart({
             json.change_pct ?? 0,
             ts,
             streamLive,
-            json.feed === 'databento',
+            json.feed === 'databento' || json.source === 'cme' || json.source === 'databento' || json.feed === 'cme',
             json.bar
           )
         } catch {

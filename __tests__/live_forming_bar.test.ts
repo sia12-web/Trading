@@ -242,4 +242,26 @@ const t0 = 1_700_000_000 - (1_700_000_000 % 300)
   assert.equal(valid.last.close, 29415)
 }
 
+{
+  // Fast market plunge on Crude Oil (e.g. EIA inventory drop $92.50 -> $90.60)
+  const crudeBar = { time: t0, open: 92.5, high: 92.6, low: 92.4, close: 92.5 }
+  
+  // Real-time CME / Databento trusted feed applies the fast drop without stalling
+  const droppedTrusted = applyTickToFormingBar(crudeBar, 90.6, t0 + 30, 300, 'CRUDE', true)
+  assert.equal(droppedTrusted.last.low, 90.6, 'trusted CME feed records fast Crude plunge low')
+  assert.equal(droppedTrusted.last.close, 90.6, 'trusted CME feed records fast Crude plunge close')
+
+  // Consecutive-tick confirmation (forceAccept) allows untrusted proxy feeds to update
+  const droppedConfirmed = applyTickToFormingBar(crudeBar, 90.6, t0 + 30, 300, 'CRUDE', false, true)
+  assert.equal(droppedConfirmed.last.low, 90.6, 'confirmed proxy tick records fast Crude plunge low')
+  assert.equal(droppedConfirmed.last.close, 90.6, 'confirmed proxy tick records fast Crude plunge close')
+
+  // Next bucket rollover prints the subsequent bar seamlessly
+  const rolledNext = applyTickToFormingBar(droppedTrusted.last, 90.4, t0 + 300, 300, 'CRUDE', true)
+  assert.equal(rolledNext.rolled, true, 'subsequent bar rolls without obstruction')
+  assert.equal(rolledNext.last.time, t0 + 300)
+  assert.equal(rolledNext.last.open, 90.6, 'new bar opens at previous bar close')
+  assert.equal(rolledNext.last.close, 90.4)
+}
+
 console.log('live_forming_bar: all passed')

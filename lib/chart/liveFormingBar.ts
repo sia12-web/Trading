@@ -124,7 +124,8 @@ export function applyTickToFormingBar(
   quoteUnix: number,
   barSec: number = DESK_LIVE_BAR_SEC,
   instrument?: string | null,
-  trustedExchange: boolean = false
+  trustedExchange: boolean = false,
+  forceAccept: boolean = false
 ): { last: FormingBar; rolled: boolean; gapFills: FormingBar[] } {
   const lastT = last.time
   const bucket = deskBarOpenUnix(quoteUnix, barSec)
@@ -141,7 +142,7 @@ export function applyTickToFormingBar(
 
   if (bucket === lastT) {
     // Outlier guard within forming bar: prevent rogue multi-hundred point jumps from creating phantom tails
-    if (!isPlausibleRealtimeTick(last.close, price, instrument, trustedExchange)) {
+    if (!forceAccept && !isPlausibleRealtimeTick(last.close, price, instrument, trustedExchange)) {
       return { last, rolled: false, gapFills: [] }
     }
 
@@ -216,14 +217,22 @@ export function dropImplausibleDeskBars<T extends FormingBar>(
   const baseRange = instrument ? DESK_MAX_5M_RANGE[instrument] : undefined
   const mult = timeframe === '30m' ? 3 : timeframe === '15m' ? 1.8 : 1
   const maxRange = baseRange != null ? baseRange * mult : undefined
+  const maxJump = timeframe === '30m' ? 0.15 : 0.08
   const out: T[] = []
-  for (const bar of bars) {
+  for (let i = 0; i < bars.length; i++) {
+    const bar = bars[i]!
     if (!(bar.close > 0) || !(bar.open > 0)) continue
     const range = bar.high - bar.low
     if (maxRange != null && range > maxRange) continue
     const prev = out[out.length - 1]
-    const maxJump = timeframe === '30m' ? 0.15 : 0.08
-    if (prev && !isPlausibleDeskTick(prev.close, bar.close, maxJump)) continue
+    if (prev && !isPlausibleDeskTick(prev.close, bar.close, maxJump)) {
+      const nextBar = bars[i + 1]
+      if (nextBar && isPlausibleDeskTick(bar.close, nextBar.close, 0.04)) {
+        out.push(bar)
+        continue
+      }
+      continue
+    }
     out.push(bar)
   }
   return out.length > 0 ? out : bars
