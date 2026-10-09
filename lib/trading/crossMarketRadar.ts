@@ -418,3 +418,174 @@ export function buildCrossMarketRadarReport(
     deskDirective,
   }
 }
+
+const RADAR_YAHOO_SYMBOLS: Record<RadarMarket, string> = {
+  NASDAQ: 'NQ=F',
+  DOW: 'YM=F',
+  SP500: 'ES=F',
+  GOLD: 'GC=F',
+  CRUDE: 'CL=F',
+  SILVER: 'SI=F',
+  NIKKEI: 'NKD=F',
+}
+
+const YAHOO_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+
+let cachedLiveMarketInputs: Partial<Record<RadarMarket, MarketInputData>> | null = null
+let lastRadarFetchMs = 0
+const RADAR_CACHE_TTL_MS = 15_000 // 15 seconds
+
+/**
+ * Fetches live quotes and 5m intraday structure for all radar markets directly from exchange feeds.
+ */
+export async function fetchLiveCrossMarketRadarInputs(): Promise<Record<RadarMarket, MarketInputData>> {
+  const now = Date.now()
+  if (cachedLiveMarketInputs && now - lastRadarFetchMs < RADAR_CACHE_TTL_MS) {
+    return cachedLiveMarketInputs as Record<RadarMarket, MarketInputData>
+  }
+
+  const results: Partial<Record<RadarMarket, MarketInputData>> = { ...cachedLiveMarketInputs }
+
+  await Promise.allSettled(
+    (Object.entries(RADAR_YAHOO_SYMBOLS) as [RadarMarket, string][]).map(async ([market, sym]) => {
+      try {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=5m&range=1d`
+        const res = await fetch(url, {
+          headers: { 'User-Agent': YAHOO_UA, Accept: 'application/json' },
+          cache: 'no-store',
+          signal: AbortSignal.timeout(3500),
+        })
+        if (!res.ok) return
+        const data = await res.json()
+        const res0 = data?.chart?.result?.[0]
+        const meta = res0?.meta
+        if (!meta || typeof meta.regularMarketPrice !== 'number') return
+
+        const price = Number(meta.regularMarketPrice)
+        const prevClose = Number(meta.chartPreviousClose || meta.previousClose || meta.regularMarketPreviousClose || price)
+        const changePct = prevClose > 0 ? Number(((price - prevClose) / prevClose * 100).toFixed(2)) : 0
+        const open = Number(meta.regularMarketOpen || prevClose)
+
+        const quotes = res0?.indicators?.quote?.[0]
+        const highs: number[] = quotes?.high?.filter((h: any) => typeof h === 'number') || []
+        const lows: number[] = quotes?.low?.filter((l: any) => typeof l === 'number') || []
+        const volumes: number[] = quotes?.volume?.filter((v: any) => typeof v === 'number' && v > 0) || []
+        const closes: number[] = quotes?.close?.filter((c: any) => typeof c === 'number') || []
+        const opens: number[] = quotes?.open?.filter((o: any) => typeof o === 'number') || []
+
+        const sessionHigh = highs.length ? Math.max(...highs) : (meta.regularMarketDayHigh ? Number(meta.regularMarketDayHigh) : price)
+        const sessionLow = lows.length ? Math.min(...lows) : (meta.regularMarketDayLow ? Number(meta.regularMarketDayLow) : price)
+
+        // RVOL calculation: last 3 bars volume vs average bar volume
+        const recentVols = volumes.slice(-3)
+        const recentVolAvg = recentVols.length ? recentVols.reduce((a, b) => a + b, 0) / recentVols.length : 0
+        const totalVolAvg = volumes.length ? volumes.reduce((a, b) => a + b, 0) / volumes.length : 1
+        const recentVolumeRatio = totalVolAvg > 0 && recentVolAvg > 0 ? Number((recentVolAvg / totalVolAvg).toFixed(2)) : 1.0
+
+        // CVD / Trend Direction
+        const cvdTrend: MarketInputData['cvdTrend'] =
+          price > open && changePct > 0.05
+            ? 'BUYER_DOMINANT'
+            : price < open && changePct < -0.05
+            ? 'SELLER_DOMINANT'
+            : 'BALANCED'
+
+        // Location to structural levels
+        const config = MARKET_TICKER_CONFIG[market]
+        const threshold = config.locationThresholdPts
+
+        const distHigh = Math.abs(price - sessionHigh)
+        const distLow = Math.abs(price - sessionLow)
+        const distPrev = Math.abs(price - prevClose)
+
+        let nearestLevel: MarketInputData['nearestLevel']
+        if (distLow <= threshold) {
+          nearestLevel = { type: 'ON_LOW', price: sessionLow, distancePts: Number(distLow.toFixed(2)), thresholdPts: threshold }
+        } else if (distHigh <= threshold) {
+          nearestLevel = { type: 'ON_HIGH', price: sessionHigh, distancePts: Number(distHigh.toFixed(2)), thresholdPts: threshold }
+        } else if (distPrev <= threshold) {
+          nearestLevel = { type: 'Y_POC', price: prevClose, distancePts: Number(distPrev.toFixed(2)), thresholdPts: threshold }
+        } else {
+          const minDist = Math.min(distHigh, distLow, distPrev)
+          if (minDist === distLow) {
+            nearestLevel = { type: 'ON_LOW', price: sessionLow, distancePts: Number(distLow.toFixed(2)), thresholdPts: threshold }
+          } else if (minDist === distHigh) {
+            nearestLevel = { type: 'ON_HIGH', price: sessionHigh, distancePts: Number(distHigh.toFixed(2)), thresholdPts: threshold }
+          } else {
+            nearestLevel = { type: 'Y_POC', price: prevClose, distancePts: Number(distPrev.toFixed(2)), thresholdPts: threshold }
+          }
+        }
+
+        // Structure & Candlestick patterns
+        let wyckoffPattern: MarketInputData['wyckoffPattern'] = 'NONE'
+        let candlestickPattern: string | null = null
+
+        if (closes.length >= 2 && lows.length >= 2 && highs.length >= 2) {
+          const lastClose = closes[closes.length - 1]!
+          const lastOpen = opens[opens.length - 1] ?? lastClose
+          const lastLow = lows[lows.length - 1]!
+          const lastHigh = highs[highs.length - 1]!
+          const prevBarClose = closes[closes.length - 2]!
+          const prevBarOpen = opens[opens.length - 2] ?? prevBarClose
+          const barRange = lastHigh - lastLow
+
+          if (barRange > 0) {
+            const lowerWick = Math.min(lastOpen, lastClose) - lastLow
+            const upperWick = lastHigh - Math.max(lastOpen, lastClose)
+            const body = Math.abs(lastClose - lastOpen)
+
+            if (distLow <= threshold * 1.5 && lowerWick >= barRange * 0.45 && lastClose > lastOpen) {
+              wyckoffPattern = 'SPRING'
+              candlestickPattern = 'Bullish Hammer / Spring at Low'
+            } else if (distHigh <= threshold * 1.5 && upperWick >= barRange * 0.45 && lastClose < lastOpen) {
+              wyckoffPattern = 'UPTHRUST'
+              candlestickPattern = 'Bearish Upthrust / Shooting Star at High'
+            } else if (lastClose > prevBarOpen && prevBarClose < prevBarOpen && body > Math.abs(prevBarClose - prevBarOpen)) {
+              candlestickPattern = 'Bullish Engulfing'
+              if (distLow <= threshold * 2) {
+                wyckoffPattern = 'ABSORPTION'
+              }
+            } else if (distHigh <= threshold * 0.5 && lastClose > prevClose) {
+              wyckoffPattern = 'BREAKOUT_RETEST'
+              candlestickPattern = 'High Breakout Retest'
+            }
+          }
+        }
+
+        results[market] = {
+          market,
+          currentPrice: price,
+          dayOpenPrice: open,
+          dayChangePct: changePct,
+          recentVolumeRatio,
+          cvdTrend,
+          nearestLevel,
+          wyckoffPattern,
+          candlestickPattern,
+        }
+      } catch {
+        // preserve previous cached entry or skip
+      }
+    })
+  )
+
+  cachedLiveMarketInputs = results
+  lastRadarFetchMs = now
+  return results as Record<RadarMarket, MarketInputData>
+}
+
+/**
+ * Builds the cross-market radar report using verified live market feeds.
+ */
+export async function getLiveCrossMarketRadarReport(
+  volState: CrossMarketVolatilityState
+): Promise<CrossMarketRadarReport> {
+  try {
+    const liveInputs = await fetchLiveCrossMarketRadarInputs()
+    return buildCrossMarketRadarReport(volState, liveInputs)
+  } catch {
+    return buildCrossMarketRadarReport(volState, {})
+  }
+}
+

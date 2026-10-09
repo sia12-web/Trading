@@ -13,7 +13,7 @@ import {
   formatRangeVolumeComparisonReport,
 } from '@/lib/trading/rangeVolumeComparison'
 import { getCrossMarketVolatility } from '@/lib/trading/crossMarketVolatility'
-import { buildCrossMarketRadarReport } from '@/lib/trading/crossMarketRadar'
+import { getLiveCrossMarketRadarReport } from '@/lib/trading/crossMarketRadar'
 import { syncFundamentalBusFromStores } from '@/lib/ai/fundamentalBusSync'
 
 export const runtime = 'nodejs'
@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
           const vol = await getCrossMarketVolatility()
           chartContext.crossMarketVolatility = vol
           if (!chartContext.marketRadar) {
-            chartContext.marketRadar = buildCrossMarketRadarReport(vol, {})
+            chartContext.marketRadar = await getLiveCrossMarketRadarReport(vol)
           }
         } catch {
           // ignore volatility radar computation errors

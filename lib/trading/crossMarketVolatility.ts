@@ -267,10 +267,123 @@ export function buildCrossMarketVolatilityState(
 
 let cachedVolState: CrossMarketVolatilityState | null = null
 let lastVolFetchMs = 0
-const VOL_CACHE_TTL_MS = 60_000 // 60 seconds cache
+const VOL_CACHE_TTL_MS = 15_000 // 15 seconds cache
+
+const YAHOO_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+
+const latestLiveQuotes: Partial<Record<VolatilitySymbol, VolatilityQuote>> = {}
+
+async function fetchLiveCboeQuote(
+  symbol: VolatilitySymbol,
+  yahooTicker: string,
+  name: string,
+  assetClass: VolatilityAssetClass,
+  targetMarkets: string[],
+  description: string
+): Promise<VolatilityQuote | null> {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker)}?interval=1m&range=1d`
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': YAHOO_UA, Accept: 'application/json' },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(3500),
+    })
+    if (!res.ok) return null
+    const json = await res.json()
+    const meta = json?.chart?.result?.[0]?.meta
+    if (!meta || typeof meta.regularMarketPrice !== 'number') return null
+
+    const value = Number(meta.regularMarketPrice)
+    const prevClose = Number(meta.chartPreviousClose || meta.previousClose || meta.regularMarketPreviousClose || value)
+    const change = Number((value - prevClose).toFixed(3))
+    const changePct = prevClose > 0 ? Number(((change / prevClose) * 100).toFixed(2)) : 0
+    const asOfIso = meta.regularMarketTime
+      ? new Date(meta.regularMarketTime * 1000).toISOString()
+      : new Date().toISOString()
+
+    const { regime, isExpanding } = classifyVolatilityRegime(symbol, value, changePct)
+
+    return {
+      symbol,
+      name,
+      assetClass,
+      targetMarkets,
+      value,
+      previousClose: prevClose,
+      change,
+      changePct,
+      regime,
+      isExpanding,
+      description,
+      asOfIso,
+    }
+  } catch {
+    return null
+  }
+}
+
+async function fetchNikkeiRealizedVol(): Promise<VolatilityQuote | null> {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/NKD=F?interval=1d&range=1mo`
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': YAHOO_UA, Accept: 'application/json' },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(3500),
+    })
+    if (!res.ok) return null
+    const json = await res.json()
+    const meta = json?.chart?.result?.[0]?.meta
+    const closes: number[] = json?.chart?.result?.[0]?.indicators?.quote?.[0]?.close?.filter((c: any) => typeof c === 'number') || []
+    if (closes.length < 5) return null
+
+    const returns: number[] = []
+    for (let i = 1; i < closes.length; i++) {
+      returns.push(Math.log(closes[i]! / closes[i - 1]!))
+    }
+    const mean = returns.reduce((a, b) => a + b, 0) / returns.length
+    const variance = returns.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (returns.length - 1)
+    const stdev = Math.sqrt(variance)
+    const annualizedVol = Number((stdev * Math.sqrt(252) * 100).toFixed(1))
+
+    const prevCloses = closes.slice(0, -1)
+    const prevReturns: number[] = []
+    for (let i = 1; i < prevCloses.length; i++) {
+      prevReturns.push(Math.log(prevCloses[i]! / prevCloses[i - 1]!))
+    }
+    const prevMean = prevReturns.reduce((a, b) => a + b, 0) / prevReturns.length
+    const prevVar = prevReturns.reduce((a, b) => a + Math.pow(b - prevMean, 2), 0) / (prevReturns.length - 1)
+    const prevAnnualized = Number((Math.sqrt(prevVar) * Math.sqrt(252) * 100).toFixed(1))
+
+    const change = Number((annualizedVol - prevAnnualized).toFixed(2))
+    const changePct = prevAnnualized > 0 ? Number(((change / prevAnnualized) * 100).toFixed(2)) : 0
+    const asOfIso = meta?.regularMarketTime
+      ? new Date(meta.regularMarketTime * 1000).toISOString()
+      : new Date().toISOString()
+
+    const { regime, isExpanding } = classifyVolatilityRegime('JNIV', annualizedVol, changePct)
+
+    return {
+      symbol: 'JNIV',
+      name: 'Nikkei 225 Volatility (Realized/Implied)',
+      assetClass: 'NIKKEI',
+      targetMarkets: ['NIKKEI'],
+      value: annualizedVol,
+      previousClose: prevAnnualized,
+      change,
+      changePct,
+      regime,
+      isExpanding,
+      description: 'Annualized 20-day volatility calculated directly from live Nikkei 225 futures prints.',
+      asOfIso,
+    }
+  } catch {
+    return null
+  }
+}
 
 /**
- * Fetches or returns cached cross-market volatility.
+ * Fetches or returns cached cross-market volatility from live CBOE and exchange feeds.
  */
 export async function getCrossMarketVolatility(): Promise<CrossMarketVolatilityState> {
   const now = Date.now()
@@ -278,15 +391,44 @@ export async function getCrossMarketVolatility(): Promise<CrossMarketVolatilityS
     return cachedVolState
   }
 
-  // Attempt live Yahoo/Finnhub fetch, fallback to robust defaults
   try {
-    const quotes = buildDefaultVolatilityQuotes(new Date())
-    // If live provider returns values, merge them here
-    cachedVolState = buildCrossMarketVolatilityState(quotes)
+    const [vixRes, vix1dRes, ovxRes, gvzRes, jnivRes] = await Promise.allSettled([
+      fetchLiveCboeQuote('VIX', '^VIX', 'Cboe Volatility Index', 'EQUITIES', ['NASDAQ', 'DOW', 'SP500'], 'Measures expected 30-day equity volatility.'),
+      fetchLiveCboeQuote('VIX1D', '^VIX1D', 'Cboe 1-Day Volatility Index', 'EQUITIES', ['NASDAQ', 'DOW', 'SP500'], 'Measures expected 1-day equity volatility using 0DTE/1DTE SPX options.'),
+      fetchLiveCboeQuote('OVX', '^OVX', 'Cboe Crude Oil Volatility Index', 'CRUDE', ['CRUDE'], 'Measures expected 30-day crude oil volatility derived from USO options pricing.'),
+      fetchLiveCboeQuote('GVZ', '^GVZ', 'Cboe Gold Volatility Index', 'GOLD', ['GOLD', 'SILVER'], 'Measures expected 30-day gold volatility derived from GLD options pricing.'),
+      fetchNikkeiRealizedVol(),
+    ])
+
+    const defaults = buildDefaultVolatilityQuotes(new Date())
+
+    const vixQuote = vixRes.status === 'fulfilled' && vixRes.value ? vixRes.value : (latestLiveQuotes.VIX ?? defaults.VIX)
+    const vix1dQuote = vix1dRes.status === 'fulfilled' && vix1dRes.value ? vix1dRes.value : (latestLiveQuotes.VIX1D ?? defaults.VIX1D)
+    const ovxQuote = ovxRes.status === 'fulfilled' && ovxRes.value ? ovxRes.value : (latestLiveQuotes.OVX ?? defaults.OVX)
+    const gvzQuote = gvzRes.status === 'fulfilled' && gvzRes.value ? gvzRes.value : (latestLiveQuotes.GVZ ?? defaults.GVZ)
+    const jnivQuote = jnivRes.status === 'fulfilled' && jnivRes.value ? jnivRes.value : (latestLiveQuotes.JNIV ?? defaults.JNIV)
+
+    if (vixRes.status === 'fulfilled' && vixRes.value) latestLiveQuotes.VIX = vixRes.value
+    if (vix1dRes.status === 'fulfilled' && vix1dRes.value) latestLiveQuotes.VIX1D = vix1dRes.value
+    if (ovxRes.status === 'fulfilled' && ovxRes.value) latestLiveQuotes.OVX = ovxRes.value
+    if (gvzRes.status === 'fulfilled' && gvzRes.value) latestLiveQuotes.GVZ = gvzRes.value
+    if (jnivRes.status === 'fulfilled' && jnivRes.value) latestLiveQuotes.JNIV = jnivRes.value
+
+    const liveQuotes: Record<VolatilitySymbol, VolatilityQuote> = {
+      VIX: vixQuote,
+      VIX1D: vix1dQuote,
+      OVX: ovxQuote,
+      GVZ: gvzQuote,
+      JNIV: jnivQuote,
+    }
+
+    cachedVolState = buildCrossMarketVolatilityState(liveQuotes)
     lastVolFetchMs = now
     return cachedVolState
   } catch {
+    if (cachedVolState) return cachedVolState
     const quotes = buildDefaultVolatilityQuotes(new Date())
     return buildCrossMarketVolatilityState(quotes)
   }
 }
+

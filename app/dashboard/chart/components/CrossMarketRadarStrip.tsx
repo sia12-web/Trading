@@ -138,30 +138,47 @@ export function CrossMarketRadarStrip({
   const [selectedCard, setSelectedCard] = useState<MarketOpportunityCard | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [sessionStatus, setSessionStatus] = useState<GlobexSessionStatus>(getGlobexSessionStatus)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [lastUpdatedTime, setLastUpdatedTime] = useState<string>('')
+
+  const fetchRadarData = React.useCallback(async (manual = false) => {
+    if (manual) setIsRefreshing(true)
+    try {
+      const res = await fetch('/api/trading/cross-market-volatility')
+      if (!res.ok) return
+      const data = await res.json()
+      if (data.success) {
+        setVolatility(data.volatility)
+        setRadar(data.radar)
+        const now = new Date()
+        setLastUpdatedTime(
+          now.toLocaleTimeString('en-US', {
+            timeZone: 'America/New_York',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false,
+          }) + ' ET'
+        )
+      }
+    } catch {
+      // Fallback silently if offline
+    } finally {
+      setIsLoading(false)
+      if (manual) setIsRefreshing(false)
+    }
+  }, [])
 
   useEffect(() => {
     let isMounted = true
 
-    async function fetchRadarData() {
-      try {
-        const res = await fetch('/api/trading/cross-market-volatility')
-        if (!res.ok) return
-        const data = await res.json()
-        if (isMounted && data.success) {
-          setVolatility(data.volatility)
-          setRadar(data.radar)
-        }
-      } catch {
-        // Fallback silently if offline
-      } finally {
-        if (isMounted) setIsLoading(false)
-      }
-    }
-
     fetchRadarData()
-    const timer = setInterval(fetchRadarData, 30_000)
+    const timer = setInterval(() => {
+      if (isMounted) fetchRadarData()
+    }, 15_000)
+
     const sessionTimer = setInterval(() => {
-      setSessionStatus(getGlobexSessionStatus())
+      if (isMounted) setSessionStatus(getGlobexSessionStatus())
     }, 10_000)
 
     return () => {
@@ -169,7 +186,7 @@ export function CrossMarketRadarStrip({
       clearInterval(timer)
       clearInterval(sessionTimer)
     }
-  }, [])
+  }, [fetchRadarData])
 
   if (isLoading && !radar) {
     return (
@@ -190,6 +207,22 @@ export function CrossMarketRadarStrip({
           <div className="flex items-center gap-1.5 text-gray-400 font-bold uppercase tracking-wider text-[9px] mr-1">
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
             <span>Vol Gauges:</span>
+            <button
+              type="button"
+              onClick={() => fetchRadarData(true)}
+              disabled={isRefreshing}
+              className={`p-0.5 rounded hover:bg-surface-800 text-gray-400 hover:text-cyan-300 transition ${
+                isRefreshing ? 'animate-spin text-cyan-400' : ''
+              }`}
+              title="Refresh Live Vol Gauges & Radar"
+            >
+              🔄
+            </button>
+            {lastUpdatedTime && (
+              <span className="text-[8.5px] text-cyan-500/80 lowercase tracking-normal">
+                {lastUpdatedTime}
+              </span>
+            )}
           </div>
 
           {/* VIX1D (Equities) */}
@@ -199,10 +232,15 @@ export function CrossMarketRadarStrip({
                 ? 'border-red-500/50 bg-red-950/40 text-red-300'
                 : 'border-surface-700 bg-surface-900/60 text-gray-300'
             }`}
-            title="VIX1D: 1-Day Intraday Expected Equity Volatility (SPX 0DTE/1DTE)"
+            title={`VIX1D: 1-Day Intraday Expected Equity Volatility (SPX 0DTE/1DTE) · Prior: ${vol?.equities.vix1d.previousClose.toFixed(1) ?? '—'}`}
           >
             <span className="text-[9px] text-gray-400">EQ (VIX1D):</span>
             <span className="font-bold">{vol?.equities.vix1d.value.toFixed(1) ?? '15.2'}</span>
+            {vol?.equities.vix1d && (
+              <span className={`text-[8.5px] ${vol.equities.vix1d.changePct >= 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                {vol.equities.vix1d.changePct >= 0 ? '+' : ''}{vol.equities.vix1d.changePct.toFixed(1)}%
+              </span>
+            )}
             {vol?.equities.isExpanding && (
               <span className="text-[9px] text-red-400 font-extrabold animate-pulse">EXPANDING 🔥</span>
             )}
@@ -215,10 +253,15 @@ export function CrossMarketRadarStrip({
                 ? 'border-amber-500/50 bg-amber-950/40 text-amber-200'
                 : 'border-surface-700 bg-surface-900/60 text-gray-300'
             }`}
-            title="OVX: Cboe Crude Oil Volatility Index (USO options)"
+            title={`OVX: Cboe Crude Oil Volatility Index (USO options) · Prior: ${vol?.crude.ovx.previousClose.toFixed(1) ?? '—'}`}
           >
             <span className="text-[9px] text-gray-400">OIL (OVX):</span>
             <span className="font-bold">{vol?.crude.ovx.value.toFixed(1) ?? '36.4'}</span>
+            {vol?.crude.ovx && (
+              <span className={`text-[8.5px] ${vol.crude.ovx.changePct >= 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                {vol.crude.ovx.changePct >= 0 ? '+' : ''}{vol.crude.ovx.changePct.toFixed(1)}%
+              </span>
+            )}
             {vol?.crude.isExpanding && (
               <span className="text-[9px] text-amber-400 font-extrabold animate-pulse">EXPANDING 🔥</span>
             )}
@@ -231,10 +274,15 @@ export function CrossMarketRadarStrip({
                 ? 'border-fuchsia-500/50 bg-fuchsia-950/40 text-fuchsia-200'
                 : 'border-surface-700 bg-surface-900/60 text-gray-300'
             }`}
-            title="JNIV: Nikkei 225 Volatility Index (Nikkei VI)"
+            title={`JNIV: Nikkei 225 Volatility (Realized/Implied) · Prior: ${vol?.nikkei?.jniv.previousClose.toFixed(1) ?? '—'}`}
           >
             <span className="text-[9px] text-gray-400">NIKKEI (JNIV):</span>
             <span className="font-bold">{vol?.nikkei?.jniv.value.toFixed(1) ?? '18.5'}</span>
+            {vol?.nikkei?.jniv && (
+              <span className={`text-[8.5px] ${vol.nikkei.jniv.changePct >= 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                {vol.nikkei.jniv.changePct >= 0 ? '+' : ''}{vol.nikkei.jniv.changePct.toFixed(1)}%
+              </span>
+            )}
             {vol?.nikkei?.isExpanding && (
               <span className="text-[9px] text-fuchsia-400 font-extrabold animate-pulse">EXPANDING 🔥</span>
             )}
@@ -247,10 +295,15 @@ export function CrossMarketRadarStrip({
                 ? 'border-yellow-500/50 bg-yellow-950/40 text-yellow-200'
                 : 'border-surface-700 bg-surface-900/60 text-gray-300'
             }`}
-            title="GVZ: Cboe Gold Volatility Index (GLD options)"
+            title={`GVZ: Cboe Gold Volatility Index (GLD options) · Prior: ${vol?.gold.gvz.previousClose.toFixed(1) ?? '—'}`}
           >
             <span className="text-[9px] text-gray-400">GOLD (GVZ):</span>
             <span className="font-bold">{vol?.gold.gvz.value.toFixed(1) ?? '15.1'}</span>
+            {vol?.gold.gvz && (
+              <span className={`text-[8.5px] ${vol.gold.gvz.changePct >= 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                {vol.gold.gvz.changePct >= 0 ? '+' : ''}{vol.gold.gvz.changePct.toFixed(1)}%
+              </span>
+            )}
             {vol?.gold.isExpanding && (
               <span className="text-[9px] text-yellow-400 font-extrabold animate-pulse">EXPANDING 🔥</span>
             )}
@@ -290,6 +343,7 @@ export function CrossMarketRadarStrip({
               (m.market === 'SP500' && (currentInstrument === 'SP500' || currentInstrument === 'ES')) ||
               (m.market === 'GOLD' && (currentInstrument === 'GOLD' || currentInstrument === 'GC')) ||
               (m.market === 'CRUDE' && (currentInstrument === 'CRUDE' || currentInstrument === 'CL')) ||
+              (m.market === 'SILVER' && (currentInstrument === 'SILVER' || currentInstrument === 'SI' || currentInstrument === 'SIL')) ||
               (m.market === 'NIKKEI' && (currentInstrument === 'NIKKEI' || currentInstrument === 'NKD'))
 
             const isGradeA = m.grade === 'A'
@@ -311,7 +365,7 @@ export function CrossMarketRadarStrip({
                     const instMap: Record<RadarMarket, string> = {
                       NASDAQ: 'NASDAQ',
                       DOW: 'DOW',
-                      SP500: 'NASDAQ', // route to desk instrument if S&P not separate chart tab
+                      SP500: 'NASDAQ',
                       GOLD: 'GOLD',
                       CRUDE: 'CRUDE',
                       SILVER: 'SILVER',
@@ -320,14 +374,10 @@ export function CrossMarketRadarStrip({
                     onSelectInstrument(instMap[m.market])
                   }
                 }}
-                className={`relative px-2 py-0.5 rounded text-[10.5px] border flex items-center gap-1 transition ${badgeBg} ${
+                className={`relative px-2 py-0.5 rounded text-[10.5px] border flex items-center gap-1.5 transition ${badgeBg} ${
                   isCurrent ? 'ring-1 ring-white/60' : ''
                 }`}
-                title={
-                  !sessionStatus.isOpen
-                    ? `[OFF-SESSION · Prior Friday Close] Click to inspect ${m.contractLabel} (${m.summaryLine})`
-                    : `Click to inspect ${m.contractLabel} (${m.summaryLine})`
-                }
+                title={`Click to inspect ${m.contractLabel}: ${m.currentPrice.toLocaleString()} (${m.dayChangePct >= 0 ? '+' : ''}${m.dayChangePct.toFixed(2)}%) · ${m.summaryLine}`}
               >
                 {m.isTopPick && (
                   <span className="text-[9px] text-amber-300 font-extrabold animate-bounce">★</span>
@@ -345,15 +395,23 @@ export function CrossMarketRadarStrip({
                   {m.grade}
                 </span>
 
+                <span
+                  className={`text-[8.5px] font-mono ${
+                    m.dayChangePct >= 0 ? 'text-emerald-400' : 'text-red-400'
+                  }`}
+                >
+                  {m.dayChangePct >= 0 ? '+' : ''}{m.dayChangePct.toFixed(1)}%
+                </span>
+
                 {/* 3 Pillar indicators: P L S */}
                 <span className="flex items-center gap-0.5 text-[8px] tracking-tighter opacity-80">
-                  <span className={m.participation.present ? 'text-emerald-400' : 'text-gray-600'}>
+                  <span className={m.participation.present ? 'text-emerald-400 font-bold' : 'text-gray-600'}>
                     P
                   </span>
-                  <span className={m.location.present ? 'text-emerald-400' : 'text-gray-600'}>
+                  <span className={m.location.present ? 'text-emerald-400 font-bold' : 'text-gray-600'}>
                     L
                   </span>
-                  <span className={m.structure.present ? 'text-emerald-400' : 'text-gray-600'}>
+                  <span className={m.structure.present ? 'text-emerald-400 font-bold' : 'text-gray-600'}>
                     S
                   </span>
                 </span>
@@ -394,7 +452,7 @@ export function CrossMarketRadarStrip({
                 </span>
               </div>
             )}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="font-extrabold text-white text-xs">
                 {selectedCard.contractLabel}
               </span>
@@ -408,6 +466,12 @@ export function CrossMarketRadarStrip({
                 }`}
               >
                 GRADE {selectedCard.grade} ({selectedCard.verdict.replace(/_/g, ' ')})
+              </span>
+              <span className="text-[10px] text-white font-mono font-bold">
+                {selectedCard.currentPrice.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })}
+              </span>
+              <span className={`text-[10px] font-mono font-bold ${selectedCard.dayChangePct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                ({selectedCard.dayChangePct >= 0 ? '+' : ''}{selectedCard.dayChangePct.toFixed(2)}%)
               </span>
               <span className="text-[10px] text-gray-400 font-mono">
                 {selectedCard.volatilityGauge}: {selectedCard.volatilityValue.toFixed(1)} (
