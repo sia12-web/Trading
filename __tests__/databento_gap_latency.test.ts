@@ -63,14 +63,14 @@ test('Candle Gap Filler - Fills missing 5m timeframe bars with carry-forward pri
   assert.equal(filled[3]!.time, baseT + 900)
   assert.equal(filled[3]!.close, 21535)
 
-  // Verify that an extended gap (> 3 bars) does NOT invent endless flat bars
+  // Verify that an extended gap (e.g. overnight lull) fills continuous carry-forward bars during active trading
   const extendedGap: BaseCandle[] = [
     { time: baseT, open: 21500, high: 21520, low: 21490, close: 21510, volume: 150 },
     // 2-hour gap (24 bars missing)
     { time: baseT + 7200, open: 21600, high: 21620, low: 21590, close: 21610, volume: 200 },
   ]
-  const notFlooded = fillCandleGaps(extendedGap, '5m', 'NASDAQ')
-  assert.equal(notFlooded.length, 2, 'Extended gap (>3 bars) should not flood chart with flat lines')
+  const filledExtended = fillCandleGaps(extendedGap, '5m', 'NASDAQ')
+  assert.equal(filledExtended.length, 25, 'Extended gap fills continuous 5m carry-forward candles')
 })
 
 test('Candle Gap Filler - Handles duplicate timestamps by updating OHLC', () => {

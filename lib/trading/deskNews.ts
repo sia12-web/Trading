@@ -255,6 +255,7 @@ export function buildDeskNewsCards(
     windowHours?: DeskNewsWindowHours
     nowUnix?: number
     limitPerDesk?: number
+    filterImportantOnly?: boolean
   }
 ): DeskNewsCard[] {
   const nowUnix = opts?.nowUnix ?? Math.floor(Date.now() / 1000)
@@ -271,12 +272,11 @@ export function buildDeskNewsCards(
   })
 
   for (const item of sorted) {
-    if (!item.headline) continue
     const datetime = normalizeNewsDatetime(item.datetime, nowUnix)
     if (datetime == null || datetime < cutoff) continue
 
-    // Check market importance
-    if (!isReallyImportantHeadline(item.headline, item.summary)) continue
+    // Check market importance when requested (e.g. in live desk news feed)
+    if (opts?.filterImportantOnly && !isReallyImportantHeadline(item.headline, item.summary)) continue
 
     const key = normalizeHeadlineKey(item.headline)
     if (!key || seen.has(key)) continue
@@ -410,16 +410,19 @@ export function instrumentsForCalendarEvent(country: string, event: string): Des
   if (/\b(Crude|Oil|EIA|Petroleum|Gasoline|OPEC|Natural Gas|Distillate)\b/i.test(text)) {
     return ['CRUDE']
   }
-  if (/\b(Gold|Silver|Bullion|Precious|TIPS|10-Year Note|30-Year Bond)\b/i.test(text)) {
-    return /\b(Silver|XAG)\b/i.test(text) ? ['SILVER'] : ['GOLD', 'SILVER']
+  if (/\b(Silver|XAG)\b/i.test(text)) {
+    return ['SILVER']
+  }
+  if (/\b(Gold|Bullion|Precious|TIPS|10-Year Note|30-Year Bond)\b/i.test(text)) {
+    return ['GOLD']
   }
   if (/\b(JP|Japan|BoJ|Tokyo|Yen|Tankan)\b/i.test(text)) {
-    return ['NIKKEI', 'DOW', 'NASDAQ']
+    return ['DOW', 'NASDAQ', 'GOLD']
   }
   if (/\b(FOMC|Fed|CPI|PCE|NFP|Nonfarm|Payrolls|Jobless|GDP|ISM|Retail Sales)\b/i.test(text)) {
-    return ['DOW', 'NASDAQ', 'NIKKEI', 'GOLD', 'SILVER']
+    return ['DOW', 'NASDAQ', 'GOLD', 'CRUDE']
   }
-  return ['DOW', 'NASDAQ', 'GOLD', 'SILVER']
+  return ['DOW', 'NASDAQ', 'GOLD', 'CRUDE']
 }
 
 export function deskNoteForCalendar(
