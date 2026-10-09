@@ -97,7 +97,7 @@ def _cl_last_trade(contract_year: int, contract_month: int) -> datetime.date:
 
 
 def get_active_cl_contract(now=None) -> str:
-    """Volume-lead WTI month (Yahoo CL=F / Tradovate), not calendar CL.c.0."""
+    """Volume-lead WTI month (Yahoo CL=F / CME), not calendar CL.c.0."""
     if now is None:
         now = (
             datetime.datetime.now(ZoneInfo("America/New_York"))
@@ -140,7 +140,7 @@ def _gold_first_notice(contract_year: int, contract_month: int) -> datetime.date
 
 
 def get_active_gold_contract(now=None) -> str:
-    """Volume-lead Micro Gold month (Yahoo MGC=F / Tradovate), not calendar MGC.c.0."""
+    """Volume-lead Micro Gold month (Yahoo MGC=F / CME), not calendar MGC.c.0."""
     if now is None:
         now = (
             datetime.datetime.now(ZoneInfo("America/New_York"))
@@ -168,7 +168,7 @@ SILVER_MONTH_CODES = {3: "H", 5: "K", 7: "N", 9: "U", 12: "Z"}
 
 
 def get_active_silver_contract(now=None) -> str:
-    """Volume-lead Micro Silver month (Yahoo SIL=F / SI=F / Tradovate), not calendar SIL.c.0."""
+    """Volume-lead Micro Silver month (Yahoo SIL=F / SI=F / CME), not calendar SIL.c.0."""
     if now is None:
         now = (
             datetime.datetime.now(ZoneInfo("America/New_York"))

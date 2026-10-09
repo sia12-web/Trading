@@ -6,7 +6,7 @@
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?style=flat-square&logo=supabase)](https://supabase.com/)
 [![Web Audio API](https://img.shields.io/badge/Web_Audio_API-Dual_Tone_Chimes-orange?style=flat-square)](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API)
 
-> **TradePulse** is a high-performance, real-time trading platform designed for institutional futures (DOW, NASDAQ, ES, GOLD, CRUDE) and equity swing traders. It pairs the **22-Rule Wyckoff & Auction Market Theory Strategy**, 5-month anchored VWAP bands ($\pm 1\sigma, \pm 2\sigma, \pm 3\sigma$), multi-tiered CME market data pipelines (Databento Live Hub), live broker portfolio synchronization (Questrade), prop firm challenge tracking (TopstepX), and an intelligent AI copilot (Leo) with an interactive 22-Rule Playbook, persistent memory zones, and procedural audio synthesis.
+> **TradePulse** is a high-performance, real-time trading platform designed for institutional futures (DOW, NASDAQ, ES, GOLD, CRUDE, SILVER) and equity swing traders. It pairs the **22-Rule Wyckoff & Auction Market Theory Strategy**, 5-month anchored VWAP bands ($\pm 1\sigma, \pm 2\sigma, \pm 3\sigma$), multi-tiered CME market data pipelines (Databento Live Hub), live broker portfolio synchronization (Questrade), and an intelligent AI copilot (Leo) with an interactive 22-Rule Playbook, persistent memory zones, and procedural audio synthesis.
 
 ---
 
@@ -21,7 +21,7 @@ The complete technical and operational documentation is organized under the [`do
 | **[Trading Desk Operations & Risk Guard](docs/TRADING_DESK_AND_OPERATIONS.md)** | Multi-session framework (Asia, London, NY Cash, Afternoon), attendance clock-in, DLL circuit breakers, attempt ladder, and zero-telemetry policy. |
 | **[Chart Engine & Technical Indicators](docs/CHART_AND_INDICATORS.md)** | Lightweight Charts v4, institutional candle styling, 5-Month Anchored VWAP + SD bands, 5-Day FRVP with candle-bounded POC, Dalton auction overlays, daily tested swing extremes, and CVD sub-pane. |
 | **[Leo AI Assistant & Web Audio Alerts](docs/LEO_AI_AND_AUDIO_ALERTS.md)** | Leo multi-tier AI copilot, interactive 22-Rule Wyckoff Playbook panel, persistent Long-Term Memory (LTM) zones, real-time proximity scanner, and procedural dual-tone chime synthesizer. |
-| **[Broker & Prop Firm Integrations](docs/BROKER_AND_PROP_INTEGRATIONS.md)** | Questrade live OAuth portfolio sync, intelligent delayed TP/SL bracket pairing, and TopstepX $1,500 challenge sync ($183.64 / 66 trades ledger). |
+| **[Broker Portfolio & Futures Integration](docs/BROKER_AND_PROP_INTEGRATIONS.md)** | Questrade live OAuth portfolio sync, intelligent delayed TP/SL bracket pairing, and futures journal ledger. |
 | **[REST API Reference & Data Contracts](docs/API_REFERENCE.md)** | Exhaustive reference for all API endpoints (`/api/trading/*`, `/api/levels/*`, `/api/health`), schemas, and Server-Sent Events (SSE). |
 
 ---
@@ -30,7 +30,7 @@ The complete technical and operational documentation is organized under the [`do
 
 ### 1. Multi-Tiered CME Market Data & Dynamic Basis Alignment
 - **Primary Feed**: CME Globex MDP 3.0 raw futures data via Databento (`GLBX.MDP3`).
-- **Continuous 24/7 Fallback**: OANDA v20 continuous CFDs adjusted in real time by the **dynamic CME basis offset** ($\text{Price}_{\text{CME Futures}} - \text{Price}_{\text{OANDA Spot}}$), ensuring tick-level accuracy against Tradovate, NinjaTrader, and TopstepX.
+- **Continuous 24/7 Fallback**: OANDA v20 continuous CFDs adjusted in real time by the **dynamic CME basis offset** ($\text{Price}_{\text{CME Futures}} - \text{Price}_{\text{OANDA Spot}}$), ensuring tick-level accuracy against CME Globex futures.
 - **Macro Daily History**: High-speed consolidation of 2 years of daily macro candles from Yahoo Finance in under 50ms.
 - **Forming Bar Engine**: Imperative in-memory candle updates via Server-Sent Events (`/api/trading/quote/stream`) with zero UI lag.
 
@@ -73,10 +73,10 @@ The complete technical and operational documentation is organized under the [`do
 - **Persistent Long-Term Memory (LTM)**: 1-click conversion of chart Range Boxes into persistent memory zones with trader notes and audible alarms.
 - **Procedural Two-Tone Chime Synthesis**: Zero-latency TradingView-style alert chime synthesized in real time via the Web Audio API (880 Hz fundamental $\rightarrow$ 1318.51 Hz harmonic shimmer) without external audio files.
 
-### 6. Questrade Broker & TopstepX Prop Firm Integration
+### 6. Questrade Broker & Futures Portfolio Integration
 - **Questrade Live Sync**: Real-time portfolio book, cash balance, open multi-day swing equities (SPY, GOOG, SLV, COPX).
 - **Intelligent Delayed TP/SL Bracket Pairing**: Proprietary algorithm pairing delayed limit targets and stop orders with open positions based on price relationship sanity (Long TP > Entry > SL) and recency scoring, completely isolating unexecuted entry limits.
-- **TopstepX $1,500 Challenge**: Zero-base prop equity engine tracking official challenge `1.5KCHCR-LABS004-V2-675081-67067724`, Max Loss Limit floor (-$500.00), live cushion ($683.64), win rate (56.06%), and the verified 66-trade ledger.
+- **Futures Journal Ledger**: Closed trade ledger tracking equity curve, performance metrics, and verified trading journal.
 
 ### 7. Strict Desk Risk Controls & Zero-Telemetry Privacy
 - **Risk Limits**: Fixed $400 dollar risk per setup, Daily Loss Limit (DLL) circuit breakers, 3-attempt daily ladder, and +$700 Green Day lock.
@@ -98,14 +98,14 @@ The complete technical and operational documentation is organized under the [`do
 │   │       ├── quote/stream/    # Server-Sent Events (SSE) Live Price Stream
 │   │       ├── context-55/      # 5M AVWAP Baseline, YDay NYC, ON Inventory
 │   │       ├── questrade/book/  # Questrade Live Broker Book & Paired Brackets
-│   │       ├── journal/         # TopstepX Prop Firm Ledger & Equity Sync
+│   │       ├── journal/         # Futures Journal Ledger & Equity Sync
 │   │       ├── team-tape/       # Live Multi-Day Swing Positions
 │   │       ├── leo/             # Leo AI Chat, Long-Term Memories & Alerts
 │   │       └── ...
 │   ├── dashboard/               # Next.js App Router Client Pages
 │   │   ├── chart/               # Fullscreen Institutional Trading Chart & CVD
 │   │   │   └── components/      # TradingChart, WyckoffRulesPanel, LeoAssistantPanel, Radar
-│   │   ├── journal/             # TopstepX Prop Challenge Ledger & Equity Curve
+│   │   ├── journal/             # Futures Trading Ledger & Equity Curve
 │   │   ├── positions/           # Live Execution Dashboard & Bracket Controls
 │   │   ├── swing/               # Questrade Swing Portfolio & Team Tape
 │   │   └── page.tsx             # Dashboard Home & Notifications Center

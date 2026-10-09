@@ -1,5 +1,5 @@
 //@version=5
-// Gold Asia range — M5. Montreal clocks. Manual orders on Tradovate.
+// Gold Asia range — M5. Montreal clocks. Manual orders on futures desk.
 // Backtest (OANDA XAU, 27 Aug 2025–27 Aug 2026): trade only if Asia range < 60.
 // Buffer 10 pts past high/low (20 pts does not fill by 03:30). SL = Asia mid. TP 1.5R.
 // Cancel unfilled 03:30. Flatten 10:25.

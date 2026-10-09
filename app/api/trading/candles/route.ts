@@ -1,6 +1,6 @@
 /**
  * GET /api/trading/candles?instrument=DOW|NASDAQ|NIKKEI|GOLD|CRUDE&timeframe=5m&days=5
- * CME futures first (MYM / MNQ / NKD / MGC / CL) so IB matches Tradovate; OANDA CFD fallback.
+ * CME futures first (MYM / MNQ / NKD / MGC / CL) so IB matches CME futures; OANDA CFD fallback.
  * Live: full day continuum (morning + afternoon + overnight). Trading stays morning-only.
  * Sim/dated: full cash session continuum (entries still morning-gated in the UI).
  */
@@ -186,7 +186,7 @@ export async function GET(request: Request) {
             ? Math.max(days, 3)
             : Math.max(days, AVWAP_CANDLE_FETCH_CALENDAR_DAYS)
 
-        // 1. Direct CME Globex futures candles (MYM=F, MNQ=F, NKD=F, MGC=F, CL=F) matching Tradovate & TradingView
+        // 1. Direct CME Globex futures candles (MYM=F, MNQ=F, NKD=F, MGC=F, CL=F) matching CME & TradingView
         try {
           const yahoo = await getYahooCandles(instrument, resolution, fetchDays)
           if (yahoo?.candles?.length) {
@@ -352,7 +352,7 @@ export async function GET(request: Request) {
         }
       }
 
-      // Direct CME futures fallback from exchange feed (Tradovate / CME MYM, MNQ, NKD, MGC, CL)
+      // Direct CME futures fallback from exchange feed (CME MYM, MNQ, NKD, MGC, CL)
       if (!quote && !endDate) {
         try {
           const yq = await getYahooQuote(instrument)

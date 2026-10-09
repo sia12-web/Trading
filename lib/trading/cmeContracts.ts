@@ -179,7 +179,7 @@ function pickQty(args: {
   }
 }
 
-export type TradovateMirrorTicket = {
+export type CmeDeskTicket = {
   instrument: DeskIndex
   symbol: string
   side: 'BUY' | 'SELL'
@@ -191,7 +191,7 @@ export type TradovateMirrorTicket = {
   target: number
   stopPts: number
   pulseRiskDollars: number
-  tradovateRiskDollars: number
+  contractRiskDollars: number
   riskDeltaDollars: number
   snapped: boolean
   overCap: boolean
@@ -200,7 +200,7 @@ export type TradovateMirrorTicket = {
   copyText: string
 }
 
-export function buildTradovateMirrorTicket(args: {
+export function buildCmeDeskTicket(args: {
   instrument: DeskIndex
   direction: 'LONG' | 'SHORT' | 'long' | 'short'
   entry: number
@@ -208,7 +208,7 @@ export function buildTradovateMirrorTicket(args: {
   target: number
   riskDollars: number
   accountName?: string | null
-}): TradovateMirrorTicket | null {
+}): CmeDeskTicket | null {
   const contract = CME_CONTRACTS[args.instrument]
   if (!contract) return null
   const pulseEntry = Number(args.entry)
@@ -239,7 +239,7 @@ export function buildTradovateMirrorTicket(args: {
       ? pickQty({ risk: pulseRisk, stopPts, contract })
       : { symbol: contract.microSymbol ?? contract.symbol, qty: 0, pointValue: contract.microPointValue ?? contract.pointValue, overCap: false }
 
-  const tradovateRisk = picked.qty > 0 ? picked.qty * stopPts * picked.pointValue : 0
+  const contractRisk = picked.qty > 0 ? picked.qty * stopPts * picked.pointValue : 0
   const side: 'BUY' | 'SELL' = isShort ? 'SELL' : 'BUY'
   const snapped = entry !== pulseEntry || stop !== pulseStop || target !== pulseTarget
   const acct = args.accountName?.trim() || 'Personal Futures'
@@ -260,7 +260,7 @@ export function buildTradovateMirrorTicket(args: {
     `ENTRY    ${fmt(entry, tick)}`,
     `SL       ${fmt(stop, tick)}`,
     `TP       ${fmt(target, tick)}`,
-    `RISK     $${tradovateRisk > 0 ? tradovateRisk.toFixed(2) : '—'}  (${stopPts} pts × ${picked.qty || 0} × $${picked.pointValue})`,
+    `RISK     $${contractRisk > 0 ? contractRisk.toFixed(2) : '—'}  (${stopPts} pts × ${picked.qty || 0} × $${picked.pointValue})`,
     contract.microSymbol ? `NOTE     Micro only — do not use the E-mini (${contract.symbol}).` : null,
   ].filter(Boolean).join('\n')
 
@@ -276,8 +276,8 @@ export function buildTradovateMirrorTicket(args: {
     target,
     stopPts,
     pulseRiskDollars: pulseRisk,
-    tradovateRiskDollars: tradovateRisk,
-    riskDeltaDollars: tradovateRisk - pulseRisk,
+    contractRiskDollars: contractRisk,
+    riskDeltaDollars: contractRisk - pulseRisk,
     snapped,
     overCap: picked.overCap,
     sizeLabel,
@@ -286,7 +286,7 @@ export function buildTradovateMirrorTicket(args: {
   }
 }
 
-export function tradovateMirrorStorageKey(id: string): string {
+export function cmeTicketStorageKey(id: string): string {
   return `personal.ticket.${id}`
 }
 
@@ -315,7 +315,7 @@ export function deskBookLines(args: {
   }
   const inst = args.instrument as DeskIndex
   if (inst !== 'DOW' && inst !== 'NASDAQ' && inst !== 'NIKKEI' && inst !== 'GOLD' && inst !== 'CRUDE' && inst !== 'SILVER') return pulse
-  const ticket = buildTradovateMirrorTicket({
+  const ticket = buildCmeDeskTicket({
     instrument: inst,
     direction: args.direction as 'LONG' | 'SHORT',
     entry: args.entry,
@@ -366,6 +366,3 @@ export function tradingViewSymbol(symbol: string): string {
 export function tradingViewChartUrl(symbol: string): string {
   return `${TRADINGVIEW_CHART_URL}?symbol=${encodeURIComponent(tradingViewSymbol(symbol))}`
 }
-
-export type TradovateContract = CmeContract
-export const TRADOVATE_CONTRACTS = CME_CONTRACTS

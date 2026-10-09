@@ -193,7 +193,6 @@ import { isUsMarketHoliday } from '@/lib/chart/sessionVwap'
 import {
   loadRulesForMarket,
   saveRulesForMarket,
-  MARKET_DEFAULT_PARAMS,
   listenToRuleUpdates,
   isEntrySituationRule,
   type ArmedRule,
@@ -367,7 +366,7 @@ import {
   resolveClockedChartInstrument,
 } from '@/lib/trading/liveDeskBook'
 import { snapDeskPrice, snapStopToTick, snapTargetToTick } from '@/lib/trading/instrumentTicks'
-import { deskBookLines } from '@/lib/trading/tradovateMirror'
+import { deskBookLines } from '@/lib/trading/cmeContracts'
 import {
   overlayTopFromPrice,
   priceFromClientY,
@@ -1231,16 +1230,6 @@ interface TradingChartProps {
   ) => void
   /** Close position execution callback from Leo or desk */
   onClosePosition?: (reason: string) => Promise<boolean | void>
-  /** Order placement callback from Leo AI or desk controls */
-  onPlaceOrder?: (order: {
-    instrument: string
-    direction: 'LONG' | 'SHORT'
-    price: number
-    stopLoss: number
-    profitTarget: number
-    reason: string
-    size?: number
-  }) => Promise<{ success: boolean; message?: string; position_id?: string }>
 }
 
 export interface RenderedSessionExtremeHit {
@@ -1303,7 +1292,6 @@ export function TradingChart({
   onDeskPerf,
   onSessionExit,
   onClosePosition,
-  onPlaceOrder,
 }: TradingChartProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartFrameRef = useRef<HTMLDivElement>(null)
@@ -12398,7 +12386,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     const asiaLive =
       asiaOco && asiaOco.qualified && asiaOco.event === 'place_both'
     if (asiaLive && asiaOco) {
-      const frac = asiaOco.instrument === 'GOLD' ? 1 : 0
+      const inst = String(asiaOco.instrument)
+      const frac = inst === 'SILVER' ? 3 : inst === 'GOLD' ? 1 : (inst === 'CRUDE' || inst === 'NASDAQ') ? 2 : 0
       const fmtA = (n: number) =>
         n.toLocaleString('en-US', { maximumFractionDigits: frac })
       paint([
@@ -15208,32 +15197,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#089981]' : 'bg-[#f23645]'}`}>
                     {isLong ? '+1' : '-1'}
                   </div>
-                  {/* Instant 1-Click Market Enter Button */}
-                  {onPlaceOrder && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        const cur = livePrice ?? sitTarget
-                        const meta = MARKET_DEFAULT_PARAMS[instrument as MarketInstrument] || { defaultPrice: cur, defaultPoints: 20 }
-                        const sl = sitSl ?? (isLong ? cur - meta.defaultPoints : cur + meta.defaultPoints)
-                        const tp = sitTp ?? (isLong ? cur + meta.defaultPoints : cur - meta.defaultPoints)
-                        void onPlaceOrder({
-                          instrument,
-                          direction: isLong ? 'LONG' : 'SHORT',
-                          price: cur,
-                          stopLoss: sl,
-                          profitTarget: tp,
-                          size: 1,
-                          reason: `Manual 1-Click Trigger of Armed Situation: ${sit.description}`,
-                        })
-                      }}
-                      className="px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white font-bold transition border-l border-[#363a45] flex items-center gap-0.5 cursor-pointer"
-                      title="Jump in immediately at market price"
-                    >
-                      <span>⚡ In</span>
-                    </button>
-                  )}
+
                   {/* Disarm / Cancel button */}
                   <button
                     type="button"
@@ -15765,7 +15729,6 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           externalPrompt={leoAutoPrompt}
           onClearExternalPrompt={() => setLeoAutoPrompt(null)}
           onClosePosition={onClosePosition}
-          onPlaceOrder={onPlaceOrder}
           onOverrideDayType={setDayTypeOverride}
         />
       </div>

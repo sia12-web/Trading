@@ -51,17 +51,17 @@ graph TD
 ### 2.1 Tier 1: CME Globex MDP 3.0 via Databento Live Hub
 - Configured via `DATABENTO_API_KEY` and the Databento Live Gateway Sidecar (`scripts/databento_live_sidecar.py`).
 - Directly streams raw CME Globex exchange trade ticks from the Aurora colocation center (`GLBX.MDP3`).
-- Both Server-Sent Events (`/api/trading/quote/stream`) and REST polls (`/api/trading/quote`) query `getLatestDatabentoLiveQuote` to deliver zero-latency price updates across `DOW`, `NASDAQ`, `GOLD`, and `CRUDE`.
+- Both Server-Sent Events (`/api/trading/quote/stream`) and REST polls (`/api/trading/quote`) query `getLatestDatabentoLiveQuote` to deliver zero-latency price updates across `DOW`, `NASDAQ`, `GOLD`, `CRUDE`, and `SILVER`.
 
 ### 2.2 Tier 2: OANDA v20 Continuous CFDs with CME Basis
-- When Databento is offline, throttled, or for extended 24-hour overnight coverage, OANDA continuous CFD pricing (`US30_USD`, `NAS100_USD`, `XAU_USD`, `WTICO_USD`) is fetched.
+- When Databento is offline, throttled, or for extended 24-hour overnight coverage, OANDA continuous CFD pricing (`US30_USD`, `NAS100_USD`, `XAU_USD`, `WTICO_USD`, `XAG_USD`) is fetched.
 - **CME Basis Engine (`lib/trading/cmeBasis.ts`)**:
   - CFDs trade against spot indices rather than futures contracts.
   - TradePulse dynamically calculates the spot-futures difference:
     $$\text{Basis} = \text{Price}_{\text{CME Futures}} - \text{Price}_{\text{OANDA Spot}}$$
   - The basis offset is periodically updated (`CME_BASIS_REFRESH_MS = 60,000ms`) and applied to every OANDA bar:
     $$\text{Price}_{\text{Adjusted}} = \text{Price}_{\text{OANDA}} + \text{Basis}$$
-  - Ensures that prices charted on the desk match the trader's Tradovate, NinjaTrader, or TopstepX futures execution platform to the exact tick.
+  - Ensures that prices charted on the desk match CME Globex futures to the exact tick.
 
 ### 2.3 Tier 3: Yahoo Finance Daily Macro History (`1D`)
 - For multi-year Higher Timeframe context on the Daily (`1D`) chart, requests bypass high-volume 1-minute historical servers (which would require downloading 260,000 bars) and query Yahoo Finance directly.
@@ -69,7 +69,7 @@ graph TD
 
 ### 2.4 Economic Calendar: ForexFactory Fallback Feed
 - To bypass free-tier API restrictions (`HTTP 403 Forbidden` on `/calendar/economic`), `finnhubClient.ts` automatically queries the live ForexFactory Weekly Calendar JSON feed (`https://nfs.faireconomy.media/ff_calendar_thisweek.json`).
-- Automatically maps high-impact macroeconomic events (FOMC, CPI, NFP, Crude Inventories) to active trader instruments: `DOW`, `NASDAQ`, `GOLD`, and `CRUDE`.
+- Automatically maps high-impact macroeconomic events (FOMC, CPI, NFP, Crude Inventories) to active trader instruments: `DOW`, `NASDAQ`, `GOLD`, `CRUDE`, and `SILVER`.
 
 ---
 

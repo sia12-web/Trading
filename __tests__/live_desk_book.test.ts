@@ -22,7 +22,7 @@ import {
   resolveSessionGate,
   shouldRunLiveAiForInstrument,
 } from '../lib/trading/sessionGate'
-import { buildTradovateMirrorTicket } from '../lib/trading/tradovateMirror'
+import { buildCmeDeskTicket } from '../lib/trading/cmeContracts'
 
 function etDate(h: number, m: number) {
   return new Date(Date.UTC(2026, 6, 15, h + 4, m, 0))
@@ -180,7 +180,7 @@ const tokyoGate = resolveSessionGate({
 assert.equal(tokyoGate.market, 'NY')
 assert.ok(tokyoGate.allowedInstruments.includes('NIKKEI'))
 
-const tight = buildTradovateMirrorTicket({
+const tight = buildCmeDeskTicket({
   instrument: 'NASDAQ',
   direction: 'LONG',
   entry: 20000,
@@ -194,7 +194,7 @@ assert.notEqual(tight!.symbol, 'NQ')
 assert.ok(tight!.qty <= 40)
 assert.ok(tight!.copyText.includes('Micro only'))
 
-const tightDow = buildTradovateMirrorTicket({
+const tightDow = buildCmeDeskTicket({
   instrument: 'DOW',
   direction: 'LONG',
   entry: 40000,
@@ -206,7 +206,7 @@ assert.ok(tightDow)
 assert.equal(tightDow!.symbol, 'MYM')
 assert.notEqual(tightDow!.symbol, 'YM')
 
-const goldTicket = buildTradovateMirrorTicket({
+const goldTicket = buildCmeDeskTicket({
   instrument: 'GOLD',
   direction: 'LONG',
   entry: 4500,
@@ -217,7 +217,7 @@ const goldTicket = buildTradovateMirrorTicket({
 assert.ok(goldTicket)
 assert.equal(goldTicket!.symbol, 'MGC')
 
-const silverTicket = buildTradovateMirrorTicket({
+const silverTicket = buildCmeDeskTicket({
   instrument: 'SILVER',
   direction: 'LONG',
   entry: 60.5,
@@ -232,16 +232,6 @@ const livePage = readFileSync(
   join(__dirname, '../app/dashboard/chart/page.tsx'),
   'utf8'
 )
-const ticketCard = readFileSync(
-  join(__dirname, '../app/dashboard/chart/components/TradovateMirrorCard.tsx'),
-  'utf8'
-)
 assert.ok(livePage.includes('<ManageDeskBar'), 'manage card stays on the live desk')
-assert.ok(ticketCard.includes('TradovateMirrorCard'), 'TradovateMirrorCard component defined')
-assert.ok(ticketCard.includes('Copied — close'), 'ticket can hide after copy without canceling the book')
-assert.ok(
-  !ticketCard.includes('absolute bottom-28'),
-  'ticket card is not independently pinned over the manage strip'
-)
 
 console.log('live_desk_book.test.ts: all assertions passed')

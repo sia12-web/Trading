@@ -119,7 +119,7 @@ function clLastTradeYmd(contractYear: number, contractMonth: number): [number, n
 }
 
 /**
- * Volume-lead WTI month (same contract Tradovate / Yahoo CL=F use).
+ * Volume-lead WTI month (same contract CME / Yahoo CL=F use).
  * `CL.c.0` is calendar front and stays on the expiring month after volume has
  * already rolled — that was painting October (~97) on a November (~93) book.
  */
@@ -164,7 +164,7 @@ function lastBusinessDayOfMonth(y: number, m: number): [number, number, number] 
 /**
  * COMEX gold first notice: last business day of the month before delivery.
  * Volume leaves the expiring month well before last trade (unlike WTI), so
- * `MGC.c.0` calendar front in late September is October while Tradovate /
+ * `MGC.c.0` calendar front in late September is October while CME /
  * Yahoo MGC=F / GC=F are already December — that painted ~4353 on a ~4382 book.
  */
 function goldFirstNoticeYmd(contractYear: number, contractMonth: number): [number, number, number] {
@@ -178,7 +178,7 @@ function goldFirstNoticeYmd(contractYear: number, contractMonth: number): [numbe
 }
 
 /**
- * Volume-lead Micro Gold month (Yahoo MGC=F / Tradovate MGC), not calendar MGC.c.0.
+ * Volume-lead Micro Gold month (Yahoo MGC=F / CME MGC), not calendar MGC.c.0.
  */
 export function getActiveCmeGoldContract(now: Date = new Date()): string {
   const ny = nyCivilDate(now)
@@ -210,7 +210,7 @@ const SILVER_MONTH_CODES: Record<number, string> = {
 }
 
 /**
- * Volume-lead Micro Silver month (Yahoo SIL=F / SI=F / Tradovate SIL), not calendar SIL.c.0.
+ * Volume-lead Micro Silver month (Yahoo SIL=F / SI=F / CME SIL), not calendar SIL.c.0.
  */
 export function getActiveCmeSilverContract(now: Date = new Date()): string {
   const ny = nyCivilDate(now)

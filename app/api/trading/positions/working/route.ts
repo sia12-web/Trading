@@ -355,7 +355,7 @@ export async function POST(request: Request) {
       if (!decision.allowed) {
         logEntryDenied({
           route: 'working',
-          reason: 'tradeify_gate',
+          reason: 'risk_gate',
           instrument,
           message: decision.refuseMessage,
           status: 400,

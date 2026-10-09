@@ -39,7 +39,7 @@ export function tradeTpProgress(args: {
 /**
  * Lift an OANDA fill onto the desk (CME) scale used by TP / SL / live quotes.
  * Ticket TP/SL stay on CME; `entry_price` is overwritten with the broker fill.
- * Mixing those spaces makes `inProfit` true while the Tradovate book is losing.
+ * Mixing those spaces makes `inProfit` true while the CME futures book is losing.
  *
  * Returns null when the books are mixed and cannot be aligned — callers must
  * fail closed (no BE / trail / scale) rather than guess.

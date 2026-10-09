@@ -1,5 +1,5 @@
 //@version=5
-// Dow Asia range — M5. Montreal clocks. Manual orders on Tradovate.
+// Dow Asia range — M5. Montreal clocks. Manual orders on futures desk.
 // Backtest (OANDA US30, 27 Aug 2025–27 Aug 2026): trade only if Asia range < 80.
 // Buffer 20 pts past high/low. SL = Asia mid. TP 1.5R. Cancel unfilled 03:30. Flatten 10:25.
 //

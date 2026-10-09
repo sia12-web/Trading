@@ -1,4 +1,4 @@
--- Tradovate E-mini Russell (RTY) fills can land in live order history.
+-- CME Globex E-mini Russell (RTY) fills can land in live order history.
 ALTER TABLE trades_journal DROP CONSTRAINT IF EXISTS trades_journal_instrument_check;
 ALTER TABLE trades_journal
   ADD CONSTRAINT trades_journal_instrument_check

@@ -1,24 +1,24 @@
 /**
- * Tradovate transfer — same TradePulse book, one legal Tradeify contract.
- * Run: npx tsx __tests__/tradovate_mirror.test.ts
+ * CME Globex Futures Contract Ticket and Desk Book.
+ * Run: npx tsx __tests__/cme_contracts.test.ts
  */
 
 import assert from 'node:assert/strict'
 import {
-  buildTradovateMirrorTicket,
+  buildCmeDeskTicket,
   deskBookLines,
   tradingViewChartUrl,
   tradingViewSymbol,
-} from '../lib/trading/tradovateMirror'
+} from '../lib/trading/cmeContracts'
 
-const nq = buildTradovateMirrorTicket({
+const nq = buildCmeDeskTicket({
   instrument: 'NASDAQ',
   direction: 'LONG',
   entry: 20000,
   stop: 19980,
   target: 20030,
   riskDollars: 400,
-  accountName: 'TDFYG50376444860',
+  accountName: 'FUTURES-MAIN',
 })
 assert.ok(nq)
 assert.equal(nq!.symbol, 'MNQ')
@@ -27,10 +27,10 @@ assert.equal(nq!.orderType, 'LIMIT')
 assert.equal(nq!.tif, 'DAY')
 assert.equal(nq!.stopPts, 20)
 assert.equal(nq!.qty, 10)
-assert.equal(nq!.tradovateRiskDollars, 400)
+assert.equal(nq!.contractRiskDollars, 400)
 assert.equal(nq!.pulseRiskDollars, 400)
 assert.equal(nq!.snapped, false)
-assert.ok(nq!.copyText.includes('TDFYG50376444860'))
+assert.ok(nq!.copyText.includes('FUTURES-MAIN'))
 assert.ok(nq!.copyText.includes('SYMBOL   MNQ'))
 assert.ok(nq!.copyText.includes('CONTRACT Micro E-mini Nasdaq-100'))
 assert.equal(nq!.contractLabel, 'Micro E-mini Nasdaq-100')
@@ -45,7 +45,7 @@ assert.ok(!nq!.copyText.includes('NQ /'))
 assert.ok(!nq!.copyText.includes('MNK'))
 assert.ok(nq!.copyText.includes('Micro only'))
 
-const ym = buildTradovateMirrorTicket({
+const ym = buildCmeDeskTicket({
   instrument: 'DOW',
   direction: 'SHORT',
   entry: 40000,
@@ -57,11 +57,11 @@ assert.ok(ym)
 assert.equal(ym!.side, 'SELL')
 assert.equal(ym!.symbol, 'MYM')
 assert.equal(ym!.qty, 10)
-assert.equal(ym!.tradovateRiskDollars, 400)
+assert.equal(ym!.contractRiskDollars, 400)
 assert.ok(ym!.copyText.includes('SIDE     SELL'))
 assert.ok(ym!.copyText.includes('SYMBOL   MYM'))
 
-const nkd = buildTradovateMirrorTicket({
+const nkd = buildCmeDeskTicket({
   instrument: 'NIKKEI',
   direction: 'LONG',
   entry: 42180,
@@ -72,11 +72,11 @@ const nkd = buildTradovateMirrorTicket({
 assert.ok(nkd)
 assert.equal(nkd!.symbol, 'NKD')
 assert.equal(nkd!.qty, 1)
-assert.equal(nkd!.tradovateRiskDollars, 400)
+assert.equal(nkd!.contractRiskDollars, 400)
 assert.ok(!nkd!.copyText.includes('MNK'))
 assert.ok(nkd!.copyText.includes('SYMBOL   NKD'))
 
-const nkdSnap = buildTradovateMirrorTicket({
+const nkdSnap = buildCmeDeskTicket({
   instrument: 'NIKKEI',
   direction: 'LONG',
   entry: 42183,
@@ -91,7 +91,7 @@ assert.equal(nkdSnap!.stop % 5, 0)
 assert.equal(nkdSnap!.target % 5, 0)
 assert.equal(nkdSnap!.snapped, true)
 
-const nqSnap = buildTradovateMirrorTicket({
+const nqSnap = buildCmeDeskTicket({
   instrument: 'NASDAQ',
   direction: 'LONG',
   entry: 20000.13,
@@ -105,7 +105,7 @@ assert.equal(nqSnap!.stop, 19980.25)
 assert.equal(nqSnap!.snapped, true)
 assert.ok(nqSnap!.stop < nqSnap!.entry)
 
-const closest = buildTradovateMirrorTicket({
+const closest = buildCmeDeskTicket({
   instrument: 'NASDAQ',
   direction: 'LONG',
   entry: 20000,
@@ -115,12 +115,11 @@ const closest = buildTradovateMirrorTicket({
 })
 assert.ok(closest)
 assert.equal(closest!.symbol, 'MNQ')
-// 30 pts × $2 = $60/contract → 4 MNQ = $240 (closer than 5 = $300)
 assert.equal(closest!.qty, 4)
-assert.equal(closest!.tradovateRiskDollars, 240)
+assert.equal(closest!.contractRiskDollars, 240)
 assert.ok(Math.abs(closest!.riskDeltaDollars) < Math.abs(300 - 250))
 
-const badStop = buildTradovateMirrorTicket({
+const badStop = buildCmeDeskTicket({
   instrument: 'NASDAQ',
   direction: 'LONG',
   entry: 20000,
@@ -130,7 +129,7 @@ const badStop = buildTradovateMirrorTicket({
 })
 assert.equal(badStop, null)
 
-const wrongSide = buildTradovateMirrorTicket({
+const wrongSide = buildCmeDeskTicket({
   instrument: 'NASDAQ',
   direction: 'LONG',
   entry: 20000,
@@ -140,7 +139,7 @@ const wrongSide = buildTradovateMirrorTicket({
 })
 assert.equal(wrongSide, null)
 
-const shortWrong = buildTradovateMirrorTicket({
+const shortWrong = buildCmeDeskTicket({
   instrument: 'DOW',
   direction: 'SHORT',
   entry: 40000,
@@ -150,7 +149,7 @@ const shortWrong = buildTradovateMirrorTicket({
 })
 assert.equal(shortWrong, null)
 
-const noRisk = buildTradovateMirrorTicket({
+const noRisk = buildCmeDeskTicket({
   instrument: 'NASDAQ',
   direction: 'LONG',
   entry: 20000,
@@ -165,7 +164,7 @@ assert.equal(noRisk!.stop, 19980)
 assert.equal(noRisk!.target, 20030)
 assert.ok(noRisk!.copyText.includes('SIDE     BUY'))
 
-const overCap = buildTradovateMirrorTicket({
+const overCap = buildCmeDeskTicket({
   instrument: 'NASDAQ',
   direction: 'LONG',
   entry: 20000,
@@ -212,4 +211,4 @@ assert.ok(tradingViewChartUrl('NKD').includes(encodeURIComponent('CME:NKD1!')))
   assert.ok(chart.includes('workingBook?.sizeNote'), 'working chip shows MYM/MNQ size')
 }
 
-console.log('tradovate_mirror.test.ts: all assertions passed')
+console.log('cme_contracts.test.ts: all assertions passed')

@@ -21,7 +21,7 @@ import {
   buildQuestradeTradeifyTransfer,
   type QuestradeTradeifyTransfer,
 } from '@/lib/trading/questradeTransfer'
-import type { DeskIndex } from '@/lib/trading/tradovateMirror'
+import type { DeskIndex } from '@/lib/trading/cmeContracts'
 import { DEV_USER_ID } from '@/lib/utils/devAuth'
 
 export type QuestradeEquityPoint = { t: string; equity: number }

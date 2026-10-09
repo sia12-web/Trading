@@ -1,6 +1,6 @@
 /**
  * Yahoo Finance chart candles (no API key).
- * Live desk uses CME futures (MYM / MNQ / NKD / MGC / CL) so IB matches Tradovate, not OANDA CFDs.
+ * Live desk uses CME futures (MYM / MNQ / NKD / MGC / CL) so IB matches CME futures, not OANDA CFDs.
  */
 
 import type { Instrument } from '@/types/price-feed'
@@ -198,7 +198,7 @@ function snapDailyCandles(candles: YahooCandle[]): YahooCandle[] {
  * Yahoo's 'MGC=F' (Micro Gold) continuous feed suffers from calendar-front month stalls
  * where daily volume drops to near zero for months before rolling late, whereas 'GC=F'
  * maintains institutional continuous liquidity (~150k-250k daily volume) at the exact
- * same price to the penny. Intraday resolutions retain 'MGC=F' matching Tradovate micro lots.
+ * same price to the penny. Intraday resolutions retain 'MGC=F' matching CME micro lots.
  */
 export function resolveYahooSymbol(
   instrument: Instrument,

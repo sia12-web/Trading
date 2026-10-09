@@ -8,7 +8,7 @@
 
 import { zonedDateTimeToUnix } from '@/lib/utils/dateUtils'
 
-export const TRADEIFY_PROFILE_ID = 'tradeify_growth_50k' as const
+export const TRADEIFY_PROFILE_ID = 'personal_futures' as const
 
 export const TRADEIFY_STARTING_BALANCE = 50_000
 export const TRADEIFY_PROFIT_TARGET = 3_000
@@ -203,7 +203,7 @@ export function formatTradeifyRiskChip(sessionFillsUsed?: number | null): string
   const used = Math.max(0, Math.floor(Number(sessionFillsUsed) || 0))
   const step = tradeifyRiskStepDollars(used)
   const fillNum = Math.min(used + 1, 3)
-  return `Tradeify $${step} (fill ${fillNum}/3)`
+  return `Desk $${step} (fill ${fillNum}/3)`
 }
 
 /** Dollars already eaten from the $1,250 DLL (wins do not refill it). */
@@ -249,15 +249,15 @@ function refuseMessage(reason: TradeifyRefuseReason, extra?: { leftover?: number
     case 'ok':
       return ''
     case 'session_full':
-      return 'Tradeify session 3/3 — no new entries.'
+      return 'Desk session 3/3 — no new entries.'
     case 'day_locked_stops':
-      return 'Tradeify day locked — 2 stop-outs. Manage only until the next 18:00 ET session.'
+      return 'Desk day locked — 2 stop-outs. Manage only until the next 18:00 ET session.'
     case 'day_locked_green':
-      return `Tradeify day locked — green-day cap ($${TRADEIFY_GREEN_DAY_LOCK_DOLLARS}). Manage only.`
+      return `Desk day locked — green-day cap ($${TRADEIFY_GREEN_DAY_LOCK_DOLLARS}). Manage only.`
     case 'dll_exhausted':
-      return `Tradeify daily loss used ($${TRADEIFY_DLL_DOLLARS}). No new entries today.`
+      return `Desk daily loss used ($${TRADEIFY_DLL_DOLLARS}). No new entries today.`
     case 'floor_exhausted':
-      return 'Tradeify trailing floor has no room left — no new entries.'
+      return 'Desk trailing floor has no room left — no new entries.'
     case 'stop_exceeds_dll':
       return `Stop $${extra?.risk} would breach leftover daily loss ($${extra?.leftover}).`
     case 'stop_exceeds_floor':
@@ -265,13 +265,13 @@ function refuseMessage(reason: TradeifyRefuseReason, extra?: { leftover?: number
     case 'risk_too_small':
       return `Leftover room is under $${TRADEIFY_MIN_RISK_DOLLARS} — sit out.`
     case 'must_flatten':
-      return 'Tradeify flatten — close Tradovate AND cancel working orders. Regular 16:59 ET / holiday 12:59 ET. No new holds until 18:00 ET.'
+      return 'Session flatten — close open positions and cancel working orders. Regular 16:59 ET / holiday 12:59 ET. No new holds until 18:00 ET.'
     case 'hedge_conflict':
-      return 'Tradeify hedge — an open index is the other way. Flatten that book before the opposite ticket (YM/NQ/NKD group).'
+      return 'Hedge conflict — an open index is the other way. Flatten that book before the opposite ticket (YM/NQ/NKD group).'
     case 'news_lock':
-      return 'Tradeify news lock — no new entries ±5 minutes around CPI / FOMC / NFP.'
+      return 'Desk news lock — no new entries ±5 minutes around CPI / FOMC / NFP.'
     default:
-      return 'Tradeify gate refused this entry.'
+      return 'Desk risk gate refused this entry.'
   }
 }
 
@@ -394,7 +394,7 @@ export function formatTradeifyBannerChip(args: {
   if (args.status === 'must_flatten') {
     return {
       label: `FLATTEN · ${dll} · ${floor}`,
-      title: `Tradeify flatten now (${flatten}). No new holds. Keep-open / Nikkei 02:00 ride does not apply.`,
+      title: `Desk session flatten now (${flatten}). No new holds. Keep-open / Nikkei 02:00 ride does not apply.`,
       tone: 'flatten',
     }
   }
@@ -409,13 +409,13 @@ export function formatTradeifyBannerChip(args: {
             : 'no new entries'
     return {
       label: `LOCKED · ${dll} · ${floor}`,
-      title: `Tradeify day locked (${why}). ${dll} leftover · ${floor} room. Flatten ${flatten}.`,
+      title: `Desk day locked (${why}). ${dll} leftover · ${floor} room. Flatten ${flatten}.`,
       tone: 'lock',
     }
   }
   return {
     label: `${dll} · ${floor}`,
-    title: `Tradeify Growth $50k · ${dll} leftover of $${TRADEIFY_DLL_DOLLARS} · ${floor} to trailing floor. Flatten ${flatten}.`,
+    title: `Futures Desk $50k · ${dll} leftover of $${TRADEIFY_DLL_DOLLARS} · ${floor} to trailing floor. Flatten ${flatten}.`,
     tone: 'ok',
   }
 }

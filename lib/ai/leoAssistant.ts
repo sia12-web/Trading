@@ -336,28 +336,6 @@ export type LeoExecutionDirective =
       ruleType?: string
     }
   | {
-      action: 'PLACE_ORDER' | 'OPEN_POSITION'
-      instrument: string
-      direction: 'LONG' | 'SHORT'
-      price: number
-      stopLoss: number
-      profitTarget: number
-      size?: number
-      reason: string
-    }
-  | {
-      action: 'COPY_TOPSTEPX_ORDER'
-      contract: string
-      direction: 'BUY' | 'SELL'
-      quantity: number
-      entryPrice: number
-      stopLoss: number
-      takeProfit: number
-      dollarRisk?: number
-      dollarReward?: number
-      bracketRatio?: string
-    }
-  | {
       action: 'SET_DAY_TYPE' | 'OVERRIDE_DAY_TYPE'
       dayType: 'DOUBLE_DISTRIBUTION' | 'NORMAL_VARIATION' | 'NORMAL' | 'TREND_BULL' | 'TREND_BEAR' | 'NEUTRAL'
       reason?: string
@@ -381,14 +359,9 @@ export function parseLeoDirectives(text: string): LeoExecutionDirective[] {
   // Helper to sanitize and normalize parsed directive
   const sanitize = (item: any): LeoExecutionDirective | null => {
     if (!item || typeof item !== 'object' || !item.action) return null
-    if (item.action === 'PLACE_ORDER' || item.action === 'OPEN_POSITION') {
-      return {
-        ...item,
-        price: Number(typeof item.price === 'number' ? item.price : parseFloat(String(item.price)) || 0),
-        stopLoss: Number(typeof item.stopLoss === 'number' ? item.stopLoss : parseFloat(String(item.stopLoss)) || 0),
-        profitTarget: Number(typeof item.profitTarget === 'number' ? item.profitTarget : parseFloat(String(item.profitTarget)) || 0),
-        size: Number(typeof item.size === 'number' ? item.size : parseInt(String(item.size), 10) || 1),
-      }
+    // System does not execute orders
+    if (item.action === 'PLACE_ORDER' || item.action === 'OPEN_POSITION' || item.action === 'COPY_ORDER' || (typeof item.action === 'string' && item.action.includes('ORDER'))) {
+      return null
     }
     if (item.action === 'ARM_CONDITIONAL_ENTRY' || item.action === 'ARM_LVN_BULL_ENG_RULE') {
       return {
@@ -413,17 +386,6 @@ export function parseLeoDirectives(text: string): LeoExecutionDirective[] {
         ...item,
         maxMinutes: Number.isFinite(parsedMin) && parsedMin > 0 ? parsedMin : 5,
         requireProfitPoints: item.requireProfitPoints != null ? Number(item.requireProfitPoints) || 1 : 1,
-      }
-    }
-    if (item.action === 'COPY_TOPSTEPX_ORDER') {
-      return {
-        ...item,
-        quantity: Number(typeof item.quantity === 'number' ? item.quantity : parseInt(String(item.quantity), 10) || 1),
-        entryPrice: Number(typeof item.entryPrice === 'number' ? item.entryPrice : parseFloat(String(item.entryPrice)) || 0),
-        stopLoss: Number(typeof item.stopLoss === 'number' ? item.stopLoss : parseFloat(String(item.stopLoss)) || 0),
-        takeProfit: Number(typeof item.takeProfit === 'number' ? item.takeProfit : parseFloat(String(item.takeProfit)) || 0),
-        dollarRisk: item.dollarRisk != null ? Number(item.dollarRisk) : undefined,
-        dollarReward: item.dollarReward != null ? Number(item.dollarReward) : undefined,
       }
     }
     if (item.action === 'SAVE_LONG_TERM_MEMORY') {
@@ -923,7 +885,12 @@ You are not a signal generator. You challenge every potential setup. You do not 
 Ask, in this order: Why here? What happened at the level? Who is aggressive? Did price respond? Did price confirm? Where is the idea wrong? Is there 2R to the next predetermined zone?
 If any answer is poor, the verdict is WAIT or NO TRADE. A session with zero trades is valid.
 
-The platform is strictly read-only. It cannot place, modify, or flatten a broker order. CLOSE_POSITION only records a manual-flatten reminder. Only the trader can close a position at the broker.
+ABSOLUTE SYSTEM DIRECTIVE — NO ORDER EXECUTION:
+The platform is strictly read-only market structure analysis, telemetry, situation monitoring, and alert notifications.
+NEITHER THE TRADER NOR LEO EVER PLACES OR EXECUTES ORDERS ON THIS PLATFORM.
+This platform does not execute orders and CANNOT place, copy, modify, or flatten broker orders.
+CLOSE_POSITION only records an advisory manual-flatten reminder for the trader's external broker.
+You must NEVER emit any order execution directive or propose placing broker trades.
 
 Execution doctrine is the 22-rule block at the end of this prompt. Nothing in this prompt adds a fifth setup, a point score, a fixed-point target, or a story about who is in the market.
 

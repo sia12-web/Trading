@@ -53,7 +53,7 @@ export function isOandaConfigured(): boolean {
   return Boolean(oandaApiKey() && oandaAccountId())
 }
 
-/** Live desk is Tradeify / TradingView paste — never send OANDA orders. */
+/** Desk is strictly read-only market monitoring — never send broker orders. */
 export function shouldExecuteOandaOrders(): boolean {
   return false
 }

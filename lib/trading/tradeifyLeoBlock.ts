@@ -48,7 +48,7 @@ export function tradeifyLeoEntryRule(instrument: string): string {
   const windows = tokyo
     ? 'up to 2 each: AM/OR30 + US Range + IB'
     : 'up to 2 each: AM/OR30 + IB + LN'
-  return `Session max 3 fills total, win/loss/breakeven all count (${windows}). Tradeify Growth $50k: $${TRADEIFY_RISK_FIRST_DOLLARS} → $${TRADEIFY_RISK_SECOND_DOLLARS} → $${TRADEIFY_RISK_THIRD_DOLLARS} by fill # (auto-shrink to leftover DLL / floor; min $50). Ignore OANDA 2% cash risk. Shared daily $ across Nikkei + NY; session rolls 18:00 ET. Day lock: ${TRADEIFY_MAX_STOP_OUTS} stop-outs or +$${TRADEIFY_GREEN_DAY_LOCK_DOLLARS}. Flatten by ~16:59 Montreal — no overnight, no "pass today". Next window unlocks when prior clock ends or probes are exhausted, but the 3-fill session cap always wins. Working limits do not count until filled. Lunch 11:30 is confirm-close only; unconfirmed books still flatten at the Tradeify cut. Voice never places orders. Range H/L = retail bait. Desk hunts stops just beyond edges with POC/AVWAP confluence. Entries only within ±10 of active range high or low (never 50% mid). Ticket sets initial SL beyond active range (or zone floor) and TP at 1.5R of that stop (1:1.5); post-fill BE/trail manage is separate.`
+  return `Session max 3 fills total, win/loss/breakeven all count (${windows}). Desk Risk $50k: $${TRADEIFY_RISK_FIRST_DOLLARS} → $${TRADEIFY_RISK_SECOND_DOLLARS} → $${TRADEIFY_RISK_THIRD_DOLLARS} by fill # (auto-shrink to leftover DLL / floor; min $50). Shared daily $ across Nikkei + NY; session rolls 18:00 ET. Day lock: ${TRADEIFY_MAX_STOP_OUTS} stop-outs or +$${TRADEIFY_GREEN_DAY_LOCK_DOLLARS}. Flatten by ~16:59 Montreal — no overnight, no "pass today". Next window unlocks when prior clock ends or probes are exhausted, but the 3-fill session cap always wins. Working limits do not count until filled. Lunch 11:30 is confirm-close only; unconfirmed books still flatten at the session cut. Voice and AI never place orders. Range H/L = retail bait. Desk hunts stops just beyond edges with POC/AVWAP confluence. Entries only within ±10 of active range high or low (never 50% mid). Ticket sets initial SL beyond active range (or zone floor) and TP at 1.5R of that stop (1:1.5); post-fill BE/trail manage is separate.`
 }
 
 function money(n: number): string {
@@ -84,8 +84,8 @@ export function formatTradeifyLeoBlock(snap: TradeifyLeoSnapshot | null | undefi
       : snap.refuseMessage || `day locked (${snap.refuseReason})`
   const inst = instrumentLine(snap.byInstrument)
   return [
-    `TRADEIFY GROWTH $50k (as-of ${snap.asOfIso}):`,
-    `Mode ON — ignore OANDA 2% / 1% / 0.5% cash risk. Do not say "pass today". Do not hold overnight.`,
+    `FUTURES DESK RISK $50k (as-of ${snap.asOfIso}):`,
+    `Mode ON — do not say "pass today". Do not hold overnight.`,
     `Shared session (Nikkei + NY) rolls 18:00 ET.`,
     `Fills ${snap.fillsUsed}/3 · next stop ${money(snap.riskDollars)} (step ${money(snap.stepDollars)}) · stops ${snap.stopOutsToday}/${TRADEIFY_MAX_STOP_OUTS}`,
     `DLL leftover ${money(snap.leftoverDll)} of ${money(snap.dllCap)} (used ${money(snap.dllUsed)}) · floor room ${money(snap.floorRoom)}`,
@@ -104,7 +104,7 @@ export function formatTradeifyTelegramBlock(
   if (!snap?.active) return ''
   const lock = snap.allowed ? 'can trade' : snap.refuseMessage || 'day locked'
   return [
-    `Tradeify $50k · as of ${snap.asOfIso}`,
+    `Futures Desk $50k · as of ${snap.asOfIso}`,
     `next ${money(snap.riskDollars)} · fills ${snap.fillsUsed}/3 · stops ${snap.stopOutsToday}/${TRADEIFY_MAX_STOP_OUTS}`,
     `DLL left ${money(snap.leftoverDll)} / ${money(TRADEIFY_DLL_DOLLARS)} · floor ${money(snap.floorRoom)} · day ${money(snap.dailyPnl)}`,
     `flatten ${snap.flattenMontreal} · no overnight · no pass-today · ${lock}`,
@@ -113,5 +113,5 @@ export function formatTradeifyTelegramBlock(
 
 
 export function tradeifyScheduleRiskLine(): string {
-  return `Ladder 2/2/2 · Tradeify $${TRADEIFY_RISK_FIRST_DOLLARS} → $${TRADEIFY_RISK_SECOND_DOLLARS} → $${TRADEIFY_RISK_THIRD_DOLLARS} · flatten 16:59 Montreal · no overnight · no pass-today`
+  return `Ladder 2/2/2 · Desk $${TRADEIFY_RISK_FIRST_DOLLARS} → $${TRADEIFY_RISK_SECOND_DOLLARS} → $${TRADEIFY_RISK_THIRD_DOLLARS} · flatten 16:59 Montreal · no overnight · no pass-today`
 }

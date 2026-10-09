@@ -5,7 +5,7 @@
 
 import { TRADEIFY_PROFILE_ID } from '@/lib/trading/tradeifyGrowth50k'
 
-export type DeskRiskProfile = 'oanda_cash' | typeof TRADEIFY_PROFILE_ID
+export type DeskRiskProfile = 'personal_futures' | 'oanda_cash' | typeof TRADEIFY_PROFILE_ID
 
 export const DESK_RISK_PROFILE_STORAGE_KEY = 'tradepulse.risk.profile'
 export const DESK_RISK_PROFILE_EVENT = 'tradepulse-risk-profile'
@@ -16,10 +16,14 @@ export function parseDeskRiskProfile(raw?: string | null): DeskRiskProfile {
     .trim()
     .toLowerCase()
     .replace(/-/g, '_')
+  if (v === 'personal_futures' || v === 'personal') {
+    return 'personal_futures'
+  }
   if (
     v === TRADEIFY_PROFILE_ID ||
     v === 'tradeify' ||
     v === 'tradeify_50k' ||
+    v === 'tradeify_growth_50k' ||
     v === 'growth_50k'
   ) {
     return TRADEIFY_PROFILE_ID

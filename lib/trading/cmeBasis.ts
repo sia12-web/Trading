@@ -1,5 +1,5 @@
 /**
- * Map OANDA CFD mids onto CME futures so live ticks stay on Tradovate scale.
+ * Map OANDA CFD mids onto CME futures so live ticks stay on CME futures scale.
  * Basis is futures last − OANDA mid (typically ~40–80 Dow pts / ~50–90 Nasdaq pts).
  *
  * Yahoo CME lasts are ~10 minutes delayed. Pair them with a same-age OANDA mid —

@@ -1,6 +1,6 @@
 /**
- * Load Tradeify Growth $50k session snapshot from trades_journal.
- * Counts live journal fills (indexes + Tradovate GOLD/CRUDE/RUSSELL) inside the 18:00 ET window.
+ * Load Futures Desk $50k session snapshot from trades_journal.
+ * Counts live journal fills (indexes + CME GOLD/CRUDE/RUSSELL) inside the 18:00 ET window.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'

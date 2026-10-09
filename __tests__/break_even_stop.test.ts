@@ -131,12 +131,12 @@ import {
   assert.equal(
     breakEvenShouldOffer(mixed),
     false,
-    'must not offer BE while Tradovate book is losing'
+    'must not offer BE while futures book is losing'
   )
   assert.equal(
     trailShouldOffer(mixed),
     false,
-    'must not offer trail while Tradovate book is losing'
+    'must not offer trail while futures book is losing'
   )
 }
 

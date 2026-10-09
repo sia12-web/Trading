@@ -22,10 +22,9 @@ import { liveDeskContractLabel } from '@/lib/trading/liveDeskBook'
 import {
   getDeskRiskProfile,
   hydrateDeskRiskProfileFromServer,
-  isTradeifyGrowth50k,
   DESK_RISK_PROFILE_EVENT,
   type DeskRiskProfile,
-} from '@/lib/trading/tradeifyProfile'
+} from '@/lib/trading/deskRiskProfile'
 import { SYSTEMATIC_LIVE_DESK } from '@/lib/trading/systematicDesk'
 import { getFeedMetricsSnapshot } from '@/lib/databento/feedLatencySelector'
 import { useInternetLatency } from '@/lib/trading/useInternetLatency'
@@ -73,14 +72,14 @@ export interface SessionGateState {
   attemptLadderLabel?: string
   /** Slot-2 / slot-3 unlock (NY: ib|lunch_range · Tokyo: us_range|ib) */
   rangeStrategy?: 'or30' | 'ib' | 'us_range' | null
-  tradeifyDayLocked?: boolean
-  tradeifyLockMessage?: string | null
-  tradeifyRefuseReason?: string | null
-  tradeifyMustFlatten?: boolean
-  tradeifyLeftoverDll?: number | null
-  tradeifyFloorRoom?: number | null
-  tradeifyStatus?: 'can_trade' | 'day_locked' | 'must_flatten' | null
-  tradeifyFlattenMontreal?: string | null
+  deskRiskLocked?: boolean
+  deskRiskLockMessage?: string | null
+  deskRiskRefuseReason?: string | null
+  deskRiskMustFlatten?: boolean
+  deskRiskLeftoverDll?: number | null
+  deskRiskFloorRoom?: number | null
+  deskRiskStatus?: 'can_trade' | 'day_locked' | 'must_flatten' | null
+  deskRiskFlattenMontreal?: string | null
 }
 
 /** Live banner clock — always Montreal (Eastern). */
@@ -142,7 +141,7 @@ export function SessionBanner({
   const prepFiredRef = useRef<string | null>(null)
   const [newsHazard, setNewsHazard] = useState<DeskNewsHazard | null>(null)
   const [newsUnavailable, setNewsUnavailable] = useState(false)
-  const [riskProfile, setRiskProfile] = useState<DeskRiskProfile>('tradeify_growth_50k')
+  const [riskProfile, setRiskProfile] = useState<DeskRiskProfile>('personal_futures')
   const [feedSnap, setFeedSnap] = useState(() => getFeedMetricsSnapshot())
   const internetLatency = useInternetLatency()
 
@@ -203,17 +202,13 @@ export function SessionBanner({
 
   useEffect(() => {
     if (!gate) return
-    if (
-      !isTradeifyGrowth50k(riskProfile) ||
-      !(gate.tradeifyDayLocked || gate.tradeifyMustFlatten)
-    )
-      return
+    if (!gate.deskRiskLocked && !gate.deskRiskMustFlatten) return
     if (!gate.canPlaceEntry) return
     const next = { ...gate, canPlaceEntry: false }
     setGate(next)
     onGate?.(next)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [riskProfile, gate?.tradeifyDayLocked, gate?.tradeifyMustFlatten])
+  }, [riskProfile, gate?.deskRiskLocked, gate?.deskRiskMustFlatten])
 
   const refresh = useCallback(async () => {
     try {
@@ -283,35 +278,36 @@ export function SessionBanner({
             json.rangeStrategy === 'us_range'
             ? json.rangeStrategy
             : null,
-        tradeifyDayLocked: !!(json.tradeify?.dayLocked || json.tradeify?.allowed === false),
-        tradeifyLockMessage:
-          typeof json.tradeify?.refuseMessage === 'string'
-            ? json.tradeify.refuseMessage
+        deskRiskLocked: !!(json.deskRisk?.dayLocked || json.deskRisk?.allowed === false || json.tradeify?.dayLocked),
+        deskRiskLockMessage:
+          typeof json.deskRisk?.refuseMessage === 'string'
+            ? json.deskRisk.refuseMessage
+            : typeof json.tradeify?.refuseMessage === 'string'
+              ? json.tradeify.refuseMessage
+              : null,
+        deskRiskRefuseReason:
+          typeof json.deskRisk?.refuseReason === 'string'
+            ? json.deskRisk.refuseReason
+            : typeof json.tradeify?.refuseReason === 'string'
+              ? json.tradeify.refuseReason
+              : null,
+        deskRiskMustFlatten: !!(json.deskRisk?.mustFlatten || json.tradeify?.mustFlatten),
+        deskRiskLeftoverDll:
+          typeof json.deskRisk?.leftoverDll === 'number' ? json.deskRisk.leftoverDll : null,
+        deskRiskFloorRoom:
+          typeof json.deskRisk?.floorRoom === 'number' ? json.deskRisk.floorRoom : null,
+        deskRiskStatus:
+          json.deskRisk?.status === 'must_flatten' ||
+          json.deskRisk?.status === 'day_locked' ||
+          json.deskRisk?.status === 'can_trade'
+            ? json.deskRisk.status
             : null,
-        tradeifyRefuseReason:
-          typeof json.tradeify?.refuseReason === 'string'
-            ? json.tradeify.refuseReason
-            : null,
-        tradeifyMustFlatten: !!json.tradeify?.mustFlatten,
-        tradeifyLeftoverDll:
-          typeof json.tradeify?.leftoverDll === 'number' ? json.tradeify.leftoverDll : null,
-        tradeifyFloorRoom:
-          typeof json.tradeify?.floorRoom === 'number' ? json.tradeify.floorRoom : null,
-        tradeifyStatus:
-          json.tradeify?.status === 'must_flatten' ||
-            json.tradeify?.status === 'day_locked' ||
-            json.tradeify?.status === 'can_trade'
-            ? json.tradeify.status
-            : null,
-        tradeifyFlattenMontreal:
-          typeof json.tradeify?.flattenMontreal === 'string'
-            ? json.tradeify.flattenMontreal
+        deskRiskFlattenMontreal:
+          typeof json.deskRisk?.flattenMontreal === 'string'
+            ? json.deskRisk.flattenMontreal
             : null,
       }
-      if (
-        isTradeifyGrowth50k(getDeskRiskProfile()) &&
-        (next.tradeifyDayLocked || next.tradeifyMustFlatten)
-      ) {
+      if (next.deskRiskLocked || next.deskRiskMustFlatten) {
         next.canPlaceEntry = false
       }
       setGate(next)
@@ -631,7 +627,7 @@ export function SessionBanner({
         {asiaOrderLive && (
           <span
             className="rounded bg-lime-500/25 px-2 py-0.5 text-lime-200 font-semibold text-xs border border-lime-500/40"
-            title="Overnight Asia range qualified — place both stop orders on Tradovate after 02:00 Montreal. Flatten 10:25."
+            title="Overnight Asia range qualified — bracket setup after 02:00 Montreal. Session window through 10:25."
           >
             ASIA DESK · BOTH STOPS
           </span>

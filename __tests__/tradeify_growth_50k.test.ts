@@ -195,8 +195,8 @@ assert(fatRoom.riskDollars <= fatRoom.stepDollars, 'never above step')
 
 assert(TRADEIFY_STARTING_BALANCE === 50_000, '50k account')
 
-assert(parseDeskRiskProfile('tradeify_growth_50k') === 'tradeify_growth_50k', 'parse tradeify')
-assert(parseDeskRiskProfile('Tradeify') === 'tradeify_growth_50k', 'parse alias')
+assert(parseDeskRiskProfile('tradeify_growth_50k') === 'personal_futures', 'parse tradeify')
+assert(parseDeskRiskProfile('Tradeify') === 'personal_futures', 'parse alias')
 assert(parseDeskRiskProfile('oanda_cash') === 'oanda_cash', 'parse oanda')
 assert(!isTradeifyGrowth50k(null), 'null is oanda')
 
@@ -287,7 +287,7 @@ const crudeFill = {
   risk_amount: 10,
 }
 const offDesk = summarizeTradeifyFills([goldFill, crudeFill], nasdaqTue)
-assert(offDesk.fillsUsed === 2, 'Tradovate gold/crude count as fills')
+assert(offDesk.fillsUsed === 2, 'CME gold/crude count as fills')
 approxEqual(offDesk.dailyPnl ?? 0, 44.36, 0.01, 'gold+crude pnl')
 const offDash = buildTradeifyDashboardPayload({ ...offDesk, fills: [goldFill, crudeFill] }, nasdaqTue)
 assert(offDash.byInstrument.GOLD.fills === 1, 'gold break')

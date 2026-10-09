@@ -32,7 +32,7 @@ type DeskQuote = {
 }
 
 async function getIndexQuote(instrument: Instrument): Promise<DeskQuote | null> {
-  // Yahoo CME (MYM/MNQ) for session OHLC — same scale as Tradovate / live chart IB.
+  // Yahoo CME (MYM/MNQ) for session OHLC — same scale as CME futures / live chart IB.
   // Current last prefers OANDA+basis: Yahoo's CME last is ~10 minutes delayed.
   try {
     const [y, oanda] = await Promise.all([
@@ -73,7 +73,7 @@ async function getIndexQuote(instrument: Instrument): Promise<DeskQuote | null> 
   } catch {
     /* fall through */
   }
-  // Never Finnhub ETF proxies for commodities (GLD/USO/SLV) — wrong scale vs Tradovate MGC/CL/SIL.
+  // Never Finnhub ETF proxies for commodities (GLD/USO/SLV) — wrong scale vs CME futures MGC/CL/SIL.
   if (instrument === 'GOLD' || instrument === 'CRUDE' || instrument === 'SILVER') {
     return null
   }

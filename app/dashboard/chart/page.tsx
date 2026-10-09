@@ -16,7 +16,7 @@ import {
   type FilledOrder,
   type PendingLimitOrder,
   limitWouldFill,
-} from './components/LevelOrderTicket'
+} from '@/lib/trading/workingLimitOrders'
 import type {
   StrategyRangeEdges,
   StrategyRiskMagnets,
@@ -1497,116 +1497,6 @@ export default function ChartPage() {
   )
   handlePlacedRef.current = handlePlaced
 
-  const handleLeoPlaceOrder = useCallback(
-    async (order: {
-      instrument: string
-      direction: 'LONG' | 'SHORT'
-      price: number
-      stopLoss: number
-      profitTarget: number
-      reason: string
-      size?: number
-    }) => {
-      try {
-        const fillPrice = order.price || livePriceRef.current || 0
-        if (!fillPrice || fillPrice <= 0) {
-          return { success: false, message: 'Live price unavailable to execute order' }
-        }
-        const targetInst = (order.instrument || instrument) as Instrument
-
-        if (targetInst !== instrument) {
-          setInstrument(targetInst)
-        }
-
-        const res = await fetch('/api/trading/positions/open', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            instrument: targetInst,
-            entry_price: fillPrice,
-            entry_direction: order.direction,
-            entry_window: 1,
-            account_size: 50000,
-            regime: order.direction === 'LONG' ? 'bullish' : 'bearish',
-            regime_confidence: 90,
-            entry_source: 'ai',
-            is_leo_order: true,
-            stop_loss_price: order.stopLoss,
-            profit_target_price: order.profitTarget,
-            entry_reason: `Leo AI Order: ${order.direction} ${targetInst} @ ${fillPrice}. ${order.reason}`,
-            auction_ticket: true,
-            risk_profile: 'tradeify_growth_50k',
-          }),
-        })
-        const json = await res.json()
-        if (res.ok && json.success) {
-          enterManage(
-            {
-              position_id: json.position_id,
-              entry_price: json.entry_price ?? fillPrice,
-              stop_loss_price: json.stop_loss_price ?? order.stopLoss,
-              position_size: json.position_size ?? order.size ?? 1,
-              risk_amount: json.risk_amount ?? 150,
-              entry_direction: order.direction,
-              profit_target_price: json.profit_target_price ?? order.profitTarget,
-              entry_source: 'ai',
-            },
-            targetInst
-          )
-          window.setTimeout(() => jumpToPriceRef.current?.(fillPrice), 150)
-          return { success: true, position_id: json.position_id, message: json.message }
-        } else {
-          // If server desk gate or broker rejects (e.g. cash close, Tradeify session cap, offline dev),
-          // STILL mount the order on the chart as a live desk / simulation position so the trader can see it!
-          const simId = `leo-sim-${Date.now()}`
-          const riskAmt = Math.abs(fillPrice - order.stopLoss) * (order.size ?? 1)
-          enterManage(
-            {
-              position_id: simId,
-              entry_price: fillPrice,
-              stop_loss_price: order.stopLoss,
-              position_size: order.size ?? 1,
-              risk_amount: Number.isFinite(riskAmt) && riskAmt > 0 ? riskAmt : 150,
-              entry_direction: order.direction,
-              profit_target_price: order.profitTarget,
-              entry_source: 'ai',
-            },
-            targetInst
-          )
-          window.setTimeout(() => jumpToPriceRef.current?.(fillPrice), 150)
-          return {
-            success: true,
-            position_id: simId,
-            message: `Position mounted on chart (${json?.message || 'Desk Simulation Mode'})`,
-          }
-        }
-      } catch (err: any) {
-        // Network or fetch error: still mount on chart for the trader
-        const simId = `leo-sim-${Date.now()}`
-        const fillPrice = order.price || livePriceRef.current || 0
-        const targetInst = (order.instrument || instrument) as Instrument
-        if (fillPrice > 0) {
-          enterManage(
-            {
-              position_id: simId,
-              entry_price: fillPrice,
-              stop_loss_price: order.stopLoss,
-              position_size: order.size ?? 1,
-              risk_amount: Math.abs(fillPrice - order.stopLoss) * (order.size ?? 1),
-              entry_direction: order.direction,
-              profit_target_price: order.profitTarget,
-              entry_source: 'ai',
-            },
-            targetInst
-          )
-          window.setTimeout(() => jumpToPriceRef.current?.(fillPrice), 150)
-        }
-        return { success: true, position_id: simId, message: 'Position mounted on chart (Offline fallback)' }
-      }
-    },
-    [enterManage, instrument, setInstrument]
-  )
-
   // Every-tick working-limit check lives behind a ref so TradingChart's hot
   // callback stays stable. fillingRef inside fillPending deduplicates bursts.
   useEffect(() => {
@@ -2329,7 +2219,6 @@ export default function ChartPage() {
               clockedIn={clockedIn}
               useCall={false}
               levelsRefreshKey={levelsRefreshKey}
-              onPlaceOrder={handleLeoPlaceOrder}
             />
           )}
         </div>

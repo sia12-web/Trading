@@ -31,6 +31,7 @@ import {
   getDeskRiskProfile,
   isTradeifyGrowth50k,
   DESK_RISK_PROFILE_EVENT,
+  type DeskRiskProfile,
 } from '@/lib/trading/tradeifyProfile'
 import {
   TRADEIFY_STARTING_BALANCE,
@@ -523,9 +524,7 @@ function SimulationDeskInner() {
   const lunchAttemptsRef = useRef(0)
   const stopHitsRef = useRef(0)
   const [accountSize] = useState(TRADEIFY_STARTING_BALANCE)
-  const [riskProfile, setRiskProfile] = useState<'oanda_cash' | 'tradeify_growth_50k'>(
-    'tradeify_growth_50k'
-  )
+  const [riskProfile, setRiskProfile] = useState<DeskRiskProfile>('personal_futures')
   const [riskBox, setRiskBox] = useState<DeskRiskBoxState | null>(null)
   const riskBoxRef = useRef<DeskRiskBoxState | null>(null)
   riskBoxRef.current = riskBox

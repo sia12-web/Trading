@@ -1,8 +1,8 @@
-# Broker & Prop Firm Integrations: Questrade & TopstepX
+# Broker & Futures Integrations: Questrade & Institutional Ledger
 
 > **TradePulse Execution & Portfolio Layer**  
 > **Live Broker Integration**: Questrade (OAuth API, Multi-Day Swings, Intelligent Delayed TP/SL Pairing)  
-> **Prop Firm Integration**: TopstepX ($1,500 Challenge, Zero-Base Prop Equity Engine, 66 Trades Ledger)  
+> **Futures Ledger Integration**: Personal Futures Desk Ledger & Daily Equity Engine  
 
 ---
 
@@ -89,47 +89,21 @@ Verified against live Questrade account data:
 
 ---
 
-## 3. TopstepX Prop Firm Challenge ($1,500 Target)
+## 3. Personal Futures Desk Ledger & Equity Architecture
 
-TradePulse provides automated synchronization with the official **TopstepX $1,500 Challenge**:
+TradePulse maintains continuous telemetry and risk analytics for the personal futures desk ledger:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│ 🏆 TOPSTEPX 1.5K CHALLENGE (Account: 1.5KCHCR-LABS004-V2-675081-67067724)│
+│ 📊 FUTURES DESK LEDGER (Personal Account)                              │
 ├────────────────────────────────────────────────────────────────────────┤
-│ Live P&L:      +$183.64        Target:         +$1,500.00              │
-│ Max Loss Floor: -$500.00        Live Cushion:   $683.64 (Safe)          │
-│ Total Trades:  66 Executions   Win Rate:       56.06% (37W / 29L)      │
-│ Profit Factor: 1.23            Direction:      48 Long / 18 Short      │
+│ Desk Balance:  $50,000.00      Daily Loss Limit:  $500.00               │
+│ Risk per Trade: $50.00         Max Daily Fills:   5 Fills               │
+│ Mode:          Read-Only       Execution:         Disabled (Zero Orders)│
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.1 Zero-Base Prop Firm Equity Architecture
-- Standard broker accounts start with cash balances (e.g. $50,000).
-- Prop firm challenge accounts operate on a **zero-base evaluation scale**:
-  - The challenge goal is to generate **+$1,500.00 in cumulative net P&L**.
-  - The failure boundary (Max Loss Limit / MLL) is **-$500.00 in net P&L**.
-- In `lib/trading/journalHistory.ts`, TradePulse supports `account_size: 0`:
-  - Prevents the UI from adding an arbitrary $50,000 base.
-  - Correctly renders equity as `$183.64` and live cushion as:
-    $$\text{Live Cushion} = \text{Current Net P\&L} - \text{MLL Floor} = 183.64 - (-500.00) = \$683.64$$
-
-### 3.2 66-Trade Verified Ledger
-The challenge metrics are backed by 66 verified trades:
-
-| Metric | Official TopstepX Value |
-| :--- | :--- |
-| **Net P&L** | **+$183.64** |
-| **Total Orders** | **66 Executed Orders (68 Total Lots)** |
-| **Win Rate** | **56.06% (37 Wins / 29 Losses)** |
-| **Profit Factor** | **1.23** (-$803.92 losses / +$987.56 wins) |
-| **Avg Win / Loss** | **+$26.69** / **-$27.72** |
-| **Best / Worst** | **+$134.58** / **-$59.04** |
-| **Trade Direction** | **72.73% Long (48 Long / 18 Short)** |
-
-#### Daily Performance Ledger
-- **2026-09-08**: -$231.50 (Initial consolidation drawdown)
-- **2026-09-09**: +$274.12 (Strong morning trend expansion)
-- **2026-09-10**: +$109.34 (Disciplined scalps)
-- **2026-09-11**: +$31.68 (Continuation gains)
-- **Total Cumulative Net Return**: **+$183.64**
+### 3.1 Strict Read-Only Market Telemetry
+- TradePulse operates exclusively in **Read-Only Market Monitoring Mode**.
+- Neither Leo AI nor the user interface submits live order tickets to brokers.
+- Signals, Wyckoff structural alerts, and risk telemetry are delivered as decision-support guidance for manual off-platform execution.

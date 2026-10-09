@@ -236,7 +236,7 @@ export class PositionSizer {
   }
 
   /**
-   * Size from a fixed dollar stop (Tradeify $400 / $250 / $150).
+   * Size from a fixed dollar stop (Desk $400 / $250 / $150).
    * Does not use OANDA % of live NAV.
    */
   calculatePositionFromRiskAmount(
@@ -438,7 +438,7 @@ export function previewPositionSizing(
   }
 }
 
-/** Client preview using a fixed dollar stop (Tradeify profile). */
+/** Client preview using a fixed dollar stop (Desk risk profile). */
 export function previewPositionSizingFromRiskAmount(
   entryPrice: number,
   accountSize: number,

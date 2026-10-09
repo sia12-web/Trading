@@ -52,13 +52,13 @@ export function liveDeskIndexHint(instrument: string | null | undefined): string
     return 'Micro Nasdaq MNQ — Nasdaq-100 points (~30k). Match TradingView MNQ, not MYM/Dow (~53k).'
   }
   if (instrument === 'GOLD') {
-    return 'Micro Gold MGC — match Tradovate MGC / TradingView MGC1!, not full GC.'
+    return 'Micro Gold MGC — match CME MGC / TradingView MGC1!, not full GC.'
   }
   if (instrument === 'CRUDE') {
-    return 'Crude oil CL — match Tradovate CL / TradingView CL1!. Shared 3-fill desk with indexes + gold.'
+    return 'Crude oil CL — match CME CL / TradingView CL1!. Shared 3-fill desk with indexes + gold.'
   }
   if (instrument === 'SILVER') {
-    return 'Micro Silver SIL — match Tradovate SIL / TradingView SIL1! or SI1!. Shared 3-fill desk with NY markets.'
+    return 'Micro Silver SIL — match CME SIL / TradingView SIL1! or SI1!. Shared 3-fill desk with NY markets.'
   }
   if (instrument === 'NIKKEI') {
     return 'CME Nikkei NKD — USD futures ($5/pt). Tokyo cash session anchors price action (09:00–15:00 JST).'

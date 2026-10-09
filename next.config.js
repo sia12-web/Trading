@@ -9,7 +9,7 @@ const nextConfig = {
   },
 
   // Next 14 silently ignores instrumentation.ts without this. It is what starts the
-  // Tradeify flatten watchdog, the Asia desk watch and the Databento live session.
+  // Asia desk watch and the Databento live session.
   experimental: {
     instrumentationHook: true,
   },

@@ -11,7 +11,6 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { entrySourceLabel, entrySourceTone } from '@/lib/trading/entrySourceBadge'
 import { formatDeskMoney } from '@/lib/trading/currency'
 import { RANGE_EDGE_RISK_PERCENT } from '@/lib/trading/positionSizing'
-import type { TopstepXChallengeState } from '@/lib/trading/topstepXChallenge'
 
 import { SYSTEMATIC_LIVE_DESK } from '@/lib/trading/systematicDesk'
 
@@ -229,7 +228,6 @@ function JournalPageInner() {
   const [summary, setSummary] = useState<Summary | null>(null)
   const [entries, setEntries] = useState<JournalEntry[]>([])
   const [expanded, setExpanded] = useState<string | null>(null)
-  const [topstepxChallenge, setTopstepxChallenge] = useState<TopstepXChallengeState | null>(null)
   const [copiedTicket, setCopiedTicket] = useState<string | null>(null)
 
   const formatCopyCommand = (e: JournalEntry): string => {
@@ -308,23 +306,19 @@ function JournalPageInner() {
         setError(json.error || json.detail || 'Failed to load order history')
         setEntries([])
         setSummary(null)
-        setTopstepxChallenge(null)
         return
       }
       if (tab === 'sim') {
         setEntries((json.entries || []).map((e: Record<string, unknown>) => mapSimEntry(e)))
         setSummary(json.summary || null)
-        setTopstepxChallenge(null)
       } else {
         setSummary(json.summary)
         setEntries(json.entries || [])
-        setTopstepxChallenge(json.topstepx_challenge || null)
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load order history')
       setEntries([])
       setSummary(null)
-      setTopstepxChallenge(null)
     } finally {
       setLoading(false)
     }
@@ -565,16 +559,16 @@ function JournalPageInner() {
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="text-[10px] uppercase tracking-wider text-gray-500">
-                  Desk equity · TopstepX Prop Firm Account {topstepxChallenge?.accountId || '1.5KCHCR-LABS004-V2-675081-67067724'}
+                  Desk Equity · Futures Account
                 </div>
                 <div className="text-[10px] font-mono text-emerald-400">
-                  LIVE · MLL Floor: -$500.00 · BAL: ${summary.ending_equity?.toFixed(2) ?? '400.46'}
+                  LIVE · BAL: ${summary.ending_equity?.toFixed(2) ?? '0.00'}
                 </div>
               </div>
               <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
                 <div>
                   <div className="text-[10px] text-gray-500 uppercase">
-                    Challenge Base
+                    Starting Base
                   </div>
                   <div className="price-mono text-lg text-white">
                     {fmtMoney(summary.starting_account ?? 0)}
@@ -582,9 +576,9 @@ function JournalPageInner() {
                 </div>
                 <div className="text-gray-600 text-xl pb-0.5">→</div>
                 <div>
-                  <div className="text-[10px] text-gray-500 uppercase">TopstepX Prop Firm Equity</div>
+                  <div className="text-[10px] text-gray-500 uppercase">Current Desk Equity</div>
                   <div className="price-mono text-lg text-white font-bold text-emerald-400">
-                    {fmtMoney(summary.ending_equity ?? summary.starting_account ?? 400.46)}
+                    {fmtMoney(summary.ending_equity ?? summary.starting_account ?? 0)}
                   </div>
                 </div>
                 <div className="ml-auto text-right">
@@ -601,7 +595,7 @@ function JournalPageInner() {
                 </div>
               </div>
               <p className="mt-2 text-[11px] text-gray-500">
-                Desk equity is strictly synced with TopstepX Prop Firm account 1.5KCHCR-LABS004-V2-675081-67067724. Cushion to -$500 floor: <strong className="text-emerald-300">${topstepxChallenge ? topstepxChallenge.remainingRoomToBreach.toFixed(2) : '900.46'}</strong>.
+                Desk equity and performance tracking for live futures journal.
               </p>
             </div>
 
@@ -851,9 +845,9 @@ function JournalPageInner() {
                                   }
                                 }}
                                 className="rounded border border-[#30363d] bg-[#0d1117] px-2 py-0.5 text-[10px] font-semibold text-gray-300 hover:text-white hover:border-gray-500 transition-colors"
-                                title="Copy order format for TopstepX / Tradovate"
+                                 title="Copy trade ticket details"
                               >
-                                {copiedTicket === e.id ? '✓ Copied!' : '📋 Copy TopstepX'}
+                                {copiedTicket === e.id ? '✓ Copied!' : '📋 Copy Ticket'}
                               </button>
                               {pnl != null && (
                                 <span
@@ -871,7 +865,7 @@ function JournalPageInner() {
 
                             {open && (
                               <div className="border-t border-[#30363d] px-4 py-4 space-y-4 text-sm">
-                                {/* TopstepX P&L and Fees Breakdown */}
+                                {/* Trade P&L and Fees Breakdown */}
                                 {e.pnl.gross_dollars != null && e.pnl.fees != null && (
                                   <div className="flex flex-wrap gap-4 text-xs rounded-lg border border-[#30363d] bg-[#0d1117] px-3 py-2">
                                     <span className="text-gray-500">

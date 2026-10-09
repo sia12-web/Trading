@@ -1,6 +1,6 @@
 /**
  * GET /api/trading/quote?instrument=DOW
- * Live OANDA mid shifted by CME basis so the tip matches Tradovate MYM / MNQ / MGC / CL.
+ * Live OANDA mid shifted by CME basis so the tip matches CME MYM / MNQ / MGC / CL.
  * Delayed Yahoo futures lasts are never served as the live price.
  */
 

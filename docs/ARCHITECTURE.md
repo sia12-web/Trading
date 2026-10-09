@@ -11,7 +11,7 @@
 
 ## 1. High-Level Architecture & System Topology
 
-TradePulse is an event-driven institutional day and swing trading workstation. It integrates multi-source market data pipelines (CME Globex MDP 3.0 via Databento, OANDA continuous CFDs with CME basis adjustments, and Yahoo Finance Daily macro history), proprietary auction market analytics (5-Month Anchored VWAP with SD bands, 5-Day FRVP, Initial Balance, Dalton Spikes), broker portfolio tracking (Questrade live OAuth & TopstepX prop firm challenge), and an intelligent trading copilot (Leo AI with the 22-Rule Wyckoff Playbook and persistent Long-Term Memory zones).
+TradePulse is an event-driven institutional day and swing trading workstation. It integrates multi-source market data pipelines (CME Globex MDP 3.0 via Databento, OANDA continuous CFDs with CME basis adjustments, and Yahoo Finance Daily macro history), proprietary auction market analytics (5-Month Anchored VWAP with SD bands, 5-Day FRVP, Initial Balance, Dalton Spikes), broker portfolio tracking (Questrade live OAuth & personal futures desk ledger), and an intelligent trading copilot (Leo AI with the 22-Rule Wyckoff Playbook and persistent Long-Term Memory zones).
 
 ```mermaid
 graph TD
@@ -32,7 +32,7 @@ graph TD
         API_Context["/api/trading/context-55 (5M AVWAP, YDay NYC, ON Inventory)"]
         API_Positions["/api/trading/current-position & positions/*"]
         API_Questrade["/api/trading/questrade/book (Live Broker)"]
-        API_Journal["/api/trading/journal & sim-journal (TopstepX Sync)"]
+        API_Journal["/api/trading/journal & sim-journal (Desk Journal Sync)"]
         API_Tape["/api/trading/team-tape & ingest (Multi-Day Swings)"]
         API_Leo["/api/trading/leo/chat, memories, notify"]
         API_Desk["/api/trading/clock-in, clock-out, session-gate, playbook"]
@@ -151,7 +151,7 @@ The platform utilizes a structured relational schema enforcing strict Row-Level 
 | **Wyckoff Playbook Engine** | `lib/ai/leoAssistant.ts`, `WyckoffRulesPanel.tsx` | 22-Rule Wyckoff system prompt, 4 valid trade setups |
 | **Audio Engine** | Web Audio API (`AudioContext`) | Real-time dual-tone synthesizers, zero latency |
 | **Market Data Providers**| Databento, OANDA v20, Yahoo Finance | CME Globex MDP 3.0, 24/7 CFDs, Daily macro data |
-| **Broker Integrations** | Questrade API, TopstepX | OAuth portfolio sync, prop firm challenge tracking |
+| **Broker Integrations** | Questrade API | Live OAuth equity & position sync |
 | **Database & Auth** | Supabase (PostgreSQL, RLS) | Secure persistence, session auth, audit logs |
 | **Language & Runtime** | TypeScript 5.4, Node.js 18+ | Strict type safety, deterministic mathematical execution |
 

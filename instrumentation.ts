@@ -38,8 +38,6 @@ export async function register() {
   const isRailway = Boolean(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID)
   const isBuild = process.env.NEXT_PHASE === 'phase-production-build'
   if (isRailway && process.env.NODE_ENV === 'production' && !isBuild) {
-    const { startTradeifyFlattenWatch } = await import('./lib/trading/tradeifyFlattenWatch')
-    startTradeifyFlattenWatch()
     const { startAsiaDeskWatch } = await import('./lib/trading/asiaDeskWatch')
     startAsiaDeskWatch()
   }

@@ -124,15 +124,6 @@ interface LeoAssistantPanelProps {
   externalPrompt?: string | null
   onClearExternalPrompt?: () => void
   onClosePosition?: (reason: string) => Promise<boolean | void>
-  onPlaceOrder?: (order: {
-    instrument: string
-    direction: 'LONG' | 'SHORT'
-    price: number
-    stopLoss: number
-    profitTarget: number
-    reason: string
-    size?: number
-  }) => Promise<LeoOrderResult>
   onOverrideDayType?: (evalResult: DayTypeEvaluation | null) => void
 }
 
@@ -159,7 +150,6 @@ export function LeoAssistantPanel({
   externalPrompt,
   onClearExternalPrompt,
   onClosePosition,
-  onPlaceOrder: _onPlaceOrder,
   onOverrideDayType,
 }: LeoAssistantPanelProps) {
   const [internalIsOpen, setInternalIsOpen] = useState(false)
@@ -648,42 +638,6 @@ export function LeoAssistantPanel({
           },
         ])
         speakText(`Leo recommends closing position: ${reason}. Manual confirmation required.`)
-      } else if (d.action === 'PLACE_ORDER' || d.action === 'OPEN_POSITION') {
-        const inst = canonicalizeInstrument(d.instrument || context.instrument)
-        const dir = (d.direction || 'LONG').toUpperCase() as 'LONG' | 'SHORT'
-        const px = Number(d.price || context.currentPrice || 0)
-
-        const { slDist, tpDist } = getInstrumentDefaultDistances(inst)
-        let sl = d.stopLoss ? Number(d.stopLoss) : undefined
-        let tp = d.profitTarget ? Number(d.profitTarget) : undefined
-
-        // Validate and prevent bracket inversion
-        if (dir === 'LONG') {
-          if (!sl || sl >= px) {
-            sl = Number((px - slDist).toFixed(2))
-          }
-          if (!tp || tp <= px) {
-            tp = Number((px + tpDist).toFixed(2))
-          }
-        } else {
-          // SHORT
-          if (!sl || sl <= px) {
-            sl = Number((px + slDist).toFixed(2))
-          }
-          if (!tp || tp >= px) {
-            tp = Number((px - tpDist).toFixed(2))
-          }
-        }
-
-        const reason = d.reason || 'Trader situation notification request'
-        notifySituation({
-          instrument: inst,
-          direction: dir,
-          price: px,
-          stopLoss: sl,
-          profitTarget: tp,
-          reason,
-        })
       } else if (d.action === 'ARM_CONDITIONAL_ENTRY' || d.action === 'ARM_LVN_BULL_ENG_RULE') {
         const inst = canonicalizeInstrument(d.instrument || context.instrument)
         const dir: 'LONG' | 'SHORT' = (d.direction || 'LONG').toUpperCase() as 'LONG' | 'SHORT'

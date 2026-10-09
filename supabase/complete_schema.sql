@@ -1509,7 +1509,7 @@ CREATE POLICY "team_signals_all"
 -- ==========================================
 -- Migration: 20260818_trades_journal_gold_crude.sql
 -- ==========================================
--- Tradovate off-desk fills (MGC / CL) can land in live order history.
+-- CME Globex off-desk fills (MGC / CL) can land in live order history.
 ALTER TABLE trades_journal DROP CONSTRAINT IF EXISTS trades_journal_instrument_check;
 ALTER TABLE trades_journal
   ADD CONSTRAINT trades_journal_instrument_check
@@ -1519,7 +1519,7 @@ ALTER TABLE trades_journal
 -- ==========================================
 -- Migration: 20260819_trades_journal_russell.sql
 -- ==========================================
--- Tradovate E-mini Russell (RTY) fills can land in live order history.
+-- CME Globex E-mini Russell (RTY) fills can land in live order history.
 ALTER TABLE trades_journal DROP CONSTRAINT IF EXISTS trades_journal_instrument_check;
 ALTER TABLE trades_journal
   ADD CONSTRAINT trades_journal_instrument_check

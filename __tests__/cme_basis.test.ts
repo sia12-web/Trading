@@ -1,5 +1,5 @@
 /**
- * CME vs OANDA basis — live ticks must sit on Tradovate scale.
+ * CME vs OANDA basis — live ticks must sit on CME futures scale.
  * Run: npx tsx __tests__/cme_basis.test.ts
  */
 

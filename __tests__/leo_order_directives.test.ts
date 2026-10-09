@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { parseLeoDirectives } from '../lib/ai/leoAssistant.ts'
 
-test('parseLeoDirectives - PLACE_ORDER directive', () => {
+test('parseLeoDirectives - rejects PLACE_ORDER directive in read-only mode', () => {
   const text = `
 Roger that! Placing LONG order on NASDAQ at 21,500.00.
 Stop Loss: 21,475.00, Take Profit: 21,550.00.
@@ -21,18 +21,11 @@ Stop Loss: 21,475.00, Take Profit: 21,550.00.
 </execute>
 `
   const directives = parseLeoDirectives(text)
-  assert.equal(directives.length, 1)
-  const d = directives[0] as any
-  assert.equal(d.action, 'PLACE_ORDER')
-  assert.equal(d.instrument, 'NASDAQ')
-  assert.equal(d.direction, 'LONG')
-  assert.equal(d.price, 21500)
-  assert.equal(d.stopLoss, 21475)
-  assert.equal(d.profitTarget, 21550)
-  assert.equal(d.size, 1)
+  // Strict Read-Only: order placement is rejected
+  assert.equal(directives.length, 0)
 })
 
-test('parseLeoDirectives - OPEN_POSITION directive (alias)', () => {
+test('parseLeoDirectives - rejects OPEN_POSITION directive (read-only mode)', () => {
   const text = `
 Executing trade:
 <execute>
@@ -48,12 +41,8 @@ Executing trade:
 </execute>
 `
   const directives = parseLeoDirectives(text)
-  assert.equal(directives.length, 1)
-  const d = directives[0] as any
-  assert.equal(d.action, 'OPEN_POSITION')
-  assert.equal(d.instrument, 'DOW')
-  assert.equal(d.direction, 'SHORT')
-  assert.equal(d.price, 39800)
+  // Strict Read-Only: order placement is rejected
+  assert.equal(directives.length, 0)
 })
 
 test('parseLeoDirectives - CLOSE_POSITION directive', () => {
@@ -132,11 +121,11 @@ test('parseLeoDirectives - ARM_STAGNATION_RULE with string minutes and trailing 
   assert.equal(d.requireProfitPoints, 2)
 })
 
-test('parseLeoDirectives - COPY_TOPSTEPX_ORDER with string fields', () => {
+test('parseLeoDirectives - rejects COPY_ORDER in read-only mode', () => {
   const text = `
 <execute>
 {
-  "action": "COPY_TOPSTEPX_ORDER",
+  "action": "COPY_ORDER",
   "contract": "MYMU26",
   "direction": "BUY",
   "quantity": "2",
@@ -149,14 +138,7 @@ test('parseLeoDirectives - COPY_TOPSTEPX_ORDER with string fields', () => {
 </execute>
 `
   const directives = parseLeoDirectives(text)
-  assert.equal(directives.length, 1)
-  const d = directives[0] as any
-  assert.equal(d.action, 'COPY_TOPSTEPX_ORDER')
-  assert.equal(d.quantity, 2)
-  assert.equal(d.entryPrice, 52500.25)
-  assert.equal(d.stopLoss, 52400.0)
-  assert.equal(d.takeProfit, 52700.0)
-  assert.equal(d.dollarRisk, 100)
-  assert.equal(d.dollarReward, 200)
+  // Strict Read-Only: order placement and copy execution rejected
+  assert.equal(directives.length, 0)
 })
 

@@ -1,6 +1,6 @@
 /**
  * Live Asia overnight book — locked Pine recipes (Dow <80/20 MYM, Gold <60/10 MGC).
- * Telegram + Trade Pulse OCO overlay. Tradovate tickets stay manual.
+ * Telegram + Trade Pulse OCO overlay. Desk orders stay manual.
  */
 
 import {

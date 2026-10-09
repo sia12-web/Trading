@@ -1,7 +1,7 @@
 # Trading Desk Operations, Session Framework & Risk Guard
 
 > **TradePulse Desk Operational Protocol**  
-> **Target Profiles**: Prop Firm Evaluation / Funded ($50,000 / $150,000) & Live Broker Accounts  
+> **Target Profiles**: Personal Futures ($50,000 Desk) & Live Broker Accounts  
 > **Trading Hours**: Structured Session Windows (Montreal EDT / UTC-4)  
 > **Security Baseline**: 100% On-Platform Privacy — Zero Telegram Telemetry Leakage  
 
@@ -74,23 +74,24 @@ Consistency in trading requires routine, preparation, and psychological discipli
 
 ---
 
-## 3. Risk Management & Prop Firm Constraints
+## 3. Risk Management & Personal Futures Desk Constraints
 
-The platform embeds institutional risk controls designed to pass and preserve prop firm evaluations (TopstepX, Tradeify, Apex):
+The platform embeds institutional risk controls and telemetry designed for personal futures accounts:
 
 | Risk Parameter | Default Constraint | Mechanism / System Action |
 | :--- | :--- | :--- |
-| **Max Dollar Risk Per Trade** | **$400.00** | Strict contract sizing calculation based on stop distance |
-| **Daily Loss Limit (DLL)** | **-$1,250.00** | Immediate circuit-breaker lock; disables order placement |
-| **Max Trailing Drawdown** | **-$2,000.00** | Absolute liquidation boundary relative to high-water mark |
-| **Green Day Lock** | **+$700.00** | Halts new entries once daily net profit reaches +$700 |
-| **Attempt Ladder** | **3 Attempts Max** | Locks desk trading after 3 stop-out executions per day |
+| **Max Dollar Risk Per Trade** | **$50.00** | Strict contract sizing calculation based on stop distance |
+| **Daily Loss Limit (DLL)** | **-$500.00** | Immediate circuit-breaker lock; halts trade signals |
+| **Max Trailing Drawdown** | **-$1,000.00** | Absolute risk boundary relative to high-water mark |
+| **Green Day Lock** | **+$700.00** | Halts new signals once daily net profit reaches +$700 |
+| **Attempt Ladder** | **5 Attempts Max** | Locks desk signals after max stop-out executions per day |
 | **Reward-to-Risk Ratio** | **$\ge 2.0\text{R}$ Filter** | Take-profit distance must be at least 2.0x stop distance |
+| **Execution Policy** | **Strict Read-Only** | Neither user nor Leo executes live orders; purely monitoring |
 
 ### 3.1 Position Sizing Formula
-Every order's contract quantity is calculated deterministically from the user's defined risk limit:
+Every setup's suggested contract quantity is calculated deterministically from the user's defined risk limit:
 
-$$\text{Contracts} = \left\lfloor \frac{\text{Dollar Risk Limit (\$400)}}{\text{Stop Loss Distance (pts)} \times \text{Point Value (\$/pt)}} \right\rfloor$$
+$$\text{Contracts} = \left\lfloor \frac{\text{Dollar Risk Limit (\$50)}}{\text{Stop Loss Distance (pts)} \times \text{Point Value (\$/pt)}} \right\rfloor$$
 
 ---
 

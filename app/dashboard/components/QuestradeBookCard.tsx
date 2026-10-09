@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Questrade book — see only. Transfer preview is Tradeify $ on DOW/NASDAQ.
+ * Questrade book — see only. Transfer preview is CME futures on DOW/NASDAQ.
  */
 
 import { useCallback, useEffect, useState } from 'react'

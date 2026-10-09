@@ -247,7 +247,7 @@ assert.ok(transfer.ticket)
 assert.equal(transfer.ticket!.symbol, 'MNQ')
 assert.notEqual(transfer.ticket!.entry, 306.71)
 assert.ok(transfer.ticket!.entry > 1000)
-assert.match(transfer.note, /not your Tradovate size/)
+assert.match(transfer.note, /not your broker size/)
 
 const noIndex = buildQuestradeTradeifyTransfer({
   row: msft,

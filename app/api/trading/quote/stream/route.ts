@@ -1,6 +1,6 @@
 /**
  * GET /api/trading/quote/stream?instrument=DOW
- * Server-Sent Events — OANDA ticks shifted onto CME (Tradovate MYM / MNQ / MGC / CL) scale.
+ * Server-Sent Events — OANDA ticks shifted onto CME (MYM / MNQ / MGC / CL) scale.
  */
 
 import { getDayPreviousClose, refreshDayPreviousClose, getYahooQuote } from '@/lib/yahoo/quote'
@@ -177,7 +177,7 @@ export async function GET(request: Request) {
 
       /**
        * Ticks are withheld until a basis exists: an unshifted OANDA mid is tens
-       * of points off Tradovate and nothing downstream can tell the two apart.
+       * of points off CME futures and nothing downstream can tell the two apart.
        */
       const flushPending = () => {
         if (pendingSent || !pending) return

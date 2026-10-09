@@ -6,10 +6,10 @@
 
 import { takeProfitFromStopR } from '@/lib/trading/positionSizing'
 import {
-  buildTradovateMirrorTicket,
+  buildCmeDeskTicket,
   type DeskIndex,
-  type TradovateMirrorTicket,
-} from '@/lib/trading/tradovateMirror'
+  type CmeDeskTicket,
+} from '@/lib/trading/cmeContracts'
 import { suggestTradeifyIndex, type QuestradeBookRow } from '@/lib/trading/questradeOrders'
 import type { TeamCopyAdvice } from '@/lib/trading/teamTape'
 import { teamTapeTarget1_5R, withSignalTarget } from '@/lib/trading/teamTape'
@@ -42,7 +42,7 @@ export type QuestradeTradeifyTransfer = {
   sessionReset: boolean
   canSize: boolean
   advice: TeamCopyAdvice
-  ticket: TradovateMirrorTicket | null
+  ticket: CmeDeskTicket | null
   note: string
 }
 
@@ -163,7 +163,7 @@ export function buildQuestradeTradeifyTransfer(args: {
     target: stockTarget,
     status: args.row.status,
   })
-  let ticket: TradovateMirrorTicket | null = null
+  let ticket: CmeDeskTicket | null = null
   if (
     (copyRisk.canSize || copyRisk.sessionReset) &&
     indexEntry != null &&
@@ -171,7 +171,7 @@ export function buildQuestradeTradeifyTransfer(args: {
     levels.target != null &&
     copyRisk.riskDollars > 0
   ) {
-    ticket = buildTradovateMirrorTicket({
+    ticket = buildCmeDeskTicket({
       instrument,
       direction: args.row.side === 'SELL' ? 'SHORT' : 'LONG',
       entry: indexEntry,
@@ -182,11 +182,11 @@ export function buildQuestradeTradeifyTransfer(args: {
     })
   }
   const note = [
-    `${args.row.label || args.row.symbol} ${args.row.side} × ${args.row.quantity} is the reason — not your Tradovate size.`,
-    `Your copy size is ${copyRisk.label}.`,
+    `${args.row.label || args.row.symbol} ${args.row.side} × ${args.row.quantity} is the reason — not your broker size.`,
+    `Your desk risk is ${copyRisk.label}.`,
     args.row.kind === 'entry_limit'
-      ? 'Questrade working limit. Copy on Tradeify only if NY is open.'
-      : 'Open/filled Questrade book. Growth cannot hold overnight — flatten 16:59 ET.',
+      ? 'Questrade working limit. Monitor only if NY is open.'
+      : 'Open/filled Questrade book. Session cannot hold overnight — flatten 16:59 ET.',
     copyRisk.sessionReset
       ? 'Session ended — size is back to $400 until you take the next NYC trade.'
       : null,
@@ -196,7 +196,7 @@ export function buildQuestradeTradeifyTransfer(args: {
     ticket
       ? `Index preview uses ${instrument} last × their stop % (${pct != null ? (pct * 100).toFixed(2) : '—'}%) at $${copyRisk.riskDollars}. Recheck at NY open.`
       : args.row.asset === 'option'
-        ? `Option — do not copy their contract size. Next Tradeify risk is $${copyRisk.riskDollars} on ${instrument}.`
+        ? `Option — do not copy their contract size. Next desk risk is $${copyRisk.riskDollars} on ${instrument}.`
         : 'No index last yet — look at their SL/TP here, then size $ on DOW or NASDAQ at the open.',
   ]
     .filter(Boolean)

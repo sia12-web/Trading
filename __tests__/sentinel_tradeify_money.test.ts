@@ -123,13 +123,13 @@ test('known Tradeify aliases still parse', () => {
   assert.ok(isTradeifyGrowth50k('TRADEIFY-GROWTH-50K'))
 })
 
-test('mergeMoneyRiskProfile: persist Tradeify beats hostile client hint', () => {
+test('mergeMoneyRiskProfile: always returns personal_futures profile', () => {
   assert.equal(
     mergeMoneyRiskProfile(`' OR 1=1 --`, 'tradeify_growth_50k'),
-    'tradeify_growth_50k'
+    'personal_futures'
   )
-  assert.equal(mergeMoneyRiskProfile('<script>', 'oanda_cash'), 'tradeify_growth_50k')
-  assert.equal(mergeMoneyRiskProfile('tradeify', null), 'tradeify_growth_50k')
+  assert.equal(mergeMoneyRiskProfile('<script>', 'oanda_cash'), 'personal_futures')
+  assert.equal(mergeMoneyRiskProfile('tradeify', null), 'personal_futures')
 })
 
 test('cookieValue only returns the named cookie', () => {
@@ -365,11 +365,10 @@ test('working route: auth + user_id + server money profile + no client size', ()
   assert.ok(s.includes('calculatePositionFromRiskAmount'), 'Tradeify $ path')
 })
 
-test('open route: auth + user_id + server money profile', () => {
+test('open route: strictly rejects order execution with 403 Forbidden', () => {
   const s = src('app/api/trading/positions/open/route.ts')
-  assert.ok(s.includes('getOrCreateUser') || s.includes('resolveDeskUser'), 'auth')
-  assert.ok(s.includes(".eq('user_id', user.id)"), 'scoped to user')
-  assert.ok(s.includes('resolveMoneyRiskProfile'), 'Tradeify cannot be skipped')
+  assert.ok(s.includes('403'), 'must return 403 Forbidden')
+  assert.ok(s.includes('Read-Only') || s.includes('never places orders'), 'read only reason')
 })
 
 test('cleanup-session: cron or desk user required', () => {
@@ -385,13 +384,9 @@ test('risk-profile: GET/POST require desk user', () => {
   assert.ok(s.includes('Unauthorized'))
 })
 
-test('Railway flatten watch is wired on boot', () => {
+test('Asia desk watch is wired on boot', () => {
   const boot = src('instrumentation.ts')
-  assert.ok(boot.includes('startTradeifyFlattenWatch'))
   assert.ok(boot.includes('startAsiaDeskWatch'))
-  const watch = src('lib/trading/tradeifyFlattenWatch.ts')
-  assert.ok(watch.includes('cleanupDeskSession'))
-  assert.ok(watch.includes('tradeifyMustFlatten'))
   const asia = src('lib/trading/asiaDeskWatch.ts')
   assert.ok(asia.includes('runAsiaDeskScanForDeskUser'))
 })

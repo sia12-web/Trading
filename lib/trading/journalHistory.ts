@@ -32,7 +32,7 @@ export type JournalEquityRow = {
   created_at?: string | null
 }
 
-/** Tradeify ticket trail — never OANDA balance / NAV / margin. */
+/** Desk futures ticket trail — never broker balance / NAV / margin. */
 export function journalTicketEquity(rows: readonly JournalEquityRow[]): {
   startingAccount: number
   endingEquity: number

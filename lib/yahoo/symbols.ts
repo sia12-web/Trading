@@ -1,11 +1,11 @@
 /**
- * Yahoo symbols for the live Tradeify desk.
- * CME micros/minis match Tradovate MYM / MNQ / NKD / MGC / CL — not OANDA CFDs.
+ * Yahoo symbols for the live Futures desk.
+ * CME micros/minis match CME MYM / MNQ / NKD / MGC / CL — not OANDA CFDs.
  */
 
 import type { Instrument } from '@/types/price-feed'
 
-/** Same scale as Tradovate MYM / MNQ / NKD / MGC / CL. */
+/** Same scale as CME MYM / MNQ / NKD / MGC / CL. */
 export const YAHOO_CME_SYMBOLS: Record<Instrument, string> = {
   DOW: 'MYM=F',
   NASDAQ: 'MNQ=F',
@@ -15,7 +15,7 @@ export const YAHOO_CME_SYMBOLS: Record<Instrument, string> = {
   SILVER: 'SIL=F',
 }
 
-/** Cash indices / spots (OANDA CFD scale). Fallback only — IB will not match Tradovate. */
+/** Cash indices / spots (OANDA CFD scale). Fallback only — IB will not match CME futures. */
 export const YAHOO_CASH_INDEX_SYMBOLS: Record<Instrument, string> = {
   DOW: '^DJI',
   NASDAQ: '^NDX',

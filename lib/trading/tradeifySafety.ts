@@ -90,8 +90,8 @@ function normSide(raw?: string | null): 'LONG' | 'SHORT' | null {
 }
 
 /**
- * Opposite open index vs the next ticket — Tradeify product-group hedge
- * (YM/NQ/NKD), including leftover Tradovate risk we can see on TradePulse.
+ * Opposite open index vs the next ticket — product-group hedge
+ * (YM/NQ/NKD), including leftover futures risk we can see on TradePulse.
  */
 export function equityIndexHedgeConflict(
   openFills: TradeifySafetyFill[],

@@ -563,7 +563,7 @@ export function formatYesterdayProfileForPrompt(p: YesterdayProfile | null): str
   const src = p.sourceSession === 'TOKYO_CASH' ? 'Tokyo cash' : 'NY RTH'
   const lines = [
     'YESTERDAY PROFILE (Dalton — ground truth, same helper as the Y overlay):',
-    `Source: last completed ${src} session ${p.sessionDate} (not Globex, not Tradeify 18:00 roll${
+    `Source: last completed ${src} session ${p.sessionDate} (not Globex, not session 18:00 roll${
       p.instrument === 'NIKKEI' ? ', not US Range' : ''
     }).`,
     `YH ${p.yh} · YL ${p.yl} · VAH ${p.vah} · VAL ${p.val} · POC ${p.poc} · R ${p.priorRangePoints} pts`,

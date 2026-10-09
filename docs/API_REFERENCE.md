@@ -130,14 +130,14 @@ Returns live Questrade portfolio balance, open swing positions, and paired TP/SL
 ---
 
 ### 2.2 `GET /api/trading/journal`
-Returns the verified order ledger, equity curve, and TopstepX challenge progress.
+Returns the verified order ledger, equity curve, and desk performance metrics.
 
 - **Response Format (`200 OK`)**:
   ```json
   {
-    "account": "1.5KCHCR-LABS004-V2-675081-67067724",
-    "starting_account": 0,
-    "ending_equity": 183.64,
+    "account": "DESK-PERSONAL-FUTURES",
+    "starting_account": 50000,
+    "ending_equity": 50183.64,
     "equity_change": 183.64,
     "max_loss_limit": -500.00,
     "cushion": 683.64,

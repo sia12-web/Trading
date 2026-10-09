@@ -1,6 +1,6 @@
 /**
  * NYC team tape (Questrade) — see-only signals + leftover-fill advice.
- * A team stock fill never burns a Tradeify attempt. Your copy does.
+ * A team stock fill never burns a desk session attempt.
  */
 
 import { takeProfitFromStopR } from '@/lib/trading/positionSizing'

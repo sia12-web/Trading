@@ -206,12 +206,13 @@ When Leo drafts entry orders (`PLACE_ORDER` / `OPEN_POSITION` / `ARM_CONDITIONAL
    - **ES (S&P 500)**: Base `6,000.00` | SL `10.0 pts` | TP `20.0 pts`
    - **GOLD**: Base `4,350.00` | SL `5.0 pts` | TP `10.0 pts`
    - **CRUDE**: Base `104.00` | SL `0.50 pts` | TP `1.00 pt`
+   - **SILVER**: Base `32.000` | SL `0.250 pts` | TP `0.500 pts`
 2. **Directive Type Sanitization**: `parseLeoDirectives` cleanly casts stringified LLM outputs into finite numbers and strips trailing commas before JSON parsing.
 3. **Safe Notification Formatting**: Notification routes format `priceDisplay` defensively to prevent unhandled `TypeError` exceptions on undefined/null prices.
 4. **Bracket Sanity**:
    - **LONG**: Validates `stopLoss < entryPrice` and `profitTarget > entryPrice`. If inverted, snaps stop loss to `entryPrice - slDist` and target to `entryPrice + tpDist`.
    - **SHORT**: Validates `stopLoss > entryPrice` and `profitTarget < entryPrice`. If inverted, snaps stop loss to `entryPrice + slDist` and target to `entryPrice - tpDist`.
-5. **TopstepX Risk Budgeting**: Sized strictly according to the account's $500 Maximum Loss Limit ($50 risk per micro contract).
+5. **Personal Futures Risk Budgeting**: Sized strictly according to the account's $500 Daily Loss Limit ($50 risk per trade). The desk strictly operates in read-only mode (zero order execution).
 
 ---
 
