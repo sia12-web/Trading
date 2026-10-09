@@ -128,13 +128,15 @@ export function fillCandleGaps<T extends BaseCandle>(
     const gapBarsCount = Math.round((targetTime - prev.time) / step) - 1
     const maxGapAllowed =
       timeframe === '1m' || timeframe === '1'
-        ? 60
+        ? 1440
         : timeframe === '5m' || timeframe === '5'
-        ? 36
+        ? 288
         : timeframe === '15m' || timeframe === '15'
-        ? 24
+        ? 96
         : timeframe === '30m' || timeframe === '30'
-        ? 16
+        ? 48
+        : timeframe === '60' || timeframe === '1H'
+        ? 24
         : 12
     if (gapBarsCount > 0 && gapBarsCount <= maxGapAllowed) {
       let cursorTime = expectedNextTime

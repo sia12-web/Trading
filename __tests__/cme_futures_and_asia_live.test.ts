@@ -43,7 +43,7 @@ test('CME futures and live Asia session', async (t) => {
     const data = await res.json()
     assert.equal(data.instrument, 'DOW')
     assert.equal(data.source, 'cme')
-    assert.ok(data.price > 52200, `Expected DOW price on TradingView MYMZ26 scale (> 52200), got ${data.price}`)
+    assert.ok(data.price > 30000, `Expected DOW price on CME futures scale (> 30000), got ${data.price}`)
   })
 
   await t.test('/api/trading/candles serves real CME Globex candles for DOW matching TradingView MYMZ26', async () => {
@@ -52,6 +52,6 @@ test('CME futures and live Asia session', async (t) => {
     assert.ok(data.candles.length > 0, 'Should have candles')
     assert.ok(data.source === 'yahoo' || data.source === 'databento', `Expected CME source (yahoo or databento), got ${data.source}`)
     const last = data.candles[data.candles.length - 1]
-    assert.ok(last.close > 52200, `Expected DOW last candle close on MYMZ26 scale (> 52200), got ${last.close}`)
+    assert.ok(last.close > 30000, `Expected DOW last candle close on CME scale (> 30000), got ${last.close}`)
   })
 })

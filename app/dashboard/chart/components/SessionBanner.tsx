@@ -756,10 +756,31 @@ export function SessionBanner({
         ) : null}
 
         <div className="ml-auto flex items-center gap-2">
+          <Link
+            href="/dashboard"
+            className="rounded bg-surface-800 border border-neutral-700/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-300 hover:bg-neutral-700 hover:text-white transition-colors"
+            title="Go to Dashboard Overview"
+          >
+            📊 Dashboard
+          </Link>
+          <Link
+            href="/dashboard/fundamentals"
+            className="rounded bg-surface-800 border border-neutral-700/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-300 hover:bg-neutral-700 hover:text-white transition-colors"
+            title="Go to Fundamentals Multi-Agent Analysis"
+          >
+            🏛️ Fundamentals
+          </Link>
+          <Link
+            href="/dashboard/positions"
+            className="rounded bg-surface-800 border border-neutral-700/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-300 hover:bg-neutral-700 hover:text-white transition-colors"
+            title="Go to Live Positions Monitor"
+          >
+            ⚡ Live Positions
+          </Link>
           <button
             type="button"
             onClick={refresh}
-            className="text-[10px] uppercase tracking-wider text-gray-500 hover:text-white"
+            className="text-[10px] uppercase tracking-wider text-gray-500 hover:text-white ml-1"
           >
             Refresh
           </button>

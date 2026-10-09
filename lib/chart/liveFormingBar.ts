@@ -1,4 +1,4 @@
-import { fillCandleGaps } from '@/lib/chart/candleGapFiller'
+import { fillCandleGaps, isCmeMarketHalt } from '@/lib/chart/candleGapFiller'
 
 export type FormingBar = {
   time: number
@@ -10,8 +10,8 @@ export type FormingBar = {
 }
 
 export const DESK_LIVE_BAR_SEC = 300
-/** Fill up to 30 missing slots (~30m on 1m, 2.5h on 5m) from last close to ensure unbroken continuum. */
-export const LIVE_MAX_GAP_FILLS = 30
+/** Fill up to 288 missing slots (~24h on 5m) from last close outside CME halts to ensure unbroken continuum. */
+export const LIVE_MAX_GAP_FILLS = 288
 /** If the packet stamp is older than this, bucket from wall clock. */
 export const LIVE_STALE_QUOTE_SEC = 120
 /** Reject a live tip only if it represents an impossible scale glitch (e.g. unshifted CFD vs CME). */
@@ -173,6 +173,7 @@ export function applyTickToFormingBar(
   const gapFills: FormingBar[] = []
   let prevClose = last.close
   for (let t = lastT + barSec; t < bucket; t += barSec) {
+    if (instrument && isCmeMarketHalt(t)) continue
     gapFills.push({
       time: t,
       open: prevClose,

@@ -253,7 +253,7 @@ for (const inst of ['DOW', 'NASDAQ'] as const) {
   })
   assert(gate.market === 'NY', 'live NIKKEI lock ignored — stays NY')
   assert(gate.lockedInstrument !== 'NIKKEI', 'NIKKEI lock dropped')
-  assert(!gate.allowedInstruments.includes('NIKKEI'), 'no live NIKKEI')
+  assert(gate.allowedInstruments.includes('NIKKEI'), 'NIKKEI tab exposed in allowedInstruments')
 }
 
 // Morning entry still works when clocked in

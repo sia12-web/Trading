@@ -35,7 +35,7 @@ import type { Instrument } from '@/types/price-feed'
 import { getDatabentoCandles, getDatabentoRecent1m, isDatabentoConfigured } from '@/lib/databento/client'
 import { fetchDatabentoLiveBars, resolveDatabentoLiveQuote } from '@/lib/databento/liveHub'
 import { liveTapeHasVendorGap, mergeTapeBars, overlayVendorWithTape } from '@/lib/databento/liveOverlay'
-import { fillCandleGaps } from '@/lib/chart/candleGapFiller'
+import { fillCandleGaps, isCmeMarketHalt } from '@/lib/chart/candleGapFiller'
 import { logger } from '@/lib/utils/logger'
 
 export const dynamic = 'force-dynamic'
@@ -269,6 +269,25 @@ export async function GET(request: Request) {
     }
     if (candles?.length && !isDaily) {
       candles = dropImplausibleDeskBars(candles, instrument, timeframe)
+      if (!endDate && asOf == null) {
+        const nowSec = Math.floor(Date.now() / 1000)
+        if (!isCmeMarketHalt(nowSec)) {
+          const stepSec = resolutionSeconds(resolution, timeframe)
+          const currentBucket = Math.floor(nowSec / stepSec) * stepSec
+          const lastBar = candles[candles.length - 1]!
+          if (currentBucket > lastBar.time) {
+            const carryClose = lastBar.close
+            candles.push({
+              time: currentBucket,
+              open: carryClose,
+              high: carryClose,
+              low: carryClose,
+              close: carryClose,
+              volume: 0,
+            })
+          }
+        }
+      }
       candles = fillCandleGaps(candles, timeframe, instrument)
     }
 

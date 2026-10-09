@@ -512,13 +512,6 @@ export function isLiveBarsAllowed(
   if (isCmeMarketHalt(nowUnix)) {
     return { open: false, reason: 'CME maintenance halt / weekend close' }
   }
-  const active = activeDeskSessionsAt(nowUnix)
-  if (active.includes('Asia')) {
-    return { open: true, reason: 'Asia session live' }
-  }
-  if (active.includes('London')) {
-    return { open: true, reason: 'London session live' }
-  }
   const s = sessionFor(instrument)
   if (!isWeekdayInTz(now, s.tz)) {
     return { open: false, reason: `Weekend — ${deskMarketFor(instrument)} session closed` }
@@ -560,17 +553,42 @@ export function isChartStreamAllowed(
   if (isCmeMarketHalt(nowUnix)) {
     return { open: false, reason: 'CME maintenance halt / weekend close — chart frozen' }
   }
-  const active = activeDeskSessionsAt(nowUnix)
-  if (active.length > 0) {
-    return { open: true, reason: `Chart streaming (${active.join(' / ')} session)` }
+  const s = sessionFor(instrument)
+  if (!isWeekdayInTz(now, s.tz)) {
+    return { open: false, reason: `Weekend — ${deskMarketFor(instrument)} session closed` }
   }
   if (isAsiaDeskInstrument(instrument) && isAsiaDeskStreamWindow(now)) {
     return { open: true, reason: 'Asia desk — GOLD/DOW overnight range' }
   }
-  if (isLiveFocusWindowActive(instrument, now) || isAfternoonWatchWindow(now, instrument)) {
-    return { open: true, reason: 'Chart streaming (focus window)' }
+  if (!isLiveFocusWindowActive(instrument, now)) {
+    const t = parseTimeToSeconds(timeInTz(now, s.tz))
+    const open = parseTimeToSeconds(s.marketOpen)
+    const close = parseTimeToSeconds(s.marketClose)
+    const focusStart = open - LIVE_FOCUS_LEAD_MINUTES * 60
+    if (t >= close) {
+      return {
+        open: false,
+        reason:
+          deskMarketFor(instrument) === 'TOKYO'
+            ? 'Cash close — chart frozen until next Tokyo focus (open − 30m).'
+            : 'Cash close — chart frozen until next NY focus (open − 30m).',
+      }
+    }
+    if (t < focusStart) {
+      return {
+        open: false,
+        reason:
+          deskMarketFor(instrument) === 'TOKYO'
+            ? `Pre-focus — NIKKEI tip starts ${deskLocalHmsAsTraderDisplay('08:30:00', s.tz, now)} ${TRADER_DISPLAY_LABEL}`
+            : `Pre-focus — NY tip starts ${deskLocalHmsAsTraderDisplay('09:00:00', s.tz, now)} ${TRADER_DISPLAY_LABEL}`,
+      }
+    }
+    return { open: false, reason: 'Outside focus window — tip frozen' }
   }
-  return { open: true, reason: 'Chart streaming (market open)' }
+  if (isAfternoonWatchWindow(now, instrument)) {
+    return { open: true, reason: 'Chart streaming (afternoon — trading locked)' }
+  }
+  return { open: true, reason: 'Chart streaming (focus window)' }
 }
 
 /**
@@ -1090,7 +1108,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       canPlaceEntry: false,
       canManagePosition: false,
       message: asia
-        ? 'Asia session active — DOW, NASDAQ, NIKKEI, GOLD, CRUDE live streaming.'
+        ? 'ASIA desk — DOW, NASDAQ, NIKKEI, GOLD, CRUDE, SILVER live streaming.'
         : activeSessions.length > 0
           ? `${activeSessions.join(' / ')} session active (chart streaming). ${nextDesk}`
           : t < analyze && weekday
@@ -1161,7 +1179,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       canPlaceEntry: false,
       canManagePosition: false,
       message: isAsia
-        ? 'Asia session active — DOW, NASDAQ, NIKKEI, GOLD, CRUDE live streaming.'
+        ? 'Asia session active — DOW, NASDAQ, NIKKEI, GOLD, CRUDE, SILVER live streaming.'
         : activeSessions.length > 0
           ? `${activeSessions.join(' / ')} session active (chart live). ${nextDesk}`
           : `Cash closed. ${nextDesk}`,
