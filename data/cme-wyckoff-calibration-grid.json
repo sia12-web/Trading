@@ -1,0 +1,842 @@
+[
+  {
+    "market": "NASDAQ",
+    "configIndex": 1,
+    "params": {
+      "requireVolumeAbsorption": false,
+      "maxStopsPerDay": 99,
+      "skipLunchDoldrums": false,
+      "minStopATRMultiple": 0.15,
+      "breakevenTriggerR": 99
+    },
+    "isMetrics": {
+      "n": 3906,
+      "winRate": 15.6,
+      "pf": 0.75,
+      "expR": -0.13,
+      "netA": -274932,
+      "netB": -295244
+    },
+    "wfMetrics": {
+      "n": 2627,
+      "winRate": 16.5,
+      "pf": 0.72,
+      "expR": -0.13,
+      "netA": -257552,
+      "netB": -271213
+    },
+    "oosMetrics": {
+      "n": 779,
+      "winRate": 11.9,
+      "pf": 0.48,
+      "expR": -0.31,
+      "netA": -198990,
+      "netB": -203041
+    }
+  },
+  {
+    "market": "NASDAQ",
+    "configIndex": 2,
+    "params": {
+      "requireVolumeAbsorption": false,
+      "maxStopsPerDay": 3,
+      "skipLunchDoldrums": true,
+      "minStopATRMultiple": 0.25,
+      "breakevenTriggerR": 99
+    },
+    "isMetrics": {
+      "n": 2180,
+      "winRate": 15.3,
+      "pf": 0.75,
+      "expR": -0.15,
+      "netA": -163226,
+      "netB": -174562
+    },
+    "wfMetrics": {
+      "n": 1470,
+      "winRate": 15.8,
+      "pf": 0.72,
+      "expR": -0.14,
+      "netA": -144568,
+      "netB": -152212
+    },
+    "oosMetrics": {
+      "n": 440,
+      "winRate": 11.1,
+      "pf": 0.48,
+      "expR": -0.33,
+      "netA": -119446,
+      "netB": -121734
+    }
+  },
+  {
+    "market": "NASDAQ",
+    "configIndex": 3,
+    "params": {
+      "requireVolumeAbsorption": true,
+      "maxStopsPerDay": 3,
+      "skipLunchDoldrums": true,
+      "minStopATRMultiple": 0.25,
+      "breakevenTriggerR": 99
+    },
+    "isMetrics": {
+      "n": 1633,
+      "winRate": 17,
+      "pf": 0.74,
+      "expR": -0.14,
+      "netA": -139392,
+      "netB": -147883
+    },
+    "wfMetrics": {
+      "n": 1101,
+      "winRate": 18.3,
+      "pf": 0.75,
+      "expR": -0.07,
+      "netA": -102535,
+      "netB": -108261
+    },
+    "oosMetrics": {
+      "n": 298,
+      "winRate": 11.1,
+      "pf": 0.4,
+      "expR": -0.42,
+      "netA": -97164,
+      "netB": -98713
+    }
+  },
+  {
+    "market": "NASDAQ",
+    "configIndex": 4,
+    "params": {
+      "requireVolumeAbsorption": true,
+      "maxStopsPerDay": 3,
+      "skipLunchDoldrums": true,
+      "minStopATRMultiple": 0.4,
+      "breakevenTriggerR": 99
+    },
+    "isMetrics": {
+      "n": 1631,
+      "winRate": 16.9,
+      "pf": 0.73,
+      "expR": -0.13,
+      "netA": -142111,
+      "netB": -150592
+    },
+    "wfMetrics": {
+      "n": 1102,
+      "winRate": 18.3,
+      "pf": 0.75,
+      "expR": -0.08,
+      "netA": -104092,
+      "netB": -109823
+    },
+    "oosMetrics": {
+      "n": 298,
+      "winRate": 11.1,
+      "pf": 0.4,
+      "expR": -0.42,
+      "netA": -97942,
+      "netB": -99491
+    }
+  },
+  {
+    "market": "NASDAQ",
+    "configIndex": 5,
+    "params": {
+      "requireVolumeAbsorption": true,
+      "maxStopsPerDay": 3,
+      "skipLunchDoldrums": true,
+      "minStopATRMultiple": 0.4,
+      "breakevenTriggerR": 1
+    },
+    "isMetrics": {
+      "n": 1879,
+      "winRate": 43.1,
+      "pf": 0.61,
+      "expR": -0.21,
+      "netA": -174064,
+      "netB": -183834
+    },
+    "wfMetrics": {
+      "n": 1299,
+      "winRate": 45.4,
+      "pf": 0.68,
+      "expR": -0.15,
+      "netA": -109045,
+      "netB": -115800
+    },
+    "oosMetrics": {
+      "n": 346,
+      "winRate": 39,
+      "pf": 0.26,
+      "expR": -0.35,
+      "netA": -98559,
+      "netB": -100359
+    }
+  },
+  {
+    "market": "NASDAQ",
+    "configIndex": 6,
+    "params": {
+      "requireVolumeAbsorption": true,
+      "maxStopsPerDay": 3,
+      "skipLunchDoldrums": true,
+      "minStopATRMultiple": 0.5,
+      "breakevenTriggerR": 1
+    },
+    "isMetrics": {
+      "n": 1872,
+      "winRate": 42.4,
+      "pf": 0.61,
+      "expR": -0.22,
+      "netA": -176440,
+      "netB": -186175
+    },
+    "wfMetrics": {
+      "n": 1296,
+      "winRate": 45.3,
+      "pf": 0.68,
+      "expR": -0.14,
+      "netA": -110104,
+      "netB": -116843
+    },
+    "oosMetrics": {
+      "n": 346,
+      "winRate": 38.2,
+      "pf": 0.26,
+      "expR": -0.36,
+      "netA": -100547,
+      "netB": -102346
+    }
+  },
+  {
+    "market": "DOW",
+    "configIndex": 1,
+    "params": {
+      "requireVolumeAbsorption": false,
+      "maxStopsPerDay": 99,
+      "skipLunchDoldrums": false,
+      "minStopATRMultiple": 0.15,
+      "breakevenTriggerR": 99
+    },
+    "isMetrics": {
+      "n": 3751,
+      "winRate": 17.6,
+      "pf": 0.77,
+      "expR": -0.06,
+      "netA": -102442,
+      "netB": -84438
+    },
+    "wfMetrics": {
+      "n": 2533,
+      "winRate": 17.6,
+      "pf": 0.71,
+      "expR": -0.07,
+      "netA": -99561,
+      "netB": -87403
+    },
+    "oosMetrics": {
+      "n": 819,
+      "winRate": 18.3,
+      "pf": 0.7,
+      "expR": -0.05,
+      "netA": -40604,
+      "netB": -36673
+    }
+  },
+  {
+    "market": "DOW",
+    "configIndex": 2,
+    "params": {
+      "requireVolumeAbsorption": false,
+      "maxStopsPerDay": 3,
+      "skipLunchDoldrums": true,
+      "minStopATRMultiple": 0.25,
+      "breakevenTriggerR": 99
+    },
+    "isMetrics": {
+      "n": 2148,
+      "winRate": 16.9,
+      "pf": 0.73,
+      "expR": -0.1,
+      "netA": -73301,
+      "netB": -62991
+    },
+    "wfMetrics": {
+      "n": 1368,
+      "winRate": 17.5,
+      "pf": 0.68,
+      "expR": -0.12,
+      "netA": -61493,
+      "netB": -54926
+    },
+    "oosMetrics": {
+      "n": 461,
+      "winRate": 20.4,
+      "pf": 0.82,
+      "expR": 0.04,
+      "netA": -14702,
+      "netB": -12489
+    }
+  },
+  {
+    "market": "DOW",
+    "configIndex": 3,
+    "params": {
+      "requireVolumeAbsorption": true,
+      "maxStopsPerDay": 3,
+      "skipLunchDoldrums": true,
+      "minStopATRMultiple": 0.25,
+      "breakevenTriggerR": 99
+    },
+    "isMetrics": {
+      "n": 1624,
+      "winRate": 18.2,
+      "pf": 0.74,
+      "expR": -0.11,
+      "netA": -55347,
+      "netB": -47552
+    },
+    "wfMetrics": {
+      "n": 1049,
+      "winRate": 18.2,
+      "pf": 0.71,
+      "expR": -0.12,
+      "netA": -44418,
+      "netB": -39382
+    },
+    "oosMetrics": {
+      "n": 342,
+      "winRate": 22.2,
+      "pf": 0.7,
+      "expR": 0.01,
+      "netA": -18707,
+      "netB": -17066
+    }
+  },
+  {
+    "market": "DOW",
+    "configIndex": 4,
+    "params": {
+      "requireVolumeAbsorption": true,
+      "maxStopsPerDay": 3,
+      "skipLunchDoldrums": true,
+      "minStopATRMultiple": 0.4,
+      "breakevenTriggerR": 99
+    },
+    "isMetrics": {
+      "n": 1623,
+      "winRate": 18.2,
+      "pf": 0.74,
+      "expR": -0.11,
+      "netA": -55346,
+      "netB": -47555
+    },
+    "wfMetrics": {
+      "n": 1049,
+      "winRate": 18.2,
+      "pf": 0.7,
+      "expR": -0.13,
+      "netA": -44553,
+      "netB": -39518
+    },
+    "oosMetrics": {
+      "n": 341,
+      "winRate": 22.3,
+      "pf": 0.7,
+      "expR": 0.01,
+      "netA": -18801,
+      "netB": -17164
+    }
+  },
+  {
+    "market": "DOW",
+    "configIndex": 5,
+    "params": {
+      "requireVolumeAbsorption": true,
+      "maxStopsPerDay": 3,
+      "skipLunchDoldrums": true,
+      "minStopATRMultiple": 0.4,
+      "breakevenTriggerR": 1
+    },
+    "isMetrics": {
+      "n": 1896,
+      "winRate": 47,
+      "pf": 0.62,
+      "expR": -0.14,
+      "netA": -69756,
+      "netB": -60655
+    },
+    "wfMetrics": {
+      "n": 1244,
+      "winRate": 45.8,
+      "pf": 0.62,
+      "expR": -0.16,
+      "netA": -50069,
+      "netB": -44098
+    },
+    "oosMetrics": {
+      "n": 399,
+      "winRate": 48.6,
+      "pf": 0.57,
+      "expR": -0.14,
+      "netA": -22340,
+      "netB": -20424
+    }
+  },
+  {
+    "market": "DOW",
+    "configIndex": 6,
+    "params": {
+      "requireVolumeAbsorption": true,
+      "maxStopsPerDay": 3,
+      "skipLunchDoldrums": true,
+      "minStopATRMultiple": 0.5,
+      "breakevenTriggerR": 1
+    },
+    "isMetrics": {
+      "n": 1892,
+      "winRate": 46.8,
+      "pf": 0.62,
+      "expR": -0.15,
+      "netA": -70128,
+      "netB": -61046
+    },
+    "wfMetrics": {
+      "n": 1243,
+      "winRate": 45.6,
+      "pf": 0.62,
+      "expR": -0.17,
+      "netA": -49784,
+      "netB": -43818
+    },
+    "oosMetrics": {
+      "n": 398,
+      "winRate": 48,
+      "pf": 0.57,
+      "expR": -0.15,
+      "netA": -22236,
+      "netB": -20326
+    }
+  },
+  {
+    "market": "CRUDE",
+    "configIndex": 1,
+    "params": {
+      "requireVolumeAbsorption": false,
+      "maxStopsPerDay": 99,
+      "skipLunchDoldrums": false,
+      "minStopATRMultiple": 0.15,
+      "breakevenTriggerR": 99
+    },
+    "isMetrics": {
+      "n": 3269,
+      "winRate": 15.1,
+      "pf": 0.66,
+      "expR": -0.08,
+      "netA": -188267,
+      "netB": -211150
+    },
+    "wfMetrics": {
+      "n": 2351,
+      "winRate": 14.2,
+      "pf": 0.53,
+      "expR": -0.15,
+      "netA": -124473,
+      "netB": -140930
+    },
+    "oosMetrics": {
+      "n": 637,
+      "winRate": 14.9,
+      "pf": 0.51,
+      "expR": -0.22,
+      "netA": -69071,
+      "netB": -73530
+    }
+  },
+  {
+    "market": "CRUDE",
+    "configIndex": 2,
+    "params": {
+      "requireVolumeAbsorption": false,
+      "maxStopsPerDay": 3,
+      "skipLunchDoldrums": true,
+      "minStopATRMultiple": 0.25,
+      "breakevenTriggerR": 99
+    },
+    "isMetrics": {
+      "n": 2425,
+      "winRate": 13.5,
+      "pf": 0.64,
+      "expR": -0.11,
+      "netA": -145085,
+      "netB": -162060
+    },
+    "wfMetrics": {
+      "n": 1805,
+      "winRate": 11.5,
+      "pf": 0.45,
+      "expR": -0.2,
+      "netA": -112605,
+      "netB": -125240
+    },
+    "oosMetrics": {
+      "n": 475,
+      "winRate": 10.5,
+      "pf": 0.38,
+      "expR": -0.34,
+      "netA": -62685,
+      "netB": -66010
+    }
+  },
+  {
+    "market": "CRUDE",
+    "configIndex": 3,
+    "params": {
+      "requireVolumeAbsorption": true,
+      "maxStopsPerDay": 3,
+      "skipLunchDoldrums": true,
+      "minStopATRMultiple": 0.25,
+      "breakevenTriggerR": 99
+    },
+    "isMetrics": {
+      "n": 2049,
+      "winRate": 15.1,
+      "pf": 0.63,
+      "expR": -0.13,
+      "netA": -138877,
+      "netB": -153220
+    },
+    "wfMetrics": {
+      "n": 1511,
+      "winRate": 13.6,
+      "pf": 0.49,
+      "expR": -0.19,
+      "netA": -95153,
+      "netB": -105730
+    },
+    "oosMetrics": {
+      "n": 378,
+      "winRate": 13.2,
+      "pf": 0.43,
+      "expR": -0.27,
+      "netA": -51954,
+      "netB": -54600
+    }
+  },
+  {
+    "market": "CRUDE",
+    "configIndex": 4,
+    "params": {
+      "requireVolumeAbsorption": true,
+      "maxStopsPerDay": 3,
+      "skipLunchDoldrums": true,
+      "minStopATRMultiple": 0.4,
+      "breakevenTriggerR": 99
+    },
+    "isMetrics": {
+      "n": 2049,
+      "winRate": 15.1,
+      "pf": 0.63,
+      "expR": -0.14,
+      "netA": -139017,
+      "netB": -153360
+    },
+    "wfMetrics": {
+      "n": 1511,
+      "winRate": 13.6,
+      "pf": 0.49,
+      "expR": -0.19,
+      "netA": -95203,
+      "netB": -105780
+    },
+    "oosMetrics": {
+      "n": 378,
+      "winRate": 13.2,
+      "pf": 0.43,
+      "expR": -0.27,
+      "netA": -51994,
+      "netB": -54640
+    }
+  },
+  {
+    "market": "CRUDE",
+    "configIndex": 5,
+    "params": {
+      "requireVolumeAbsorption": true,
+      "maxStopsPerDay": 3,
+      "skipLunchDoldrums": true,
+      "minStopATRMultiple": 0.4,
+      "breakevenTriggerR": 1
+    },
+    "isMetrics": {
+      "n": 2388,
+      "winRate": 45.6,
+      "pf": 0.6,
+      "expR": -0.14,
+      "netA": -125464,
+      "netB": -142180
+    },
+    "wfMetrics": {
+      "n": 1630,
+      "winRate": 43.7,
+      "pf": 0.48,
+      "expR": -0.17,
+      "netA": -81500,
+      "netB": -92910
+    },
+    "oosMetrics": {
+      "n": 416,
+      "winRate": 39.4,
+      "pf": 0.32,
+      "expR": -0.33,
+      "netA": -51768,
+      "netB": -54680
+    }
+  },
+  {
+    "market": "CRUDE",
+    "configIndex": 6,
+    "params": {
+      "requireVolumeAbsorption": true,
+      "maxStopsPerDay": 3,
+      "skipLunchDoldrums": true,
+      "minStopATRMultiple": 0.5,
+      "breakevenTriggerR": 1
+    },
+    "isMetrics": {
+      "n": 2388,
+      "winRate": 45.6,
+      "pf": 0.61,
+      "expR": -0.14,
+      "netA": -124234,
+      "netB": -140950
+    },
+    "wfMetrics": {
+      "n": 1630,
+      "winRate": 43.7,
+      "pf": 0.49,
+      "expR": -0.16,
+      "netA": -80120,
+      "netB": -91530
+    },
+    "oosMetrics": {
+      "n": 415,
+      "winRate": 39.3,
+      "pf": 0.32,
+      "expR": -0.33,
+      "netA": -51805,
+      "netB": -54710
+    }
+  },
+  {
+    "market": "GOLD",
+    "configIndex": 1,
+    "params": {
+      "requireVolumeAbsorption": false,
+      "maxStopsPerDay": 99,
+      "skipLunchDoldrums": false,
+      "minStopATRMultiple": 0.15,
+      "breakevenTriggerR": 99
+    },
+    "isMetrics": {
+      "n": 67,
+      "winRate": 14.9,
+      "pf": 0.3,
+      "expR": -0.46,
+      "netA": -7181,
+      "netB": -7610
+    },
+    "wfMetrics": {
+      "n": 31,
+      "winRate": 29,
+      "pf": 2.1,
+      "expR": 0.13,
+      "netA": 7073,
+      "netB": 6875
+    },
+    "oosMetrics": {
+      "n": 7,
+      "winRate": 0,
+      "pf": 0,
+      "expR": -0.57,
+      "netA": -5055,
+      "netB": -5100
+    }
+  },
+  {
+    "market": "GOLD",
+    "configIndex": 2,
+    "params": {
+      "requireVolumeAbsorption": false,
+      "maxStopsPerDay": 3,
+      "skipLunchDoldrums": true,
+      "minStopATRMultiple": 0.25,
+      "breakevenTriggerR": 99
+    },
+    "isMetrics": {
+      "n": 57,
+      "winRate": 14,
+      "pf": 0.28,
+      "expR": -0.5,
+      "netA": -6615,
+      "netB": -6980
+    },
+    "wfMetrics": {
+      "n": 30,
+      "winRate": 26.7,
+      "pf": 2.02,
+      "expR": 0.06,
+      "netA": 6572,
+      "netB": 6380
+    },
+    "oosMetrics": {
+      "n": 7,
+      "winRate": 0,
+      "pf": 0,
+      "expR": -0.57,
+      "netA": -5055,
+      "netB": -5100
+    }
+  },
+  {
+    "market": "GOLD",
+    "configIndex": 3,
+    "params": {
+      "requireVolumeAbsorption": true,
+      "maxStopsPerDay": 3,
+      "skipLunchDoldrums": true,
+      "minStopATRMultiple": 0.25,
+      "breakevenTriggerR": 99
+    },
+    "isMetrics": {
+      "n": 43,
+      "winRate": 11.6,
+      "pf": 0.12,
+      "expR": -0.56,
+      "netA": -6535,
+      "netB": -6810
+    },
+    "wfMetrics": {
+      "n": 21,
+      "winRate": 23.8,
+      "pf": 2.02,
+      "expR": -0.01,
+      "netA": 5449,
+      "netB": 5315
+    },
+    "oosMetrics": {
+      "n": 5,
+      "winRate": 0,
+      "pf": 0,
+      "expR": -0.4,
+      "netA": -3928,
+      "netB": -3960
+    }
+  },
+  {
+    "market": "GOLD",
+    "configIndex": 4,
+    "params": {
+      "requireVolumeAbsorption": true,
+      "maxStopsPerDay": 3,
+      "skipLunchDoldrums": true,
+      "minStopATRMultiple": 0.4,
+      "breakevenTriggerR": 99
+    },
+    "isMetrics": {
+      "n": 43,
+      "winRate": 11.6,
+      "pf": 0.12,
+      "expR": -0.56,
+      "netA": -6546,
+      "netB": -6821
+    },
+    "wfMetrics": {
+      "n": 21,
+      "winRate": 23.8,
+      "pf": 2.02,
+      "expR": -0.01,
+      "netA": 5449,
+      "netB": 5315
+    },
+    "oosMetrics": {
+      "n": 5,
+      "winRate": 0,
+      "pf": 0,
+      "expR": -0.4,
+      "netA": -3928,
+      "netB": -3960
+    }
+  },
+  {
+    "market": "GOLD",
+    "configIndex": 5,
+    "params": {
+      "requireVolumeAbsorption": true,
+      "maxStopsPerDay": 3,
+      "skipLunchDoldrums": true,
+      "minStopATRMultiple": 0.4,
+      "breakevenTriggerR": 1
+    },
+    "isMetrics": {
+      "n": 47,
+      "winRate": 31.9,
+      "pf": 0.16,
+      "expR": -0.44,
+      "netA": -5390,
+      "netB": -5691
+    },
+    "wfMetrics": {
+      "n": 23,
+      "winRate": 52.2,
+      "pf": 3.16,
+      "expR": 0.15,
+      "netA": 7382,
+      "netB": 7235
+    },
+    "oosMetrics": {
+      "n": 4,
+      "winRate": 0,
+      "pf": 0,
+      "expR": -0.5,
+      "netA": -3894,
+      "netB": -3920
+    }
+  },
+  {
+    "market": "GOLD",
+    "configIndex": 6,
+    "params": {
+      "requireVolumeAbsorption": true,
+      "maxStopsPerDay": 3,
+      "skipLunchDoldrums": true,
+      "minStopATRMultiple": 0.5,
+      "breakevenTriggerR": 1
+    },
+    "isMetrics": {
+      "n": 47,
+      "winRate": 31.9,
+      "pf": 0.16,
+      "expR": -0.44,
+      "netA": -5407,
+      "netB": -5708
+    },
+    "wfMetrics": {
+      "n": 23,
+      "winRate": 52.2,
+      "pf": 3.16,
+      "expR": 0.15,
+      "netA": 7382,
+      "netB": 7235
+    },
+    "oosMetrics": {
+      "n": 4,
+      "winRate": 0,
+      "pf": 0,
+      "expR": -0.5,
+      "netA": -3894,
+      "netB": -3920
+    }
+  }
+]

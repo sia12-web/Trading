@@ -221,3 +221,8 @@ async function getYahooQuoteFromChart(
     return fallback ?? null
   }
 }
+
+export function getCachedYahooQuote(instrument: Instrument): YahooQuote | null {
+  return quoteCache.get(instrument)?.quote ?? null
+}
+

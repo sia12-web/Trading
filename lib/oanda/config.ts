@@ -10,6 +10,7 @@ export const OANDA_INSTRUMENTS: Partial<Record<Instrument, string>> = {
   NIKKEI: 'JP225_USD',
   GOLD: 'XAU_USD',
   CRUDE: 'WTICO_USD',
+  SILVER: 'XAG_USD',
 }
 
 export function oandaBaseUrl(): string {
@@ -33,6 +34,7 @@ const OANDA_TO_DESK: Record<string, Instrument> = {
   JP225_USD: 'NIKKEI',
   XAU_USD: 'GOLD',
   WTICO_USD: 'CRUDE',
+  XAG_USD: 'SILVER',
 }
 
 export function fromOandaInstrument(symbol: string): Instrument | null {

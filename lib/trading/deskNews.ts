@@ -3,7 +3,7 @@
  * Context only — never a trade signal.
  */
 
-export type DeskNewsInstrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
+export type DeskNewsInstrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | 'SILVER'
 export type DeskNewsTag = 'MACRO' | 'EARNINGS' | 'GEO' | 'FLOW' | 'OTHER'
 export type DeskNewsWindowHours = 2 | 12 | 24
 
@@ -76,6 +76,8 @@ const GOLD_KEYS =
   /\b(gold|xau|bullion|mgc|gc1|gld|precious.?metal)\b/i
 const CRUDE_KEYS =
   /\b(crude|wti|brent|oil\b|opec|cl1|uso|energy.?oil)\b/i
+const SILVER_KEYS =
+  /\b(silver|xag|slv|sil1|si1|comex.?silver)\b/i
 
 const MACRO_KEYS =
   /\b(fed|fomc|cpi|inflation|jobs|payroll|nfp|gdp|rate.?cut|rate.?hike|treasury|yield|powell|boj|ecb|pce|unemployment)\b/i
@@ -142,6 +144,7 @@ export function instrumentsForHeadline(
   if (NIKKEI_KEYS.test(text) || /\bEWJ\b/.test(origin || '')) hit.add('NIKKEI')
   if (GOLD_KEYS.test(text) || /\bGLD\b/.test(origin || '')) hit.add('GOLD')
   if (CRUDE_KEYS.test(text) || /\bUSO\b/.test(origin || '')) hit.add('CRUDE')
+  if (SILVER_KEYS.test(text) || /\bSLV\b/.test(origin || '')) hit.add('SILVER')
 
   // Korea / peninsula risk → US indices first (semis/risk), Asia if Japan session channel
   if (KOREA_KEYS.test(text)) {
@@ -156,6 +159,7 @@ export function instrumentsForHeadline(
   if (origin === 'DIA') hit.add('DOW')
   if (origin === 'QQQ') hit.add('NASDAQ')
   if (origin === 'EWJ') hit.add('NIKKEI')
+  if (origin === 'SLV') hit.add('SILVER')
 
   // Broad US risk-on/off market news → both US desks
   if (hit.size === 0 && /\b(stock|equity|wall street|s&p|spx|futures)\b/i.test(text)) {
@@ -165,7 +169,7 @@ export function instrumentsForHeadline(
 
   if (hit.size === 0) {
     // Unscoped general → all active trader desks so All-tab stays useful
-    return ['DOW', 'NASDAQ', 'GOLD', 'CRUDE']
+    return ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'SILVER']
   }
   return Array.from(hit)
 }
@@ -303,12 +307,12 @@ export function instrumentsForCalendarEvent(country: string, event: string): Des
     return ['CRUDE']
   }
   if (/\b(Gold|Silver|Bullion|Precious)\b/i.test(text)) {
-    return ['GOLD']
+    return /\b(Silver|XAG)\b/i.test(text) ? ['SILVER'] : ['GOLD', 'SILVER']
   }
   if (/\b(JP|Japan|BoJ|Tokyo|Yen)\b/i.test(text)) {
-    return ['DOW', 'NASDAQ', 'GOLD']
+    return ['DOW', 'NASDAQ', 'GOLD', 'SILVER']
   }
-  return ['DOW', 'NASDAQ', 'GOLD', 'CRUDE']
+  return ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'SILVER']
 }
 
 export function deskNoteForCalendar(

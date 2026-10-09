@@ -164,12 +164,42 @@ def get_active_gold_contract(now=None) -> str:
     return f"MGCZ{str(y)[-1]}"
 
 
+SILVER_MONTH_CODES = {3: "H", 5: "K", 7: "N", 9: "U", 12: "Z"}
+
+
+def get_active_silver_contract(now=None) -> str:
+    """Volume-lead Micro Silver month (Yahoo SIL=F / SI=F / Tradovate), not calendar SIL.c.0."""
+    if now is None:
+        now = (
+            datetime.datetime.now(ZoneInfo("America/New_York"))
+            if ZoneInfo is not None
+            else datetime.datetime.now()
+        )
+    today = now.date() if hasattr(now, "date") else now
+    roll_lead_bd = 10
+    y, m = today.year, today.month
+    for i in range(18):
+        mm = m + i
+        cy = y + (mm - 1) // 12
+        cm = (mm - 1) % 12 + 1
+        code = SILVER_MONTH_CODES.get(cm)
+        if not code:
+            continue
+        fnd = _gold_first_notice(cy, cm)
+        roll = _business_days_before(fnd, roll_lead_bd)
+        if today <= roll:
+            return f"SIL{code}{str(cy)[-1]}"
+    return f"SILZ{str(y)[-1]}"
+
+
 DESK_SYMBOLS = {
     "MNQ.c.0": "NASDAQ",
     "MYM.c.0": "DOW",
     "MGC.c.0": "GOLD",
     "CL.c.0": "CRUDE",
     "NKD.c.0": "NIKKEI",
+    "SIL.c.0": "SILVER",
+    "SI.c.0": "SILVER",
 }
 
 # Completed 1m bars retained per desk. The historical bar vendors run several minutes
@@ -381,6 +411,7 @@ def desk_raw_symbols():
         get_active_quarterly_contract("NKD"): "NIKKEI",
         get_active_cl_contract(): "CRUDE",
         get_active_gold_contract(): "GOLD",
+        get_active_silver_contract(): "SILVER",
     }
 
 
@@ -653,13 +684,27 @@ def run_databento_stream(api_key: str):
 
         except Exception as e:
             connected = False
-            print(
-                f"[Sidecar] Stream error: {e}. Reconnecting in {reconnect_delay:.2f}s...",
-                file=sys.stderr,
-                flush=True,
-            )
-            time.sleep(reconnect_delay)
-            reconnect_delay = min(reconnect_delay * 2, 3.0)
+            err_msg = str(e)
+            if "license is required" in err_msg.lower():
+                print(
+                    "[Sidecar] A live data license is required to stream GLBX.MDP3.\n"
+                    "          Please ensure the CME Globex subscriber agreement is signed and Live data\n"
+                    "          is activated on your Databento portal: https://databento.com/portal/licenses\n"
+                    "          In the meantime, the trading desk will automatically and safely stream via real-time OANDA with CME basis shift.\n"
+                    "          Re-checking license in 30s...",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                time.sleep(30.0)
+                reconnect_delay = 5.0
+            else:
+                print(
+                    f"[Sidecar] Stream error: {e}. Reconnecting in {reconnect_delay:.2f}s...",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                time.sleep(reconnect_delay)
+                reconnect_delay = min(reconnect_delay * 2, 5.0)
 
 
 def main():

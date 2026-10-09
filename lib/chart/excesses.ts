@@ -99,6 +99,7 @@ const ROUNDED_NUMBER_STEP: Record<string, number> = {
   NIKKEI: 500,
   GOLD: 50,
   CRUDE: 5,
+  SILVER: 1,
 }
 
 /**

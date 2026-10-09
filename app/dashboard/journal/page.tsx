@@ -15,7 +15,7 @@ import type { TopstepXChallengeState } from '@/lib/trading/topstepXChallenge'
 
 import { SYSTEMATIC_LIVE_DESK } from '@/lib/trading/systematicDesk'
 
-type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | 'RUSSELL' | 'ALL'
+type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | 'SILVER' | 'RUSSELL' | 'ALL'
 type HistoryTab = 'live' | 'sim' | 'voice'
 
 interface JournalEntry {
@@ -245,7 +245,9 @@ function JournalPageInner() {
             ? 'MGCZ26'
             : e.instrument === 'CRUDE'
               ? 'MCLV26'
-              : e.instrument)
+              : e.instrument === 'SILVER'
+                ? 'SILZ26'
+                : e.instrument)
     const entry = e.fill?.price != null ? e.fill.price.toFixed(2) : 'MKT'
     const sl = e.risk?.stop_loss ? ` | SL: ${e.risk.stop_loss.toFixed(2)}` : ''
     const tp = e.risk?.take_profit ? ` | TP: ${e.risk.take_profit.toFixed(2)}` : ''
@@ -425,7 +427,7 @@ function JournalPageInner() {
           </div>
           {(isSim
             ? (['ALL', 'DOW', 'NASDAQ', 'NIKKEI'] as Instrument[])
-            : (['ALL', 'NASDAQ', 'DOW', 'GOLD', 'CRUDE', 'RUSSELL'] as Instrument[])
+            : (['ALL', 'NASDAQ', 'DOW', 'GOLD', 'CRUDE', 'SILVER', 'RUSSELL'] as Instrument[])
           ).map((inst) => (
             <button
               key={inst}

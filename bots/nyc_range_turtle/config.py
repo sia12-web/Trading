@@ -21,6 +21,7 @@ US_SESSION_INSTRUMENTS = (
     "DE30_EUR",    # DAX
     "UK100_GBP",   # FTSE
     "XAU_USD",     # Gold
+    "XAG_USD",     # Silver
 )
 
 # Prior-VA mean-reversion universe (Asia winners + US cleanest names)
@@ -71,7 +72,7 @@ LUNCH_START = time(12, 0)
 LUNCH_END = time(13, 30)  # exclusive end of lunch lock (12:00–13:30)
 # Instruments that observe US lunch lock
 LUNCH_LOCK_INSTRUMENTS = frozenset(
-    {"US30_USD", "NAS100_USD", "DE30_EUR", "UK100_GBP", "XAU_USD"}
+    {"US30_USD", "NAS100_USD", "DE30_EUR", "UK100_GBP", "XAU_USD", "XAG_USD"}
 )
 
 # True NYC Range: overnight Asia+London (16:00→09:30 ET) on US indices
@@ -110,6 +111,7 @@ SESSION_START: dict[str, time] = {
     "DE30_EUR": time(9, 30),
     "UK100_GBP": time(9, 30),
     "XAU_USD": time(9, 30),
+    "XAG_USD": time(9, 30),
     "EUR_USD": time(3, 0),
     "GBP_USD": time(3, 0),
 }
@@ -121,6 +123,7 @@ SESSION_END: dict[str, time] = {
     "DE30_EUR": time(16, 0),
     "UK100_GBP": time(16, 0),
     "XAU_USD": time(16, 0),
+    "XAG_USD": time(16, 0),
     "EUR_USD": time(17, 0),
     "GBP_USD": time(17, 0),
 }
@@ -145,6 +148,7 @@ SESSION_WINDOWS: dict[str, list[tuple[time, time]]] = {
     "DE30_EUR": [(time(9, 30), time(16, 0))],
     "UK100_GBP": [(time(9, 30), time(16, 0))],
     "XAU_USD": [(time(9, 30), time(16, 0))],
+    "XAG_USD": [(time(9, 30), time(16, 0))],
     "EUR_USD": [(time(3, 0), time(17, 0))],
     "GBP_USD": [(time(3, 0), time(17, 0))],
 }

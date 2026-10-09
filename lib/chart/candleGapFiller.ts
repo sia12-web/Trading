@@ -123,10 +123,19 @@ export function fillCandleGaps<T extends BaseCandle>(
       continue
     }
 
-    // Fill intraday dropouts (up to 10 bars on 1m, up to 3 bars on 5m+).
-    // Never invent endless synthetic flat bars over session pauses, halts, or extended lulls.
+    // Fill intraday dropouts during active market hours (e.g. overnight Asia lull, vendor latency).
+    // Never invent synthetic flat bars over CME maintenance halts or weekend closes.
     const gapBarsCount = Math.round((targetTime - prev.time) / step) - 1
-    const maxGapAllowed = timeframe === '1m' || timeframe === '1' ? 10 : 3
+    const maxGapAllowed =
+      timeframe === '1m' || timeframe === '1'
+        ? 60
+        : timeframe === '5m' || timeframe === '5'
+        ? 36
+        : timeframe === '15m' || timeframe === '15'
+        ? 24
+        : timeframe === '30m' || timeframe === '30'
+        ? 16
+        : 12
     if (gapBarsCount > 0 && gapBarsCount <= maxGapAllowed) {
       let cursorTime = expectedNextTime
       while (cursorTime < targetTime && filledCount < MAX_GAP_FILL_BARS) {

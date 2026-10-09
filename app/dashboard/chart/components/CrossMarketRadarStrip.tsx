@@ -314,6 +314,7 @@ export function CrossMarketRadarStrip({
                       SP500: 'NASDAQ', // route to desk instrument if S&P not separate chart tab
                       GOLD: 'GOLD',
                       CRUDE: 'CRUDE',
+                      SILVER: 'SILVER',
                       NIKKEI: 'NIKKEI',
                     }
                     onSelectInstrument(instMap[m.market])

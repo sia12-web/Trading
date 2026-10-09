@@ -181,9 +181,9 @@ function FundamentalsContent() {
             }`}
           >
             <span>🪙</span>
-            <span>COMEX Gold (GC)</span>
+            <span>Gold & Silver (GC/SI)</span>
             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-400/30 text-amber-200">
-              Macro/Monetary
+              Precious Metals
             </span>
           </button>
 
@@ -241,7 +241,7 @@ function FundamentalsContent() {
             : market === 'NQ'
             ? 'Nasdaq Analyst: Macro · Rates Engine · Mega-Cap Guidance · AI/Semis · Breadth'
             : market === 'GC'
-            ? 'Gold Analyst: Real Rates · USD · Fed · Central Banks · WGC ETFs · Wyckoff Rejection'
+            ? 'Gold & Silver Analyst: Real Rates · USD · Fed · Central Banks · Gold/Silver Ratio · WGC ETFs · Wyckoff Rejection'
             : 'Oil Analyst: Physical balances · Cushing inventories · OPEC+ quota · 3:2:1 Crack margins'}
         </div>
       </div>

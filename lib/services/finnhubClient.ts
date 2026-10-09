@@ -533,6 +533,7 @@ export class FinnhubClient {
       NASDAQ: 'QQQ', // Invesco QQQ (Nasdaq-100 proxy)
       NIKKEI: 'EWJ', // iShares MSCI Japan ETF
       GOLD: 'GLD', // SPDR Gold Shares
+      SILVER: 'SLV', // iShares Silver Trust
       CRUDE: 'USO', // United States Oil Fund
     }
     const symbol = symbolMap[instrument]

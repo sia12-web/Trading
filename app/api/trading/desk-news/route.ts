@@ -50,7 +50,7 @@ export async function GET(request: Request) {
     const focus = liveFocusMarket(now)
 
     const finnhub = getFinnhubClient()
-    const instruments: DeskNewsInstrument[] = ['DOW', 'NASDAQ', 'NIKKEI', 'GOLD', 'CRUDE']
+    const instruments: DeskNewsInstrument[] = ['DOW', 'NASDAQ', 'NIKKEI', 'GOLD', 'CRUDE', 'SILVER']
 
     const calendarRowsPromise = finnhub.getEconomicCalendar(
       ymd(new Date(now.getTime() - 21 * 86400000)),
@@ -124,6 +124,7 @@ export async function GET(request: Request) {
       NIKKEI: filterCardsForDesk(allCards, 'NIKKEI', 10),
       GOLD: filterCardsForDesk(allCards, 'GOLD', 10),
       CRUDE: filterCardsForDesk(allCards, 'CRUDE', 10),
+      SILVER: filterCardsForDesk(allCards, 'SILVER', 10),
       ALL: filterCardsForDesk(allCards, 'ALL', 12, sessionOpts),
     }
 

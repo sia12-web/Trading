@@ -322,9 +322,12 @@ function applyManageStructure(
 
 /** ETF proxies for index options (cash indices have no liquid listed chains here). */
 export function optionsProxySymbol(
-  instrument: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
+  instrument: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | 'SILVER'
 ): string {
   if (instrument === 'NASDAQ') return 'QQQ'
   if (instrument === 'NIKKEI') return 'EWJ'
+  if (instrument === 'GOLD') return 'GLD'
+  if (instrument === 'CRUDE') return 'USO'
+  if (instrument === 'SILVER') return 'SLV'
   return 'DIA'
 }

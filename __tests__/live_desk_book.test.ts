@@ -32,6 +32,7 @@ assert.equal(isLiveClockInstrument('DOW'), true)
 assert.equal(isLiveClockInstrument('NASDAQ'), true)
 assert.equal(isLiveClockInstrument('GOLD'), true)
 assert.equal(isLiveClockInstrument('CRUDE'), true)
+assert.equal(isLiveClockInstrument('SILVER'), true)
 assert.equal(isLiveClockInstrument('NIKKEI'), false)
 assert.equal(isNyGlanceChart('NASDAQ', 'DOW'), false)
 assert.equal(isNyGlanceChart('NASDAQ', 'NASDAQ'), false)
@@ -40,8 +41,10 @@ assert.equal(liveDeskContractLabel('DOW'), 'DOW · MYM')
 assert.equal(liveDeskContractLabel('NASDAQ'), 'NASDAQ · MNQ')
 assert.equal(liveDeskContractLabel('GOLD'), 'GOLD · MGC')
 assert.equal(liveDeskContractLabel('CRUDE'), 'CRUDE · CL')
+assert.equal(liveDeskContractLabel('SILVER'), 'SILVER · SIL')
 assert.ok(liveDeskIndexHint('NASDAQ').includes('30k'))
 assert.ok(liveDeskIndexHint('DOW').includes('53k'))
+assert.ok(liveDeskIndexHint('SILVER').includes('SIL'))
 assert.ok(clockedNameOnlyMessage('NASDAQ').includes('shared 3'))
 
 assert.equal(
@@ -88,6 +91,9 @@ if (ok.ok) assert.equal(ok.instrument, 'NASDAQ')
 const goldOk = assertLiveClockIn({ market: 'NY', instrument: 'GOLD' })
 assert.equal(goldOk.ok, true)
 
+const silverOk = assertLiveClockIn({ market: 'NY', instrument: 'SILVER' })
+assert.equal(silverOk.ok, true)
+
 const switchName = assertLiveClockIn({
   market: 'NY',
   instrument: 'DOW',
@@ -102,8 +108,9 @@ const vis = liveVisibleInstruments(now, {
   clockedIn: true,
   attendedToday: true,
 })
-assert.deepEqual(vis, ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'], `full board ${vis}`)
+assert.deepEqual(vis, ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'SILVER'], `full board ${vis}`)
 assert.ok(vis.includes('GOLD'))
+assert.ok(vis.includes('SILVER'))
 assert.ok(!vis.includes('NIKKEI'))
 
 const freeSwitch = resolveSessionGate({
@@ -117,8 +124,9 @@ const freeSwitch = resolveSessionGate({
 })
 assert.equal(freeSwitch.glanceOnly, false)
 assert.equal(freeSwitch.lockedInstrument, 'NASDAQ')
-assert.deepEqual(freeSwitch.allowedInstruments, ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'NIKKEI'])
+assert.deepEqual(freeSwitch.allowedInstruments, ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'SILVER', 'NIKKEI'])
 assert.ok(freeSwitch.allowedInstruments.includes('GOLD'))
+assert.ok(freeSwitch.allowedInstruments.includes('SILVER'))
 
 const allowedGold = assertCanOpenPosition('GOLD', {
   ...freeSwitch,
@@ -158,7 +166,7 @@ const nikkeiLockIgnored = liveVisibleInstruments(etDate(10, 0), {
   attendedToday: true,
 })
 assert.ok(!nikkeiLockIgnored.includes('NIKKEI'))
-assert.deepEqual(nikkeiLockIgnored, ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'])
+assert.deepEqual(nikkeiLockIgnored, ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'SILVER'])
 
 const tokyoHours = new Date(Date.UTC(2026, 6, 15, 0, 30, 0)) // 09:30 JST
 assert.ok(!liveVisibleInstruments(tokyoHours).includes('NIKKEI'))
@@ -208,6 +216,17 @@ const goldTicket = buildTradovateMirrorTicket({
 })
 assert.ok(goldTicket)
 assert.equal(goldTicket!.symbol, 'MGC')
+
+const silverTicket = buildTradovateMirrorTicket({
+  instrument: 'SILVER',
+  direction: 'LONG',
+  entry: 60.5,
+  stop: 60.1,
+  target: 61.3,
+  riskDollars: 400,
+})
+assert.ok(silverTicket)
+assert.equal(silverTicket!.symbol, 'SIL')
 
 const livePage = readFileSync(
   join(__dirname, '../app/dashboard/chart/page.tsx'),

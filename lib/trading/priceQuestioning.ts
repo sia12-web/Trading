@@ -211,6 +211,8 @@ function getInstrumentStdScale(instrument: string): number {
       return 5.0
     case 'CRUDE':
       return 0.75
+    case 'SILVER':
+      return 0.35
     case 'DOW':
       return 100.0
     case 'NIKKEI':
@@ -232,6 +234,11 @@ function isRoundNumber(price: number, instrument: string): boolean {
     // $1.00 or $0.50
     const modHalf = Math.abs((price * 10) % 5)
     return modHalf < 0.5 || modHalf > 4.5
+  }
+  if (inst === 'SILVER') {
+    // $1.00 or $0.50
+    const modHalf = Math.abs((price * 10) % 5)
+    return modHalf < 0.25 || modHalf > 4.75
   }
   if (inst === 'DOW' || inst === 'NIKKEI') {
     // 500 or 100 handles

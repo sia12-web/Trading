@@ -6,7 +6,7 @@
 
 export const SYSTEMATIC_LIVE_DESK = false
 
-export const LIVE_DESK_NAMES = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'] as const
+export const LIVE_DESK_NAMES = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'SILVER'] as const
 export type LiveDeskName = (typeof LIVE_DESK_NAMES)[number]
 
 export function isLiveDeskName(value: string): value is LiveDeskName {

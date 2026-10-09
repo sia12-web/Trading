@@ -123,7 +123,7 @@ export async function GET(request: Request) {
         60_000
       )
       let pendingSent = false
-      let dbOnBook = true
+      let dbOnBook = isDatabentoLiveActive(instrument)
       const openedAt = Date.now()
 
       const send = (obj: unknown) => {
@@ -183,10 +183,13 @@ export async function GET(request: Request) {
         if (pendingSent || !pending) return
         if (isDatabentoLiveActive(instrument) && dbOnBook) return
         if (basis == null) {
-          // Never send unshifted OANDA quotes on CME instruments when Databento is configured
-          if (isDatabentoConfigured() && dbOnBook) return
-          if (instrument === 'GOLD' || instrument === 'CRUDE') return
-          if (Date.now() - openedAt < UNSHIFTED_AFTER_MS) return
+          // Never send unshifted OANDA quotes when Databento Live is active and on-book
+          if (isDatabentoLiveActive(instrument) && dbOnBook) return
+          if (instrument === 'GOLD' || instrument === 'CRUDE' || instrument === 'SILVER') {
+            if (Date.now() - openedAt < 1000) return
+          } else if (Date.now() - openedAt < UNSHIFTED_AFTER_MS) {
+            return
+          }
         }
         flush(pending)
       }

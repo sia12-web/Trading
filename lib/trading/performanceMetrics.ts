@@ -59,6 +59,11 @@ export function formatCmeExchangePrice(symbol: string, price: number | null | un
     return price.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 2 })
   }
 
+  // CME Silver Futures (SIL / SI) — 0.005 tick precision
+  if (sym.includes('SIL') || sym.includes('SI') || sym === 'SILVER') {
+    return price.toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
+  }
+
   // CME Crude Oil Futures (MCL / CL) — 0.01 tick precision
   if (sym.includes('MCL') || sym.includes('CL') || sym === 'CRUDE') {
     return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -80,6 +85,7 @@ export function getExchangeTag(symbol: string): string {
     sym.includes('MNQ') || sym.includes('NQ') || sym === 'NASDAQ' ||
     sym.includes('MYM') || sym.includes('YM') || sym === 'DOW' ||
     sym.includes('MGC') || sym.includes('GC') || sym === 'GOLD' ||
+    sym.includes('SIL') || sym.includes('SI') || sym === 'SILVER' ||
     sym.includes('MCL') || sym.includes('CL') || sym === 'CRUDE' ||
     sym.includes('M2K') || sym.includes('RTY') || sym === 'RUSSELL'
   ) {

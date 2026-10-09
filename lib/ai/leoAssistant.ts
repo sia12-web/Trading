@@ -796,10 +796,10 @@ Platform session (TOKYO_SESSION — yesterday's profile and rule expiry use this
 
 "Around the open" means around 09:00 JST.`
   }
-  if (instrument === 'GOLD' || instrument === 'CRUDE') {
+  if (instrument === 'GOLD' || instrument === 'CRUDE' || instrument === 'SILVER') {
     return `SESSION_POLICY_NYC
 TRADER_DEFINED_NY_PROFILE_SESSION
-Gold and crude do not have an equity cash session. 09:30–16:00 ET is the trader-defined New York profile window used for yesterday's profile. Call that window TRADER_DEFINED_NY_PROFILE_SESSION. Do not infer an equity open auction, a cash imbalance, or a stock-market close from it.
+Gold, crude, and silver do not have an equity cash session. 09:30–16:00 ET is the trader-defined New York profile window used for yesterday's profile. Call that window TRADER_DEFINED_NY_PROFILE_SESSION. Do not infer an equity open auction, a cash imbalance, or a stock-market close from it.
 
 - Before 09:30 ET: build the map from verified levels only.
 - 09:30 ET: freeze the map. Do not invent levels after the freeze.
@@ -810,7 +810,7 @@ US equity-index session. Yesterday's profile is the NYC cash session 09:30–16:
 
 - Before 09:30 ET: build the map from verified levels only.
 - 09:30 ET: freeze the map. Do not invent levels after the freeze.
-- "Around the open" means 09:30 ET. Scan NQ, ES, YM, Gold, and Oil for location, participation, and one of the four structures.`
+- "Around the open" means 09:30 ET. Scan NQ, ES, YM, Gold, Silver, and Oil for location, participation, and one of the four structures.`
 }
 
 const CLEAN_LOCATION_AUDIT: Record<string, string> = {
@@ -1292,7 +1292,7 @@ ${
 You must follow this strategy EXACTLY. No speculative hedging narratives, no dealer gamma theories, no multi-agent consensus distractions. Focus strictly on observable Auction Market Theory and Wyckoff structural events.
 
 1. WATCHLIST & SCANNING:
-   - Primary futures watchlist: NQ / ES / YM / Gold / Oil.
+   - Primary futures watchlist: NQ / ES / YM / Gold / Silver / Oil.
    - Do NOT decide beforehand that today is a Nasdaq day. At the open, look for the market showing the best combination of: Volatility + Participation + Important Location.
    - VIX can help tell if equity volatility is waking up. It does not say who is positioned, and it does not give the setup. The market itself must give the setup.
 
@@ -1369,7 +1369,7 @@ You must follow this strategy EXACTLY. No speculative hedging narratives, no dea
     - Focus solely on observable, measurable behavior: What are participants actually accomplishing at the level?
 
 15. HOW TO SELECT WHICH MARKET TO TRADE:
-    - At the open defined by the injected SESSION_POLICY, ask 3 questions across NQ, ES, YM, Gold, Oil:
+    - At the open defined by the injected SESSION_POLICY, ask 3 questions across NQ, ES, YM, Gold, Silver, Oil:
       1. Is participation expanding (volume/range increasing)?
       2. Is price near one of my predetermined levels?
       3. Is one of the four structures forming (Spring, Upthrust, Breakdown/Failed Reclaim, Breakout/Retest)?

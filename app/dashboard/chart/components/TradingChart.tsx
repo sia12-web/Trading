@@ -647,7 +647,7 @@ function makeDeskChartFormatters(_instrument: Instrument, timeframe: DeskTimefra
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Instrument = 'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE' | 'NIKKEI'
+type Instrument = 'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE' | 'SILVER' | 'NIKKEI'
 
 export type DeskTimeframe = '1m' | '5m' | '30m' | '1D'
 export const DESK_TIMEFRAMES: DeskTimeframe[] = ['1m', '5m', '30m', '1D']
@@ -710,6 +710,7 @@ const INSTRUMENT_META: Record<Instrument, { label: string; symbol: string; color
   NASDAQ: { label: 'Micro Nasdaq · MNQ', symbol: 'MNQ', color: '#0f766e', basePrice: 29500 },
   GOLD: { label: 'Micro Gold · MGC', symbol: 'MGC', color: '#ca8a04', basePrice: 4350 },
   CRUDE: { label: 'Crude · CL', symbol: 'CL', color: '#78716c', basePrice: 104 },
+  SILVER: { label: 'Micro Silver · SIL', symbol: 'SIL', color: '#94a3b8', basePrice: 60.5 },
   NIKKEI: { label: 'Nikkei 225 · NKD', symbol: 'NKD', color: '#dc2626', basePrice: 38900 },
 }
 
@@ -723,6 +724,9 @@ function deskCandlePriceFormat(instrument: Instrument) {
   }
   if (instrument === 'GOLD') {
     return { type: 'price' as const, precision: 1, minMove: 0.1 }
+  }
+  if (instrument === 'SILVER') {
+    return { type: 'price' as const, precision: 3, minMove: 0.005 }
   }
   if (instrument === 'NASDAQ') {
     return { type: 'price' as const, precision: 2, minMove: 0.25 }
@@ -1860,7 +1864,7 @@ export function TradingChart({
     const reload = () => {
       try {
         const inst = instrument as MarketInstrument
-        if (['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'NIKKEI'].includes(inst)) {
+        if (['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'SILVER', 'NIKKEI'].includes(inst)) {
           const rules = loadRulesForMarket(inst)
           setArmedSituations(rules.filter((r) => isEntrySituationRule(r.type) && r.status === 'ARMED'))
         } else {
@@ -7309,7 +7313,7 @@ export function TradingChart({
     if (allowedInstruments && allowedInstruments.length > 0) {
       return allowedInstruments as Instrument[]
     }
-    return ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'NIKKEI']
+    return ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'SILVER', 'NIKKEI']
   })
 
   useEffect(() => {
@@ -7337,25 +7341,30 @@ export function TradingChart({
     setVisibleInstruments(live)
   }, [allowedInstruments, lockedInstrument, focusTick, deskAttended])
 
-  /** Tip/SSE: pre-open focus free; after open / afternoon only if attended */
+  /** Tip/SSE: pre-open focus free; active during any desk session (Asia, London, NY) or open CME */
   const tipStreamActive = useMemo(() => {
     if (!clockReady) return false
     void focusTick
-    return isLiveTipStreamAllowed(instrument, new Date(), {
+    const gate = isLiveTipStreamAllowed(instrument, new Date(), {
       attendedToday: deskAttended,
       clockedIn: deskAttended,
-    }).open
+    })
+    return (
+      gate.open ||
+      activeDeskSessionsAt(Math.floor(Date.now() / 1000)).length > 0
+    )
   }, [instrument, deskAttended, focusTick, clockReady])
 
   const setInstrument = useCallback((inst: Instrument) => {
     if (!visibleInstruments.includes(inst)) return
     setInstrumentState(inst)
-    // Free-switch: remember any board tab (indexes + gold/crude/nikkei).
+    // Free-switch: remember any board tab (indexes + gold/crude/silver/nikkei).
     if (
       inst === 'DOW' ||
       inst === 'NASDAQ' ||
       inst === 'GOLD' ||
       inst === 'CRUDE' ||
+      inst === 'SILVER' ||
       inst === 'NIKKEI'
     ) {
       setDeskInstrumentPreference(inst)
@@ -10236,7 +10245,7 @@ export function TradingChart({
           const tip = nextBars[nextBars.length - 1]!
           try {
             candleRef.current?.update({
-              time: toChartTime(tip.time as number, chartTzRef.current) as UTCTimestamp,
+              time: toSeriesTime(tip.time as number, timeframe, chartTzRef.current),
               open: tip.open,
               high: tip.high,
               low: tip.low,
@@ -14454,7 +14463,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           const isFlat = Math.abs(pnlPts) < 0.25
 
           const pointVal =
-            instrument === 'NASDAQ' ? 2 : instrument === 'DOW' ? 0.5 : instrument === 'GOLD' ? 10 : instrument === 'CRUDE' ? 100 : instrument === 'NIKKEI' ? 5 : 5
+            instrument === 'NASDAQ' ? 2 : instrument === 'DOW' ? 0.5 : instrument === 'GOLD' ? 10 : instrument === 'CRUDE' ? 100 : instrument === 'SILVER' ? 1000 : instrument === 'NIKKEI' ? 5 : 5
           const sz = positionOverlay.positionSize ?? 1
           const pnlUsd = pnlPts * sz * pointVal
 
@@ -14989,7 +14998,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           const tpPx = ov.profitTarget
           const pnlPts = isLong ? curPx - entryPx : entryPx - curPx
           const pointVal =
-            instrument === 'NASDAQ' ? 2 : instrument === 'DOW' ? 0.5 : instrument === 'GOLD' ? 10 : instrument === 'CRUDE' ? 100 : instrument === 'NIKKEI' ? 5 : 5
+            instrument === 'NASDAQ' ? 2 : instrument === 'DOW' ? 0.5 : instrument === 'GOLD' ? 10 : instrument === 'CRUDE' ? 100 : instrument === 'SILVER' ? 1000 : instrument === 'NIKKEI' ? 5 : 5
           const sz = ov.positionSize ?? 1
           const pnlUsd = pnlPts * sz * pointVal
 

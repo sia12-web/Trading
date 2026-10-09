@@ -11,7 +11,7 @@
 export interface TopstepXTrade {
   ticketId: string
   contract: string
-  instrument: 'NASDAQ' | 'DOW' | 'GOLD' | 'CRUDE' | 'RUSSELL'
+  instrument: 'NASDAQ' | 'DOW' | 'GOLD' | 'CRUDE' | 'SILVER' | 'RUSSELL'
   quantity: number
   entryTime: string
   exitTime: string
@@ -311,6 +311,8 @@ export function validateTopstepXOrderRisk(args: {
           ? 'MGCZ26'
           : norm === 'CRUDE' || norm === 'MCL' || norm === 'CL'
             ? 'MCLV26'
+            : norm === 'SILVER' || norm === 'SIL' || norm === 'SI'
+              ? 'SILZ26'
             : norm === 'RUSSELL' || norm === 'M2K' || norm === 'RTY'
               ? 'M2KU26'
               : norm

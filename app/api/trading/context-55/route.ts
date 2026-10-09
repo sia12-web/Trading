@@ -34,7 +34,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const rawInstrument = (searchParams.get('instrument') || 'DOW').toUpperCase() as Instrument
 
-    const validInstruments: Instrument[] = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'NIKKEI']
+    const validInstruments: Instrument[] = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'SILVER', 'NIKKEI']
     const instrument = validInstruments.includes(rawInstrument) ? rawInstrument : 'DOW'
 
     const cached = cache.get(instrument)

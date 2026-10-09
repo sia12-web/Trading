@@ -1,6 +1,6 @@
 import { DEFAULT_PERSONAL_BALANCE } from '@/lib/trading/deskRiskProfile'
 
-export const LIVE_JOURNAL_INSTRUMENTS = ['DOW', 'NASDAQ', 'NIKKEI', 'GOLD', 'CRUDE', 'RUSSELL'] as const
+export const LIVE_JOURNAL_INSTRUMENTS = ['DOW', 'NASDAQ', 'NIKKEI', 'GOLD', 'CRUDE', 'SILVER', 'RUSSELL'] as const
 export type LiveJournalInstrument = (typeof LIVE_JOURNAL_INSTRUMENTS)[number]
 
 const LIVE_JOURNAL_INSTRUMENT_SET = new Set<string>(LIVE_JOURNAL_INSTRUMENTS)

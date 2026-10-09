@@ -47,6 +47,7 @@ const INSTRUMENT_LABEL: Record<LiveJournalInstrument, string> = {
   NIKKEI: 'Nikkei',
   GOLD: 'Micro Gold',
   CRUDE: 'Crude',
+  SILVER: 'Micro Silver',
   RUSSELL: 'E-mini Russell',
 }
 

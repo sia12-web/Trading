@@ -48,6 +48,8 @@ import {
   isAsiaDeskInstrument,
   isAsiaDeskStreamWindow,
 } from '@/lib/trading/asiaDesk'
+import { isCmeMarketHalt } from '@/lib/chart/candleGapFiller'
+import { activeDeskSessionsAt } from '@/lib/chart/sessionVwap'
 
 export {
   MAX_DAY_ATTEMPTS,
@@ -68,20 +70,21 @@ export type SessionPhase =
   | 'FLAT'
   | 'DONE'
   | 'CLOSED'
+  | 'ASIA'
 
 /** Unlocked slot-2 / slot-3 strategy (null = not in an unlock window). */
 export type RangeStrategy = 'or30' | 'ib' | 'us_range' | null
 /** @deprecated use RangeStrategy */
 export type NyRangeStrategy = RangeStrategy
 
-export type DeskInstrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
+export type DeskInstrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | 'SILVER'
 export type DeskMarket = 'NY' | 'TOKYO'
 
 /** @deprecated use DeskInstrument — kept for older imports */
-export type NyInstrument = 'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE'
+export type NyInstrument = 'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE' | 'SILVER'
 
-export const NY_INSTRUMENTS: DeskInstrument[] = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE']
-export const DESK_INSTRUMENTS: DeskInstrument[] = ['DOW', 'NASDAQ', 'NIKKEI', 'GOLD', 'CRUDE']
+export const NY_INSTRUMENTS: DeskInstrument[] = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'SILVER']
+export const DESK_INSTRUMENTS: DeskInstrument[] = ['DOW', 'NASDAQ', 'NIKKEI', 'GOLD', 'CRUDE', 'SILVER']
 
 export interface MarketSessionTimes {
   tz: string
@@ -359,12 +362,13 @@ export function isDeskInstrument(i: string | null | undefined): i is DeskInstrum
     i === 'NASDAQ' ||
     i === 'NIKKEI' ||
     i === 'GOLD' ||
-    i === 'CRUDE'
+    i === 'CRUDE' ||
+    i === 'SILVER'
   )
 }
 
 function isNyInstrument(i: string | null | undefined): i is NyInstrument {
-  return i === 'DOW' || i === 'NASDAQ' || i === 'GOLD' || i === 'CRUDE'
+  return i === 'DOW' || i === 'NASDAQ' || i === 'GOLD' || i === 'CRUDE' || i === 'SILVER'
 }
 
 function timeInTz(date: Date, timeZone: string): string {
@@ -504,6 +508,17 @@ export function isLiveBarsAllowed(
   if (!isDeskInstrument(instrument)) {
     return { open: false, reason: 'Unknown instrument' }
   }
+  const nowUnix = Math.floor(now.getTime() / 1000)
+  if (isCmeMarketHalt(nowUnix)) {
+    return { open: false, reason: 'CME maintenance halt / weekend close' }
+  }
+  const active = activeDeskSessionsAt(nowUnix)
+  if (active.includes('Asia')) {
+    return { open: true, reason: 'Asia session live' }
+  }
+  if (active.includes('London')) {
+    return { open: true, reason: 'London session live' }
+  }
   const s = sessionFor(instrument)
   if (!isWeekdayInTz(now, s.tz)) {
     return { open: false, reason: `Weekend — ${deskMarketFor(instrument)} session closed` }
@@ -541,42 +556,21 @@ export function isChartStreamAllowed(
   if (!isDeskInstrument(instrument)) {
     return { open: false, reason: 'Unknown instrument' }
   }
-  const s = sessionFor(instrument)
-  if (!isWeekdayInTz(now, s.tz)) {
-    return { open: false, reason: `Weekend — ${deskMarketFor(instrument)} session closed` }
+  const nowUnix = Math.floor(now.getTime() / 1000)
+  if (isCmeMarketHalt(nowUnix)) {
+    return { open: false, reason: 'CME maintenance halt / weekend close — chart frozen' }
+  }
+  const active = activeDeskSessionsAt(nowUnix)
+  if (active.length > 0) {
+    return { open: true, reason: `Chart streaming (${active.join(' / ')} session)` }
   }
   if (isAsiaDeskInstrument(instrument) && isAsiaDeskStreamWindow(now)) {
     return { open: true, reason: 'Asia desk — GOLD/DOW overnight range' }
   }
-  if (!isLiveFocusWindowActive(instrument, now)) {
-    const t = parseTimeToSeconds(timeInTz(now, s.tz))
-    const open = parseTimeToSeconds(s.marketOpen)
-    const close = parseTimeToSeconds(s.marketClose)
-    const focusStart = open - LIVE_FOCUS_LEAD_MINUTES * 60
-    if (t >= close) {
-      return {
-        open: false,
-        reason:
-          deskMarketFor(instrument) === 'TOKYO'
-            ? 'Cash close — chart frozen until next Tokyo focus (open − 30m).'
-            : 'Cash close — chart frozen until next NY focus (open − 30m).',
-      }
-    }
-    if (t < focusStart) {
-      return {
-        open: false,
-        reason:
-          deskMarketFor(instrument) === 'TOKYO'
-            ? `Pre-focus — NIKKEI tip starts ${deskLocalHmsAsTraderDisplay('08:30:00', s.tz, now)} ${TRADER_DISPLAY_LABEL}`
-            : `Pre-focus — NY tip starts ${deskLocalHmsAsTraderDisplay('09:00:00', s.tz, now)} ${TRADER_DISPLAY_LABEL}`,
-      }
-    }
-    return { open: false, reason: 'Outside focus window — tip frozen' }
+  if (isLiveFocusWindowActive(instrument, now) || isAfternoonWatchWindow(now, instrument)) {
+    return { open: true, reason: 'Chart streaming (focus window)' }
   }
-  if (isAfternoonWatchWindow(now, instrument)) {
-    return { open: true, reason: 'Chart streaming (afternoon — trading locked)' }
-  }
-  return { open: true, reason: 'Chart streaming (focus window)' }
+  return { open: true, reason: 'Chart streaming (market open)' }
 }
 
 /**
@@ -1055,8 +1049,11 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
         }
       }
     }
-    const asiaDeskActive = isAsiaDeskChartWindow(now)
-    if (asiaDeskActive) {
+    const nowUnix = Math.floor(now.getTime() / 1000)
+    const activeSessions = activeDeskSessionsAt(nowUnix)
+    const isMarketOpen = !isCmeMarketHalt(nowUnix)
+    const isAsiaActive = isAsiaDeskChartWindow(now) || activeSessions.includes('Asia')
+    if (isAsiaActive || isMarketOpen) {
       out = {
         ...out,
         asiaDeskActive: true,
@@ -1079,20 +1076,26 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
   // Pre-session / weekend / after cash close
   // NY dual browse opens at cash open − 30m (before analyzeStart / clock-in).
   if (!weekday || (t < analyze && !nyDualBrowse)) {
-    const asia = isAsiaDeskChartWindow(now)
+    const nowUnix = Math.floor(now.getTime() / 1000)
+    const activeSessions = activeDeskSessionsAt(nowUnix)
+    const isMarketOpen = !isCmeMarketHalt(nowUnix)
+    const asia = isAsiaDeskChartWindow(now) || activeSessions.includes('Asia')
+    const canLive = asia || activeSessions.length > 0 || isMarketOpen
     return finish({
       ...base,
       rangeStrategy: null,
-      phase: 'CLOSED',
-      canViewLiveChart: asia,
-      canFetchLiveBars: asia,
+      phase: asia ? 'ASIA' : 'CLOSED',
+      canViewLiveChart: canLive,
+      canFetchLiveBars: canLive,
       canPlaceEntry: false,
       canManagePosition: false,
       message: asia
-        ? 'ASIA desk — GOLD (MGC <60 / buffer 10) and DOW (MYM <80 / buffer 20). Place both stop orders after 02:00 Montreal. Cancel unfilled 03:30 · flatten 10:25.'
-        : t < analyze && weekday
-          ? `Pre-session. NY tip + dual browse from ${deskLocalHmsAsTraderDisplay('09:00:00', s.tz, now)} ${TRADER_DISPLAY_LABEL}; AI pick + clock-in at ${analyzeEt} ${TRADER_DISPLAY_LABEL}.`
-          : `Weekend — desk closed. ${nextDesk} Or use Simulation.`,
+        ? 'Asia session active — DOW, NASDAQ, NIKKEI, GOLD, CRUDE live streaming.'
+        : activeSessions.length > 0
+          ? `${activeSessions.join(' / ')} session active (chart streaming). ${nextDesk}`
+          : t < analyze && weekday
+            ? `Pre-session. NY tip + dual browse from ${deskLocalHmsAsTraderDisplay('09:00:00', s.tz, now)} ${TRADER_DISPLAY_LABEL}; AI pick + clock-in at ${analyzeEt} ${TRADER_DISPLAY_LABEL}.`
+            : `Weekend — desk closed. ${nextDesk} Or use Simulation.`,
     })
   }
 
@@ -1144,15 +1147,24 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
   }
 
   if (afterCashClose) {
+    const nowUnix = Math.floor(now.getTime() / 1000)
+    const activeSessions = activeDeskSessionsAt(nowUnix)
+    const isMarketOpen = !isCmeMarketHalt(nowUnix)
+    const canLive = activeSessions.length > 0 || isMarketOpen
+    const isAsia = activeSessions.includes('Asia')
     return finish({
       ...base,
       rangeStrategy: null,
-      phase: 'CLOSED',
+      phase: isAsia ? 'ASIA' : 'CLOSED',
       canViewLiveChart: true,
-      canFetchLiveBars: false,
+      canFetchLiveBars: canLive,
       canPlaceEntry: false,
       canManagePosition: false,
-      message: `Cash closed. ${nextDesk}`,
+      message: isAsia
+        ? 'Asia session active — DOW, NASDAQ, NIKKEI, GOLD, CRUDE live streaming.'
+        : activeSessions.length > 0
+          ? `${activeSessions.join(' / ')} session active (chart live). ${nextDesk}`
+          : `Cash closed. ${nextDesk}`,
     })
   }
 
@@ -1164,7 +1176,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       rangeStrategy: null,
       phase: afternoonWatch ? 'DONE' : 'DONE',
       canViewLiveChart: true,
-      canFetchLiveBars: false,
+      canFetchLiveBars: true,
       canPlaceEntry: false,
       canManagePosition: false,
       message:

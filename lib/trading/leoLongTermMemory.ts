@@ -10,7 +10,7 @@ import { isNycSessionExpired } from '@/lib/trading/sessionGate'
 
 export interface LeoLongTermMemory {
   id: string
-  instrument: string // 'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE' | 'RUSSELL'
+  instrument: string // 'DOW' | 'NASDAQ' | 'GOLD' | 'SILVER' | 'CRUDE' | 'NIKKEI'
   timeframe: string // '1D' | '30m' | '5m' | '1m'
   priceLow: number
   priceHigh: number

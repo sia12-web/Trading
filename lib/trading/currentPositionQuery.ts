@@ -8,7 +8,7 @@
 import { getESTDateString } from '@/lib/utils/timeUtils'
 import { tradeDateForInstrument } from '@/lib/trading/deskAttendance'
 
-export type DeskInstrumentParam = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
+export type DeskInstrumentParam = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | 'SILVER'
 
 export function scopeForCurrentPositionQuery(args: {
   instrument: DeskInstrumentParam | null

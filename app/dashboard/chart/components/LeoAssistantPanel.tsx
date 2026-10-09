@@ -568,6 +568,7 @@ export function LeoAssistantPanel({
     if (s === 'NQ' || s === 'MNQ' || s.includes('NAS')) return 'NASDAQ'
     if (s === 'YM' || s === 'MYM' || s.includes('DOW')) return 'DOW'
     if (s === 'GC' || s === 'MGC' || s.includes('GOLD')) return 'GOLD'
+    if (s === 'SI' || s === 'SIL' || s.includes('SILVER')) return 'SILVER'
     if (s === 'CL' || s === 'MCL' || s.includes('CRUDE') || s.includes('OIL')) return 'CRUDE'
     if (s === 'NKD' || s.includes('NIKKEI')) return 'NIKKEI'
     return s
@@ -582,6 +583,8 @@ export function LeoAssistantPanel({
         return { slDist: 0.5, tpDist: 1.0 }
       case 'GOLD':
         return { slDist: 5.0, tpDist: 10.0 }
+      case 'SILVER':
+        return { slDist: 0.30, tpDist: 0.60 }
       case 'NIKKEI':
         return { slDist: 100, tpDist: 200 }
       case 'NASDAQ':
@@ -599,6 +602,8 @@ export function LeoAssistantPanel({
         return { proximity: 45.0, touch: 8.0, multiplier: 0.5 }
       case 'GOLD':
         return { proximity: 1.5, touch: 0.3, multiplier: 10.0 }
+      case 'SILVER':
+        return { proximity: 0.20, touch: 0.04, multiplier: 1000.0 }
       case 'CRUDE':
         return { proximity: 0.25, touch: 0.05, multiplier: 100.0 }
       case 'NIKKEI':
@@ -740,7 +745,7 @@ export function LeoAssistantPanel({
 
         if (!targetPx) {
           const defaultPrice =
-            inst === 'DOW' ? 52500 : inst === 'GOLD' ? 4350 : inst === 'CRUDE' ? 104 : 29500
+            inst === 'DOW' ? 52500 : inst === 'GOLD' ? 4350 : inst === 'SILVER' ? 60.5 : inst === 'CRUDE' ? 104 : 29500
           targetPx = context.shortTermMoney?.yval ?? context.currentPrice ?? defaultPrice
         }
 
@@ -1526,7 +1531,7 @@ export function LeoAssistantPanel({
                 rule.instrument || context.instrument
               )
               const tickCushion =
-                rule.instrument === 'GOLD' ? 0.3 : rule.instrument === 'CRUDE' ? 0.05 : 2.0
+                rule.instrument === 'GOLD' ? 0.3 : rule.instrument === 'SILVER' ? 0.025 : rule.instrument === 'CRUDE' ? 0.05 : 2.0
 
               const userSl = rule.stopLoss ?? (rule as any).conditions?.stopLoss
               let sl = userSl != null && Number.isFinite(Number(userSl)) && Number(userSl) > 0 ? Number(userSl) : undefined
@@ -1554,7 +1559,7 @@ export function LeoAssistantPanel({
               }
 
               const finalRiskPts = Math.max(
-                rule.instrument === 'CRUDE' ? 0.05 : rule.instrument === 'GOLD' ? 0.2 : 1.0,
+                rule.instrument === 'CRUDE' ? 0.05 : rule.instrument === 'SILVER' ? 0.03 : rule.instrument === 'GOLD' ? 0.2 : 1.0,
                 Math.abs(entryPx - sl)
               )
 

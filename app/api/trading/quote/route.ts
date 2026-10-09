@@ -5,7 +5,7 @@
  */
 
 import { NextResponse } from 'next/server'
-import { getDayPreviousClose, getYahooQuote } from '@/lib/yahoo/quote'
+import { getDayPreviousClose, getYahooQuote, getCachedYahooQuote } from '@/lib/yahoo/quote'
 import { activeDeskSessionsAt } from '@/lib/chart/sessionVwap'
 import { getOandaPrice } from '@/lib/oanda/pricing'
 import {
@@ -81,7 +81,7 @@ export async function GET(request: Request) {
 
     if (!isLiveDeskInstrument(instrument)) {
       return NextResponse.json(
-        { error: 'Desk quote supports DOW, NASDAQ, GOLD, or CRUDE' },
+        { error: 'Desk quote supports DOW, NASDAQ, GOLD, CRUDE, or SILVER' },
         { status: 400 }
       )
     }
@@ -104,8 +104,8 @@ export async function GET(request: Request) {
     if (isDatabentoConfigured()) {
       const dbLive = await resolveDatabentoLiveQuote(instrument)
       if (dbLive && dbLive.price > 0) {
-        const yq = await getYahooQuote(instrument)
-        const book = yq?.price
+        const cachedYq = getCachedYahooQuote(instrument)
+        const book = cachedYq?.price
         if (
           !(
             book &&
@@ -113,7 +113,7 @@ export async function GET(request: Request) {
               dbLive.price,
               dbLive.timestamp,
               book,
-              yq?.timestamp ?? 0,
+              cachedYq?.timestamp ?? 0,
               instrument
             )
           )

@@ -275,6 +275,7 @@ export function isDeskInstrumentPref(i: string | null | undefined): i is DeskIns
     i === 'NASDAQ' ||
     i === 'NIKKEI' ||
     i === 'GOLD' ||
-    i === 'CRUDE'
+    i === 'CRUDE' ||
+    i === 'SILVER'
   )
 }

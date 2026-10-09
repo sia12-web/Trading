@@ -38,6 +38,7 @@ const EMPTY_BY_DESK: Record<DeskTab, DeskNewsCard[]> = {
   NIKKEI: [],
   GOLD: [],
   CRUDE: [],
+  SILVER: [],
 }
 
 const TABS: { id: DeskTab; label: string }[] = [
@@ -47,6 +48,7 @@ const TABS: { id: DeskTab; label: string }[] = [
   { id: 'NIKKEI', label: 'NIKKEI' },
   { id: 'GOLD', label: 'GOLD' },
   { id: 'CRUDE', label: 'CRUDE' },
+  { id: 'SILVER', label: 'SILVER' },
 ]
 
 const WINDOWS: DeskNewsWindowHours[] = [2, 12, 24]
@@ -216,7 +218,7 @@ export default function DeskNewsPage() {
   const deskNotesHazards = useMemo(() => {
     const rows = data?.calendar || []
     if (rows.length === 0) return []
-    const activeInstruments: DeskNewsInstrument[] = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE']
+    const activeInstruments: DeskNewsInstrument[] = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'SILVER']
     const targetMarkets = tab === 'ALL' ? activeInstruments : [tab]
     const all: DeskNewsHazard[] = []
     const seen = new Set<string>()

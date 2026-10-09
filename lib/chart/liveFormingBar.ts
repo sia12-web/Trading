@@ -26,6 +26,7 @@ export const DESK_MAX_5M_RANGE: Record<string, number> = {
   NIKKEI: 2000,
   GOLD: 300,
   CRUDE: 25,
+  SILVER: 5.0,
 }
 
 /**
@@ -39,6 +40,7 @@ export const MAX_SINGLE_TICK_PTS: Record<string, number> = {
   NIKKEI: 150,
   GOLD: 15,
   CRUDE: 1.5,
+  SILVER: 0.50,
 }
 
 /**
@@ -261,9 +263,7 @@ export function mergeHistoryWithLiveTip<T extends FormingBar>(
   }
   if (liveT > lastT) {
     if (!isPlausibleDeskTick(last.close, alignedLive.close, 0.08)) return history
-    // Do not invent flat zero-volume bars across the vendor lag window.
-    // Real 1m CME prints for that span come from the Databento overlay.
-    return [...history, alignedLive]
+    return fillCandleGaps([...history, alignedLive], timeframe, (instrument as any) ?? 'NASDAQ')
   }
   if (liveT < lastT) return history
   if (!isPlausibleDeskTick(last.close, alignedLive.close, 0.08)) return history
@@ -278,7 +278,7 @@ export function mergeHistoryWithLiveTip<T extends FormingBar>(
   }
   const out = history.slice()
   out[out.length - 1] = next
-  return fillCandleGaps(out, timeframe)
+  return fillCandleGaps(out, timeframe, (instrument as any) ?? 'NASDAQ')
 }
 
 /**

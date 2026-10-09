@@ -20,7 +20,7 @@ export function WyckoffRulesPanel({ instrument, onAskLeo }: WyckoffRulesPanelPro
                 The 22-Rule Wyckoff Strategy & Execution Rules
               </h3>
               <p className="text-[10px] text-emerald-300/80 font-mono">
-                Deterministic Intraday Method for NQ, ES, YM, Gold, Oil
+                Deterministic Intraday Method for NQ, ES, YM, Gold, Silver, Oil
               </p>
             </div>
           </div>

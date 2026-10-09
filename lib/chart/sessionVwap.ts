@@ -56,7 +56,7 @@ export const SESSION_WINDOWS = {
 /**
  * Classify a bar into Asia / London / NY, or null when between sessions
  * (post–cash-close dead zone — no paint).
- * All supported instruments (DOW, NASDAQ, GOLD, CRUDE) use America/New_York.
+ * All supported instruments (DOW, NASDAQ, GOLD, CRUDE, SILVER) use America/New_York.
  */
 export function nyDeskSessionAt(unix: number): SessionName | null {
   const h = hourInTz(unix, 'America/New_York')
@@ -965,7 +965,7 @@ export const TOKYO_DESK_CLOCK: DeskClock = {
   openLabel: 'Tokyo 9:00',
 }
 
-/** Returns the desk clock for instruments (DOW, NASDAQ, GOLD, CRUDE use NY, NIKKEI uses Tokyo). */
+/** Returns the desk clock for instruments (DOW, NASDAQ, GOLD, CRUDE, SILVER use NY, NIKKEI uses Tokyo). */
 export function deskClockFor(instrument?: string | null): DeskClock {
   if (instrument === 'NIKKEI') {
     return {

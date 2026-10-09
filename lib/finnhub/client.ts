@@ -15,6 +15,7 @@ const INSTRUMENT_SYMBOLS: Record<Instrument, string> = {
   NASDAQ: 'QQQ', // Invesco QQQ Trust (Nasdaq-100 proxy)
   NIKKEI: 'EWJ', // iShares MSCI Japan ETF (Nikkei proxy on free tier)
   GOLD: 'GLD',   // SPDR Gold Shares
+  SILVER: 'SLV', // iShares Silver Trust
   CRUDE: 'USO',  // United States Oil Fund
 }
 
@@ -24,6 +25,7 @@ export const INSTRUMENT_INDEX_SYMBOLS: Record<Instrument, string> = {
   NASDAQ: '^NDX',
   NIKKEI: '^N225',
   GOLD: 'GC=F',
+  SILVER: 'SI=F',
   CRUDE: 'CL=F',
 }
 

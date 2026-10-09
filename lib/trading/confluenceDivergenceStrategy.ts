@@ -242,6 +242,7 @@ export const TICK_SIZES: Record<Instrument, number> = {
   NASDAQ: 0.25,
   NIKKEI: 5.0,
   GOLD: 0.1,
+  SILVER: 0.005,
   CRUDE: 0.01,
 }
 
@@ -250,6 +251,7 @@ export const STRUCTURAL_BUFFERS: Record<Instrument, number> = {
   NASDAQ: 12.0,  // 12 pts beyond swing wick (~$24 on MNQ)
   NIKKEI: 25.0,
   GOLD: 2.0,     // $2.00 beyond swing wick (~$20 on MGC)
+  SILVER: 0.05,  // $0.05 beyond swing wick (10 ticks, ~$50 on SIL)
   CRUDE: 0.20,   // $0.20 beyond swing wick (~$20 on MCL)
 }
 

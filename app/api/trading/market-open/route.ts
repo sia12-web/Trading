@@ -21,7 +21,7 @@ import { getRecommendationEngine } from '@/lib/trading/recommendationEngine'
 import type { Instrument, MarketOpenResponse, OvernightOHLC } from '@/types/trading'
 import type { Instrument as PriceInstrument } from '@/types/price-feed'
 
-const INSTRUMENTS: Instrument[] = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE']
+const INSTRUMENTS: Instrument[] = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'SILVER']
 
 type DeskQuote = {
   open: number
@@ -73,8 +73,8 @@ async function getIndexQuote(instrument: Instrument): Promise<DeskQuote | null> 
   } catch {
     /* fall through */
   }
-  // Never Finnhub ETF proxies for GOLD/CRUDE (GLD/USO) — wrong scale vs Tradovate MGC/CL.
-  if (instrument === 'GOLD' || instrument === 'CRUDE') {
+  // Never Finnhub ETF proxies for commodities (GLD/USO/SLV) — wrong scale vs Tradovate MGC/CL/SIL.
+  if (instrument === 'GOLD' || instrument === 'CRUDE' || instrument === 'SILVER') {
     return null
   }
   try {

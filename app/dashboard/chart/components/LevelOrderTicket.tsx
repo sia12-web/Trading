@@ -50,7 +50,7 @@ type Direction = 'LONG' | 'SHORT'
 
 /** Working limit — not yet filled. */
 export interface PendingLimitOrder {
-  instrument: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
+  instrument: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | 'SILVER'
   level: number
   levelType?: string
   entryReason?: string
@@ -89,7 +89,7 @@ export interface FilledOrder {
 }
 
 interface Props {
-  instrument: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
+  instrument: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | 'SILVER'
   levelPrice: number
   levelType?: string
   /** Explicit playbook side — preferred over levelType parsing */

@@ -336,7 +336,7 @@ export async function GET(request: Request) {
           if (!endDate && (basis == null || getCmeBasis(instrument, CME_BASIS_REFRESH_MS) == null)) {
             void warmCmeBasis(instrument)
           }
-          if (!endDate && o?.price && o.price > 0 && (basis != null || (instrument !== 'GOLD' && instrument !== 'CRUDE'))) {
+          if (!endDate && o?.price && o.price > 0 && (basis != null || (instrument !== 'GOLD' && instrument !== 'CRUDE' && instrument !== 'SILVER'))) {
             const price = applyCmeBasis(o.price, basis)
             const previous_close = getDayPreviousClose(instrument) ?? price
             const change = price - previous_close

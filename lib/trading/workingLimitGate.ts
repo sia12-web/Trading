@@ -72,11 +72,13 @@ export type WorkingLimitRow = {
   entry_source?: string | null
 }
 
+import type { DeskInstrument } from '@/lib/trading/sessionGate'
+
 export const WORKING_SL_LOCKED_HINT = 'SL locked — sized at place'
 
 /** Map durable working row → chart pending overlay (client). */
 export function workingRowToPending(row: WorkingLimitRow): {
-  instrument: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
+  instrument: DeskInstrument
   level: number
   direction: 'LONG' | 'SHORT'
   stopLoss: number
@@ -93,7 +95,7 @@ export function workingRowToPending(row: WorkingLimitRow): {
   entrySource: 'ai' | 'structure' | 'manual'
   workingId?: string
 } {
-  const instrument = row.instrument as 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
+  const instrument = row.instrument as DeskInstrument
   const level = Number(row.entry_price)
   const direction =
     String(row.entry_direction || '').toUpperCase() === 'SHORT' ? 'SHORT' : 'LONG'

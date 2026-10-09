@@ -3,7 +3,7 @@
  * Real-time market price data structures and types
  */
 
-export type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
+export type Instrument = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | 'SILVER'
 export type MarketSession = 'market' | 'pre' | 'after' | 'closed'
 
 /**

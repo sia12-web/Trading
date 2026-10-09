@@ -116,7 +116,7 @@ export async function cleanupDeskSession(
     .eq('user_id', userId)
     .in('trade_date', tradeDates)
     .is('exit_timestamp', null)
-    .in('instrument', ['DOW', 'NASDAQ', 'NIKKEI', 'GOLD', 'CRUDE'])
+    .in('instrument', ['DOW', 'NASDAQ', 'NIKKEI', 'GOLD', 'CRUDE', 'SILVER'])
 
   for (const row of openRows || []) {
     const inst = row.instrument as DeskInstrument

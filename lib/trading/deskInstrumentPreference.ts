@@ -1,6 +1,6 @@
 /**
- * Remember the live desk instrument across refresh (DOW / NASDAQ / GOLD / CRUDE).
- * Clock-in lock is a preference only — free-switch among the four NY books.
+ * Remember the live desk instrument across refresh (DOW / NASDAQ / GOLD / CRUDE / SILVER).
+ * Clock-in lock is a preference only — free-switch among the NY books.
  * Persisted NIKKEI is ignored (live desk is NYC only; Nikkei stays on Simulation).
  */
 

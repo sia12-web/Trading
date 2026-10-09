@@ -591,8 +591,8 @@ export function buildLiveDeskBrief(
     focusMarket === 'TOKYO'
       ? ['NIKKEI']
       : focusMarket === 'NY'
-      ? ['DOW', 'NASDAQ', 'GOLD', 'CRUDE']
-      : ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'NIKKEI']
+      ? ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'SILVER']
+      : ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'SILVER', 'NIKKEI']
   const cards = instruments.map((instrument) =>
     buildInstrumentDeskCard(
       factsByInst.get(instrument) ?? { instrument },

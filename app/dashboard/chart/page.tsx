@@ -3,7 +3,7 @@
 /**
  * Chart Page — live desk: morning trading; afternoon chart continues (read-only).
  * Flow: place WORKING limit → wait for fill → then MANAGE (morning only).
- * NY:  DOW/NASDAQ/GOLD/CRUDE  9:30–11:30 ET trade / chart through 16:00
+ * NY:  DOW/NASDAQ/GOLD/CRUDE/SILVER  9:30–11:30 ET trade / chart through 16:00
  * Simulation and Nikkei are not on the live desk.
  */
 
@@ -290,7 +290,7 @@ export default function ChartPage() {
   gateRef.current = gate
 
   // Persist clock preference; only snap chart to that book on rising-edge clock-in
-  // (free-switch among DOW/NASDAQ/GOLD/CRUDE after that).
+  // (free-switch among DOW/NASDAQ/GOLD/CRUDE/SILVER after that).
   const wasClockedRef = useRef(false)
   useEffect(() => {
     const locked = gate?.lockedInstrument

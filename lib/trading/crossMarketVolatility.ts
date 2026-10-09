@@ -73,7 +73,15 @@ export function mapInstrumentToVolatilityGauge(instrument: string): {
   if (norm.includes('OIL') || norm.includes('CRUDE') || norm.includes('CL')) {
     return { primaryGauge: 'OVX', assetClass: 'CRUDE' }
   }
-  if (norm.includes('GOLD') || norm.includes('GC') || norm.includes('MGC')) {
+  if (
+    norm.includes('GOLD') ||
+    norm.includes('GC') ||
+    norm.includes('MGC') ||
+    norm.includes('SILVER') ||
+    norm.includes('SIL') ||
+    norm.includes('SI') ||
+    norm.includes('XAG')
+  ) {
     return { primaryGauge: 'GVZ', assetClass: 'GOLD' }
   }
   // Default to Equities (NQ, YM, ES, DOW, NASDAQ, S&P)
@@ -178,7 +186,7 @@ export function buildDefaultVolatilityQuotes(now: Date = new Date()): Record<Vol
       symbol: 'GVZ',
       name: 'Cboe Gold Volatility Index',
       assetClass: 'GOLD',
-      targetMarkets: ['GOLD'],
+      targetMarkets: ['GOLD', 'SILVER'],
       value: 15.1,
       previousClose: 15.3,
       change: -0.2,

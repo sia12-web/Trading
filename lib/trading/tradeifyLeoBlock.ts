@@ -61,7 +61,7 @@ function instrumentLine(
   by: TradeifyLeoSnapshot['byInstrument']
 ): string | null {
   if (!by) return null
-  const order: LiveJournalInstrument[] = ['NIKKEI', 'NASDAQ', 'DOW', 'GOLD', 'CRUDE', 'RUSSELL']
+  const order: LiveJournalInstrument[] = ['NIKKEI', 'NASDAQ', 'DOW', 'GOLD', 'CRUDE', 'SILVER', 'RUSSELL']
   const parts = order
     .filter((k) => {
       const row = by[k]

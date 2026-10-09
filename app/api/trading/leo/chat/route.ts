@@ -323,6 +323,7 @@ ${marketsList}
     else if (/\bnasdaq\b|nq/i.test(lower)) inst = 'NASDAQ'
     else if (/\bgold\b|gc/i.test(lower)) inst = 'GOLD'
     else if (/\bcrude\b|oil|cl/i.test(lower)) inst = 'CRUDE'
+    else if (/\bsilver\b|si\b|sil\b/i.test(lower)) inst = 'SILVER'
 
     // Only assign a candlestick pattern if the user actually mentioned one.
     // If they just said "buy above this level" with no pattern language → LEVEL_TOUCH.

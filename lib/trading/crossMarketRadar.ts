@@ -29,7 +29,7 @@ import {
   mapInstrumentToVolatilityGauge,
 } from './crossMarketVolatility'
 
-export type RadarMarket = 'NASDAQ' | 'DOW' | 'SP500' | 'GOLD' | 'CRUDE' | 'NIKKEI'
+export type RadarMarket = 'NASDAQ' | 'DOW' | 'SP500' | 'GOLD' | 'CRUDE' | 'SILVER' | 'NIKKEI'
 
 export const ALL_RADAR_MARKETS: RadarMarket[] = [
   'NASDAQ',
@@ -37,6 +37,7 @@ export const ALL_RADAR_MARKETS: RadarMarket[] = [
   'SP500',
   'GOLD',
   'CRUDE',
+  'SILVER',
   'NIKKEI',
 ]
 
@@ -111,6 +112,7 @@ const MARKET_TICKER_CONFIG: Record<
   SP500: { root: 'MES', label: 'S&P 500 · MES', locationThresholdPts: 4 },
   GOLD: { root: 'MGC', label: 'Gold · MGC', locationThresholdPts: 3.5 },
   CRUDE: { root: 'CL', label: 'Crude Oil · CL', locationThresholdPts: 0.35 },
+  SILVER: { root: 'SIL', label: 'Silver · SIL', locationThresholdPts: 0.15 },
   NIKKEI: { root: 'NKD', label: 'Nikkei · NKD', locationThresholdPts: 35 },
 }
 
@@ -342,6 +344,14 @@ export function buildCrossMarketRadarReport(
       wyckoffPattern: 'SPRING',
       candlestickPattern: 'Bullish Engulfing',
       runwayRatio: 2.8,
+    },
+    SILVER: {
+      market: 'SILVER',
+      currentPrice: 60.5,
+      dayChangePct: 0.5,
+      recentVolumeRatio: 1.1,
+      cvdTrend: 'BALANCED',
+      nearestLevel: { type: '5D_LVN', price: 60.2, distancePts: 0.3, thresholdPts: 0.15 },
     },
     NIKKEI: {
       market: 'NIKKEI',

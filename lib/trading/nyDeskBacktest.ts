@@ -18,7 +18,7 @@ import { strategyEntryRisk } from '@/lib/trading/strategyRiskGeometry'
 export const DESK_DAILY_LOSS_LIMIT_DOLLARS = 1250
 export const DESK_RISK_DOLLARS = 400
 
-export const NY_BACKTEST_INSTRUMENTS = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'] as const
+export const NY_BACKTEST_INSTRUMENTS = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'SILVER'] as const
 export type NyBacktestInstrument = (typeof NY_BACKTEST_INSTRUMENTS)[number]
 
 export type NyBacktestBar = DeskCallBar
@@ -419,6 +419,10 @@ export function runNyDeskBoardBacktest(args: {
       (args.candles.GOLD || []).filter((c) => isNyCashBar(c.time)),
       clock.timeZone
     ),
+    SILVER: groupCashDays(
+      (args.candles.SILVER || []).filter((c) => isNyCashBar(c.time)),
+      clock.timeZone
+    ),
     CRUDE: groupCashDays(
       (args.candles.CRUDE || []).filter((c) => isNyCashBar(c.time)),
       clock.timeZone
@@ -446,6 +450,7 @@ export function runNyDeskBoardBacktest(args: {
       DOW: grouped.DOW.byDay.get(ymd) || [],
       NASDAQ: grouped.NASDAQ.byDay.get(ymd) || [],
       GOLD: grouped.GOLD.byDay.get(ymd) || [],
+      SILVER: grouped.SILVER.byDay.get(ymd) || [],
       CRUDE: grouped.CRUDE.byDay.get(ymd) || [],
     }
     const times = new Set<number>()
@@ -455,16 +460,18 @@ export function runNyDeskBoardBacktest(args: {
     const timeline = Array.from(times).sort((a, b) => a - b)
     if (timeline.length < 8) continue
 
-    const barAt = {
+    const barAt: Record<NyBacktestInstrument, Map<number, NyBacktestBar>> = {
       DOW: new Map(sessions.DOW.map((b) => [b.time, b])),
       NASDAQ: new Map(sessions.NASDAQ.map((b) => [b.time, b])),
       GOLD: new Map(sessions.GOLD.map((b) => [b.time, b])),
+      SILVER: new Map(sessions.SILVER.map((b) => [b.time, b])),
       CRUDE: new Map(sessions.CRUDE.map((b) => [b.time, b])),
     }
-    const histBase = {
+    const histBase: Record<NyBacktestInstrument, NyBacktestBar[]> = {
       DOW: histEndingOn(ymd, grouped.DOW.days, grouped.DOW.byDay),
       NASDAQ: histEndingOn(ymd, grouped.NASDAQ.days, grouped.NASDAQ.byDay),
       GOLD: histEndingOn(ymd, grouped.GOLD.days, grouped.GOLD.byDay),
+      SILVER: histEndingOn(ymd, grouped.SILVER.days, grouped.SILVER.byDay),
       CRUDE: histEndingOn(ymd, grouped.CRUDE.days, grouped.CRUDE.byDay),
     }
     let fills = 0

@@ -8,9 +8,9 @@
 
 import { isArmedRuleExpired } from '@/lib/trading/sessionGate'
 
-export type MarketInstrument = 'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE' | 'NIKKEI'
+export type MarketInstrument = 'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE' | 'NIKKEI' | 'SILVER'
 
-export const ALL_MARKETS: MarketInstrument[] = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'NIKKEI']
+export const ALL_MARKETS: MarketInstrument[] = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'NIKKEI', 'SILVER']
 
 export type RuleType =
   | 'CONDITIONAL_ENTRY'
@@ -309,6 +309,7 @@ export const MARKET_DEFAULT_PARAMS: Record<MarketInstrument, MarketDefaultSituat
   DOW: { defaultPrice: 52218, defaultPoints: 40 },
   NASDAQ: { defaultPrice: 29448, defaultPoints: 20 },
   GOLD: { defaultPrice: 4323, defaultPoints: 5 },
+  SILVER: { defaultPrice: 60.5, defaultPoints: 0.3 },
   CRUDE: { defaultPrice: 101.25, defaultPoints: 0.5 },
   NIKKEI: { defaultPrice: 38900, defaultPoints: 100 },
 }
@@ -484,6 +485,7 @@ export function loadAllRules(): Record<MarketInstrument, ArmedRule[]> {
     DOW: [],
     NASDAQ: [],
     GOLD: [],
+    SILVER: [],
     CRUDE: [],
     NIKKEI: [],
   }

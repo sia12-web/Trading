@@ -83,12 +83,13 @@ export async function POST(request: Request) {
     try {
       const finnhub = getFinnhubClient()
 
-      const [rawHeadlines, calendarRows, dq, nq, gq, cq, nkq] = await Promise.all([
+      const [rawHeadlines, calendarRows, dq, nq, gq, sq, cq, nkq] = await Promise.all([
         finnhub.getMarketNews('general').catch(() => null),
         finnhub.getEconomicCalendar(ymd(now), ymd(new Date(now.getTime() + 7 * 86400000))).catch(() => null),
         getYahooQuote('DOW').catch(() => null),
         getYahooQuote('NASDAQ').catch(() => null),
         getYahooQuote('GOLD').catch(() => null),
+        getYahooQuote('SILVER').catch(() => null),
         getYahooQuote('CRUDE').catch(() => null),
         getYahooQuote('NIKKEI').catch(() => null),
       ])
@@ -156,6 +157,7 @@ export async function POST(request: Request) {
         formatQuoteForPrompt('NQ', 'MNQ', nq),
         formatQuoteForPrompt('NKD', 'NKD', nkq),
         formatQuoteForPrompt('GC', 'MGC', gq),
+        formatQuoteForPrompt('SI', 'SIL', sq),
         formatQuoteForPrompt('CL', 'MCL', cq),
       ].join('\n')
     } catch (err) {
@@ -165,7 +167,7 @@ export async function POST(request: Request) {
     const newsContextStr = `
 CURRENT DATE & SERVER TIME: ${now.toUTCString()}
 CURRENT DESK TAB SELECTION: ${tab}
-ANALYSIS MARKETS: YM, NQ, NKD, GC, CL
+ANALYSIS MARKETS: YM, NQ, NKD, GC, SI, CL
 JPY_INTERVENTION_RISK: UNKNOWN (not supplied)
 options_implied_event_move: NOT SUPPLIED
 MARKET REACTION ENGINE: NOT SUPPLIED
@@ -202,7 +204,7 @@ ${calendarBlock}
 
 Market reaction status: PENDING_REACTION_ENGINE.
 
-Deeper interpretation belongs to OIL_AGENT, GOLD_AGENT, NQ_AGENT, DOW_AGENT, and NIKKEI_AGENT. Chart Leo owns price location.`
+Deeper interpretation belongs to OIL_AGENT, GOLD_AGENT, SILVER_AGENT, NQ_AGENT, DOW_AGENT, and NIKKEI_AGENT. Chart Leo owns price location.`
 
       return new Response(
         `data: ${JSON.stringify({ text: fallbackText })}\n\ndata: [DONE]\n\n`,

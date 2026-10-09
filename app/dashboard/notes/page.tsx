@@ -19,7 +19,7 @@ import {
 import { DashboardNotifications } from '../components/DashboardNotifications'
 import { isArmedRuleExpired } from '@/lib/trading/sessionGate'
 
-type MarketFilter = 'ALL' | 'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE'
+type MarketFilter = 'ALL' | 'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE' | 'SILVER'
 
 export interface DeskArmedAlert {
   id: string
@@ -32,7 +32,7 @@ export interface DeskArmedAlert {
   createdAt: number
 }
 
-const MARKETS = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'] as const
+const MARKETS = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'SILVER'] as const
 
 export default function NotesPage() {
   const [market, setMarket] = useState<MarketFilter>('ALL')
@@ -166,7 +166,7 @@ export default function NotesPage() {
 
       {/* Market Selector Tabs */}
       <div className="flex flex-wrap items-center gap-2 pt-2">
-        {(['ALL', 'DOW', 'NASDAQ', 'GOLD', 'CRUDE'] as const).map((m) => (
+        {(['ALL', 'DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'SILVER'] as const).map((m) => (
           <button
             key={m}
             type="button"

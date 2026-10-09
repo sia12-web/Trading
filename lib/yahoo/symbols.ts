@@ -12,6 +12,7 @@ export const YAHOO_CME_SYMBOLS: Record<Instrument, string> = {
   NIKKEI: 'NKD=F',
   GOLD: 'MGC=F',
   CRUDE: 'CL=F',
+  SILVER: 'SIL=F',
 }
 
 /** Cash indices / spots (OANDA CFD scale). Fallback only — IB will not match Tradovate. */
@@ -21,6 +22,7 @@ export const YAHOO_CASH_INDEX_SYMBOLS: Record<Instrument, string> = {
   NIKKEI: '^N225',
   GOLD: 'GC=F',
   CRUDE: 'CL=F',
+  SILVER: 'SI=F',
 }
 
 export const YAHOO_SYMBOLS = YAHOO_CME_SYMBOLS

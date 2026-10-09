@@ -26,6 +26,7 @@ export const CME_BASIS_MAX_ABS: Record<Instrument, number> = {
   NIKKEI: 1500,
   GOLD: 150,
   CRUDE: 15,
+  SILVER: 5,
 }
 
 /** Tight pairing: delayed futures last vs OANDA mid of the same second. */

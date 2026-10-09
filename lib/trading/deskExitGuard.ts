@@ -8,6 +8,9 @@ export function liveDeskPointValue(instrument: string): number {
   if (inst === 'NASDAQ') return 2
   if (inst === 'DOW') return 0.5
   if (inst === 'NIKKEI') return 5
+  if (inst === 'GOLD') return 10
+  if (inst === 'CRUDE') return 100
+  if (inst === 'SILVER') return 1000
   return 1
 }
 
@@ -46,5 +49,8 @@ export function quoteBelongsToBook(args: {
   const inst = String(args.instrument || '').toUpperCase()
   if (inst === 'NASDAQ' && (quote < 15000 || quote > 42000)) return false
   if (inst === 'DOW' && (quote < 35000 || quote > 70000)) return false
+  if (inst === 'GOLD' && (quote < 1000 || quote > 7000)) return false
+  if (inst === 'CRUDE' && (quote < 20 || quote > 200)) return false
+  if (inst === 'SILVER' && (quote < 15 || quote > 150)) return false
   return true
 }

@@ -12,6 +12,7 @@ export const DATABENTO_SYMBOLS: Record<Instrument, string> = {
   NIKKEI: 'NKD.c.0',
   GOLD: 'MGC.c.0',
   CRUDE: 'CL.c.0',
+  SILVER: 'SIL.c.0',
 }
 
 /**
@@ -200,6 +201,36 @@ export function getActiveCmeGoldContract(now: Date = new Date()): string {
   return `MGCZ${String(ny.y).slice(-1)}`
 }
 
+const SILVER_MONTH_CODES: Record<number, string> = {
+  3: 'H',
+  5: 'K',
+  7: 'N',
+  9: 'U',
+  12: 'Z',
+}
+
+/**
+ * Volume-lead Micro Silver month (Yahoo SIL=F / SI=F / Tradovate SIL), not calendar SIL.c.0.
+ */
+export function getActiveCmeSilverContract(now: Date = new Date()): string {
+  const ny = nyCivilDate(now)
+  const today = ymdNum(ny.y, ny.m, ny.d)
+  const ROLL_LEAD_BD = 10
+  for (let i = 0; i < 18; i++) {
+    const dt = new Date(Date.UTC(ny.y, ny.m - 1 + i, 1))
+    const cy = dt.getUTCFullYear()
+    const cm = dt.getUTCMonth() + 1
+    const code = SILVER_MONTH_CODES[cm]
+    if (!code) continue
+    const fnd = goldFirstNoticeYmd(cy, cm)
+    const roll = businessDaysBefore(fnd[0], fnd[1], fnd[2], ROLL_LEAD_BD)
+    if (today <= ymdNum(roll[0], roll[1], roll[2])) {
+      return `SIL${code}${String(cy).slice(-1)}`
+    }
+  }
+  return `SILZ${String(ny.y).slice(-1)}`
+}
+
 export function getDatabentoActiveSymbol(
   instrument: Instrument,
   now: Date = new Date()
@@ -218,6 +249,9 @@ export function getDatabentoActiveSymbol(
   }
   if (instrument === 'CRUDE') {
     return { symbol: getActiveCmeClContract(now), stype_in: 'raw_symbol' }
+  }
+  if (instrument === 'SILVER') {
+    return { symbol: getActiveCmeSilverContract(now), stype_in: 'raw_symbol' }
   }
   return { symbol: 'MYM.c.0', stype_in: 'continuous' }
 }
@@ -557,8 +591,18 @@ export async function getDatabentoRecent1m(
     return cached.candles
   }
 
+  // Fast check: Databento historical API has an available end timestamp (usually ~few hours delayed).
+  // If the requested window is completely after the available dataset end, historical API cannot have it.
+  const maxEnd = await getAvailableDatasetEnd(apiKey)
+  const maxEndSec = maxEnd ? Math.floor(new Date(maxEnd).getTime() / 1000) : 0
+  if (maxEndSec > 0 && startSec >= maxEndSec) {
+    // Current window is live tape only (served by sidecar / live streaming).
+    return null
+  }
+
+  const effectiveEndSec = maxEndSec > 0 ? Math.min(nowSec, maxEndSec) : nowSec
   const startDateStr = new Date(startSec * 1000).toISOString().slice(0, 19)
-  const endDateStr = new Date(nowSec * 1000).toISOString().slice(0, 19)
+  const endDateStr = new Date(effectiveEndSec * 1000).toISOString().slice(0, 19)
   try {
     const text = await fetchDatabentoOhlcvJsonl(
       apiKey,

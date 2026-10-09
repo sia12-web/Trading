@@ -10,7 +10,7 @@ import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { logger } from '@/lib/utils/logger'
 import {
   resolveSessionGate,
-  isNyDeskInstrument,
+  isDeskInstrument,
   liveFocusMarket,
   isAnyLiveFocusWindowActive,
   instrumentsForDeskMarket,
@@ -26,7 +26,6 @@ import {
   TRADEIFY_DLL_DOLLARS,
 } from '@/lib/trading/tradeifyGrowth50k'
 import { tradeifyFlattenMontreal } from '@/lib/trading/tradeifyLeoBlock'
-import { LIVE_CLOCK_REFUSE } from '@/lib/trading/liveDeskBook'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -40,7 +39,7 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url)
     const viewingParam = searchParams.get('instrument')
-    const viewingInstrument = isNyDeskInstrument(viewingParam || '')
+    const viewingInstrument = isDeskInstrument(viewingParam || '')
       ? (viewingParam as DeskInstrument)
       : null
 
@@ -50,11 +49,13 @@ export async function GET(request: Request) {
 
     /** Soft AI / regime pick — never collapses NY tabs by itself */
     let suggestedInstrument: DeskInstrument | null = viewingInstrument || marketInstruments[0] || 'DOW'
-    /** Ranked board across DOW / NASDAQ / GOLD / CRUDE */
+    /** Ranked board across all desk instruments */
     const rankedBoard: Array<{ instrument: DeskInstrument; confidence: number }> = [
       { instrument: 'DOW', confidence: 0.8 },
       { instrument: 'NASDAQ', confidence: 0.8 },
+      { instrument: 'NIKKEI', confidence: 0.8 },
       { instrument: 'GOLD', confidence: 0.7 },
+      { instrument: 'SILVER', confidence: 0.7 },
       { instrument: 'CRUDE', confidence: 0.7 },
     ]
     const lockedInstrument: DeskInstrument | null = null
@@ -104,30 +105,16 @@ export async function GET(request: Request) {
 
     const tradeify = resolveTradeifyPlace(tradeifySnap)
 
-    const liveTokyoOff =
-      focusMarket === 'TOKYO' ||
-      viewingForGate === 'NIKKEI' ||
-      gate.market === 'TOKYO'
-    const liveGate = liveTokyoOff
-      ? {
-          ...gate,
-          canClockIn: false,
-          canPlaceEntry: false,
-          glanceOnly: true,
-          canViewLiveChart: true,
-          canFetchLiveBars: true,
-          message: LIVE_CLOCK_REFUSE,
-        }
-      : {
-          ...gate,
-          canClockIn: false,
-          clockedIn: true,
-          attendedToday: true,
-          canViewLiveChart: true,
-          canFetchLiveBars: true,
-          canManagePosition: true,
-          canPlaceEntry: !gate.dayLocked && (gate.attemptsUsed ?? 0) < (gate.maxAttempts ?? 3),
-        }
+    const liveGate = {
+      ...gate,
+      canClockIn: false,
+      clockedIn: true,
+      attendedToday: true,
+      canViewLiveChart: true,
+      canFetchLiveBars: true,
+      canManagePosition: true,
+      canPlaceEntry: !gate.dayLocked && (gate.attemptsUsed ?? 0) < (gate.maxAttempts ?? 3),
+    }
 
     noteSessionGateTransition({
       userId: user.id,

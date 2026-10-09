@@ -1,0 +1,198 @@
+[
+  {
+    "market": "NASDAQ",
+    "name": "NASDAQ (NQ)",
+    "isStats": {
+      "n": 1967,
+      "uniqueDays": 645,
+      "winRate": 28.7,
+      "pf": 0.97,
+      "expR": 0,
+      "netA": -13970,
+      "netB": -24199,
+      "ciRLow": -0.06,
+      "ciRHigh": 0.07
+    },
+    "wfStats": {
+      "n": 1291,
+      "uniqueDays": 432,
+      "winRate": 29.4,
+      "pf": 0.96,
+      "expR": 0.03,
+      "netA": -14363,
+      "netB": -21076,
+      "ciRLow": -0.05,
+      "ciRHigh": 0.11
+    },
+    "oosStats": {
+      "n": 386,
+      "uniqueDays": 132,
+      "winRate": 31.3,
+      "pf": 1.03,
+      "expR": 0.1,
+      "netA": 5277,
+      "netB": 3270,
+      "ciRLow": -0.06,
+      "ciRHigh": 0.25
+    },
+    "totalStats": {
+      "n": 3699,
+      "uniqueDays": 1228,
+      "winRate": 29.2,
+      "pf": 0.97,
+      "expR": 0.02,
+      "netA": -25908,
+      "netB": -45143,
+      "ciRLow": -0.03,
+      "ciRHigh": 0.07
+    },
+    "tradeCount": 3699
+  },
+  {
+    "market": "DOW",
+    "name": "DOW (YM)",
+    "isStats": {
+      "n": 1917,
+      "uniqueDays": 639,
+      "winRate": 28.5,
+      "pf": 0.85,
+      "expR": 0,
+      "netA": -28043,
+      "netB": -18841,
+      "ciRLow": -0.07,
+      "ciRHigh": 0.08
+    },
+    "wfStats": {
+      "n": 1305,
+      "uniqueDays": 417,
+      "winRate": 29,
+      "pf": 0.88,
+      "expR": 0.02,
+      "netA": -17363,
+      "netB": -11099,
+      "ciRLow": -0.07,
+      "ciRHigh": 0.1
+    },
+    "oosStats": {
+      "n": 447,
+      "uniqueDays": 145,
+      "winRate": 29.5,
+      "pf": 0.83,
+      "expR": 0.03,
+      "netA": -11133,
+      "netB": -8988,
+      "ciRLow": -0.15,
+      "ciRHigh": 0.19
+    },
+    "totalStats": {
+      "n": 3721,
+      "uniqueDays": 1218,
+      "winRate": 28.9,
+      "pf": 0.86,
+      "expR": 0.01,
+      "netA": -57409,
+      "netB": -39549,
+      "ciRLow": -0.04,
+      "ciRHigh": 0.06
+    },
+    "tradeCount": 3721
+  },
+  {
+    "market": "CRUDE",
+    "name": "CRUDE (CL)",
+    "isStats": {
+      "n": 1870,
+      "uniqueDays": 629,
+      "winRate": 28,
+      "pf": 0.78,
+      "expR": -0.02,
+      "netA": -47800,
+      "netB": -60890,
+      "ciRLow": -0.09,
+      "ciRHigh": 0.05
+    },
+    "wfStats": {
+      "n": 1223,
+      "uniqueDays": 424,
+      "winRate": 26.7,
+      "pf": 0.71,
+      "expR": -0.08,
+      "netA": -33659,
+      "netB": -42220,
+      "ciRLow": -0.16,
+      "ciRHigh": 0.02
+    },
+    "oosStats": {
+      "n": 375,
+      "uniqueDays": 126,
+      "winRate": 34.1,
+      "pf": 1.02,
+      "expR": 0.18,
+      "netA": 1135,
+      "netB": -1490,
+      "ciRLow": 0.01,
+      "ciRHigh": 0.36
+    },
+    "totalStats": {
+      "n": 3513,
+      "uniqueDays": 1197,
+      "winRate": 28.2,
+      "pf": 0.79,
+      "expR": -0.02,
+      "netA": -80809,
+      "netB": -105400,
+      "ciRLow": -0.07,
+      "ciRHigh": 0.03
+    },
+    "tradeCount": 3513
+  },
+  {
+    "market": "GOLD",
+    "name": "GOLD (GC)",
+    "isStats": {
+      "n": 39,
+      "uniqueDays": 22,
+      "winRate": 15.4,
+      "pf": 0.35,
+      "expR": -0.46,
+      "netA": -2470,
+      "netB": -2720,
+      "ciRLow": -0.82,
+      "ciRHigh": -0.08
+    },
+    "wfStats": {
+      "n": 17,
+      "uniqueDays": 9,
+      "winRate": 29.4,
+      "pf": 0.66,
+      "expR": 0.03,
+      "netA": -745,
+      "netB": -854,
+      "ciRLow": 0,
+      "ciRHigh": 0
+    },
+    "oosStats": {
+      "n": 4,
+      "uniqueDays": 3,
+      "winRate": 50,
+      "pf": 9.89,
+      "expR": 0.53,
+      "netA": 14750,
+      "netB": 14724,
+      "ciRLow": 0,
+      "ciRHigh": 0
+    },
+    "totalStats": {
+      "n": 60,
+      "uniqueDays": 34,
+      "winRate": 21.7,
+      "pf": 2.51,
+      "expR": -0.26,
+      "netA": 11534,
+      "netB": 11150,
+      "ciRLow": -0.57,
+      "ciRHigh": 0.08
+    },
+    "tradeCount": 60
+  }
+]

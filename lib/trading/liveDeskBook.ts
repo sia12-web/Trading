@@ -4,11 +4,11 @@
  * Nikkei stays on Simulation.
  */
 
-export const LIVE_CLOCK_INSTRUMENTS = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE'] as const
+export const LIVE_CLOCK_INSTRUMENTS = ['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'SILVER'] as const
 export type LiveClockInstrument = (typeof LIVE_CLOCK_INSTRUMENTS)[number]
 
 export const LIVE_CLOCK_REFUSE =
-  'Live desk is NYC only (DOW / NASDAQ / GOLD / CRUDE). Nikkei is Simulation.'
+  'Live desk is NYC only (DOW / NASDAQ / GOLD / CRUDE / SILVER). Nikkei is Simulation.'
 
 export function isLiveClockInstrument(
   instrument: string | null | undefined
@@ -17,7 +17,8 @@ export function isLiveClockInstrument(
     instrument === 'DOW' ||
     instrument === 'NASDAQ' ||
     instrument === 'GOLD' ||
-    instrument === 'CRUDE'
+    instrument === 'CRUDE' ||
+    instrument === 'SILVER'
   )
 }
 
@@ -38,6 +39,7 @@ export function liveDeskContractLabel(instrument: string | null | undefined): st
   if (instrument === 'NASDAQ') return 'NASDAQ · MNQ'
   if (instrument === 'GOLD') return 'GOLD · MGC'
   if (instrument === 'CRUDE') return 'CRUDE · CL'
+  if (instrument === 'SILVER') return 'SILVER · SIL'
   if (instrument === 'NIKKEI') return 'NIKKEI · NKD'
   return instrument?.trim() || '—'
 }
@@ -55,6 +57,9 @@ export function liveDeskIndexHint(instrument: string | null | undefined): string
   if (instrument === 'CRUDE') {
     return 'Crude oil CL — match Tradovate CL / TradingView CL1!. Shared 3-fill desk with indexes + gold.'
   }
+  if (instrument === 'SILVER') {
+    return 'Micro Silver SIL — match Tradovate SIL / TradingView SIL1! or SI1!. Shared 3-fill desk with NY markets.'
+  }
   if (instrument === 'NIKKEI') {
     return 'CME Nikkei NKD — USD futures ($5/pt). Tokyo cash session anchors price action (09:00–15:00 JST).'
   }
@@ -62,7 +67,7 @@ export function liveDeskIndexHint(instrument: string | null | undefined): string
 }
 
 export function clockedNameOnlyMessage(locked: string | null | undefined): string {
-  return `NY desk clocked in (${liveDeskContractLabel(locked) || 'board'}). Switch freely among DOW / NASDAQ / GOLD / CRUDE — shared 3 fills.`
+  return `NY desk clocked in (${liveDeskContractLabel(locked) || 'board'}). Switch freely among DOW / NASDAQ / GOLD / CRUDE / SILVER — shared 3 fills.`
 }
 
 /** Prefer viewing book; fall back to locked preference, then first visible. */
@@ -95,7 +100,7 @@ export function assertLiveClockIn(args: {
   if (!isLiveClockInstrument(args.instrument)) {
     return {
       ok: false,
-      error: 'Clock in on DOW, NASDAQ, GOLD, or CRUDE. Shared 3 fills across the NY board.',
+      error: 'Clock in on DOW, NASDAQ, GOLD, CRUDE, or SILVER. Shared 3 fills across the NY board.',
     }
   }
   // Free switch: already clocked into another NY name is OK — preference updates.

@@ -5,7 +5,7 @@
 
 export const TRADINGVIEW_CHART_URL = 'https://www.tradingview.com/chart/'
 
-export type DeskIndex = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'
+export type DeskIndex = 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | 'SILVER'
 
 export type CmeContract = {
   symbol: string
@@ -75,6 +75,17 @@ export const CME_CONTRACTS: Record<DeskIndex, CmeContract> = {
     maxMinis: 4,
     maxMicros: 40,
   },
+  SILVER: {
+    symbol: 'SI',
+    microSymbol: 'SIL',
+    name: 'Silver Futures',
+    microName: 'Micro Silver',
+    pointValue: 5000,
+    microPointValue: 1000,
+    tick: 0.005,
+    maxMinis: 2,
+    maxMicros: 20,
+  },
 }
 
 export function deskFuturesTitle(instrument: string): string {
@@ -89,6 +100,8 @@ export function deskFuturesTitle(instrument: string): string {
       return 'Gold'
     case 'CRUDE':
       return 'Crude'
+    case 'SILVER':
+      return 'Silver'
     default:
       return instrument
   }
@@ -111,7 +124,7 @@ function snapToTick(price: number, tick: number): number {
 }
 
 function fmt(n: number, tick: number): string {
-  const dec = tick < 1 ? 2 : tick >= 5 ? 0 : 2
+  const dec = tick <= 0.005 ? 3 : tick < 1 ? 2 : tick >= 5 ? 0 : 2
   return n.toFixed(dec)
 }
 
@@ -301,7 +314,7 @@ export function deskBookLines(args: {
     sizeNote: '',
   }
   const inst = args.instrument as DeskIndex
-  if (inst !== 'DOW' && inst !== 'NASDAQ' && inst !== 'NIKKEI' && inst !== 'GOLD' && inst !== 'CRUDE') return pulse
+  if (inst !== 'DOW' && inst !== 'NASDAQ' && inst !== 'NIKKEI' && inst !== 'GOLD' && inst !== 'CRUDE' && inst !== 'SILVER') return pulse
   const ticket = buildTradovateMirrorTicket({
     instrument: inst,
     direction: args.direction as 'LONG' | 'SHORT',
@@ -337,6 +350,10 @@ export function tradingViewSymbol(symbol: string): string {
       return 'COMEX:MGC1!'
     case 'GC':
       return 'COMEX:GC1!'
+    case 'SIL':
+      return 'COMEX:SIL1!'
+    case 'SI':
+      return 'COMEX:SI1!'
     case 'CL':
       return 'NYMEX:CL1!'
     case 'MCL':

@@ -16,7 +16,7 @@ const PRESET_PROMPTS = [
   {
     id: 'briefing',
     label: 'What happened',
-    prompt: 'What material events are on the desk? For each one, say what happened, which of YM, NQ, NKD, GC, and CL it affects, and which specialist should own it.',
+    prompt: 'What material events are on the desk? For each one, say what happened, which of YM, NQ, NKD, GC, SI, and CL it affects, and which specialist should own it.',
   },
   {
     id: 'reactions',
@@ -36,7 +36,7 @@ const PRESET_PROMPTS = [
   {
     id: 'drivers',
     label: 'Route the event',
-    prompt: 'For the main event on the desk, name the transmission channels and route it to OIL_AGENT, GOLD_AGENT, NQ_AGENT, DOW_AGENT, or NIKKEI_AGENT. Do not assign a standing market regime.',
+    prompt: 'For the main event on the desk, name the transmission channels and route it to OIL_AGENT, GOLD_AGENT, SILVER_AGENT, NQ_AGENT, DOW_AGENT, or NIKKEI_AGENT. Do not assign a standing market regime.',
   },
 ]
 
@@ -138,7 +138,7 @@ export function DeskNewsAiAssistant({ tab = 'ALL' }: { tab?: string }) {
               </span>
             </h2>
             <p className="text-[11px] text-slate-400">
-              What happened, which of YM, NQ, NKD, GC, and CL it affects, and which specialist owns it
+              What happened, which of YM, NQ, NKD, GC, SI, and CL it affects, and which specialist owns it
             </p>
           </div>
         </div>

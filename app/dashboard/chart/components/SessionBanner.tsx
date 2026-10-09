@@ -29,16 +29,17 @@ import {
 import { SYSTEMATIC_LIVE_DESK } from '@/lib/trading/systematicDesk'
 import { getFeedMetricsSnapshot } from '@/lib/databento/feedLatencySelector'
 import { useInternetLatency } from '@/lib/trading/useInternetLatency'
+import type { DeskInstrument } from '@/lib/trading/sessionGate'
 
 export interface SessionGateState {
   phase: string
   message: string
-  lockedInstrument: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | null
-  suggestedInstrument?: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | null
-  allowedInstruments?: Array<'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE'>
+  lockedInstrument: DeskInstrument | null
+  suggestedInstrument?: DeskInstrument | null
+  allowedInstruments?: Array<DeskInstrument>
   /** 9:15 ranked board — soft priority across NY books */
   rankedBoard?: Array<{
-    instrument: 'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE'
+    instrument: DeskInstrument
     confidence: number
   }>
   canPlaceEntry: boolean
@@ -97,7 +98,7 @@ function formatDeskClock(_market?: 'NY' | 'TOKYO' | null): { time: string; label
 function phaseLabel(
   phase: string,
   rangeStrategy?: 'or30' | 'ib' | 'us_range' | null,
-  instrument?: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | null
+  instrument?: DeskInstrument | null
 ): string {
   if (rangeStrategy === 'us_range') return 'US-RANGE'
   if (rangeStrategy === 'or30') return 'OR30'
@@ -128,7 +129,7 @@ export function SessionBanner({
   lastQuoteAt?: number | null
   dataMode?: 'live' | 'synthetic'
   /** Current chart tab — preferred clock-in commitment when in focus market */
-  viewingInstrument?: 'DOW' | 'NASDAQ' | 'NIKKEI' | 'GOLD' | 'CRUDE' | null
+  viewingInstrument?: DeskInstrument | null
   /** Qualified Asia OCO after 02:00 lock — hide the badge unless the recipe fires */
   asiaOrderLive?: boolean
 }) {
@@ -557,9 +558,9 @@ export function SessionBanner({
           ? 'border-red-600/50 bg-red-950/80 text-red-200'
           : gate.phase === 'FLAT'
             ? 'border-sky-700/40 bg-sky-950/50 text-sky-100'
-            : 'border-[#30363d] bg-[#161b22]/90 text-gray-300'
-
-
+            : gate.phase === 'ASIA'
+              ? 'border-purple-500/50 bg-purple-950/80 text-purple-200 shadow-sm shadow-purple-500/10'
+              : 'border-[#30363d] bg-[#161b22]/90 text-gray-300'
 
   const currentPhaseLabel = phaseLabel(gate.phase, gate.rangeStrategy, gate.lockedInstrument)
 
@@ -567,8 +568,11 @@ export function SessionBanner({
     <>
       <div className={`rounded-lg border px-3 py-2 text-xs flex flex-wrap items-center gap-3 ${tone}`}>
         {currentPhaseLabel && currentPhaseLabel !== 'CLOSED' && (
-          <span className="font-semibold tracking-wide uppercase">
-            {currentPhaseLabel}
+          <span className="font-semibold tracking-wide uppercase flex items-center gap-1.5">
+            {gate.phase === 'ASIA' && (
+              <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+            )}
+            {currentPhaseLabel === 'ASIA' ? 'ASIA LIVE' : currentPhaseLabel}
           </span>
         )}
         <span

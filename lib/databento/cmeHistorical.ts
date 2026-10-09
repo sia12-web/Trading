@@ -17,6 +17,7 @@ interface DailyBarsData {
   NASDAQ: ContextBar[]
   DOW: ContextBar[]
   GOLD: ContextBar[]
+  SILVER?: ContextBar[]
   CRUDE: ContextBar[]
 }
 
@@ -24,6 +25,7 @@ interface FiveMinBarsData {
   NASDAQ: ContextBar[]
   DOW: ContextBar[]
   GOLD: ContextBar[]
+  SILVER?: ContextBar[]
   CRUDE: ContextBar[]
 }
 

@@ -71,5 +71,6 @@ metadata.json
 tmp-*.json
 scratch/
 data/cme_sessions/
+data/cme_multiyear/
 
 

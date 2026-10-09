@@ -60,6 +60,7 @@ export function emptyInstrumentBreak(): Record<LiveJournalInstrument, TradeifyIn
     NASDAQ: { fills: 0, pnl: 0, risked: 0, stops: 0 },
     NIKKEI: { fills: 0, pnl: 0, risked: 0, stops: 0 },
     GOLD: { fills: 0, pnl: 0, risked: 0, stops: 0 },
+    SILVER: { fills: 0, pnl: 0, risked: 0, stops: 0 },
     CRUDE: { fills: 0, pnl: 0, risked: 0, stops: 0 },
     RUSSELL: { fills: 0, pnl: 0, risked: 0, stops: 0 },
   }
