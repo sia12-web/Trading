@@ -858,7 +858,7 @@ export function computeSessionHighlightRects(args: {
 export function paintSessionHighlightOverlay(
   host: HTMLElement | null,
   rects: SessionHighlightRect[],
-  opts?: { keepPreviousIfEmpty?: boolean; paintKey?: string; hideLabels?: boolean }
+  opts?: { keepPreviousIfEmpty?: boolean; paintKey?: string; hideLabels?: boolean; showSessionName?: boolean }
 ): void {
   if (!host) return
   if (opts?.paintKey && host.dataset.paintKey !== opts.paintKey) {
@@ -915,7 +915,7 @@ export function paintSessionHighlightOverlay(
       continue
     }
 
-    // Clean label metadata (Range / Avg / Session) without dashed lines covering the high/low
+    // Clean label metadata (Range / Avg) without dashed lines covering the high/low
     const rangeStr =
       s.range != null
         ? Number.isInteger(s.range)
@@ -930,12 +930,20 @@ export function paintSessionHighlightOverlay(
         : ''
     const sessName = s.displayName ?? (s.name === 'Asia' ? 'Tokyo' : s.name)
 
+    const labelLines: string[] = []
+    if (rangeStr) labelLines.push(`<div>Range: ${rangeStr}</div>`)
+    if (avgStr) labelLines.push(`<div>Avg: ${avgStr}</div>`)
+    if (opts?.showSessionName) labelLines.push(`<div style="font-weight:600;">${sessName}</div>`)
+
+    if (labelLines.length === 0) {
+      d.innerHTML = ''
+      continue
+    }
+
     const labelTop = s.height + 6
     d.innerHTML = `
       <div style="position:absolute;left:8px;top:${labelTop}px;font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;font-size:11px;font-weight:500;line-height:1.35;color:${lineColor};pointer-events:none;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,0.4);">
-        ${rangeStr ? `<div>Range: ${rangeStr}</div>` : ''}
-        ${avgStr ? `<div>Avg: ${avgStr}</div>` : ''}
-        <div style="font-weight:600;">${sessName}</div>
+        ${labelLines.join('')}
       </div>
     `
   }
