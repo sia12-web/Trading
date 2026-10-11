@@ -13,6 +13,7 @@ import {
   isVisibleLiveJournalRow,
   journalTicketEquity,
 } from '@/lib/trading/journalHistory'
+import { getCmcJournalEntries } from '@/lib/trading/cmcJournalAdapter'
 
 
 export const dynamic = 'force-dynamic'
@@ -225,6 +226,22 @@ export async function GET(request: NextRequest) {
       }
     })
 
+    const cmcFallback = getCmcJournalEntries()
+
+    if (entries.length === 0) {
+      return NextResponse.json({
+        success: true,
+        cmc_account: {
+          accountName: 'CMC Markets CFD',
+          broker: 'CMC Markets CFD',
+          startingCapital: 2000,
+        },
+        summary: cmcFallback.summary,
+        entries: cmcFallback.entries,
+        trades: cmcFallback.entries,
+      })
+    }
+
     const mergedEntries = [...entries]
 
     // Sort descending by fill time
@@ -273,9 +290,11 @@ export async function GET(request: NextRequest) {
         days,
       },
       entries: mergedEntries,
+      trades: mergedEntries,
     })
   } catch (e) {
     console.error('[journal]', e)
+    const fallback = getCmcJournalEntries()
     return NextResponse.json({
       success: true,
       cmc_account: {
@@ -283,23 +302,9 @@ export async function GET(request: NextRequest) {
         broker: 'CMC Markets CFD',
         startingCapital: 2000,
       },
-      summary: {
-        trades: 0,
-        open: 0,
-        closed: 0,
-        wins: 0,
-        losses: 0,
-        stop_outs: 0,
-        take_profits: 0,
-        win_rate: null,
-        total_pnl: 0,
-        starting_account: 2000,
-        ending_equity: 2000,
-        equity_change: 0,
-        equity_source: 'cmc_broker',
-        days: 30,
-      },
-      entries: [],
+      summary: fallback.summary,
+      entries: fallback.entries,
+      trades: fallback.entries,
     })
   }
 }

@@ -490,11 +490,11 @@ function JournalPageInner() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="rounded-lg border border-[#30363d] bg-[#0d1117]/80 p-3">
                 <div className="text-[10px] uppercase font-semibold text-gray-500">Account Balance</div>
-                <div className={`mt-1 text-xl font-bold price-mono ${(summary?.total_pnl ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {fmtMoney(2000 + (summary?.total_pnl ?? 0))}
+                <div className={`mt-1 text-xl font-bold price-mono ${(summary?.ending_equity ?? 1929.69) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {fmtMoney(summary?.ending_equity ?? 1929.69)}
                 </div>
                 <div className="text-[10px] text-gray-500 mt-0.5">
-                  Starting Capital: $2,000.00
+                  Starting: $2,000.00 · W/D: $200.00
                 </div>
               </div>
 
@@ -534,9 +534,11 @@ function JournalPageInner() {
                 <span className="font-semibold text-gray-300">Desk Account:</span>
                 <span>CMC Markets CFD</span>
                 <span>·</span>
-                <span>Capital: $2,000.00</span>
+                <span>Capital: $2,000.00 CAD</span>
                 <span>·</span>
-                <span>Markets: NASDAQ · DOW · GOLD · CRUDE</span>
+                <span>Balance: $1,929.69 CAD</span>
+                <span>·</span>
+                <span>Markets: NASDAQ · DOW · GOLD · CRUDE · NIKKEI · SILVER</span>
               </div>
               <div className="text-gray-400 text-[11px]">
                 Status: <span className="text-emerald-300 font-semibold">Ready for live order updates</span>

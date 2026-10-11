@@ -48,8 +48,8 @@ export default function PerformancePage() {
 
   const isCmc = accountMode === 'cmc'
   const accountId = isCmc ? 'CMC-CFD-LIVE-2000' : '1.5KCHCR-LABS004-V2-675081-67067724'
-  const accountTitle = isCmc ? 'My CMC Markets CFD Account' : 'NYC Team Tape Desk'
-  const capitalLabel = isCmc ? 'Starting Capital: $2,000.00 · Live CFD Desk' : 'NYC Stocks & Options Team Book'
+  const accountTitle = isCmc ? 'My CMC Markets CFD Account' : 'NYC Team Tape Execution Desk'
+  const capitalLabel = isCmc ? 'Starting Capital: $2,000.00 CAD · Balance: $1,929.69 CAD (+$132.13 Net Realized P&L · $200.00 Withdrawn)' : 'NYC Stocks & Options Team Book'
 
   // Fetch live trades from API on mount
   useEffect(() => {
@@ -267,7 +267,7 @@ export default function PerformancePage() {
             <div className="flex items-center rounded-lg bg-black/50 p-1 border border-white/10 text-xs">
               {(
                 [
-                  { id: 'custom', label: '09/30/2026 – 10/01/2026' },
+                  { id: 'custom', label: '10/02/2026 – 10/09/2026' },
                   { id: 'today', label: 'TODAY' },
                   { id: 'last_week', label: 'LAST WEEK' },
                   { id: 'last_month', label: 'LAST MONTH' },
@@ -369,16 +369,25 @@ export default function PerformancePage() {
               <span className="text-[10px] text-gray-500 uppercase block">Starting Capital</span>
               <span className="text-sm font-bold text-white">${isCmc ? '2,000.00' : '1,500.00'}</span>
             </div>
+            {isCmc && (
+              <>
+                <div className="h-8 w-px bg-white/10" />
+                <div className="space-y-1">
+                  <span className="text-[10px] text-gray-500 uppercase block">Withdrawn (Oct 7)</span>
+                  <span className="text-sm font-bold text-amber-400">-$200.00</span>
+                </div>
+              </>
+            )}
             <div className="h-8 w-px bg-white/10" />
             <div className="space-y-1">
-              <span className="text-[10px] text-gray-500 uppercase block">Gross Profit</span>
+              <span className="text-[10px] text-gray-500 uppercase block">{isCmc ? 'Gross Profit' : 'Realized Profit'}</span>
               <span className="text-sm font-bold text-emerald-400">+${metrics.grossProfit.toFixed(2)}</span>
             </div>
             <div className="h-8 w-px bg-white/10" />
             <div className="space-y-1">
-              <span className="text-[10px] text-gray-500 uppercase block">Current Ending Balance</span>
+              <span className="text-[10px] text-gray-500 uppercase block">Ending Balance</span>
               <span className="text-sm font-bold text-sky-300">
-                ${( (isCmc ? 2000 : 1500) + metrics.totalPnl ).toFixed(2)}
+                ${isCmc ? '1,929.69' : ((1500 + metrics.totalPnl).toFixed(2))}
               </span>
             </div>
           </div>

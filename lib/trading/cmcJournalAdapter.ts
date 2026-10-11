@@ -1,4 +1,4 @@
-import { AUTHENTIC_CMC_TRADES, type CmcTradeRecord } from './cmcMarketsTrades'
+import { AUTHENTIC_CMC_TRADES } from './cmcMarketsTrades'
 
 export function getCmcJournalEntries() {
   const chrono = [...AUTHENTIC_CMC_TRADES].sort(
@@ -7,12 +7,7 @@ export function getCmcJournalEntries() {
 
   let runningEquity = 2000.0 // Starting capital in CAD
 
-  const mapped = chrono.map((t, idx) => {
-    // Check if withdrawal happened before this trade
-    // Withdrawal BW.74988765 was at 2026-10-07T12:43:10Z
-    const tradeTime = new Date(t.exitTime || t.entryTime).getTime()
-    const withdrawalTime = new Date('2026-10-07T12:43:10Z').getTime()
-    
+  const mapped = chrono.map((t) => {
     const equityBefore = runningEquity
     const pnl = t.pnl ?? 0
     runningEquity = Math.round((runningEquity + pnl) * 100) / 100
