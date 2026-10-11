@@ -9976,13 +9976,13 @@ export function TradingChart({
       if (!isPlausible && tip) {
         const now = Date.now()
         // Consecutive tick confirmation:
-        // If consecutive quotes arrive at this new price level within 5 seconds,
+        // If consecutive quotes arrive at this new price level within 15 seconds,
         // this is genuine high-volatility market velocity (momentum plunge, inventory breakout, CPI spike),
         // NOT an isolated single-tick glitch. Immediately validate and accept.
         if (
           outlierCandidate &&
-          now - outlierCandidate.ts < 5000 &&
-          Math.abs(price - outlierCandidate.price) / outlierCandidate.price <= 0.04
+          now - outlierCandidate.ts < 15000 &&
+          Math.abs(price - outlierCandidate.price) / outlierCandidate.price <= 0.06
         ) {
           outlierCandidate = null
           isPlausible = true
@@ -10276,8 +10276,37 @@ export function TradingChart({
         )
 
         lastCandleRef.current = nextBars[nextBars.length - 1]!
-        // REST owns closed bars: replace gap-fill flats when Yahoo catches up.
+        candlesRef.current = nextBars
+        syncDeskPlaybookRangesRef.current(nextBars)
+        refreshSessionHighlightsRef.current?.()
+        paintUserDrawingsRef.current?.()
+
+        // REST owns closed bars: replace gap-fill flats and heal incomplete bars when history reconciles
         if (structureChanged || closedChanged) {
+          try {
+            const tz = chartTzRef.current
+            const ordered = normalizeCandleTimes(nextBars, timeframe)
+            const seenTimes = new Set<string>()
+            const candleData: CandlestickData[] = []
+            for (const c of ordered) {
+              const t = toSeriesTime(c.time as number, timeframe, tz)
+              const key = isBusinessDay(t) ? `${t.year}-${t.month}-${t.day}` : String(t)
+              if (!seenTimes.has(key)) {
+                seenTimes.add(key)
+                candleData.push({
+                  time: t,
+                  open: c.open,
+                  high: c.high,
+                  low: c.low,
+                  close: c.close,
+                })
+              }
+            }
+            candleData.sort((a, b) => chartTimeToUnix(a.time) - chartTimeToUnix(b.time))
+            candleRef.current?.setData(candleData)
+          } catch {
+            /* ignore */
+          }
           setCandles(nextBars)
         } else {
           const tip = nextBars[nextBars.length - 1]!
@@ -10292,10 +10321,6 @@ export function TradingChart({
           } catch {
             setCandles(nextBars)
           }
-          candlesRef.current = nextBars
-          syncDeskPlaybookRangesRef.current(nextBars)
-          refreshSessionHighlightsRef.current?.()
-          paintUserDrawingsRef.current?.()
         }
         setDataMode('live')
         if (json.source === 'yahoo' || json.source === 'oanda' || json.source === 'databento') {

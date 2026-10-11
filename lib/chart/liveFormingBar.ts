@@ -81,7 +81,8 @@ export function liveQuoteDisagreesWithReference(
 
 /**
  * Per-tick guard. Official raw-contract Databento prints are trusted up to the
- * hard scale-glitch ceiling; proxy/fallback feeds keep tighter point limits.
+ * hard scale-glitch ceiling; proxy/fallback feeds allow realistic momentum
+ * while rejecting phantom scale bleed spikes.
  */
 export function isPlausibleRealtimeTick(
   lastClose: number,
@@ -95,8 +96,8 @@ export function isPlausibleRealtimeTick(
     return Math.abs(price - lastClose) / lastClose <= LIVE_MAX_TIP_JUMP_PCT
   }
   const maxPts = instrument
-    ? (MAX_SINGLE_TICK_PTS[instrument] ?? lastClose * 0.025)
-    : lastClose * 0.05
+    ? (MAX_SINGLE_TICK_PTS[instrument] ?? lastClose * 0.02)
+    : lastClose * 0.02
   return Math.abs(price - lastClose) <= maxPts
 }
 
@@ -276,13 +277,13 @@ export function mergeHistoryWithLiveTip<T extends FormingBar>(
     return fillCandleGaps([...history, alignedLive], timeframe, (instrument as any) ?? 'NASDAQ')
   }
   if (liveT < lastT) return history
-  if (!isPlausibleDeskTick(last.close, alignedLive.close, 0.08)) return history
+  if (!isPlausibleDeskTick(last.close, alignedLive.close, 0.15)) return history
   const close = alignedLive.close
   const next: T = {
     ...last,
     open: alignedLive.open > 0 ? alignedLive.open : last.open,
     high: Math.max(last.high, alignedLive.high, close),
-    low: Math.min(last.low, alignedLive.low, close),
+    low: Math.min(last.low > 0 ? last.low : close, alignedLive.low > 0 ? alignedLive.low : close, close),
     close,
     volume: Math.max(last.volume || 0, alignedLive.volume || 0),
   }
