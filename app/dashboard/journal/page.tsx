@@ -22,9 +22,9 @@ interface JournalEntry {
   ticket_id?: string
   contract?: string
   instrument: string
-  market?: 'NY' | 'TOKYO'
+  market?: 'NY' | 'TOKYO' | string
   trade_date: string
-  entry_window: number
+  entry_window: number | string
   direction: string
   status: 'open' | 'closed'
   fill: {
@@ -35,7 +35,7 @@ interface JournalEntry {
     source?: string | null
   }
   risk: {
-    stop_loss: number
+    stop_loss: number | null
     take_profit: number | null
     position_size: number
     risk_amount: number
@@ -674,7 +674,7 @@ function JournalPageInner() {
                       <span className="text-[10px] uppercase font-semibold text-gray-500">Spoken Pins:</span>
                       {sess.pins.map((p, i) => (
                         <span key={i} className="rounded bg-black/40 border border-emerald-500/30 px-1.5 py-0.5 font-mono text-[10px] text-emerald-200">
-                          {p.side ? `${p.side} ` : ''}{p.price.toLocaleString()} {p.reason ? `(${p.reason})` : ''}
+                          {p.side ? `${p.side} ` : ''}{p.price != null ? p.price.toLocaleString() : '—'} {p.reason ? `(${p.reason})` : ''}
                         </span>
                       ))}
                     </div>
@@ -781,12 +781,12 @@ function JournalPageInner() {
                             >
                               <span
                                 className={`text-xs font-bold px-2 py-0.5 rounded border ${
-                                  e.direction === 'LONG'
+                                  e.direction === 'LONG' || e.direction === 'BUY'
                                     ? 'text-emerald-400 border-emerald-800 bg-emerald-950/40'
                                     : 'text-red-400 border-red-800 bg-red-950/40'
                                 }`}
                               >
-                                {e.direction === 'LONG' ? '▲ LONG' : '▼ SHORT'}
+                                {e.direction === 'LONG' || e.direction === 'BUY' ? '▲ LONG' : '▼ SHORT'}
                               </span>
                               {e.ticket_id && (
                                 <span className="font-mono text-[10px] text-sky-400 font-semibold bg-sky-950/60 border border-sky-800/60 rounded px-1.5 py-0.5">
@@ -798,7 +798,7 @@ function JournalPageInner() {
                                   {e.contract}
                                 </span>
                               )}
-                              {e.fill.source && (
+                              {e.fill?.source && (
                                 <span
                                   className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${entrySourceTone(e.fill.source)}`}
                                   title="How this limit was chosen"
@@ -809,11 +809,11 @@ function JournalPageInner() {
                               <span className="text-xs text-gray-400">
                                 Entry{' '}
                                 <span className="price-mono text-sky-300">
-                                  {e.fill.price.toLocaleString()}
+                                  {e.fill?.price != null ? e.fill.price.toLocaleString() : '—'}
                                 </span>
                               </span>
                               <span className="text-[10px] text-gray-600">
-                                {fmtTime(e.fill.time, marketFor(e))}
+                                {fmtTime(e.fill?.time, marketFor(e))}
                               </span>
                               {e.duration && (
                                 <span className="text-[10px] text-gray-400 font-mono">
@@ -823,11 +823,11 @@ function JournalPageInner() {
                               <span className="text-xs text-gray-500">
                                 SL{' '}
                                 <span className="price-mono text-red-400/90">
-                                  {e.risk.stop_loss.toLocaleString()}
+                                  {e.risk?.stop_loss != null ? e.risk.stop_loss.toLocaleString() : '—'}
                                 </span>
                                 {' · '}TP{' '}
                                 <span className="price-mono text-emerald-400/90">
-                                  {e.risk.take_profit?.toLocaleString() ?? '—'}
+                                  {e.risk?.take_profit?.toLocaleString() ?? '—'}
                                 </span>
                               </span>
                               <span
@@ -928,11 +928,11 @@ function JournalPageInner() {
                                     <span className="text-gray-500">
                                       Risk margin{' '}
                                       <span className="price-mono text-amber-300">
-                                        {fmtMoney(e.risk.risk_amount)}
+                                        {fmtMoney(e.risk?.risk_amount)}
                                       </span>
                                       <span className="text-gray-600">
                                         {' '}
-                                        ({e.risk.position_size.toFixed(2)} u)
+                                        ({(e.risk?.position_size ?? 1).toFixed(2)} u)
                                       </span>
                                     </span>
                                   </div>
@@ -942,7 +942,7 @@ function JournalPageInner() {
                                   <h3 className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">
                                     Why this level / entry
                                   </h3>
-                                  {e.fill.source && (
+                                  {e.fill?.source && (
                                     <p className="mb-1.5">
                                       <span
                                         className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${entrySourceTone(e.fill.source)}`}
@@ -952,15 +952,15 @@ function JournalPageInner() {
                                       </span>
                                     </p>
                                   )}
-                                  <p className="text-gray-300 leading-relaxed">{e.fill.reason}</p>
+                                  <p className="text-gray-300 leading-relaxed">{e.fill?.reason || '—'}</p>
                                   <p className="mt-1 text-xs text-gray-500">
-                                    {e.fill.level != null && (
+                                    {e.fill?.level != null && (
                                       <>
                                         Level {e.fill.level.toLocaleString()} ·{' '}
                                       </>
                                     )}
-                                    Window {e.entry_window} · Regime {e.regime.type || '—'}
-                                    {e.regime.confidence != null
+                                    Window {e.entry_window} · Regime {e.regime?.type || '—'}
+                                    {e.regime?.confidence != null
                                       ? ` (${e.regime.confidence}%)`
                                       : ''}
                                   </p>
@@ -970,15 +970,15 @@ function JournalPageInner() {
                                   <div className="rounded-lg bg-[#0d1117] border border-[#30363d] px-3 py-2">
                                     <div className="text-gray-500">Entry</div>
                                     <div className="price-mono text-sky-300 mt-0.5">
-                                      {e.fill.price.toLocaleString()}
+                                      {e.fill?.price != null ? e.fill.price.toLocaleString() : '—'}
                                     </div>
                                   </div>
                                   <div className="rounded-lg bg-[#0d1117] border border-[#30363d] px-3 py-2">
                                     <div className="text-gray-500">Stop loss</div>
                                     <div className="price-mono text-red-400 mt-0.5">
-                                      {e.risk.stop_loss.toLocaleString()}
+                                      {e.risk?.stop_loss != null ? e.risk.stop_loss.toLocaleString() : '—'}
                                     </div>
-                                    {e.stops.hit_count > 0 && (
+                                    {(e.stops?.hit_count ?? 0) > 0 && (
                                       <div className="mt-1 text-red-300/80">
                                         Hit ×{e.stops.hit_count}
                                         {e.stops.hit_at ? ` · ${fmtTime(e.stops.hit_at, marketFor(e))}` : ''}
@@ -988,7 +988,7 @@ function JournalPageInner() {
                                   <div className="rounded-lg bg-[#0d1117] border border-[#30363d] px-3 py-2">
                                     <div className="text-gray-500">Take profit</div>
                                     <div className="price-mono text-emerald-400 mt-0.5">
-                                      {e.risk.take_profit?.toLocaleString() ?? '—'}
+                                      {e.risk?.take_profit?.toLocaleString() ?? '—'}
                                     </div>
                                     {e.exit?.tp_hit && (
                                       <div className="mt-1 text-emerald-300/80">Target hit</div>
@@ -1024,7 +1024,7 @@ function JournalPageInner() {
                                       </span>
                                       {' · '}
                                       {fmtTime(e.exit.time, marketFor(e))}
-                                      {e.pnl.percent != null && (
+                                      {e.pnl?.percent != null && (
                                         <span className="ml-2">
                                           vs risk{' '}
                                           {e.pnl.percent >= 0 ? '+' : ''}
@@ -1035,7 +1035,7 @@ function JournalPageInner() {
                                   </section>
                                 )}
 
-                                {e.decisions.length > 0 && (
+                                {Array.isArray(e.decisions) && e.decisions.length > 0 && (
                                   <section>
                                     <h3 className="text-[10px] uppercase tracking-wider text-gray-500 mb-2">
                                       Manage trail
