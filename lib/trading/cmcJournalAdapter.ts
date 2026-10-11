@@ -30,7 +30,6 @@ export function getCmcJournalEntries() {
     }
 
     const tradeDate = (t.entryTime || '').slice(0, 10)
-    const isWin = pnl > 0
     const isStop = t.exitType === 'Stop Loss'
     const isTp = t.exitType === 'Take Profit'
 
