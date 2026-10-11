@@ -197,6 +197,7 @@ DESK_SYMBOLS = {
     "MYM.c.0": "DOW",
     "MGC.c.0": "GOLD",
     "CL.c.0": "CRUDE",
+    "NIY.c.0": "NIKKEI",
     "NKD.c.0": "NIKKEI",
     "SIL.c.0": "SILVER",
     "SI.c.0": "SILVER",
@@ -408,6 +409,7 @@ def desk_raw_symbols():
     return {
         get_active_quarterly_contract("MYM"): "DOW",
         get_active_quarterly_contract("MNQ"): "NASDAQ",
+        get_active_quarterly_contract("NIY"): "NIKKEI",
         get_active_quarterly_contract("NKD"): "NIKKEI",
         get_active_cl_contract(): "CRUDE",
         get_active_gold_contract(): "GOLD",

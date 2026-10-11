@@ -113,7 +113,7 @@ const MARKET_TICKER_CONFIG: Record<
   GOLD: { root: 'MGC', label: 'Gold · MGC', locationThresholdPts: 3.5 },
   CRUDE: { root: 'CL', label: 'Crude Oil · CL', locationThresholdPts: 0.35 },
   SILVER: { root: 'SIL', label: 'Silver · SIL', locationThresholdPts: 0.15 },
-  NIKKEI: { root: 'NKD', label: 'Nikkei · NKD', locationThresholdPts: 35 },
+  NIKKEI: { root: 'NIY', label: 'Nikkei · NIY', locationThresholdPts: 35 },
 }
 
 /**
@@ -426,7 +426,7 @@ const RADAR_YAHOO_SYMBOLS: Record<RadarMarket, string> = {
   GOLD: 'GC=F',
   CRUDE: 'CL=F',
   SILVER: 'SI=F',
-  NIKKEI: 'NKD=F',
+  NIKKEI: 'NIY=F',
 }
 
 const YAHOO_UA =

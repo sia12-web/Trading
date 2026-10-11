@@ -272,6 +272,12 @@ export async function getYahooCandles(
     const retry = await fetchYahooChart(symbol, interval, `range=${range}`)
     candles = retry === UNREACHABLE ? null : retry
   }
+  if (!candles?.length && instrument === 'NIKKEI') {
+    const fallback = await fetchYahooChart('NKD=F', interval, `range=${range}`)
+    if (fallback && fallback !== UNREACHABLE && fallback.length > 0) {
+      candles = fallback
+    }
+  }
   if (!candles?.length) return null
   if (interval === '1d') {
     candles = snapDailyCandles(candles)
@@ -295,11 +301,21 @@ export async function getYahooCandlesRange(
   if (!symbol) return null
 
   const interval = INTERVAL_MAP[resolution] || '5m'
-  const fetched = await fetchYahooChart(
+  let fetched = await fetchYahooChart(
     symbol,
     interval,
     `period1=${Math.floor(period1)}&period2=${Math.floor(period2)}`
   )
+  if ((!fetched || fetched === UNREACHABLE || fetched.length === 0) && instrument === 'NIKKEI') {
+    const fallback = await fetchYahooChart(
+      'NKD=F',
+      interval,
+      `period1=${Math.floor(period1)}&period2=${Math.floor(period2)}`
+    )
+    if (fallback && fallback !== UNREACHABLE && fallback.length > 0) {
+      fetched = fallback
+    }
+  }
   if (!fetched || fetched === UNREACHABLE) return null
   let candles: YahooCandle[] = fetched
   if (interval === '1d') candles = snapDailyCandles(candles)

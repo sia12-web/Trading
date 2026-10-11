@@ -116,7 +116,7 @@ export function recordEvaluatedNikkeiEvent(event: NikkeiEventEvaluation) {
  */
 export async function updateNikkeiTelemetry(): Promise<NikkeiTelemetry> {
   try {
-    const symbols = ['NKD=F', 'JPY=X', '^N225', '^SOX']
+    const symbols = ['NIY=F', 'NKD=F', 'JPY=X', '^N225', '^SOX']
     const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols.join(',')}`
 
     const res = await fetch(url, {
@@ -131,7 +131,7 @@ export async function updateNikkeiTelemetry(): Promise<NikkeiTelemetry> {
       const results = data.quoteResponse?.result || []
 
       for (const q of results) {
-        if (q.symbol === 'NKD=F') {
+        if (q.symbol === 'NIY=F' || q.symbol === 'NKD=F') {
           currentNikkeiState.nikkeiTelemetry.nkdPrice = q.regularMarketPrice || currentNikkeiState.nikkeiTelemetry.nkdPrice
           currentNikkeiState.nikkeiTelemetry.nkdChange = q.regularMarketChange || currentNikkeiState.nikkeiTelemetry.nkdChange
           currentNikkeiState.nikkeiTelemetry.nkdChangePct = q.regularMarketChangePercent || currentNikkeiState.nikkeiTelemetry.nkdChangePct

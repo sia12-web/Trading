@@ -324,7 +324,7 @@ async function fetchLiveCboeQuote(
 }
 
 async function fetchNikkeiRealizedVol(): Promise<VolatilityQuote | null> {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/NKD=F?interval=1d&range=1mo`
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/NIY=F?interval=1d&range=1mo`
   try {
     const res = await fetch(url, {
       headers: { 'User-Agent': YAHOO_UA, Accept: 'application/json' },

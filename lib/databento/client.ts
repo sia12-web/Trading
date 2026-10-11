@@ -9,18 +9,18 @@ import { getCme5mRange } from '@/lib/databento/cmeHistorical'
 export const DATABENTO_SYMBOLS: Record<Instrument, string> = {
   DOW: 'MYM.c.0',
   NASDAQ: 'MNQ.c.0',
-  NIKKEI: 'NKD.c.0',
+  NIKKEI: 'NIY.c.0',
   GOLD: 'MGC.c.0',
   CRUDE: 'CL.c.0',
   SILVER: 'SIL.c.0',
 }
 
 /**
- * CME Equity Index Futures (MYM, MNQ, NKD) roll 8 days prior to the 3rd Friday
+ * CME Equity Index Futures (MYM, MNQ, NKD, NIY) roll 8 days prior to the 3rd Friday
  * of March (H), June (M), September (U), December (Z).
  */
 export function getActiveCmeQuarterlyContract(
-  root: 'MYM' | 'MNQ' | 'NKD',
+  root: 'MYM' | 'MNQ' | 'NKD' | 'NIY',
   now: Date = new Date()
 ): string {
   const year = now.getFullYear()
@@ -242,7 +242,7 @@ export function getDatabentoActiveSymbol(
     return { symbol: getActiveCmeQuarterlyContract('MNQ', now), stype_in: 'raw_symbol' }
   }
   if (instrument === 'NIKKEI') {
-    return { symbol: getActiveCmeQuarterlyContract('NKD', now), stype_in: 'raw_symbol' }
+    return { symbol: getActiveCmeQuarterlyContract('NIY', now), stype_in: 'raw_symbol' }
   }
   if (instrument === 'GOLD') {
     return { symbol: getActiveCmeGoldContract(now), stype_in: 'raw_symbol' }

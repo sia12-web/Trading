@@ -713,7 +713,7 @@ const INSTRUMENT_META: Record<Instrument, { label: string; symbol: string; color
   GOLD: { label: 'Micro Gold · MGC', symbol: 'MGC', color: '#ca8a04', basePrice: 4350 },
   CRUDE: { label: 'Crude · CL', symbol: 'CL', color: '#78716c', basePrice: 104 },
   SILVER: { label: 'Micro Silver · SIL', symbol: 'SIL', color: '#94a3b8', basePrice: 60.5 },
-  NIKKEI: { label: 'Nikkei 225 · NKD', symbol: 'NKD', color: '#dc2626', basePrice: 38900 },
+  NIKKEI: { label: 'Nikkei 225 · NIY', symbol: 'NIY', color: '#dc2626', basePrice: 38900 },
 }
 
 /** Exchange-native axis precision keeps labels clean like TradingView. */

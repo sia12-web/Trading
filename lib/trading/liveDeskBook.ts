@@ -40,7 +40,7 @@ export function liveDeskContractLabel(instrument: string | null | undefined): st
   if (instrument === 'GOLD') return 'GOLD · MGC'
   if (instrument === 'CRUDE') return 'CRUDE · CL'
   if (instrument === 'SILVER') return 'SILVER · SIL'
-  if (instrument === 'NIKKEI') return 'NIKKEI · NKD'
+  if (instrument === 'NIKKEI') return 'NIKKEI · NIY'
   return instrument?.trim() || '—'
 }
 
@@ -61,7 +61,7 @@ export function liveDeskIndexHint(instrument: string | null | undefined): string
     return 'Micro Silver SIL — match CME SIL / TradingView SIL1! or SI1!. Shared 3-fill desk with NY markets.'
   }
   if (instrument === 'NIKKEI') {
-    return 'CME Nikkei NKD — USD futures ($5/pt). Tokyo cash session anchors price action (09:00–15:00 JST).'
+    return 'CME Nikkei NIY — Yen futures (¥500/pt). High liquidity (~7x NKD) with full 24h continuous candles.'
   }
   return ''
 }

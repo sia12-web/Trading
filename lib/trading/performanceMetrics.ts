@@ -6,6 +6,7 @@
 
 import { FUTURES_POINT_VALUES } from '@/lib/trading/positionSizing'
 import type { QuestradeBookRow } from '@/lib/trading/questradeOrders'
+import { AUTHENTIC_CMC_TRADES } from '@/lib/trading/cmcMarketsTrades'
 
 export interface TradeRecord {
   id: string
@@ -64,8 +65,13 @@ export function formatCmeExchangePrice(symbol: string, price: number | null | un
     return price.toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
   }
 
-  // CME Crude Oil Futures (MCL / CL) — 0.01 tick precision
-  if (sym.includes('MCL') || sym.includes('CL') || sym === 'CRUDE') {
+  // CME Crude Oil Futures (MCL / CL) / Brent — 0.01 tick precision
+  if (sym.includes('MCL') || sym.includes('CL') || sym === 'CRUDE' || sym.includes('BRENT')) {
+    return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  }
+
+  // Japan 225 / Nikkei Futures (NK225)
+  if (sym.includes('NK225') || sym.includes('JAPAN') || sym.includes('NIKKEI')) {
     return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   }
 
@@ -81,6 +87,12 @@ export function formatCmeExchangePrice(symbol: string, price: number | null | un
 /** Returns the exchange name tag for a symbol */
 export function getExchangeTag(symbol: string): string {
   const sym = symbol.toUpperCase()
+  if (sym.includes('NK225') || sym.includes('JAPAN') || sym.includes('NIKKEI')) {
+    return 'JPX / Osaka'
+  }
+  if (sym.includes('BRENT')) {
+    return 'ICE Futures'
+  }
   if (
     sym.includes('MNQ') || sym.includes('NQ') || sym === 'NASDAQ' ||
     sym.includes('MYM') || sym.includes('YM') || sym === 'DOW' ||
@@ -130,113 +142,8 @@ export function classifyDurationBucket(sec: number): DurationBucket {
   return '4 hours and up'
 }
 
-/** Default CMC Markets CFD Fills (Live $2,000 Account) */
-export const DEFAULT_CMC_TRADES: TradeRecord[] = [
-  {
-    id: 'CMC-FILL-101',
-    symbol: 'MNQ',
-    direction: 'BUY',
-    entry: 20142.50,
-    exit: 20178.25,
-    stop: 20125.00,
-    target: 20178.25,
-    pnl: 71.50,
-    quantity: 2,
-    status: 'closed',
-    entryTime: '2026-10-01T09:35:10Z',
-    exitTime: '2026-10-01T09:42:30Z',
-    exchange: 'CME Globex',
-  },
-  {
-    id: 'CMC-FILL-102',
-    symbol: 'MYM',
-    direction: 'BUY',
-    entry: 42310,
-    exit: 42385,
-    stop: 42260,
-    target: 42385,
-    pnl: 37.50,
-    quantity: 1,
-    status: 'closed',
-    entryTime: '2026-10-01T10:05:00Z',
-    exitTime: '2026-10-01T10:18:45Z',
-    exchange: 'CME Globex',
-  },
-  {
-    id: 'CMC-FILL-103',
-    symbol: 'MGC',
-    direction: 'SELL',
-    entry: 2654.30,
-    exit: 2648.80,
-    stop: 2658.50,
-    target: 2648.80,
-    pnl: 55.00,
-    quantity: 1,
-    status: 'closed',
-    entryTime: '2026-10-01T11:12:00Z',
-    exitTime: '2026-10-01T11:25:30Z',
-    exchange: 'CME Globex',
-  },
-  {
-    id: 'CMC-FILL-104',
-    symbol: 'MCL',
-    direction: 'BUY',
-    entry: 68.45,
-    exit: 68.10,
-    stop: 68.10,
-    target: 69.20,
-    pnl: -35.00,
-    quantity: 1,
-    status: 'closed',
-    entryTime: '2026-10-01T13:02:15Z',
-    exitTime: '2026-10-01T13:08:40Z',
-    exchange: 'CME Globex',
-  },
-  {
-    id: 'CMC-FILL-105',
-    symbol: 'MNQ',
-    direction: 'BUY',
-    entry: 20185.00,
-    exit: 20230.50,
-    stop: 20165.00,
-    target: 20230.50,
-    pnl: 91.00,
-    quantity: 2,
-    status: 'closed',
-    entryTime: '2026-10-01T14:15:00Z',
-    exitTime: '2026-10-01T14:32:10Z',
-    exchange: 'CME Globex',
-  },
-  {
-    id: 'CMC-FILL-106',
-    symbol: 'MYM',
-    direction: 'SELL',
-    entry: 42420,
-    exit: 42475,
-    stop: 42475,
-    target: 42350,
-    pnl: -27.50,
-    quantity: 1,
-    status: 'closed',
-    entryTime: '2026-10-01T15:10:00Z',
-    exitTime: '2026-10-01T15:14:20Z',
-    exchange: 'CME Globex',
-  },
-  {
-    id: 'CMC-FILL-107',
-    symbol: 'MNQ',
-    direction: 'BUY',
-    entry: 20240.25,
-    exit: undefined,
-    stop: 20215.00,
-    target: 20295.00,
-    pnl: 42.50,
-    quantity: 1,
-    status: 'open',
-    entryTime: '2026-10-01T15:45:00Z',
-    exchange: 'CME Globex',
-  },
-]
+/** Default CMC Markets CFD Fills (Live $2,000 Account — Authentic Broker History) */
+export const DEFAULT_CMC_TRADES: TradeRecord[] = AUTHENTIC_CMC_TRADES
 
 /** Default NYC Team Tape Desk Fills (Stocks & Options) */
 export const DEFAULT_TEAM_TRADES: TradeRecord[] = [

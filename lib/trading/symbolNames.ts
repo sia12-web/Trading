@@ -228,6 +228,7 @@ export const KNOWN_SYMBOLS: Record<string, { name: string; shortName?: string; s
   MCL: { name: 'Micro WTI Crude Oil Futures', shortName: 'Micro Crude', sector: 'Commodity Futures', assetType: 'future' },
   NIKKEI: { name: 'Nikkei 225 Index Futures', shortName: 'Nikkei Futures', sector: 'Index Futures', assetType: 'future' },
   NKD: { name: 'Nikkei 225 (USD) Futures', shortName: 'Nikkei USD', sector: 'Index Futures', assetType: 'future' },
+  NIY: { name: 'Nikkei 225 (Yen) Futures', shortName: 'Nikkei Yen', sector: 'Index Futures', assetType: 'future' },
 }
 
 const OPTION_FORMAT_A = /^([A-Z0-9.\-]+)\s+(\d{2}[A-Za-z]{3}\d{2})([CPcp])(\d+(?:\.\d+)?)$/
