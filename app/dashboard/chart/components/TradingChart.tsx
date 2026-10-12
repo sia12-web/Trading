@@ -1052,11 +1052,11 @@ const LivePriceTicker = memo(function LivePriceTicker({
     <div className="flex flex-col items-end leading-tight">
       <div className="flex items-center gap-2">
         <span className="text-xs text-gray-500" title={liveDeskIndexHint(instrument)}>
-          {INSTRUMENT_META[instrument].label}
+          {INSTRUMENT_META[instrument]?.label || instrument}
         </span>
         <span
           className="price-mono text-xl font-extrabold transition-colors duration-300"
-          style={{ color: INSTRUMENT_META[instrument].color }}
+          style={{ color: INSTRUMENT_META[instrument]?.color || '#38bdf8' }}
           title={
             liveDeskIndexHint(instrument) ||
             'OANDA mid (bid+ask)/2 — compare TradingView to the same index (MNQ vs MYM are different markets)'
@@ -1356,7 +1356,8 @@ export function TradingChart({
     try {
       const saved = localStorage.getItem('trading_desk_trendlines_v1')
       if (!saved) return []
-      return JSON.parse(saved)
+      const parsed = JSON.parse(saved)
+      return Array.isArray(parsed) ? parsed.filter((t) => t && typeof t === 'object') : []
     } catch {
       return []
     }
@@ -1375,7 +1376,9 @@ export function TradingChart({
     if (typeof window === 'undefined') return []
     try {
       const saved = localStorage.getItem('trading_desk_ranges_v1')
-      return saved ? JSON.parse(saved) : []
+      if (!saved) return []
+      const parsed = JSON.parse(saved)
+      return Array.isArray(parsed) ? parsed.filter((r) => r && typeof r === 'object') : []
     } catch {
       return []
     }
@@ -1384,7 +1387,9 @@ export function TradingChart({
     if (typeof window === 'undefined') return []
     try {
       const saved = localStorage.getItem('trading_desk_frvps_v1')
-      return saved ? JSON.parse(saved) : []
+      if (!saved) return []
+      const parsed = JSON.parse(saved)
+      return Array.isArray(parsed) ? parsed.filter((f) => f && typeof f === 'object') : []
     } catch {
       return []
     }
@@ -1393,7 +1398,9 @@ export function TradingChart({
     if (typeof window === 'undefined') return []
     try {
       const saved = localStorage.getItem('trading_desk_measures_v1')
-      return saved ? JSON.parse(saved) : []
+      if (!saved) return []
+      const parsed = JSON.parse(saved)
+      return Array.isArray(parsed) ? parsed.filter((m) => m && typeof m === 'object') : []
     } catch {
       return []
     }
@@ -1807,19 +1814,19 @@ export function TradingChart({
   )
 
   const activeTrendlines = useMemo(
-    () => trendlines.filter((t) => t.instrument === instrument),
+    () => (Array.isArray(trendlines) ? trendlines : []).filter((t) => t && t.instrument === instrument),
     [trendlines, instrument]
   )
   const activeRangeBoxes = useMemo(
-    () => rangeBoxes.filter((r) => r.instrument === instrument),
+    () => (Array.isArray(rangeBoxes) ? rangeBoxes : []).filter((r) => r && r.instrument === instrument && r.p1 && r.p2),
     [rangeBoxes, instrument]
   )
   const activeManualFrvps = useMemo(
-    () => manualFrvps.filter((f) => f.instrument === instrument),
+    () => (Array.isArray(manualFrvps) ? manualFrvps : []).filter((f) => f && f.instrument === instrument),
     [manualFrvps, instrument]
   )
   const activeMeasures = useMemo(
-    () => measures.filter((m) => !m.instrument || m.instrument === instrument),
+    () => (Array.isArray(measures) ? measures : []).filter((m) => m && (!m.instrument || m.instrument === instrument)),
     [measures, instrument]
   )
 
@@ -7424,7 +7431,7 @@ export function TradingChart({
     }
   }, [jumpToPriceRef])
 
-  const meta = INSTRUMENT_META[instrument]
+  const meta = INSTRUMENT_META[instrument] || INSTRUMENT_META.DOW
 
   // ── Load levels — SAME pipeline as the simulation desk (shared deskLevels) ───
   const loadLevels = useCallback(async (inst: Instrument, freshCandles?: OHLCV[]) => {
@@ -8543,7 +8550,7 @@ export function TradingChart({
     let cancelled = false
 
     const load = async () => {
-      const meta = INSTRUMENT_META[instrument]
+      const meta = INSTRUMENT_META[instrument] || INSTRUMENT_META.DOW
       const tfSec = barSeconds
       const tradeLive = isLiveBarsAllowed(instrument)
 
@@ -13160,7 +13167,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   key={inst}
                   onClick={() => setInstrument(inst)}
                   className={`tab ${instrument === inst ? 'tab-active' : ''}`}
-                  style={instrument === inst ? { backgroundColor: INSTRUMENT_META[inst].color + '33', color: INSTRUMENT_META[inst].color } : {}}
+                  style={instrument === inst ? { backgroundColor: (INSTRUMENT_META[inst]?.color || '#1d4ed8') + '33', color: INSTRUMENT_META[inst]?.color || '#ffffff' } : {}}
                 >
                   {liveDeskContractLabel(inst)}
                 </button>

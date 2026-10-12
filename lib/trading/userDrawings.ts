@@ -328,13 +328,17 @@ export function computeRangeMetrics(
   currentPrice?: number | null,
   candles?: Array<{ time: number; open: number; high: number; low: number; close: number; volume: number }>
 ) {
-  const priceHigh = Math.max(p1.price, p2.price)
-  const priceLow = Math.min(p1.price, p2.price)
+  const p1Price = p1 && Number.isFinite(p1.price) ? p1.price : 0
+  const p2Price = p2 && Number.isFinite(p2.price) ? p2.price : 0
+  const priceHigh = Math.max(p1Price, p2Price)
+  const priceLow = Math.min(p1Price, p2Price)
   const midPrice = Number(((priceHigh + priceLow) / 2).toFixed(2))
   const heightPts = Number((priceHigh - priceLow).toFixed(2))
 
-  const timeStart = Math.min(p1.time, p2.time)
-  const timeEnd = Math.max(p1.time, p2.time)
+  const p1Time = p1 && typeof p1.time === 'number' ? p1.time : 0
+  const p2Time = p2 && typeof p2.time === 'number' ? p2.time : 0
+  const timeStart = Math.min(p1Time, p2Time)
+  const timeEnd = Math.max(p1Time, p2Time)
   const durationMin = Math.round((timeEnd - timeStart) / 60)
 
   let priceRelation: 'INSIDE' | 'ABOVE' | 'BELOW' = 'INSIDE'

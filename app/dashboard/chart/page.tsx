@@ -10,6 +10,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { TradingChart } from './components/TradingChart'
+import { ChartErrorBoundary } from './components/ChartErrorBoundary'
 import { SessionBanner, type SessionGateState } from './components/SessionBanner'
 import { CrossMarketRadarStrip } from './components/CrossMarketRadarStrip'
 import {
@@ -176,7 +177,11 @@ function loadStoredManagePos(): ManagePosition | null {
   if (typeof window === 'undefined') return null
   try {
     const raw = localStorage.getItem(ACTIVE_POS_STORAGE_KEY)
-    return raw ? JSON.parse(raw) : null
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    if (!parsed.id || !parsed.instrument || parsed.entryPrice == null) return null
+    return parsed
   } catch {
     return null
   }
@@ -186,7 +191,11 @@ function loadStoredPositionOverlay(): PositionOverlay | null {
   if (typeof window === 'undefined') return null
   try {
     const raw = localStorage.getItem(POSITION_OVERLAY_STORAGE_KEY)
-    return raw ? JSON.parse(raw) : null
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    if (parsed.entryPrice == null || !Number.isFinite(Number(parsed.entryPrice))) return null
+    return parsed
   } catch {
     return null
   }
@@ -196,7 +205,10 @@ function loadStoredPendingLimit(): PendingLimitOrder | null {
   if (typeof window === 'undefined') return null
   try {
     const raw = localStorage.getItem(PENDING_LIMIT_STORAGE_KEY)
-    return raw ? JSON.parse(raw) : null
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    return parsed
   } catch {
     return null
   }
@@ -2005,47 +2017,49 @@ export default function ChartPage() {
         {showDeskOverlay ? (
           <div className="absolute bottom-14 left-3 z-30 pointer-events-auto flex flex-col gap-2 items-start max-h-[min(72vh,calc(100%-3.5rem))] overflow-y-auto">
             {showManageBar && managePos ? (
-              <ManageDeskBar
-                position={managePos}
-                currentPrice={
-                  livePrice != null &&
-                  quoteBelongsToBook({
-                    instrument: managePos.instrument,
-                    entry: managePos.entryPrice,
-                    quote: livePrice,
-                  })
-                    ? livePrice
-                    : null
-                }
-                atrAdviceLine={rangeAtrAdvice}
-                onClosed={(exitReason = 'manual') => {
-                  positionExitHandledRef.current = true
-                  if (exitReason === 'stop_hit') {
-                    warningToast(
-                      `Stop loss hit @ ${managePos.stopLoss.toLocaleString()}`,
-                      9000
-                    )
-                  } else if (exitReason === 'take_profit') {
-                    successToast(
-                      `Take profit @ ${managePos.profitTarget.toLocaleString()}`,
-                      9000
-                    )
+              <ChartErrorBoundary fallbackTitle="Position Manager">
+                <ManageDeskBar
+                  position={managePos}
+                  currentPrice={
+                    livePrice != null &&
+                    quoteBelongsToBook({
+                      instrument: managePos.instrument,
+                      entry: managePos.entryPrice,
+                      quote: livePrice,
+                    })
+                      ? livePrice
+                      : null
                   }
-                  clearPositionUi(exitReason)
-                }}
-                onRefreshGate={refreshGate}
-                onAiVerdict={setAiVerdict}
-                onBreakEvenAvailable={handleBreakEvenAvailable}
-                onValueAccepted={handleValueAccepted}
-                onBrokerExit={handleBrokerExit}
-                perfLeave={deskPerf?.leaveBook === true}
-                perfBadge={deskPerf?.badgeText ?? null}
-                leaveLine={deskPerf?.playLine ?? null}
-                sitHold={deskPerf?.sitHold === true}
-                sitBadge={deskPerf?.sitBadge ?? null}
-                sitPlayLine={deskPerf?.sitPlayLine ?? null}
-                sessionExit={sessionExit}
-              />
+                  atrAdviceLine={rangeAtrAdvice}
+                  onClosed={(exitReason = 'manual') => {
+                    positionExitHandledRef.current = true
+                    if (exitReason === 'stop_hit') {
+                      warningToast(
+                        `Stop loss hit @ ${managePos?.stopLoss != null ? managePos.stopLoss.toLocaleString() : '—'}`,
+                        9000
+                      )
+                    } else if (exitReason === 'take_profit') {
+                      successToast(
+                        `Take profit @ ${managePos?.profitTarget != null ? managePos.profitTarget.toLocaleString() : '—'}`,
+                        9000
+                      )
+                    }
+                    clearPositionUi(exitReason)
+                  }}
+                  onRefreshGate={refreshGate}
+                  onAiVerdict={setAiVerdict}
+                  onBreakEvenAvailable={handleBreakEvenAvailable}
+                  onValueAccepted={handleValueAccepted}
+                  onBrokerExit={handleBrokerExit}
+                  perfLeave={deskPerf?.leaveBook === true}
+                  perfBadge={deskPerf?.badgeText ?? null}
+                  leaveLine={deskPerf?.playLine ?? null}
+                  sitHold={deskPerf?.sitHold === true}
+                  sitBadge={deskPerf?.sitBadge ?? null}
+                  sitPlayLine={deskPerf?.sitPlayLine ?? null}
+                  sessionExit={sessionExit}
+                />
+              </ChartErrorBoundary>
             ) : null}
 
 
@@ -2078,8 +2092,9 @@ export default function ChartPage() {
         )}
 
         <div className="relative flex-1 w-full max-w-full min-h-0 overflow-hidden overscroll-none">
-          {chartBooted && (
-            <TradingChart
+          <ChartErrorBoundary fallbackTitle="Trading Chart">
+            {chartBooted && (
+              <TradingChart
               initialInstrument={instrument}
               onInstrumentChange={setInstrument}
               onInstrumentSync={syncInstrument}
@@ -2221,6 +2236,7 @@ export default function ChartPage() {
               levelsRefreshKey={levelsRefreshKey}
             />
           )}
+          </ChartErrorBoundary>
         </div>
       </div>
     </div>

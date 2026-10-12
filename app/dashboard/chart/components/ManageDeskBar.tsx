@@ -776,19 +776,19 @@ export function ManageDeskBar({
         <span className="text-gray-500">
           E{' '}
           <span className="price-mono text-blue-400">
-            {position.entryPrice.toLocaleString()}
+            {position?.entryPrice != null ? position.entryPrice.toLocaleString() : '—'}
           </span>
         </span>
         <span className="text-gray-500">
           SL{' '}
           <span className="price-mono text-red-400">
-            {position.stopLoss.toLocaleString()}
+            {position?.stopLoss != null ? position.stopLoss.toLocaleString() : '—'}
           </span>
         </span>
         <span className="text-gray-500">
           TP{' '}
           <span className="price-mono text-emerald-400/80">
-            {position.profitTarget.toLocaleString()}
+            {position?.profitTarget != null ? position.profitTarget.toLocaleString() : '—'}
           </span>
         </span>
       </div>
