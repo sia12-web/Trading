@@ -57,8 +57,9 @@ export async function POST(req: NextRequest) {
         }> = []
         const startIdx = Math.max(0, bars.length - 30)
         for (let i = startIdx; i < bars.length; i++) {
+          const b = bars[i]
+          if (!b || !Number.isFinite(b.time)) continue
           const res = detectCandlestickPatterns(bars, i)
-          const b = bars[i]!
           const timeEt = new Date(b.time * 1000).toLocaleTimeString('en-US', {
             timeZone: 'America/New_York',
             hour: '2-digit',

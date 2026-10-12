@@ -354,8 +354,9 @@ export function computeHTFExcessSignals(args: {
     const vp = args.vpAnchors ?? []
     const signals: HTFExcessSignal[] = []
 
-    const processBars = (bars: HTFBarInput[], tf: '5m' | '15m' | '1H' | '4H') => {
-        const validBars = bars.filter((b) => Number.isFinite(b.time) && b.time <= asOfUnix)
+    const processBars = (bars: HTFBarInput[] | undefined, tf: '5m' | '15m' | '1H' | '4H') => {
+        if (!bars || !Array.isArray(bars)) return
+        const validBars = bars.filter((b) => b && Number.isFinite(b.time) && b.time <= asOfUnix)
         if (validBars.length === 0) return
 
         for (let i = Math.max(0, validBars.length - 15); i < validBars.length; i++) {
@@ -433,7 +434,8 @@ export function computePoorExtremes(args: {
     asOfUnix: number
 }): PoorExtremeTarget[] {
     const { candles, asOfUnix } = args
-    const valid = candles.filter((c) => Number.isFinite(c.time) && c.time <= asOfUnix)
+    if (!candles || !Array.isArray(candles)) return []
+    const valid = candles.filter((c) => c && Number.isFinite(c.time) && c.time <= asOfUnix)
     if (valid.length < 5) return []
 
     const targets: PoorExtremeTarget[] = []
@@ -511,9 +513,11 @@ export function computePoorExtremes(args: {
  * Determine TPO/Volume Profile shape ('P' Short Cover, 'b' Long Liq, Normal, Double Dist).
  */
 export function computeProfileShape(bars: HTFBarInput[]): HTFProfileShape {
-    if (bars.length < 5) return 'NORMAL_DISTRIBUTION'
-    const highs = bars.map((b) => b.high)
-    const lows = bars.map((b) => b.low)
+    if (!bars || !Array.isArray(bars) || bars.length < 5) return 'NORMAL_DISTRIBUTION'
+    const valid = bars.filter((b) => b && Number.isFinite(b.high) && Number.isFinite(b.low))
+    if (valid.length < 5) return 'NORMAL_DISTRIBUTION'
+    const highs = valid.map((b) => b.high)
+    const lows = valid.map((b) => b.low)
     const maxH = Math.max(...highs)
     const minL = Math.min(...lows)
     const range = maxH - minL
@@ -528,7 +532,7 @@ export function computeProfileShape(bars: HTFBarInput[]): HTFProfileShape {
     let botVol = 0
     let totalVol = 0
 
-    for (const b of bars) {
+    for (const b of valid) {
         const v = Math.max(1, b.volume || 100)
         totalVol += v
         if (b.close >= topBound) topVol += v
@@ -562,8 +566,10 @@ export function computeProfileShape(bars: HTFBarInput[]): HTFProfileShape {
  * Detect Ledges (half of normal distribution stalling at flat boundary).
  */
 export function computeLedges(bars: HTFBarInput[]): HTFLedge[] {
-    if (bars.length < 6) return []
-    const recent = bars.slice(-36)
+    if (!bars || !Array.isArray(bars) || bars.length < 6) return []
+    const valid = bars.filter((b) => b && Number.isFinite(b.high) && Number.isFinite(b.low))
+    if (valid.length < 6) return []
+    const recent = valid.slice(-36)
     const ledges: HTFLedge[] = []
 
     const highs = recent.map((b) => b.high)
@@ -627,8 +633,9 @@ export function computeLedges(bars: HTFBarInput[]): HTFLedge[] {
  * Identify HVN (High Volume Nodes) and LVN (Low Volume Nodes / Single Print Vacuums) + Invalidation Check.
  */
 export function computeVolumeNodes(bars: HTFBarInput[]): HTFVolumeNodes {
-    if (bars.length < 5) return { hvns: [], lvns: [], singlePrints: [] }
-    const valid = bars.filter((b) => Number.isFinite(b.close))
+    if (!bars || !Array.isArray(bars) || bars.length < 5) return { hvns: [], lvns: [], singlePrints: [] }
+    const valid = bars.filter((b) => b && Number.isFinite(b.close) && Number.isFinite(b.high) && Number.isFinite(b.low))
+    if (valid.length < 5) return { hvns: [], lvns: [], singlePrints: [] }
     const highs = valid.map((b) => b.high)
     const lows = valid.map((b) => b.low)
     const maxH = Math.max(...highs)
@@ -704,7 +711,16 @@ export function computeVolumeNodes(bars: HTFBarInput[]): HTFVolumeNodes {
  * Detect "Day Timeframe Mirage" (Page 145: day timeframe direction vs multi-day value placement).
  */
 export function computeMirageState(bars: HTFBarInput[]): HTFMirageState {
-    const valid = bars.filter((b) => Number.isFinite(b.open) && Number.isFinite(b.close) && b.open > 0 && b.close > 0)
+    if (!bars || !Array.isArray(bars)) {
+        return {
+            isMirage: false,
+            dayDirection: 'BALANCED',
+            multiDayValueMigration: 'UNCHANGED',
+            illusionType: 'NONE',
+            message: 'Day timeframe direction aligned with multi-day value.',
+        }
+    }
+    const valid = bars.filter((b) => b && Number.isFinite(b.open) && Number.isFinite(b.close) && b.open > 0 && b.close > 0)
     if (valid.length < 6) {
         return {
             isMirage: false,
@@ -759,7 +775,10 @@ export function computeMirageState(bars: HTFBarInput[]): HTFMirageState {
  * Compute Cumulative Rotation Factor (Page 147: sum of auction rotations).
  */
 export function computeRotationFactor(bars: HTFBarInput[]): HTFRotationFactor {
-    const valid = bars.filter((b) => Number.isFinite(b.high) && Number.isFinite(b.low))
+    if (!bars || !Array.isArray(bars)) {
+        return { score: 0, trend: 'BALANCED', summary: 'Rotation Factor: 0 (Insufficient data)' }
+    }
+    const valid = bars.filter((b) => b && Number.isFinite(b.high) && Number.isFinite(b.low))
     if (valid.length < 3) {
         return { score: 0, trend: 'BALANCED', summary: 'Rotation Factor: 0 (Insufficient data)' }
     }
@@ -789,7 +808,8 @@ export function computeRotationFactor(bars: HTFBarInput[]): HTFRotationFactor {
  * Detect Macro Gaps ("Invisible Tails" - Page 155) & Island Days (Page 152).
  */
 export function computeMacroGapsAndIslands(bars: HTFBarInput[]): { gaps: HTFMacroGap[]; islandDays: HTFIslandDay[] } {
-    const valid = bars.filter((b) => Number.isFinite(b.open) && Number.isFinite(b.high) && Number.isFinite(b.low) && Number.isFinite(b.close))
+    if (!bars || !Array.isArray(bars)) return { gaps: [], islandDays: [] }
+    const valid = bars.filter((b) => b && Number.isFinite(b.open) && Number.isFinite(b.high) && Number.isFinite(b.low) && Number.isFinite(b.close))
     if (valid.length < 8) return { gaps: [], islandDays: [] }
 
     const gaps: HTFMacroGap[] = []
@@ -919,7 +939,10 @@ export function computeOpportunityWindow(args: {
  * Compute Value Area Placement (Figure 4.54 - Page 160: Higher, Lower, Overlapping, Inside, Outside).
  */
 export function computeValueAreaPlacement(bars: HTFBarInput[]): { placement: HTFValueAreaPlacement; vaHigh: number; vaLow: number; vaWidth: HTFValueAreaWidth } {
-    const valid = bars.filter((b) => Number.isFinite(b.close) && Number.isFinite(b.high) && Number.isFinite(b.low))
+    if (!bars || !Array.isArray(bars)) {
+        return { placement: 'UNCHANGED', vaHigh: 0, vaLow: 0, vaWidth: 'AVERAGE' }
+    }
+    const valid = bars.filter((b) => b && Number.isFinite(b.close) && Number.isFinite(b.high) && Number.isFinite(b.low))
     if (valid.length < 12) {
         return { placement: 'UNCHANGED', vaHigh: 0, vaLow: 0, vaWidth: 'AVERAGE' }
     }
@@ -998,11 +1021,12 @@ export function computeDynamicRiskReward(
     vaHigh: number,
     vaLow: number
 ): HTFDynamicRiskReward {
-    const recent = bars5m.slice(-36)
+    const valid = Array.isArray(bars5m) ? bars5m.filter((b) => b && Number.isFinite(b.high) && Number.isFinite(b.low)) : []
+    const recent = valid.slice(-36)
     const highs = recent.map((b) => b.high)
     const lows = recent.map((b) => b.low)
-    const rMax = Math.max(...highs, vaHigh || 0)
-    const rMin = Math.min(...lows, vaLow || 0)
+    const rMax = highs.length > 0 ? Math.max(...highs, vaHigh || 0) : vaHigh || 0
+    const rMin = lows.length > 0 ? Math.min(...lows, vaLow || 0) : vaLow || 0
 
     const r30mLow = Math.round(rMin * 100) / 100
     const r30mHigh = Math.round(rMax * 100) / 100
@@ -1050,8 +1074,9 @@ export function computeLongTermBracket(
     bars: HTFBarInput[],
     currentPrice: number
 ): HTFBracketDetails {
-    const bars5d = bars.slice(-288) // ~5 days of 5m bars
-    const bars20d = bars.slice(-1152) // ~20 days of 5m bars
+    const valid = Array.isArray(bars) ? bars.filter((b) => b && Number.isFinite(b.high) && Number.isFinite(b.low)) : []
+    const bars5d = valid.slice(-288) // ~5 days of 5m bars
+    const bars20d = valid.slice(-1152) // ~20 days of 5m bars
 
     // 5-Day Swing Bracket Boundaries
     const s5Highs = bars5d.map((b) => b.high)
@@ -1088,14 +1113,14 @@ export function computeLongTermBracket(
     const lowTestCount = s5Lows.filter((l) => l <= s5Min + 3).length
 
     // Rule 4 / Breakout Failure: Auction Failure Detection
-    const recentRecent = bars.slice(-12)
-    const probedBelowAndRebounded = recentRecent.some((b) => b.low < s5Min - 2) && currentPrice > s5Val
-    const probedAboveAndReversed = recentRecent.some((b) => b.high > s5Max + 2) && currentPrice < s5Vah
+    const recentRecent = valid.slice(-12)
+    const probedBelowAndRebounded = recentRecent.some((b) => b && b.low < s5Min - 2) && currentPrice > s5Val
+    const probedAboveAndReversed = recentRecent.some((b) => b && b.high > s5Max + 2) && currentPrice < s5Vah
     const auctionFailureDetected = probedBelowAndRebounded || probedAboveAndReversed
 
     // Page 196: Trend Aging Volume Divergence
-    const upDaysVol = bars5d.filter((b) => b.close > b.open).reduce((sum, b) => sum + (b.volume || 0), 0)
-    const downDaysVol = bars5d.filter((b) => b.close < b.open).reduce((sum, b) => sum + (b.volume || 0), 0)
+    const upDaysVol = bars5d.filter((b) => b && b.close > b.open).reduce((sum, b) => sum + (b.volume || 0), 0)
+    const downDaysVol = bars5d.filter((b) => b && b.close < b.open).reduce((sum, b) => sum + (b.volume || 0), 0)
     const trendAgingDivergence = downDaysVol > 1.25 * upDaysVol && currentPrice > s5Poc
 
     // Determine Bracket Mode
@@ -1148,7 +1173,7 @@ export function computeCorrectiveAction(
     vaPlacement: HTFValueAreaPlacement,
     bracket: HTFBracketDetails
 ): HTFCorrectiveActionDetails {
-    if (bars.length < 24) {
+    if (!bars || !Array.isArray(bars) || bars.length < 24) {
         return {
             type: 'NONE',
             isDisguised: false,
@@ -1158,7 +1183,18 @@ export function computeCorrectiveAction(
         }
     }
 
-    const recentBars = bars.slice(-24) // Last 2 hours of 5m bars
+    const valid = bars.filter((b) => b && Number.isFinite(b.high) && Number.isFinite(b.low) && Number.isFinite(b.close))
+    if (valid.length < 24) {
+        return {
+            type: 'NONE',
+            isDisguised: false,
+            underlyingStrength: 'NORMAL',
+            targetMultiplierBonus: 0,
+            directiveSummary: 'Insufficient data for corrective action evaluation.',
+        }
+    }
+
+    const recentBars = valid.slice(-24) // Last 2 hours of 5m bars
     const sessionHigh = Math.max(...recentBars.map((b) => b.high))
     const sessionLow = Math.min(...recentBars.map((b) => b.low))
     const currentPrice = recentBars[recentBars.length - 1]!.close
@@ -1218,23 +1254,47 @@ export function computeAnchorProfile(
     excesses: HTFExcessSignal[],
     bracket: HTFBracketDetails
 ): HTFAnchorProfileDetails {
+    if (!bars || !Array.isArray(bars) || bars.length === 0) {
+        return {
+            anchorResetTriggered: false,
+            anchorResetReason: 'Standard 5-Day Rolling Anchor',
+            anchorTimestamp: 0,
+            anchorPoc: 0,
+            anchorVah: 0,
+            anchorVal: 0,
+        }
+    }
+
+    const valid = bars.filter((b) => b && Number.isFinite(b.high) && Number.isFinite(b.low))
+    if (valid.length === 0) {
+        return {
+            anchorResetTriggered: false,
+            anchorResetReason: 'Standard 5-Day Rolling Anchor',
+            anchorTimestamp: 0,
+            anchorPoc: 0,
+            anchorVah: 0,
+            anchorVal: 0,
+        }
+    }
+
     const primaryExcess = excesses.length > 0 ? excesses[0] : null
     let anchorResetTriggered = false
     let anchorResetReason = 'Standard 5-Day Rolling Anchor'
-    let anchorBar = bars[Math.max(0, bars.length - 288)]!
+    let anchorBar = valid[Math.max(0, valid.length - 288)] || valid[0]
 
     if (primaryExcess) {
         anchorResetTriggered = true
         anchorResetReason = `Anchor Reset: ${primaryExcess.type} (${primaryExcess.timeframe})`
-        const found = bars.find((b) => Math.abs(b.time - primaryExcess.timestamp) < 300000)
+        const found = valid.find((b) => b && Math.abs(b.time - primaryExcess.timestamp) < 300000)
         if (found) anchorBar = found
     } else if (bracket.bracketMode === 'INITIATIVE_TREND' || bracket.bracketMode === 'AUCTION_FAILURE_REVERSAL') {
         anchorResetTriggered = true
         anchorResetReason = `Anchor Reset: ${bracket.bracketMode} Breakout`
-        anchorBar = bars[Math.max(0, bars.length - 72)]! // Reset to breakout bar ~6 hours ago
+        anchorBar = valid[Math.max(0, valid.length - 72)] || valid[0] // Reset to breakout bar ~6 hours ago
     }
 
-    const anchorSlice = bars.filter((b) => b.time >= anchorBar.time)
+    const anchorTime = anchorBar?.time ?? 0
+    const anchorSlice = valid.filter((b) => b && b.time >= anchorTime)
     const highs = anchorSlice.map((b) => b.high)
     const lows = anchorSlice.map((b) => b.low)
     const aHigh = highs.length > 0 ? Math.max(...highs) : 0
@@ -1247,7 +1307,7 @@ export function computeAnchorProfile(
     return {
         anchorResetTriggered,
         anchorResetReason,
-        anchorTimestamp: anchorBar.time,
+        anchorTimestamp: anchorTime,
         anchorPoc,
         anchorVah,
         anchorVal,
@@ -1263,7 +1323,7 @@ export function computeSpecialSituations(
     vaPlacement: HTFValueAreaPlacement,
     bracket: HTFBracketDetails
 ): HTFSpecialSituationDetails {
-    if (bars.length < 36) {
+    if (!bars || !Array.isArray(bars) || bars.length < 36) {
         return {
             activeSituation: 'NONE',
             continuationProbabilityPct: 50,
@@ -1273,7 +1333,18 @@ export function computeSpecialSituations(
         }
     }
 
-    const currentPrice = bars[bars.length - 1]!.close
+    const valid = bars.filter((b) => b && Number.isFinite(b.open) && Number.isFinite(b.close))
+    if (valid.length < 36) {
+        return {
+            activeSituation: 'NONE',
+            continuationProbabilityPct: 50,
+            primaryTargetPrice: null,
+            invalidationPrice: null,
+            directiveSummary: 'Insufficient data for Special Situation evaluation.',
+        }
+    }
+
+    const currentPrice = valid[valid.length - 1]!.close
 
     // 1. Balance-Area Breakout (Page 256) — Priority 1 Macro Shift
     if (bracket.tradeLocationGrade === 'OUT_OF_BRACKET_BREAKOUT') {
@@ -1288,7 +1359,7 @@ export function computeSpecialSituations(
     }
 
     // 2. Initiative Gap (Page 260)
-    const sessionOpen = bars[0]!.open
+    const sessionOpen = valid[0]!.open
     const prevHigh = bracket.swing5d.vah
     const prevLow = bracket.swing5d.val
 
@@ -1411,7 +1482,17 @@ export function computeMarketStandAsideState(
     bracket: HTFBracketDetails,
     macroContext: HTFMacroContextState
 ): HTFStandAsideDetails {
-    if (bars.length < 24) {
+    if (!bars || !Array.isArray(bars) || bars.length < 24) {
+        return {
+            isStandAside: false,
+            reason: 'NONE',
+            severity: 'NONE',
+            directiveSummary: 'Insufficient data for Stand-Aside evaluation.',
+        }
+    }
+
+    const valid = bars.filter((b) => b && Number.isFinite(b.open) && Number.isFinite(b.high) && Number.isFinite(b.low) && Number.isFinite(b.close))
+    if (valid.length < 24) {
         return {
             isStandAside: false,
             reason: 'NONE',
@@ -1422,8 +1503,8 @@ export function computeMarketStandAsideState(
 
     let maxHigh = -Infinity
     let minLow = Infinity
-    for (let i = 0; i < bars.length; i++) {
-        const b = bars[i]!
+    for (let i = 0; i < valid.length; i++) {
+        const b = valid[i]!
         if (b.high > maxHigh) maxHigh = b.high
         if (b.low < minLow) minLow = b.low
     }
@@ -1441,9 +1522,9 @@ export function computeMarketStandAsideState(
     }
 
     // 2. Nonconviction Days (Page 266) — Random rotations inside prior value, zero OTF conviction
-    const sessionOpen = bars[0]!.open
+    const sessionOpen = valid[0]!.open
     const isOpenInsideValue = sessionOpen >= bracket.swing5d.val && sessionOpen <= bracket.swing5d.vah
-    const currentPrice = bars[bars.length - 1]!.close
+    const currentPrice = valid[valid.length - 1]!.close
     const isPriceInsideValue = currentPrice >= bracket.swing5d.val && currentPrice <= bracket.swing5d.vah
     const isChopLocation = bracket.tradeLocationGrade === 'MID_BRACKET_CHOP'
 
@@ -1503,8 +1584,23 @@ export function computeHTFContextState(args: {
     avwapAnchors?: number[]
     vpAnchors?: number[]
 }): HTFContextState {
-    const { instrument, asOfUnix, candles5m } = args
-    const excesses = computeHTFExcessSignals(args)
+    const instrument = args.instrument || 'DOW'
+    const asOfUnix = typeof args.asOfUnix === 'number' ? args.asOfUnix : Math.floor(Date.now() / 1000)
+    const candles5m = Array.isArray(args.candles5m) ? args.candles5m : []
+    const candles15m = Array.isArray(args.candles15m) ? args.candles15m : undefined
+    const candles1h = Array.isArray(args.candles1h) ? args.candles1h : undefined
+    const avwapAnchors = Array.isArray(args.avwapAnchors) ? args.avwapAnchors : undefined
+    const vpAnchors = Array.isArray(args.vpAnchors) ? args.vpAnchors : undefined
+
+    const excesses = computeHTFExcessSignals({
+        instrument,
+        candles5m,
+        candles15m,
+        candles1h,
+        asOfUnix,
+        avwapAnchors,
+        vpAnchors,
+    })
     const poorExtremes = computePoorExtremes({ candles: candles5m, asOfUnix })
 
     const profileShape = computeProfileShape(candles5m)
@@ -1549,7 +1645,7 @@ export function computeHTFContextState(args: {
     }
 
     // Long-Term Bracket Engine (Mind Over Markets Ch 4, Pages 183-210)
-    const currentPrice = candles5m.length > 0 ? candles5m[candles5m.length - 1]!.close : 0
+    const currentPrice = candles5m.length > 0 ? (candles5m[candles5m.length - 1]?.close ?? 0) : 0
     const bracket = computeLongTermBracket(candles5m, currentPrice)
 
     // Corrective Action, Dynamic Anchor Profile, Special Situation & Stand-Aside Engine (Mind Over Markets Ch 4, Pages 225-275)

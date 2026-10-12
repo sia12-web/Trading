@@ -137,4 +137,36 @@ assert.ok(fullState.summaryText)
 assert.ok(fullState.leoPromptBlock.includes('DAY TIMEFRAME & LONG-TERM SPECIALIST'))
 console.log('   ✅ Full HTFContextState integration passed.')
 
+// 5. Empty & Sparse Bars Resilience (Leo Desk /api/trading/htf-context GET safety)
+console.log('\n5. Testing Empty & Sparse Candle Resilience...')
+const emptyState = computeHTFContextState({
+    instrument: 'DOW',
+    asOfUnix: 1700000000,
+    candles5m: [],
+})
+assert.strictEqual(emptyState.instrument, 'DOW')
+assert.strictEqual(emptyState.status, 'BALANCED')
+assert.strictEqual(emptyState.primaryExcess, null)
+assert.strictEqual(emptyState.anchorProfile?.anchorTimestamp, 0)
+assert.ok(emptyState.leoPromptBlock)
+
+const nullState = computeHTFContextState({
+    instrument: 'NASDAQ',
+    asOfUnix: 1700000000,
+    candles5m: null as any,
+})
+assert.strictEqual(nullState.instrument, 'NASDAQ')
+assert.strictEqual(nullState.status, 'BALANCED')
+
+const singleBarState = computeHTFContextState({
+    instrument: 'GOLD',
+    asOfUnix: 1700000000,
+    candles5m: [{ time: 1700000000, open: 2000, high: 2005, low: 1995, close: 2000, volume: 100 }],
+})
+assert.strictEqual(singleBarState.instrument, 'GOLD')
+assert.ok(singleBarState.anchorProfile)
+
+console.log('   ✅ Empty, null, and sparse candle resilience passed.')
+
 console.log('\n🎉 ALL SENTINEL VERIFICATION TESTS PASSED SUCCESSFULLY!\n')
+

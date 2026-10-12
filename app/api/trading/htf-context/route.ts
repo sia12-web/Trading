@@ -89,11 +89,45 @@ export async function GET(request: NextRequest) {
         ? (rawInstrument as DeskInstrument)
         : 'DOW'
 
+    let persistedLog: {
+        status?: any
+        summary_text?: string
+        primary_excess?: any
+        poor_extremes?: any
+        as_of_unix?: number
+    } | null = null
+
+    try {
+        const supabase = await createClient()
+        const { data } = await supabase
+            .from('htf_context_logs')
+            .select('*')
+            .eq('user_id', user.id)
+            .eq('instrument', instrument)
+            .order('as_of_unix', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+        persistedLog = data
+    } catch {
+        // Non-blocking failover
+    }
+
+    const asOfUnix = typeof persistedLog?.as_of_unix === 'number'
+        ? persistedLog.as_of_unix
+        : Math.floor(Date.now() / 1000)
+
     const htfState = computeHTFContextState({
         instrument,
         candles5m: [],
-        asOfUnix: Math.floor(Date.now() / 1000),
+        asOfUnix,
     })
+
+    if (persistedLog) {
+        if (persistedLog.status) htfState.status = persistedLog.status
+        if (persistedLog.summary_text) htfState.summaryText = persistedLog.summary_text
+        if (persistedLog.primary_excess) htfState.primaryExcess = persistedLog.primary_excess
+        if (persistedLog.poor_extremes) htfState.poorExtremes = persistedLog.poor_extremes
+    }
 
     return NextResponse.json({
         ok: true,
