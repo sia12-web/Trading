@@ -855,9 +855,6 @@ function normalizeCandleTimes(candles: OHLCV[], tf: DeskTimeframe = '5m', instru
     const l = Number(c.low)
     const cl = Number(c.close)
     if (!Number.isFinite(rawT) || !Number.isFinite(o) || !Number.isFinite(h) || !Number.isFinite(l) || !Number.isFinite(cl)) continue
-    // Strip synthetic zero-volume carry-price flat bars that render as dashes
-    const isSyntheticFlat = (c.volume ?? 0) === 0 && o === cl && h === l
-    if (isSyntheticFlat && sorted.length > 2) continue
 
     // Daily bars: NY session date at UTC midnight. Yahoo stamps some days at 13:00/14:00 UTC
     // (shortened sessions) which would otherwise plot as a second candle on the same day.
@@ -9882,8 +9879,6 @@ export function TradingChart({
       }
       const next = bars
       for (const g of fills) {
-        // Skip synthetic zero-volume carry-price flat fills that render as horizontal dashes
-        if ((g.volume ?? 0) === 0 && g.high === g.low) continue
         const prev = next[next.length - 1]
         // Ensure gap fills strictly advance time
         if (prev && (g.time as number) <= (prev.time as number)) continue
@@ -9924,11 +9919,13 @@ export function TradingChart({
         next[next.length - 1] = {
           ...last,
           ...bar,
+          high: Math.max(last.high, bar.high),
+          low: Math.min(last.low, bar.low),
           volume: Math.max(last.volume ?? 0, bar.volume ?? 0),
         }
       }
       candlesRef.current = next
-      paintTipBar(bar)
+      paintTipBar(next[next.length - 1]!)
       if (fills.length > 0) {
         const now = Date.now()
         if (now - lastMarkerPaintAt >= 1000) {
@@ -10206,7 +10203,12 @@ export function TradingChart({
             json.change_pct ?? 0,
             ts,
             streamLive,
-            json.feed === 'databento' || json.source === 'cme' || json.source === 'databento' || json.feed === 'cme',
+            json.feed === 'databento' ||
+            json.feed === 'cme' ||
+            json.source === 'cme' ||
+            json.source === 'cme_globex' ||
+            json.source === 'databento' ||
+            Boolean(json.bar),
             json.bar
           )
         }
@@ -10352,8 +10354,6 @@ export function TradingChart({
           const startIndex = Math.max(0, prev.length - 1)
           for (let i = startIndex; i < nextBars.length; i++) {
             const b = nextBars[i]!
-            // Skip synthetic zero-volume carry-price flat bars that render as dashes
-            if ((b.volume ?? 0) === 0 && b.high === b.low && b.open === b.close) continue
             const v = ensureVisibleCandleRange(b, instrument)
             const t = toSeriesTime(b.time as number, timeframe, tz)
             try {
@@ -10448,7 +10448,12 @@ export function TradingChart({
             json.change_pct ?? 0,
             ts,
             streamLive,
-            json.feed === 'databento' || json.source === 'cme' || json.source === 'databento' || json.feed === 'cme',
+            json.feed === 'databento' ||
+            json.feed === 'cme' ||
+            json.source === 'cme' ||
+            json.source === 'cme_globex' ||
+            json.source === 'databento' ||
+            Boolean(json.bar),
             json.bar
           )
         } catch {

@@ -44,9 +44,23 @@ export const MAX_SINGLE_TICK_PTS: Record<string, number> = {
 }
 
 /**
+ * Realistic contract/scale disagreement thresholds per instrument.
+ * Distinguishes true wrong-month / scale roll mismatches (e.g. CLV6 ~97 vs CLX6 ~93 = 3.93 pts,
+ * or unshifted CFDs off by 1000s of pts) from legitimate fast market volatility (CPI / news surges).
+ */
+export const MAX_DISAGREEMENT_PTS: Record<string, number> = {
+  DOW: 1200,
+  NASDAQ: 600,
+  NIKKEI: 1000,
+  GOLD: 60,
+  CRUDE: 2.5,
+  SILVER: 1.0,
+}
+
+/**
  * Live CME print vs the vendor book we are overlaying. A calendar-front
  * contract after the volume roll (e.g. CLV6 ~97 vs CLX6 / CL=F ~93) trips this;
- * a delayed Yahoo last of a few ticks does not.
+ * legitimate fast-market moves (CPI, FOMC, opening bells) are allowed without false veto.
  */
 export function liveTipDisagreesWithBook(
   liveClose: number,
@@ -55,9 +69,9 @@ export function liveTipDisagreesWithBook(
 ): boolean {
   if (!(liveClose > 0) || !(bookClose > 0)) return false
   const maxPts = instrument
-    ? (MAX_SINGLE_TICK_PTS[instrument] ?? bookClose * 0.025)
-    : bookClose * 0.025
-  return Math.abs(liveClose - bookClose) > maxPts * 2
+    ? (MAX_DISAGREEMENT_PTS[instrument] ?? bookClose * 0.04)
+    : bookClose * 0.04
+  return Math.abs(liveClose - bookClose) > maxPts
 }
 
 /**
@@ -282,7 +296,24 @@ export function mergeHistoryWithLiveTip<T extends FormingBar>(
   }
   if (liveT > lastT) {
     if (!isPlausibleDeskTick(last.close, alignedLive.close, 0.08)) return history
-    return [...history, alignedLive]
+    const intermediate: T[] = []
+    const numSteps = Math.round((liveT - lastT) / step)
+    if (numSteps > 1 && numSteps <= LIVE_MAX_GAP_FILLS) {
+      const prevClose = last.close
+      for (let t = lastT + step; t < liveT; t += step) {
+        if (instrument && isCmeMarketHalt(t)) continue
+        intermediate.push({
+          ...alignedLive,
+          time: t,
+          open: prevClose,
+          high: prevClose,
+          low: prevClose,
+          close: prevClose,
+          volume: 0,
+        })
+      }
+    }
+    return [...history, ...intermediate, alignedLive]
   }
   if (liveT < lastT) return history
   if (!isPlausibleDeskTick(last.close, alignedLive.close, 0.15)) return history
