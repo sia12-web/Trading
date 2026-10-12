@@ -2724,7 +2724,7 @@ export function TradingChart({
       }
     }
     yesterdayNycLinesRef.current = []
-  }, [timeframe])
+  }, [instrument, timeframe])
 
   const paintInventorySessions = useCallback(() => {
     const host = priceLineHostRef.current

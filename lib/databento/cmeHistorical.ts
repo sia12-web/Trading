@@ -69,8 +69,8 @@ export function loadCme5mBars(): FiveMinBarsData | null {
  */
 export function getCmeDailyBars(instrument: Instrument): ContextBar[] {
   const data = loadCmeDailyBars()
-  if (!data) return []
-  const key = instrument === 'NIKKEI' ? 'NASDAQ' : (instrument as keyof DailyBarsData)
+  if (!data || instrument === 'NIKKEI') return []
+  const key = instrument as keyof DailyBarsData
   return data[key] || []
 }
 

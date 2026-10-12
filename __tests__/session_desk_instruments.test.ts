@@ -75,9 +75,17 @@ assert(nyDeskSessionAt(et(2026, 7, 16, 15, 55)) === 'New York', 'NY 15:55 → NY
 
 // deskSessionAt routes by instrument
 assert(deskSessionAt(et(2026, 7, 16, 17, 0), 'DOW') === null, 'DOW 17:00 dead')
+assert(deskSessionAt(et(2026, 7, 16, 18, 0), 'DOW') === 'Asia', 'DOW 18:00 Asia')
+
+// NIKKEI: Asia session draws from beginning of Japan session (09:00 JST)
+assert(deskSessionAt(jst(2026, 7, 16, 8, 55), 'NIKKEI') === null, 'NIKKEI before 09:00 JST is not Asia')
+assert(deskSessionAt(jst(2026, 7, 16, 9, 0), 'NIKKEI') === 'Asia', 'NIKKEI 09:00 JST is Asia start')
+assert(deskSessionAt(jst(2026, 7, 16, 14, 55), 'NIKKEI') === 'Asia', 'NIKKEI 14:55 JST is Asia')
+assert(deskSessionAt(jst(2026, 7, 16, 15, 5), 'NIKKEI') === null, 'NIKKEI 15:05 JST after close is dead zone')
 
 assert(deskClockFor('DOW').timeZone === 'America/New_York', 'DOW TZ')
 assert(deskClockFor('NASDAQ').timeZone === 'America/New_York', 'NASDAQ TZ')
+assert(deskClockFor('NIKKEI').timeZone === 'Asia/Tokyo', 'NIKKEI TZ')
 
 // Lighter, soft session fills
 for (const name of ['Asia', 'London', 'New York'] as const) {

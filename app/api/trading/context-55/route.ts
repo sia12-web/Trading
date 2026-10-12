@@ -6,9 +6,12 @@
 import { NextResponse } from 'next/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { getCmeDailyBars } from '@/lib/databento/cmeHistorical'
+import { getYahooCandles } from '@/lib/yahoo/candles'
+import { deskClockFor } from '@/lib/chart/sessionVwap'
 import {
   compute5MonthAnchoredVwapFromDailyBars,
   type AnchoredVwapBenchmark5M,
+  type ContextBar,
 } from '@/lib/chart/context55'
 import type { Instrument } from '@/types/price-feed'
 
@@ -45,20 +48,39 @@ export async function GET(request: Request) {
         instrument,
         avwap5m: cached.benchmark,
         cached: true,
-        source: 'cme_globex',
+        source: instrument === 'NIKKEI' ? 'yahoo_jp225' : 'cme_globex',
       })
     }
 
-    const dailyBars = getCmeDailyBars(instrument)
+    let dailyBars: ContextBar[] = []
+    let source = 'cme_globex'
+
+    if (instrument === 'NIKKEI') {
+      const yahoo = await getYahooCandles('NIKKEI', 'D', 180)
+      if (yahoo?.candles?.length) {
+        dailyBars = yahoo.candles.map((c) => ({
+          time: c.time,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          volume: c.volume,
+        }))
+        source = 'yahoo_jp225'
+      }
+    } else {
+      dailyBars = getCmeDailyBars(instrument)
+    }
 
     if (!dailyBars || dailyBars.length === 0) {
       return NextResponse.json(
-        { error: `No CME historical daily bars returned for ${instrument}` },
+        { error: `No historical daily bars returned for ${instrument}` },
         { status: 404 }
       )
     }
 
-    const benchmark = compute5MonthAnchoredVwapFromDailyBars(dailyBars)
+    const clock = deskClockFor(instrument)
+    const benchmark = compute5MonthAnchoredVwapFromDailyBars(dailyBars, undefined, clock)
     if (!benchmark) {
       return NextResponse.json(
         { error: `Could not calculate 5M AVWAP for ${instrument}` },
@@ -73,7 +95,7 @@ export async function GET(request: Request) {
       instrument,
       avwap5m: benchmark,
       cached: false,
-      source: 'cme_globex',
+      source,
     })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)

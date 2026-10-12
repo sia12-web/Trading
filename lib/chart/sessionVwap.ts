@@ -54,6 +54,17 @@ export const SESSION_WINDOWS = {
 } as const
 
 /**
+ * Nikkei session windows:
+ * Asia draws from the beginning of the Japan cash session (09:00 → 15:00 JST).
+ * London and New York align with their respective market trading hours.
+ */
+export const NIKKEI_SESSION_WINDOWS = {
+  Asia: { tz: 'Asia/Tokyo', start: 9, end: 15 }, // Japan cash session 09:00 → 15:00 JST
+  London: { tz: 'America/New_York', start: 3, end: 11.5 }, // 03:00 → 11:30 ET
+  'New York': { tz: 'America/New_York', start: 9.5, end: 16 }, // 09:30 → 16:00 ET
+} as const
+
+/**
  * Classify a bar into Asia / London / NY, or null when between sessions
  * (post–cash-close dead zone — no paint).
  * All supported instruments (DOW, NASDAQ, GOLD, CRUDE, SILVER) use America/New_York.
@@ -72,8 +83,31 @@ export function nyDeskSessionAt(unix: number): SessionName | null {
 /**
  * All active desk sessions at unix time.
  * Supports concurrent active sessions (e.g. London + NY overlap from 09:30 to 11:30).
+ * For NIKKEI, Asia session is drawn from the beginning of the Japan session (09:00–15:00 JST).
  */
-export function activeDeskSessionsAt(unix: number): SessionName[] {
+export function activeDeskSessionsAt(
+  unix: number,
+  instrument?: string | null
+): SessionName[] {
+  if (instrument === 'NIKKEI') {
+    const hJst = hourInTz(unix, 'Asia/Tokyo')
+    const hEt = hourInTz(unix, 'America/New_York')
+    const active: SessionName[] = []
+    // Japan cash session: 09:00 → 15:00 JST
+    if (hJst >= NIKKEI_SESSION_WINDOWS.Asia.start && hJst < NIKKEI_SESSION_WINDOWS.Asia.end) {
+      active.push('Asia')
+    }
+    // London: 03:00 → 11:30 ET
+    if (hEt >= NIKKEI_SESSION_WINDOWS.London.start && hEt < NIKKEI_SESSION_WINDOWS.London.end) {
+      active.push('London')
+    }
+    // New York: 09:30 → 16:00 ET
+    if (hEt >= NIKKEI_SESSION_WINDOWS['New York'].start && hEt < NIKKEI_SESSION_WINDOWS['New York'].end) {
+      active.push('New York')
+    }
+    return active
+  }
+
   const h = hourInTz(unix, 'America/New_York')
   // Post–NY cash close dead zone (16:00–18:00)
   if (h >= SESSION_WINDOWS['New York'].end && h < SESSION_WINDOWS.Asia.start) {
@@ -95,11 +129,18 @@ export function activeDeskSessionsAt(unix: number): SessionName[] {
 /** @deprecated Kept for test-file compat — all live instruments use nyDeskSessionAt. */
 export const tokyoDeskSessionAt = nyDeskSessionAt
 
-/** Per-instrument session paint clock — always NY desk. */
+/** Per-instrument session paint clock (Japan session 09:00–15:00 JST for NIKKEI; NY desk for others). */
 export function deskSessionAt(
   unix: number,
-  _instrument?: string | null
+  instrument?: string | null
 ): SessionName | null {
+  if (instrument === 'NIKKEI') {
+    const active = activeDeskSessionsAt(unix, instrument)
+    if (active.includes('Asia')) return 'Asia'
+    if (active.includes('New York')) return 'New York'
+    if (active.includes('London')) return 'London'
+    return null
+  }
   return nyDeskSessionAt(unix)
 }
 
@@ -109,21 +150,26 @@ export function deskSessionAt(
  */
 export function sessionInstanceKeyAt(
   unix: number,
-  _instrument?: string | null
+  instrument?: string | null
 ): { name: SessionName; key: string } | null {
-  const sess = nyDeskSessionAt(unix)
+  const sess = deskSessionAt(unix, instrument)
   if (!sess) return null
   return {
     name: sess,
-    key: sessionInstanceKeyFor(unix, sess),
+    key: sessionInstanceKeyFor(unix, sess, instrument),
   }
 }
 
 /** Unique key for any specific session instance on a date. */
 export function sessionInstanceKeyFor(
   unix: number,
-  name: SessionName
+  name: SessionName,
+  instrument?: string | null
 ): string {
+  if (instrument === 'NIKKEI' && name === 'Asia') {
+    const ymd = dayFormatter('Asia/Tokyo').format(new Date(unix * 1000))
+    return `${ymd}_Asia`
+  }
   const ymd = dayFormatter('America/New_York').format(new Date(unix * 1000))
   const h = hourInTz(unix, 'America/New_York')
   let sessionDate = ymd
@@ -497,7 +543,8 @@ export function logicalFromPixel(
  */
 export function computeLatestSessionRanges(
   candles: SessionBar[],
-  asOfUnix?: number
+  asOfUnix?: number,
+  instrument?: string | null
 ): SessionRange[] {
   const hasAsOf = asOfUnix != null && Number.isFinite(asOfUnix)
   const now = hasAsOf ? (asOfUnix as number) : Infinity
@@ -520,10 +567,11 @@ export function computeLatestSessionRanges(
   }
 
   const latest = new Map<SessionName, SessionRange>()
+  const windows = instrument === 'NIKKEI' ? NIKKEI_SESSION_WINDOWS : SESSION_WINDOWS
 
   for (const dayUnix of Array.from(expanded).sort((a, b) => a - b)) {
-    for (const name of Object.keys(SESSION_WINDOWS) as SessionName[]) {
-      const w = SESSION_WINDOWS[name]
+    for (const name of Object.keys(windows) as SessionName[]) {
+      const w = windows[name]
       if (name === 'Asia') {
         if (!isSessionTradingDay(dayUnix, 'ASIA')) continue
       } else if (!isSessionTradingDay(dayUnix, 'US')) {
@@ -639,11 +687,11 @@ export function computeSessionHighlightSpans(args: {
   const spanMap = new Map<string, SessionHighlightSpan>()
 
   for (const c of bars) {
-    const activeSessions = activeDeskSessionsAt(c.time)
+    const activeSessions = activeDeskSessionsAt(c.time, args.instrument)
     const barEnd = c.time + barSec
 
     for (const name of activeSessions) {
-      const key = sessionInstanceKeyFor(c.time, name)
+      const key = sessionInstanceKeyFor(c.time, name, args.instrument)
       const existing = spanMap.get(key)
       if (!existing) {
         spanMap.set(key, {

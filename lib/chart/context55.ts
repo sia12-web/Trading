@@ -627,8 +627,8 @@ export function computeYesterdayNycSession(
   for (let daysBack = startDaysBack; daysBack <= 10; daysBack++) {
     const candidateYmd = daysBack === 0 ? todayYmd : nthTradingDayBefore(todayYmd, daysBack, clock.timeZone)
 
-    // Skip official US stock & futures exchange holidays (e.g. Labor Day, Memorial Day, MLK, etc.)
-    if (isUsMarketHoliday(candidateYmd)) {
+    // Skip official US stock & futures exchange holidays (e.g. Labor Day, Memorial Day, MLK, etc.) for US desks only
+    if (clock.timeZone === 'America/New_York' && isUsMarketHoliday(candidateYmd)) {
       continue
     }
 
