@@ -268,20 +268,24 @@ export function SessionBanner({
             json.rangeStrategy === 'us_range'
             ? json.rangeStrategy
             : null,
-        deskRiskLocked: !!(json.deskRisk?.dayLocked || json.deskRisk?.allowed === false || json.tradeify?.dayLocked),
+        deskRiskLocked: !!(json.deskRisk?.dayLocked || json.deskRisk?.allowed === false || json.personalFutures?.dayLocked || json.tradeify?.dayLocked),
         deskRiskLockMessage:
           typeof json.deskRisk?.refuseMessage === 'string'
             ? json.deskRisk.refuseMessage
-            : typeof json.tradeify?.refuseMessage === 'string'
-              ? json.tradeify.refuseMessage
-              : null,
+            : typeof json.personalFutures?.refuseMessage === 'string'
+              ? json.personalFutures.refuseMessage
+              : typeof json.tradeify?.refuseMessage === 'string'
+                ? json.tradeify.refuseMessage
+                : null,
         deskRiskRefuseReason:
           typeof json.deskRisk?.refuseReason === 'string'
             ? json.deskRisk.refuseReason
-            : typeof json.tradeify?.refuseReason === 'string'
-              ? json.tradeify.refuseReason
-              : null,
-        deskRiskMustFlatten: !!(json.deskRisk?.mustFlatten || json.tradeify?.mustFlatten),
+            : typeof json.personalFutures?.refuseReason === 'string'
+              ? json.personalFutures.refuseReason
+              : typeof json.tradeify?.refuseReason === 'string'
+                ? json.tradeify.refuseReason
+                : null,
+        deskRiskMustFlatten: !!(json.deskRisk?.mustFlatten || json.personalFutures?.mustFlatten || json.tradeify?.mustFlatten),
         deskRiskLeftoverDll:
           typeof json.deskRisk?.leftoverDll === 'number' ? json.deskRisk.leftoverDll : null,
         deskRiskFloorRoom:

@@ -1,14 +1,15 @@
 /**
- * Tradeify Growth eval guards that the $400 ladder alone does not cover:
- * open-stop reserve, EOD floor trail, equity-index hedge, red-news lock.
+ * Personal Futures risk guards that the $400 ladder alone does not cover:
+ * open-stop reserve, closed-session peak tracking, equity-index hedge, red-news lock.
  */
 
 import { tradeifySessionKey } from '@/lib/trading/tradeifyGrowth50k'
 import { parseCalendarEventMs } from '@/lib/trading/deskNewsHazard'
 
-export const TRADEIFY_NEWS_LOCK_MS = 5 * 60 * 1000
+export const PERSONAL_NEWS_LOCK_MS = 5 * 60 * 1000
+export const TRADEIFY_NEWS_LOCK_MS = PERSONAL_NEWS_LOCK_MS
 
-export type TradeifySafetyFill = {
+export type PersonalSafetyFill = {
   instrument?: string | null
   fill_status?: string | null
   entry_timestamp?: string | null
@@ -19,6 +20,8 @@ export type TradeifySafetyFill = {
   risk_amount?: number | null
   entry_direction?: string | null
 }
+
+export type TradeifySafetyFill = PersonalSafetyFill
 
 const EQUITY_INDEX = new Set(['DOW', 'NASDAQ', 'NIKKEI'])
 
@@ -135,3 +138,7 @@ export function tradeifyRedNewsBlocks(
   }
   return false
 }
+
+export const isClosedPersonalFill = isClosedTradeifyFill
+export const isPersonalRedNewsEvent = isTradeifyRedNewsEvent
+export const personalRedNewsBlocks = tradeifyRedNewsBlocks

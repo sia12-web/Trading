@@ -1,5 +1,5 @@
 /**
- * Load the full read-only Questrade book + Tradeify transfer previews.
+ * Load the full read-only Questrade book + Futures transfer previews.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'

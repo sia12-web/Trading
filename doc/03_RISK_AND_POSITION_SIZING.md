@@ -1,7 +1,7 @@
-# 🛡️ 03. Risk Management, Tradeify Rules & Position Sizing
+# 🛡️ 03. Risk Management, Personal Futures Rules & Position Sizing
 
-> **Institutional Capital Preservation, Tradeify Growth $50k Overlay, and Fixed Dollar Sizing**  
-> **Source Files**: [`lib/trading/tradeifyGrowth50k.ts`](file:///c:/Users/shahb/myApplications/Trading/lib/trading/tradeifyGrowth50k.ts), [`lib/trading/positionSizing.ts`](file:///c:/Users/shahb/myApplications/Trading/lib/trading/positionSizing.ts), [`lib/trading/instrumentTicks.ts`](file:///c:/Users/shahb/myApplications/Trading/lib/trading/instrumentTicks.ts), [`lib/trading/attemptLadder.ts`](file:///c:/Users/shahb/myApplications/Trading/lib/trading/attemptLadder.ts), [`lib/trading/deskExitGuard.ts`](file:///c:/Users/shahb/myApplications/Trading/lib/trading/deskExitGuard.ts)
+> **Institutional Capital Preservation, Personal Futures $50k Model, and Fixed Dollar Sizing**  
+> **Source Files**: [`lib/trading/tradeifyGrowth50k.ts`](file:///c:/Users/shahb/myApplications/Trading/lib/trading/tradeifyGrowth50k.ts), [`lib/trading/positionSizing.ts`](file:///c:/Users/shahb/myApplications/Trading/lib/trading/positionSizing.ts), [`lib/trading/instrumentTicks.ts`](file:///c:/Users/shahb/myApplications/Trading/lib/trading/instrumentTicks.ts), [`lib/trading/attemptLadder.ts`](file:///c:/Users/shahb/myApplications/Trading/lib/trading/attemptLadder.ts), [`lib/trading/sessionCleanup.ts`](file:///c:/Users/shahb/myApplications/Trading/lib/trading/sessionCleanup.ts)
 
 ---
 
@@ -9,7 +9,7 @@
 
 The TradePulse risk architecture operates on a core institutional premise: **Trade generation is probabilistic, but risk management is 100% deterministic.** 
 
-Every trade setup must pass through mathematical risk gatekeepers before any order ticket can be generated. If a setup violates the Daily Loss Limit, Trailing Drawdown, or Ladder Quota, the execution gate locks down instantly.
+Every trade setup must pass through mathematical risk gatekeepers before any order ticket can be generated. If a setup violates the Daily Loss Limit or Ladder Quota, the execution gate locks down instantly.
 
 ```
        ┌────────────────────────────────────────────────────────┐
@@ -31,11 +31,11 @@ Every trade setup must pass through mathematical risk gatekeepers before any ord
                                    │ YES
                                    ▼
        ┌────────────────────────────────────────────────────────┐
-       │           GATE 3: TRADEIFY $50K BOUNDS CHECK           │
+       │        GATE 3: PERSONAL FUTURES $50K BOUNDS CHECK      │
        │   - DLL Remaining > Planned Risk? ($1,250 limit)       │
-       │   - Balance > Invalidation Floor? ($48,000 + EOD peak) │
-       │   - Green Day Locked? ($700 profit lock)               │
-       │   - Flatten Time Exceeded? (16:59 ET regular)          │
+       │   - Stop-loss within remaining daily risk budget?      │
+       │   - Correlated index hedge conflict check              │
+       │   - Red-news economic event lock                       │
        └───────────────────────────┬────────────────────────────┘
                                    │ YES
                                    ▼
@@ -51,21 +51,17 @@ Every trade setup must pass through mathematical risk gatekeepers before any ord
 
 ---
 
-## 2. Tradeify Growth $50k Risk Profile Specification
+## 2. Personal Futures $50k Risk Profile Specification
 
-The primary prop execution account simulated and tracked by the desk is the **Tradeify Growth $50,000 Evaluation Account** (`lib/trading/tradeifyGrowth50k.ts`):
+The primary execution account tracked by the desk is the **Personal Futures $50,000 Account** (`lib/trading/tradeifyGrowth50k.ts`):
 
 | Parameter | Value | Institutional Mechanism / Rule Behavior |
 | :--- | :---: | :--- |
-| **Starting Balance** | **$50,000.00** | Initial baseline evaluation equity. |
-| **Profit Target** | **+$3,000.00 ($53,000)** | Evaluation target to qualify for funded allocation. |
+| **Starting Capital** | **$50,000.00** | Initial baseline equity. |
 | **Daily Loss Limit (DLL)**| **-$1,250.00** | Intraday circuit-breaker. If realized + unrealized loss reaches -$1,250, trading halts for the session. |
-| **Trailing Max Drawdown** | **$2,000.00** | Maximum permitted equity decline from high-water mark. |
-| **Breach Floor (Initial)**| **$48,000.00** | $\$50,000 - \$2,000 = \$48,000$. Any tick below breaches account. |
-| **Peak EOD Ratchet Floor**| **$\max(48,000, \text{Peak EOD} - 2,000)$** | The floor trails only at **End-of-Day Close**. Intraday unrealized peaks **do not** ratchet the floor. |
-| **Funded Lock Balance** | **$52,100.00** | Once equity crosses $52,100, the trailing drawdown permanently locks at $50,100 ($100 buffer). |
-| **Green Day Lock** | **+$700.00** | If session realized P&L reaches +$700, the day locks to prevent giving back profits. |
-| **Max Daily Stop-Outs** | **2 Stop-Outs** | If two trades hit full stop-loss in a single day, the desk triggers emergency lock. |
+| **Session Fill Limit** | **3 Fills** | Strict discipline cap: max 3 filled executions per trading day across all sessions. |
+| **Progressive Risk Ladder**| **$400 → $250 → $150** | Risk per trade steps down on successive fills ($400 on #1, $250 on #2, $150 on #3). |
+| **Session Window** | **18:00 ET to 18:00 ET** | Daily session window rolling each afternoon at 18:00 ET (covers Tokyo Nikkei + NY indexes). |
 | **Slippage Buffer** | **$75.00** | Conservative reserve deducted from risk calculations to prevent accidental DLL breach. |
 | **Commission Reserve** | **$20.00 / fill** | Estimated round-trip futures exchange & clearing commission. |
 
@@ -84,22 +80,17 @@ Fill #1: $400.00 Risk (1R) ───► Fill #2: $250.00 Risk ───► Fill 
 3. **Trade #3 (Final Session Probe)**: **`$150.00 Dollar Risk`**. Minimal probe size.
 4. **Hard 3-Fill Session Cap**: Once 3 filled trades land in a session, **every window locks down completely**, regardless of whether any window shows spare probes or whether the trader is up or down.
 
-### Tradeify Refusal Reason Codes
+### Refusal Reason Codes
 
-The risk evaluator (`resolveTradeifyPlace()`) emits deterministic refusal codes:
+The risk evaluator (`resolvePersonalPlace()`) emits deterministic refusal codes:
 
 - `'ok'`: Risk checks passed; order sizing permitted.
 - `'session_full'`: 3 fills already taken on this session.
-- `'day_locked_stops'`: 2 full stop-outs occurred today; desk locked.
-- `'day_locked_green'`: +$700 daily target reached; profits protected.
 - `'dll_exhausted'`: Daily loss has reached or is within slippage of $1,250 DLL.
-- `'floor_exhausted'`: Equity is within slippage of the trailing drawdown floor.
 - `'stop_exceeds_dll'`: Proposed trade stop-loss dollar amount exceeds remaining room to DLL.
-- `'stop_exceeds_floor'`: Proposed trade stop-loss dollar amount exceeds room to trailing floor.
 - `'risk_too_small'`: Calculated risk is below $50 (token size; refused).
-- `'must_flatten'`: Mandatory flatten clock reached (16:59 ET regular / 12:59 ET holiday).
-- `'hedge_conflict'`: Attempting simultaneous opposing positions on correlated indices.
-- `'news_lock'`: High-impact Tier-1 economic event imminently scheduled.
+- `'hedge_conflict'`: Attempting simultaneous opposing positions on correlated indices (YM/NQ/NKD).
+- `'news_lock'`: High-impact Tier-1 economic event imminently scheduled ($\pm5$ minutes).
 
 ---
 
@@ -162,22 +153,18 @@ export function snapDeskPrice(price: number, instrument: string): number {
 
 ---
 
-## 6. Mandatory Cash Close Flatten & Holiday Protocol
+## 6. Session Close Risk Protocol & Clean Exits
 
-Prop evaluation rules strictly forbid holding positions overnight past exchange closing windows.
+Day trading discipline requires orderly risk management and avoiding unmonitored overnight exposure on intraday futures tickets.
 
-### 6.1 Regular Session Flatten
-- **Daily Cutoff Time**: **`16:59:00 ET`** (America/New_York / Montreal Time).
-- At 16:55 ET, the workstation sounds a persistent audio alert.
-- At 16:59 ET, all working limit orders are cancelled and all open positions are marked for immediate market liquidation.
+### 6.1 Cash Close Protocol
+- **Cash Close Time**: Market cash close (16:00 ET for NY equities, 15:00 JST for Tokyo).
+- As the close approaches, the workstation flags open positions and working orders.
+- Unfilled working limits past the active entry window are cancelled to avoid accidental fills in illiquid post-market conditions.
 
-### 6.2 Holiday Early-Close Flatten
-- On designated CME equity early-close holidays, market close occurs at 13:00 ET.
-- **Holiday Cutoff Time**: **`12:59:00 ET`**.
-- Hard-coded holiday dates (`TRADEIFY_EARLY_CLOSE_ET_YMD`):
-  - Day before Independence Day (July 3)
-  - Day after Thanksgiving (Black Friday)
-  - Christmas Eve (December 24)
+### 6.2 Holiday Sessions
+- On designated CME equity early-close holidays (e.g., Black Friday, Christmas Eve), market close occurs at 13:00 ET.
+- The workstation reflects early-close schedules in session countdowns.
 
 ---
 

@@ -60,8 +60,8 @@ const afterGreenPeak = resolveTradeifyPlace({
   peakEodBalance: 51_500,
   equity: 51_500,
 })
-assert.equal(afterGreenPeak.floorLevel, 49_500)
-assert.ok(afterGreenPeak.floorRoom <= 2000)
+assert.equal(afterGreenPeak.floorLevel, 0)
+assert.equal(afterGreenPeak.floorRoom, 51_500)
 
 const stackedOpen = resolveTradeifyPlace({
   now: midday,
@@ -115,8 +115,7 @@ assert.equal(newsPlace.refuseReason, 'news_lock')
 
 const holiday = new Date('2026-11-27T13:05:00-05:00')
 assert.equal(tradeifyIsEarlyCloseDay(holiday), true)
-assert.equal(tradeifyMustFlatten(holiday), true)
-assert.equal(tradeifyMustFlatten(new Date('2026-11-27T12:00:00-05:00')), false)
+assert.equal(tradeifyMustFlatten(holiday), false)
 assert.equal(tradeifyMustFlatten(midday), false)
 
 const tightPlaceable = resolveTradeifyPlace({ now: midday, fillsUsed: 0, dailyPnl: -1200 })

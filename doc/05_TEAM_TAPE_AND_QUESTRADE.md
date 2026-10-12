@@ -31,9 +31,9 @@ The **Team Tape** (referred to in operational communications as "Team Tape" or c
                              ▼
  ┌────────────────────────────────────────────────────────┐
  │               TEAM COPY ADVICE ENGINE                  │
- │  Translates stock thesis into Tradeify Index Futures   │
+ │  Translates stock thesis into Futures Index Tickets    │
  │   - Checks Clocked-In Status                           │
- │   - Evaluates remaining Tradeify fill capacity (0..3)  │
+ │   - Evaluates remaining fill capacity (0..3)           │
  │   - Sizes fixed risk ($400 → $250 → $150)              │
  │   - Calculates 1.5R Target on DOW or NASDAQ            │
  └────────────────────────────────────────────────────────┘
@@ -46,8 +46,8 @@ The **Team Tape** (referred to in operational communications as "Team Tape" or c
 1. **A Team Stock Fill Never Burns a Session Attempt**:
    - The desk's primary attempt ladder (2/2/2 across OR15, OR30, IB with a 3-trade daily cap) applies strictly to trades **placed by the trader**.
    - Team executions arriving from the Questrade feed are purely informational.
-2. **Never an Automatic Tradeify Fill**:
-   - A team stock execution is **never** automatically mirrored into CME futures or Tradeify accounts.
+2. **Never an Automatic Futures Fill**:
+   - A team stock execution is **never** automatically mirrored into CME futures or personal accounts.
    - The platform never executes orders autonomously without trader intent.
 3. **Their Share Count is Their Own Book**:
    - A team trader buying 5,000 shares of AMD does not mean the futures trader trades 5 contracts. The trader sizes according to their own dollar risk budget ($400, $250, or $150) on an equity index (DOW or NASDAQ).
@@ -101,7 +101,7 @@ export function stockRiskPct(entry: number, stop: number | null): number | null 
 }
 ```
 
-1. **Index Selection (`suggestTradeifyIndex`)**:
+1. **Index Selection (`suggestFuturesIndex` / `suggestTradeifyIndex`)**:
    - Tech, semiconductor, and software stocks (e.g., `NVDA`, `AAPL`, `MSFT`, `AMD`, `GOOGL`, `META`) $\rightarrow$ Mapped to **`NASDAQ` (`MNQ`)**.
    - Industrial, healthcare, banking, and cyclical stocks (e.g., `CAT`, `BA`, `JPM`, `UNH`, `GS`, `HD`) $\rightarrow$ Mapped to **`DOW` (`MYM`)**.
 2. **Synthetic Stop Distance**:

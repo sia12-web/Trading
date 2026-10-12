@@ -1090,7 +1090,7 @@ function SimulationDeskInner() {
         setLevels([])
         adviseBookKeyRef.current = ''
         setMsg(
-          `${instrument} · ${formatDateDisplay(replayDate)} · Tradeify $50k · CALL + playbook ±10 govern entries`
+          `${instrument} · ${formatDateDisplay(replayDate)} · Personal Futures $50k · CALL + playbook ±10 govern entries`
         )
         setLoading(false)
       } catch (e) {
@@ -3380,10 +3380,10 @@ function SimulationDeskInner() {
         setPlaying(false)
         setMsg(
           posFlat
-            ? `Tradeify flatten @ ${bar.close.toLocaleString()} — 16:59 ET. No new holds.`
+            ? `Session flatten @ ${bar.close.toLocaleString()} — market close. No new holds.`
             : pendFlat
-              ? 'Tradeify flatten — working limit cancelled. No new holds until 18:00 ET.'
-              : 'Tradeify flatten window — no new entries until 18:00 ET.'
+              ? 'Session flatten — working limit cancelled.'
+              : 'Session flatten window.'
         )
         return
       }
@@ -3484,7 +3484,7 @@ function SimulationDeskInner() {
     setMsg('Working limit cancelled — entry window closed (never filled)')
   }, [simNow, pending])
 
-  // Tradeify 16:59 ET flatten — cancel working + close the book if the clock is already there
+  // Session close flatten — cancel working + close the book if the clock is already there
   useEffect(() => {
     if (playing || !simNow) return
     if (!tradeifyMustFlatten(new Date(simNow * 1000))) return
@@ -3506,11 +3506,11 @@ function SimulationDeskInner() {
       positionRef.current = null
       setPosition(null)
       setLunchFlatPrompt(false)
-      setMsg(`Tradeify flatten @ ${px.toLocaleString()} — 16:59 ET. No new holds.`)
+      setMsg(`Session flatten @ ${px.toLocaleString()} — market close. No new holds.`)
       return
     }
     if (pending) {
-      setMsg('Tradeify flatten — working limit cancelled. No new holds until 18:00 ET.')
+      setMsg('Session flatten — working limit cancelled.')
     }
   }, [playing, simNow, pending, instrument, replayDate, recordPaperClose])
 
@@ -4165,9 +4165,9 @@ function SimulationDeskInner() {
           )}
           <span
             className="shrink-0 rounded bg-amber-500 px-2 py-1 text-[10px] font-bold uppercase text-black"
-            title="Tradeify $50k dollar risk — $400 / $250 / $150"
+            title="Personal Futures $50k dollar risk — $400 / $250 / $150"
           >
-            Tradeify $50k
+            Personal Futures $50k
           </span>
           {!tradeifyDayLock.allowed && (
             <span

@@ -35,7 +35,7 @@ import {
   type TradeifyLeoSnapshot,
 } from '@/lib/trading/tradeifyLeoBlock'
 
-export type TradeifyFillRow = {
+export type PersonalFillRow = {
   instrument?: string | null
   fill_status?: string | null
   entry_timestamp?: string | null
@@ -47,12 +47,16 @@ export type TradeifyFillRow = {
   entry_direction?: string | null
 }
 
-export type TradeifyInstrumentBreak = {
+export type TradeifyFillRow = PersonalFillRow
+
+export type PersonalInstrumentBreak = {
   fills: number
   pnl: number
   risked: number
   stops: number
 }
+
+export type TradeifyInstrumentBreak = PersonalInstrumentBreak
 
 export function emptyInstrumentBreak(): Record<LiveJournalInstrument, TradeifyInstrumentBreak> {
   return {
@@ -252,3 +256,9 @@ export async function resolveServerTradeifyPlace(
   )
   return resolveTradeifyPlace({ ...snap, now, newsBlocked, hedgeBlocked })
 }
+
+export const loadPersonalSessionSnapshot = loadTradeifySessionSnapshot
+export const buildPersonalDashboardPayload = buildTradeifyDashboardPayload
+export const toPersonalLeoSnapshot = toTradeifyLeoSnapshot
+export const loadPersonalLeoSnapshot = loadTradeifyLeoSnapshot
+export const resolveServerPersonalPlace = resolveServerTradeifyPlace

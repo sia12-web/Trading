@@ -15,7 +15,7 @@ All desk operations align to **Montreal Time (EDT/EST / `America/Toronto`)** and
 ├──────────────┬──────────────────┬──────────────────────────────────────────────────────┤
 │ Time (ET)    │ Session Stage    │ Core Desk Operational Action                         │
 ├──────────────┼──────────────────┼──────────────────────────────────────────────────────┤
-│ **18:00**    │ **Globex Open**  │ CME Globex opens. New 24-hour Tradeify session rolls.│
+│ **18:00**    │ **Globex Open**  │ CME Globex opens. New 24-hour futures session rolls. │
 │ **20:00**    │ **Tokyo Open**   │ TSE Cash Open (09:00 JST). Nikkei map freezes.       │
 │ **02:00**    │ **Asia Scan**    │ Dow Asia Narrow Range scan (<80 pts compression).    │
 │ **03:00**    │ **London Open**  │ London financial session opens. Track ONH/ONL.       │
@@ -28,7 +28,6 @@ All desk operations align to **Montreal Time (EDT/EST / `America/Toronto`)** and
 │ **11:30**    │ **Lunch Zone**   │ NY Lunch doldrums (11:30–13:30). Manage-only.        │
 │ **15:15**    │ **Last Entry**   │ Final entry cutoff. No new trade entries permitted.  │
 │ **16:00**    │ **Cash Close**   │ US Equity Cash Close. Settle Dalton Day Type.        │
-│ **16:59**    │ **HARD FLATTEN** │ Tradeify Mandatory Flatten. Liquidate all positions. │
 │ **17:00**    │ **CME Halt**     │ Daily 60-minute CME maintenance shutdown.            │
 └──────────────┴──────────────────┴──────────────────────────────────────────────────────┘
 ```
@@ -51,7 +50,7 @@ All desk operations align to **Montreal Time (EDT/EST / `America/Toronto`)** and
    - Click `[5M AVWAP]` on the top HUD to inspect distance from the 5-Month Anchored VWAP and its $\pm1\sigma/\pm2\sigma$ bands.
    - Check the **Cross-Market Volatility Radar**: `VIX1D` for equities, `OVX` for crude, `GVZ` for gold.
 5. **Check Account Capacity**:
-   - Verify remaining Tradeify $50k DLL Room ($1,250 limit) and Floor Room ($48,000 baseline).
+   - Verify remaining Personal Futures $50k DLL Room ($1,250 limit).
    - Verify Attempt Ladder: 0/3 trades used. Next Risk: **$400 (1R)**.
 
 ---

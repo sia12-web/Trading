@@ -48,10 +48,11 @@ export function shouldAutoFlattenAtCashClose(args: {
   timeSec: number
   marketCloseSec: number
   forceCashClose?: boolean
-  /** Tradeify 16:59 ET window — beats instrument cash close and keep-open. */
+  /** Forced flatten window — beats instrument cash close and keep-open. */
   tradeifyMustFlatten?: boolean
+  deskMustFlatten?: boolean
 }): boolean {
-  if (args.tradeifyMustFlatten === true) return true
+  if (args.tradeifyMustFlatten === true || args.deskMustFlatten === true) return true
   return args.forceCashClose === true || args.timeSec >= args.marketCloseSec
 }
 
@@ -68,8 +69,9 @@ export function shouldExpireWorkingLimit(args: {
   marketCloseSec: number
   forceExpireWorking?: boolean
   tradeifyMustFlatten?: boolean
+  deskMustFlatten?: boolean
 }): boolean {
-  if (args.forceExpireWorking || args.tradeifyMustFlatten) return true
+  if (args.forceExpireWorking || args.tradeifyMustFlatten || args.deskMustFlatten) return true
   return (
     args.timeSec >= args.lastEntryCloseSec || args.timeSec >= args.marketCloseSec
   )
@@ -89,8 +91,9 @@ export type CleanupOpts = {
   forceCashClose?: boolean
   /** @deprecated alias of forceCashClose */
   forceLunchClose?: boolean
-  /** Tradeify flatten window — flatten every desk, including Nikkei before 02:00. */
+  /** Forced flatten window — flatten every desk, including Nikkei before 02:00. */
   tradeifyMustFlatten?: boolean
+  deskMustFlatten?: boolean
 }
 
 /** Expire working limits past entry/lunch; flatten filled opens only past cash close. */

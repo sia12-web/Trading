@@ -1,6 +1,6 @@
 /**
  * GET/POST /api/trading/risk-profile
- * Desk is Tradeify Growth $50k only — POST cannot switch to OANDA.
+ * Desk is Personal Futures $50k only.
  */
 
 import { NextResponse } from 'next/server'

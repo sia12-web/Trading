@@ -1,6 +1,6 @@
 /**
  * GET /api/trading/questrade/book
- * Read-only Questrade orders, equity curve, Tradeify transfer previews.
+ * Read-only Questrade orders, equity curve, Futures transfer previews.
  */
 
 import { NextResponse } from 'next/server'

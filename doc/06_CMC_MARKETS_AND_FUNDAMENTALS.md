@@ -7,7 +7,7 @@
 
 ## 1. CMC Markets Canada CFD Desk Overview
 
-In addition to CME direct futures and Tradeify evaluation accounts, TradePulse supports CFD execution via **CMC Markets Canada** (denominated in Canadian Dollars - CAD):
+In addition to CME direct futures and personal futures accounts, TradePulse supports CFD execution via **CMC Markets Canada** (denominated in Canadian Dollars - CAD):
 
 - **Execution Instruments**: Cash index and commodity CFDs tracking global benchmarks with flexible fractional unit sizes.
 - **Role in the Trading Architecture**: Enables small-capitalization testing, overnight swing positioning, and fractional risk calibration without the full margin commitments of standard futures contracts.

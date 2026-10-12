@@ -1,41 +1,50 @@
 /**
- * Tradeify Growth $50k risk overlay (Slice 1).
- * Pure rules — does not change OANDA 2% → 1% → 0.5%.
+ * Personal Futures Desk Risk & Position Limits.
+ * Clean personal risk model — no prop firm eval rules, no trailing drawdown ratchets.
  *
- * Session: 18:00 ET → flatten ~16:59 ET next calendar day.
+ * Session: 18:00 ET roll.
  * Nikkei night and NY morning share one session_key.
  */
 
 import { zonedDateTimeToUnix } from '@/lib/utils/dateUtils'
 
-export const TRADEIFY_PROFILE_ID = 'personal_futures' as const
+export const PERSONAL_PROFILE_ID = 'personal_futures' as const
+export const TRADEIFY_PROFILE_ID = PERSONAL_PROFILE_ID
 
-export const TRADEIFY_STARTING_BALANCE = 50_000
+export const PERSONAL_STARTING_BALANCE = 50_000
+export const TRADEIFY_STARTING_BALANCE = PERSONAL_STARTING_BALANCE
 export const TRADEIFY_PROFIT_TARGET = 3_000
-export const TRADEIFY_DLL_DOLLARS = 1_250
+export const PERSONAL_DLL_DOLLARS = 1_250
+export const TRADEIFY_DLL_DOLLARS = PERSONAL_DLL_DOLLARS
 export const TRADEIFY_TRAILING_DD_DOLLARS = 2_000
-export const TRADEIFY_BREACH_FLOOR = TRADEIFY_STARTING_BALANCE - TRADEIFY_TRAILING_DD_DOLLARS // 48_000
+export const TRADEIFY_BREACH_FLOOR = 48_000
 export const TRADEIFY_FUNDED_LOCK_BALANCE = 52_100
 
-/** Fill #1 / #2 / #3 planned stop $ (before shrink). */
-export const TRADEIFY_RISK_FIRST_DOLLARS = 400
-export const TRADEIFY_RISK_SECOND_DOLLARS = 250
-export const TRADEIFY_RISK_THIRD_DOLLARS = 150
-export const TRADEIFY_MAX_DAILY_FILLS = 3
+/** Fill #1 / #2 / #3 planned stop $ ($400 -> $250 -> $150). */
+export const PERSONAL_RISK_FIRST_DOLLARS = 400
+export const TRADEIFY_RISK_FIRST_DOLLARS = PERSONAL_RISK_FIRST_DOLLARS
+export const PERSONAL_RISK_SECOND_DOLLARS = 250
+export const TRADEIFY_RISK_SECOND_DOLLARS = PERSONAL_RISK_SECOND_DOLLARS
+export const PERSONAL_RISK_THIRD_DOLLARS = 150
+export const TRADEIFY_RISK_THIRD_DOLLARS = PERSONAL_RISK_THIRD_DOLLARS
+export const PERSONAL_MAX_DAILY_FILLS = 3
+export const TRADEIFY_MAX_DAILY_FILLS = PERSONAL_MAX_DAILY_FILLS
 
 /** Refuse rather than place a token-size stop. */
-export const TRADEIFY_MIN_RISK_DOLLARS = 50
+export const PERSONAL_MIN_RISK_DOLLARS = 50
+export const TRADEIFY_MIN_RISK_DOLLARS = PERSONAL_MIN_RISK_DOLLARS
 
-/** Tradeify session rolls at 18:00 America/New_York. */
-export const TRADEIFY_SESSION_ROLL_ET = '18:00:00'
-/** Mandatory flatten (Growth) — show as 16:59 Montreal when EDT. */
-export const TRADEIFY_FLATTEN_ET = '16:59:00'
+/** Session rolls at 18:00 America/New_York. */
+export const PERSONAL_SESSION_ROLL_ET = '18:00:00'
+export const TRADEIFY_SESSION_ROLL_ET = PERSONAL_SESSION_ROLL_ET
+export const PERSONAL_FLATTEN_ET = '16:59:00'
+export const TRADEIFY_FLATTEN_ET = PERSONAL_FLATTEN_ET
 
 export const TRADEIFY_GREEN_DAY_LOCK_DOLLARS = 700
 export const TRADEIFY_MAX_STOP_OUTS = 2
 export const TRADEIFY_SLIPPAGE_BUFFER_DOLLARS = 75
 export const TRADEIFY_COMMISSION_PER_FILL_EST = 20
-/** CME equity early-close days — flatten from 12:59 ET (Tradeify holiday rule). */
+
 export const TRADEIFY_EARLY_CLOSE_ET_YMD = new Set([
   '2025-07-03',
   '2025-11-28',
@@ -64,9 +73,9 @@ export type TradeifyRefuseReason =
   | 'hedge_conflict'
   | 'news_lock'
 
-export type TradeifyPlaceDecision = {
+export type PersonalPlaceDecision = {
   allowed: boolean
-  profileId: typeof TRADEIFY_PROFILE_ID
+  profileId: typeof PERSONAL_PROFILE_ID
   sessionKey: string
   fillsUsed: number
   stepDollars: number
@@ -78,26 +87,22 @@ export type TradeifyPlaceDecision = {
   refuseMessage: string
 }
 
+export type TradeifyPlaceDecision = PersonalPlaceDecision
+
 export type TradeifyPlaceInput = {
   now?: Date
-  /** Filled trades already counted on this Tradeify session (working does not count). */
   fillsUsed?: number | null
-  /** Realized + unrealized day P&L for this Tradeify session (negative = loss). */
   dailyPnl?: number | null
-  /** Current account equity (defaults to starting 50k + dailyPnl). */
   equity?: number | null
-  /**
-   * Highest *end-of-day* balance this eval has closed at.
-   * Floor = max(48_000, peakEod − 2_000). Eval never locks.
-   */
   peakEodBalance?: number | null
   stopOutsToday?: number | null
   greenDayLocked?: boolean | null
-  /** Open stop $ (or worse unrealized) still hanging on this session. */
   openReserved?: number | null
   hedgeBlocked?: boolean | null
   newsBlocked?: boolean | null
 }
+
+export type PersonalPlaceInput = TradeifyPlaceInput
 
 function etYmdAndHms(now: Date): { ymd: string; hms: string; hour: number } {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -131,17 +136,13 @@ function addCalendarDaysYmd(ymd: string, delta: number): string {
   return `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}-${String(cursor.getUTCDate()).padStart(2, '0')}`
 }
 
-/**
- * Shared Tradeify session id: the ET calendar date on which the 18:00 roll occurred.
- * Mon 21:00 ET (Nikkei) and Tue 11:30 ET (NASDAQ) → same key (Monday).
- */
-export function tradeifySessionKey(now: Date = new Date()): string {
+export function personalSessionKey(now: Date = new Date()): string {
   const { ymd, hour } = etYmdAndHms(now)
   if (hour >= 18) return ymd
   return addCalendarDaysYmd(ymd, -1)
 }
+export const tradeifySessionKey = personalSessionKey
 
-/** ET hour+minute as minutes since midnight. */
 export function tradeifyEtMinutes(now: Date = new Date()): number {
   const { hour, hms } = etYmdAndHms(now)
   const minute = parseInt(hms.slice(3, 5), 10) || 0
@@ -152,36 +153,32 @@ export function tradeifyIsEarlyCloseDay(now: Date = new Date()): boolean {
   return TRADEIFY_EARLY_CLOSE_ET_YMD.has(etYmdAndHms(now).ymd)
 }
 
-/** Regular 16:59 ET, or 12:59 ET on CME early-close days, until 18:00 roll. */
-export function tradeifyMustFlatten(now: Date = new Date()): boolean {
-  const m = tradeifyEtMinutes(now)
-  if (m >= 18 * 60) return false
-  const cut = tradeifyIsEarlyCloseDay(now) ? 12 * 60 + 59 : 16 * 60 + 59
-  return m >= cut
+/** Personal futures do not have forced overnight liquidations. */
+export function personalMustFlatten(_now: Date = new Date()): boolean {
+  return false
 }
+export const tradeifyMustFlatten = personalMustFlatten
 
 export type TradeifyDeskStatus = 'can_trade' | 'day_locked' | 'must_flatten'
 
 export function tradeifyDeskStatus(
   decision: TradeifyPlaceDecision,
-  now: Date = new Date()
+  _now: Date = new Date()
 ): TradeifyDeskStatus {
-  if (tradeifyMustFlatten(now)) return 'must_flatten'
   if (!decision.allowed) return 'day_locked'
   return 'can_trade'
 }
 
 export function sameTradeifySession(a: Date, b: Date): boolean {
-  return tradeifySessionKey(a) === tradeifySessionKey(b)
+  return personalSessionKey(a) === personalSessionKey(b)
 }
 
-/** Inclusive start / exclusive end ISO for journal queries. */
-export function tradeifySessionWindow(now: Date = new Date()): {
+export function personalSessionWindow(now: Date = new Date()): {
   sessionKey: string
   startIso: string
   endIso: string
 } {
-  const sessionKey = tradeifySessionKey(now)
+  const sessionKey = personalSessionKey(now)
   const next = addCalendarDaysYmd(sessionKey, 1)
   const startUnix = zonedDateTimeToUnix(sessionKey, 18, 0, ET)
   const endUnix = zonedDateTimeToUnix(next, 18, 0, ET)
@@ -191,39 +188,41 @@ export function tradeifySessionWindow(now: Date = new Date()): {
     endIso: new Date(endUnix * 1000).toISOString(),
   }
 }
+export const tradeifySessionWindow = personalSessionWindow
 
-export function tradeifyRiskStepDollars(sessionFillsUsed?: number | null): number {
+export function personalRiskStepDollars(sessionFillsUsed?: number | null): number {
   const used = Math.max(0, Math.floor(Number(sessionFillsUsed) || 0))
-  if (used <= 0) return TRADEIFY_RISK_FIRST_DOLLARS
-  if (used === 1) return TRADEIFY_RISK_SECOND_DOLLARS
-  return TRADEIFY_RISK_THIRD_DOLLARS
+  if (used <= 0) return PERSONAL_RISK_FIRST_DOLLARS
+  if (used === 1) return PERSONAL_RISK_SECOND_DOLLARS
+  return PERSONAL_RISK_THIRD_DOLLARS
 }
+export const tradeifyRiskStepDollars = personalRiskStepDollars
 
 export function formatTradeifyRiskChip(sessionFillsUsed?: number | null): string {
   const used = Math.max(0, Math.floor(Number(sessionFillsUsed) || 0))
-  const step = tradeifyRiskStepDollars(used)
+  const step = personalRiskStepDollars(used)
   const fillNum = Math.min(used + 1, 3)
-  return `Desk $${step} (fill ${fillNum}/3)`
+  return `Personal $${step} (fill ${fillNum}/3)`
 }
 
-/** Dollars already eaten from the $1,250 DLL (wins do not refill it). */
-export function tradeifyDllUsed(dailyPnl?: number | null): number {
+export function personalDllUsed(dailyPnl?: number | null): number {
   const pnl = Number(dailyPnl)
   if (!Number.isFinite(pnl) || pnl >= 0) return 0
-  return Math.min(TRADEIFY_DLL_DOLLARS, Math.round(-pnl * 100) / 100)
+  return Math.min(PERSONAL_DLL_DOLLARS, Math.round(-pnl * 100) / 100)
 }
+export const tradeifyDllUsed = personalDllUsed
 
-export function tradeifyLeftoverDll(dailyPnl?: number | null): number {
-  return Math.max(0, Math.round((TRADEIFY_DLL_DOLLARS - tradeifyDllUsed(dailyPnl)) * 100) / 100)
+export function personalLeftoverDll(dailyPnl?: number | null): number {
+  return Math.max(0, Math.round((PERSONAL_DLL_DOLLARS - personalDllUsed(dailyPnl)) * 100) / 100)
 }
+export const tradeifyLeftoverDll = personalLeftoverDll
 
-export function tradeifyFloorLevel(peakEodBalance?: number | null): number {
-  const peak = Number(peakEodBalance)
-  const high = Number.isFinite(peak) && peak > 0 ? peak : TRADEIFY_STARTING_BALANCE
-  return Math.max(TRADEIFY_BREACH_FLOOR, Math.round((high - TRADEIFY_TRAILING_DD_DOLLARS) * 100) / 100)
+export function personalFloorLevel(_peakEodBalance?: number | null): number {
+  return 0
 }
+export const tradeifyFloorLevel = personalFloorLevel
 
-export function tradeifyFloorRoom(args: {
+export function personalFloorRoom(args: {
   equity?: number | null
   dailyPnl?: number | null
   peakEodBalance?: number | null
@@ -233,88 +232,58 @@ export function tradeifyFloorRoom(args: {
   const equity =
     Number.isFinite(eqRaw) && eqRaw > 0
       ? eqRaw
-      : TRADEIFY_STARTING_BALANCE + (Number.isFinite(pnl) ? pnl : 0)
-  const floor = tradeifyFloorLevel(args.peakEodBalance)
-  return Math.max(0, Math.round((equity - floor) * 100) / 100)
+      : PERSONAL_STARTING_BALANCE + (Number.isFinite(pnl) ? pnl : 0)
+  return Math.max(0, Math.round(equity * 100) / 100)
 }
+export const tradeifyFloorRoom = personalFloorRoom
 
-export function oandaCashRiskDollars(fillsUsed?: number | null, account = TRADEIFY_STARTING_BALANCE): number {
+export function oandaCashRiskDollars(fillsUsed?: number | null, account = PERSONAL_STARTING_BALANCE): number {
   const used = Math.max(0, Math.floor(Number(fillsUsed) || 0))
   const pct = used <= 0 ? 0.02 : used === 1 ? 0.01 : 0.005
   return Math.round(account * pct * 100) / 100
 }
 
-function refuseMessage(reason: TradeifyRefuseReason, extra?: { leftover?: number; floor?: number; risk?: number }): string {
+function refuseMessage(reason: TradeifyRefuseReason, extra?: { leftover?: number; risk?: number }): string {
   switch (reason) {
     case 'ok':
       return ''
     case 'session_full':
-      return 'Desk session 3/3 — no new entries.'
-    case 'day_locked_stops':
-      return 'Desk day locked — 2 stop-outs. Manage only until the next 18:00 ET session.'
-    case 'day_locked_green':
-      return `Desk day locked — green-day cap ($${TRADEIFY_GREEN_DAY_LOCK_DOLLARS}). Manage only.`
+      return 'Personal desk session 3/3 — no new entries.'
     case 'dll_exhausted':
-      return `Desk daily loss used ($${TRADEIFY_DLL_DOLLARS}). No new entries today.`
-    case 'floor_exhausted':
-      return 'Desk trailing floor has no room left — no new entries.'
+      return `Desk daily loss limit reached ($${PERSONAL_DLL_DOLLARS}). No new entries today.`
     case 'stop_exceeds_dll':
-      return `Stop $${extra?.risk} would breach leftover daily loss ($${extra?.leftover}).`
-    case 'stop_exceeds_floor':
-      return `Stop $${extra?.risk} would tag the trailing floor (room $${extra?.floor}).`
+      return `Stop $${extra?.risk} would exceed leftover daily loss budget ($${extra?.leftover}).`
     case 'risk_too_small':
-      return `Leftover room is under $${TRADEIFY_MIN_RISK_DOLLARS} — sit out.`
-    case 'must_flatten':
-      return 'Session flatten — close open positions and cancel working orders. Regular 16:59 ET / holiday 12:59 ET. No new holds until 18:00 ET.'
+      return `Remaining risk budget is under $${PERSONAL_MIN_RISK_DOLLARS} — sit out.`
     case 'hedge_conflict':
-      return 'Hedge conflict — an open index is the other way. Flatten that book before the opposite ticket (YM/NQ/NKD group).'
+      return 'Hedge conflict — an open index is in the opposing direction.'
     case 'news_lock':
-      return 'Desk news lock — no new entries ±5 minutes around CPI / FOMC / NFP.'
+      return 'Desk news caution — high-impact catalyst window.'
     default:
-      return 'Desk risk gate refused this entry.'
+      return 'Risk limits reached.'
   }
 }
 
-/**
- * Decide planned stop $ and whether a new entry is legal.
- * Shrinks the step to leftover DLL / floor room; never grows above the step.
- */
-export function tradeifyPlaceHaircut(fillsUsed?: number | null): number {
+export function personalPlaceHaircut(fillsUsed?: number | null): number {
   const used = Math.max(0, Math.floor(Number(fillsUsed) || 0))
   return TRADEIFY_SLIPPAGE_BUFFER_DOLLARS + used * TRADEIFY_COMMISSION_PER_FILL_EST
 }
+export const tradeifyPlaceHaircut = personalPlaceHaircut
 
-export function resolveTradeifyPlace(input: TradeifyPlaceInput = {}): TradeifyPlaceDecision {
+export function resolvePersonalPlace(input: PersonalPlaceInput = {}): PersonalPlaceDecision {
   const now = input.now ?? new Date()
   const fillsUsed = Math.max(0, Math.floor(Number(input.fillsUsed) || 0))
-  const sessionKey = tradeifySessionKey(now)
+  const sessionKey = personalSessionKey(now)
   const reserved = Math.max(0, Number(input.openReserved) || 0)
-  const leftoverDll = Math.max(0, Math.round((tradeifyLeftoverDll(input.dailyPnl) - reserved) * 100) / 100)
-  const floorRoom = Math.max(
-    0,
-    Math.round(
-      (tradeifyFloorRoom({
-        equity: input.equity,
-        dailyPnl: input.dailyPnl,
-        peakEodBalance: input.peakEodBalance,
-      }) -
-        reserved) *
-      100
-    ) / 100
-  )
-  const floorLevel = tradeifyFloorLevel(input.peakEodBalance)
-  const stepDollars = tradeifyRiskStepDollars(fillsUsed)
-  const stopOuts = Math.max(0, Math.floor(Number(input.stopOutsToday) || 0))
-  const dailyPnl = Number(input.dailyPnl)
-  const greenLocked =
-    input.greenDayLocked === true ||
-    (Number.isFinite(dailyPnl) && dailyPnl >= TRADEIFY_GREEN_DAY_LOCK_DOLLARS)
-  const haircut = tradeifyPlaceHaircut(fillsUsed)
+  const leftoverDll = Math.max(0, Math.round((personalLeftoverDll(input.dailyPnl) - reserved) * 100) / 100)
+  const floorRoom = personalFloorRoom({ equity: input.equity, dailyPnl: input.dailyPnl })
+  const floorLevel = 0
+  const stepDollars = personalRiskStepDollars(fillsUsed)
+  const haircut = personalPlaceHaircut(fillsUsed)
   const placeableDll = Math.max(0, Math.round((leftoverDll - haircut) * 100) / 100)
-  const placeableFloor = Math.max(0, Math.round((floorRoom - haircut) * 100) / 100)
 
   const base = {
-    profileId: TRADEIFY_PROFILE_ID,
+    profileId: PERSONAL_PROFILE_ID,
     sessionKey,
     fillsUsed,
     stepDollars,
@@ -323,27 +292,22 @@ export function resolveTradeifyPlace(input: TradeifyPlaceInput = {}): TradeifyPl
     floorLevel,
   } as const
 
-  const deny = (reason: TradeifyRefuseReason, riskDollars = 0): TradeifyPlaceDecision => ({
+  const deny = (reason: TradeifyRefuseReason, riskDollars = 0): PersonalPlaceDecision => ({
     ...base,
     allowed: false,
     riskDollars,
     refuseReason: reason,
-    refuseMessage: refuseMessage(reason, { leftover: leftoverDll, floor: floorRoom, risk: riskDollars || stepDollars }),
+    refuseMessage: refuseMessage(reason, { leftover: leftoverDll, risk: riskDollars || stepDollars }),
   })
 
-  if (tradeifyMustFlatten(now)) return deny('must_flatten')
   if (input.newsBlocked) return deny('news_lock')
   if (input.hedgeBlocked) return deny('hedge_conflict')
-  if (fillsUsed >= TRADEIFY_MAX_DAILY_FILLS) return deny('session_full')
-  if (stopOuts >= TRADEIFY_MAX_STOP_OUTS) return deny('day_locked_stops')
-  if (greenLocked) return deny('day_locked_green')
-  if (leftoverDll < TRADEIFY_MIN_RISK_DOLLARS) return deny('dll_exhausted')
-  if (floorRoom < TRADEIFY_MIN_RISK_DOLLARS) return deny('floor_exhausted')
+  if (fillsUsed >= PERSONAL_MAX_DAILY_FILLS) return deny('session_full')
+  if (leftoverDll < PERSONAL_MIN_RISK_DOLLARS) return deny('dll_exhausted')
 
-  const riskDollars = Math.min(stepDollars, placeableDll, placeableFloor)
-  if (riskDollars < TRADEIFY_MIN_RISK_DOLLARS) return deny('risk_too_small')
+  const riskDollars = Math.min(stepDollars, placeableDll)
+  if (riskDollars < PERSONAL_MIN_RISK_DOLLARS) return deny('risk_too_small')
   if (riskDollars > leftoverDll) return deny('stop_exceeds_dll', riskDollars)
-  if (riskDollars > floorRoom) return deny('stop_exceeds_floor', riskDollars)
 
   return {
     ...base,
@@ -353,15 +317,11 @@ export function resolveTradeifyPlace(input: TradeifyPlaceInput = {}): TradeifyPl
     refuseMessage: '',
   }
 }
+export const resolveTradeifyPlace = resolvePersonalPlace
 
-/** True if the OANDA cash % ladder would breach Growth $50k DLL or floor on this state. */
-/** Reasons that block new entries for the rest of this Tradeify session. */
 export const TRADEIFY_DAY_LOCK_REASONS: readonly TradeifyRefuseReason[] = [
-  'day_locked_stops',
-  'day_locked_green',
   'session_full',
   'dll_exhausted',
-  'floor_exhausted',
 ]
 
 export function tradeifyBlocksNewEntries(decision: TradeifyPlaceDecision): boolean {
@@ -369,16 +329,11 @@ export function tradeifyBlocksNewEntries(decision: TradeifyPlaceDecision): boole
 }
 
 export function isTradeifySessionDayLock(reason: TradeifyRefuseReason): boolean {
-  return (
-    reason === 'day_locked_stops' ||
-    reason === 'day_locked_green' ||
-    reason === 'session_full'
-  )
+  return reason === 'session_full' || reason === 'dll_exhausted'
 }
 
-/** Keep-open / Nikkei 02:00 ride must not survive the 16:59 ET flatten window. */
-export function tradeifyFlattenOverridesKeepOpen(now: Date = new Date()): boolean {
-  return tradeifyMustFlatten(now)
+export function tradeifyFlattenOverridesKeepOpen(_now: Date = new Date()): boolean {
+  return false
 }
 
 export function formatTradeifyBannerChip(args: {
@@ -389,33 +344,16 @@ export function formatTradeifyBannerChip(args: {
   flattenMontreal?: string | null
 }): { label: string; title: string; tone: 'ok' | 'lock' | 'flatten' } {
   const dll = `DLL $${Math.round(Number(args.leftoverDll) || 0)}`
-  const floor = `floor $${Math.round(Number(args.floorRoom) || 0)}`
-  const flatten = args.flattenMontreal || '16:59 Montreal'
-  if (args.status === 'must_flatten') {
-    return {
-      label: `FLATTEN · ${dll} · ${floor}`,
-      title: `Desk session flatten now (${flatten}). No new holds. Keep-open / Nikkei 02:00 ride does not apply.`,
-      tone: 'flatten',
-    }
-  }
   if (args.status === 'day_locked') {
-    const why =
-      args.refuseReason === 'day_locked_stops'
-        ? '2 stop-outs'
-        : args.refuseReason === 'day_locked_green'
-          ? 'green-day cap'
-          : args.refuseReason === 'session_full'
-            ? '3/3 fills'
-            : 'no new entries'
     return {
-      label: `LOCKED · ${dll} · ${floor}`,
-      title: `Desk day locked (${why}). ${dll} leftover · ${floor} room. Flatten ${flatten}.`,
+      label: `LOCKED · ${dll}`,
+      title: `Desk session locked. ${dll} leftover.`,
       tone: 'lock',
     }
   }
   return {
-    label: `${dll} · ${floor}`,
-    title: `Futures Desk $50k · ${dll} leftover of $${TRADEIFY_DLL_DOLLARS} · ${floor} to trailing floor. Flatten ${flatten}.`,
+    label: `${dll}`,
+    title: `Personal Futures · ${dll} leftover of $${PERSONAL_DLL_DOLLARS}.`,
     tone: 'ok',
   }
 }
@@ -423,11 +361,8 @@ export function formatTradeifyBannerChip(args: {
 export function oandaLadderWouldBreachTradeify(args: {
   fillsUsed?: number | null
   dailyPnl?: number | null
-  equity?: number | null
-  peakEodBalance?: number | null
 }): boolean {
   const planned = oandaCashRiskDollars(args.fillsUsed)
-  const leftoverDll = tradeifyLeftoverDll(args.dailyPnl)
-  const floorRoom = tradeifyFloorRoom(args)
-  return planned > leftoverDll || planned > floorRoom
+  const leftoverDll = personalLeftoverDll(args.dailyPnl)
+  return planned > leftoverDll
 }

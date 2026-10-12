@@ -1,6 +1,6 @@
 /**
  * GET /api/trading/team-tape
- * See-only NYC team book + leftover Tradeify fill advice.
+ * See-only NYC team book + leftover Personal Futures fill advice.
  */
 
 import { NextResponse } from 'next/server'
@@ -8,10 +8,8 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { DEV_USER_ID, getOrCreateUser } from '@/lib/utils/devAuth'
 import { getTodayAttendance } from '@/lib/trading/deskAttendance'
-import { loadTradeifySessionSnapshot } from '@/lib/trading/tradeifySessionState'
-import {
-  resolveTradeifyPlace,
-} from '@/lib/trading/tradeifyGrowth50k'
+import { loadPersonalSessionSnapshot } from '@/lib/trading/tradeifySessionState'
+import { resolvePersonalPlace } from '@/lib/trading/tradeifyGrowth50k'
 import {
   buildTeamCopyAdvice,
   teamTapeTarget1_5R,
@@ -82,7 +80,7 @@ export async function GET(request: Request) {
   since.setUTCDate(since.getUTCDate() - 30)
 
   const [snap, attendance, teamSignalsRes, questradeBook] = await Promise.all([
-    loadTradeifySessionSnapshot(supabase, deskId, now),
+    loadPersonalSessionSnapshot(supabase, deskId, now),
     getTodayAttendance(supabase, deskId, 'NY', now),
     (async () => {
       try {
@@ -104,7 +102,7 @@ export async function GET(request: Request) {
     })),
   ])
 
-  const place = resolveTradeifyPlace(snap)
+  const place = resolvePersonalPlace(snap)
   const advice = buildTeamCopyAdvice({
     place,
     clockedIn: attendance?.status === 'clocked_in',

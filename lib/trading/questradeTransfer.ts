@@ -1,5 +1,5 @@
 /**
- * Questrade stock ticket → Tradeify look-book.
+ * Questrade stock ticket → Futures execution look-book.
  * Stock prices are the reason. Index levels use the stock R% on DOW/NASDAQ.
  * Never auto-places.
  */
@@ -186,7 +186,7 @@ export function buildQuestradeTradeifyTransfer(args: {
     `Your desk risk is ${copyRisk.label}.`,
     args.row.kind === 'entry_limit'
       ? 'Questrade working limit. Monitor only if NY is open.'
-      : 'Open/filled Questrade book. Session cannot hold overnight — flatten 16:59 ET.',
+      : 'Open/filled Questrade book. Monitor according to desk rules.',
     copyRisk.sessionReset
       ? 'Session ended — size is back to $400 until you take the next NYC trade.'
       : null,
@@ -230,3 +230,7 @@ export function buildQuestradeTradeifyTransfer(args: {
     note,
   }
 }
+
+export type QuestradePersonalTransfer = QuestradeTradeifyTransfer
+export const buildQuestradePersonalTransfer = buildQuestradeTradeifyTransfer
+

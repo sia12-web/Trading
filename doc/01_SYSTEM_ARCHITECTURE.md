@@ -7,7 +7,7 @@
 
 ## 1. Executive System Topology
 
-TradePulse is a high-performance institutional trading workstation engineered to bridge institutional order flow analysis (CME Globex MDP 3.0), systematic auction market theory (Wyckoff & Dalton Market Profile), multi-broker execution accounting (Tradeify Futures, CMC Markets CFDs, Questrade Equities), and real-time AI auditing (Leo AI & Fundamental Intelligence Bus).
+TradePulse is a high-performance institutional trading workstation engineered to bridge institutional order flow analysis (CME Globex MDP 3.0), systematic auction market theory (Wyckoff & Dalton Market Profile), multi-broker execution accounting (Personal Futures $50k Account, CMC Markets CFDs, Questrade Equities), and real-time AI auditing (Leo AI & Fundamental Intelligence Bus).
 
 ```mermaid
 flowchart TD
@@ -34,8 +34,8 @@ flowchart TD
 
     subgraph RiskGate["4. Systematic Risk & Execution Gateways"]
         LADDER["Attempt Ladder<br/>(2/2/2 per window, ≤3 Session Cap)"]
-        T50K["Tradeify Growth $50k<br/>($1,250 DLL, $2,000 Trailing DD, $400 1R)"]
-        EXIT["Desk Exit & Flatten Guard<br/>(16:59 ET Regular / 12:59 ET Holiday)"]
+        T50K["Personal Futures $50k<br/>($1,250 DLL, $400 → $250 → $150 Ladder)"]
+        EXIT["Desk Exit & Session Guard<br/>(Disciplined Risk Closure)"]
         SNAP["Tick Snapping Engine<br/>(CME & Cash Precision Rounding)"]
     end
 
@@ -157,14 +157,13 @@ Risk enforcement is completely decoupled from trade generation and runs determin
 1. **Attempt Ladder (`lib/trading/attemptLadder.ts`)**:
    - Enforces a per-window quota: Maximum 2 attempts in the Morning Open Range (`OR15`), 2 attempts in the 30-Minute Range (`OR30`), and 2 attempts in the Initial Balance (`IB`).
    - **Hard Session Cap**: Irrespective of remaining window capacity, **maximum 3 filled trades per session**. Once 3 fills land, the entire desk locks down immediately.
-2. **Tradeify Growth $50k Overlay (`lib/trading/tradeifyGrowth50k.ts`)**:
+2. **Personal Futures $50k Risk Engine (`lib/trading/tradeifyGrowth50k.ts`)**:
    - Enforces Daily Loss Limit (**$1,250 DLL**).
-   - Enforces Trailing Maximum Drawdown (**$2,000 Trailing DD** from highest EOD equity).
-   - Hard Breach Floor at **$48,000**.
+   - Maximum 3 fills per session.
    - Progressive Risk Dollar Allocation: **$400** on Trade #1, **$250** on Trade #2, **$150** on Trade #3.
-3. **Mandatory Cash Close Flatten Guard (`lib/trading/sessionExit.ts`)**:
-   - Regular trading days: Hard flatten mandated at **16:59:00 ET** (Montreal Time).
-   - CME early-close holiday sessions: Hard flatten mandated at **12:59:00 ET**.
+   - Preserves account equity and resets each session at 18:00 ET.
+3. **Desk Session Exit & Risk Protocol (`lib/trading/sessionCleanup.ts`)**:
+   - Orderly management of working limits and open risk past session close.
 
 ---
 
@@ -336,7 +335,7 @@ The platform's backend services are exposed via Next.js App Router API endpoints
 
 | Endpoint | Method | Responsibility & Behavior |
 | :--- | :---: | :--- |
-| `/api/trading/team-tape` | `GET` | Returns active team tape signals, copy advice, and remaining Tradeify fill capacity. |
+| `/api/trading/team-tape` | `GET` | Returns active team tape signals, copy advice, and remaining personal futures fill capacity. |
 | `/api/trading/team-tape/ingest` | `POST` | Webhook/endpoint ingesting external Questrade stock fills with strict validation. |
 | `/api/trading/questrade/book` | `GET` | Returns read-only Questrade portfolio snapshot, open positions, working orders, and equity curve. |
 
@@ -377,7 +376,7 @@ The workstation UI (`app/dashboard/`) is designed for split-second situational a
 │                                                                    │ & Trade Hypotheses│
 ├────────────────────────────────────────────────────────────────────┴───────────────────┤
 │ BOTTOM RISK & POSITION STATUS BAR (DeskRiskBoxOverlay.tsx & PositionStatusCard.tsx)    │
-│ [Account: Tradeify $50k] | [DLL Room: $1,250] | [Trades: 1/3] | [Next Risk: $250 (1R)] │
+│ [Account: Personal $50k] | [DLL Room: $1,250] | [Trades: 1/3] | [Next Risk: $250 (1R)]  │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

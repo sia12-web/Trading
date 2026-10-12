@@ -1,50 +1,35 @@
 /**
- * Desk risk profile. Live desk is Tradeify Growth $50k only — no OANDA switch.
- * Client localStorage + cookie + POST /api/trading/risk-profile for Leo / Telegram.
+ * Desk Risk Profile: Personal Futures Risk.
  */
 
-import { TRADEIFY_PROFILE_ID } from '@/lib/trading/tradeifyGrowth50k'
+import { PERSONAL_PROFILE_ID, TRADEIFY_PROFILE_ID } from '@/lib/trading/tradeifyGrowth50k'
 
-export type DeskRiskProfile = 'personal_futures' | 'oanda_cash' | typeof TRADEIFY_PROFILE_ID
+export type DeskRiskProfile = 'personal_futures' | typeof TRADEIFY_PROFILE_ID
 
 export const DESK_RISK_PROFILE_STORAGE_KEY = 'tradepulse.risk.profile'
 export const DESK_RISK_PROFILE_EVENT = 'tradepulse-risk-profile'
 export const DESK_RISK_PROFILE_COOKIE = 'tradepulse_risk_profile'
 
-export function parseDeskRiskProfile(raw?: string | null): DeskRiskProfile {
-  const v = String(raw || '')
-    .trim()
-    .toLowerCase()
-    .replace(/-/g, '_')
-  if (v === 'personal_futures' || v === 'personal') {
-    return 'personal_futures'
-  }
-  if (
-    v === TRADEIFY_PROFILE_ID ||
-    v === 'tradeify' ||
-    v === 'tradeify_50k' ||
-    v === 'tradeify_growth_50k' ||
-    v === 'growth_50k'
-  ) {
-    return TRADEIFY_PROFILE_ID
-  }
-  return 'oanda_cash'
+export function parseDeskRiskProfile(_raw?: string | null): DeskRiskProfile {
+  return PERSONAL_PROFILE_ID
 }
 
 export function isTradeifyGrowth50k(raw?: string | null): boolean {
-  return parseDeskRiskProfile(raw) === TRADEIFY_PROFILE_ID
+  if (raw == null) return true
+  return parseDeskRiskProfile(raw) === PERSONAL_PROFILE_ID
 }
 
-/** Live money path is Tradeify only — never size OANDA 2% on this desk. */
+export const isPersonalFutures = isTradeifyGrowth50k
+
 export function mergeMoneyRiskProfile(
   _client?: string | null,
   _persisted?: string | null
 ): DeskRiskProfile {
-  return TRADEIFY_PROFILE_ID
+  return PERSONAL_PROFILE_ID
 }
 
 export function getDeskRiskProfile(): DeskRiskProfile {
-  return TRADEIFY_PROFILE_ID
+  return PERSONAL_PROFILE_ID
 }
 
 function applyLocalDeskRiskProfile(profile: DeskRiskProfile): void {
@@ -59,12 +44,11 @@ function applyLocalDeskRiskProfile(profile: DeskRiskProfile): void {
   }
 }
 
-/** Overwrite a stale OANDA cookie / desk_settings row with Tradeify. */
 export async function hydrateDeskRiskProfileFromServer(): Promise<DeskRiskProfile> {
-  if (typeof window === 'undefined') return TRADEIFY_PROFILE_ID
-  applyLocalDeskRiskProfile(TRADEIFY_PROFILE_ID)
-  syncDeskRiskProfileToServer(TRADEIFY_PROFILE_ID)
-  return TRADEIFY_PROFILE_ID
+  if (typeof window === 'undefined') return PERSONAL_PROFILE_ID
+  applyLocalDeskRiskProfile(PERSONAL_PROFILE_ID)
+  syncDeskRiskProfileToServer(PERSONAL_PROFILE_ID)
+  return PERSONAL_PROFILE_ID
 }
 
 function writeRiskProfileCookie(profile: DeskRiskProfile): void {
@@ -87,6 +71,6 @@ export function syncDeskRiskProfileToServer(profile: DeskRiskProfile = getDeskRi
 
 export function setDeskRiskProfile(_profile?: DeskRiskProfile): void {
   if (typeof window === 'undefined') return
-  applyLocalDeskRiskProfile(TRADEIFY_PROFILE_ID)
-  syncDeskRiskProfileToServer(TRADEIFY_PROFILE_ID)
+  applyLocalDeskRiskProfile(PERSONAL_PROFILE_ID)
+  syncDeskRiskProfileToServer(PERSONAL_PROFILE_ID)
 }

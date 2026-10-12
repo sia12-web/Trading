@@ -10,7 +10,7 @@
 TradePulse utilizes the **Chicago Mercantile Exchange (CME) Globex electronic trading platform** as its primary source of institutional market truth:
 
 1. **Centralized Liquidity & Order Flow**: Unlike decentralized OTC or retail CFD quotes, CME Globex provides a transparent, consolidated limit order book with verifiable Cumulative Volume Delta (CVD) and time-and-sales execution prints.
-2. **Analysis vs Execution Decoupling**: Market structure analysis, Dalton market profiles, and Wyckoff factor scores are derived from real CME Globex data. Execution is then routed to CME Direct Futures, Tradeify ($50k funded evaluation), or CMC Markets CFDs.
+2. **Analysis vs Execution Decoupling**: Market structure analysis, Dalton market profiles, and Wyckoff factor scores are derived from real CME Globex data. Execution is then routed to CME Direct Futures (Personal Futures $50k Account) or CMC Markets CFDs.
 
 ---
 
@@ -134,7 +134,7 @@ TradePulse operates strictly according to official exchange operating hours:
 │   - 03:00 ET: London Financial Open                                    │
 │   - 09:30 ET: US Equity Cash Session Open (RTH Open - Freeze Map)      │
 │   - 16:00 ET: US Equity Cash Session Close                             │
-│   - 16:59 ET: Tradeify Mandatory Flatten Deadline                      │
+│   - 17:00 ET: CME Daily Close / Maintenance Break                      │
 │ Friday 17:00 ET: CME Globex Weekend Close                              │
 └────────────────────────────────────────────────────────────────────────┘
 ```

@@ -19,7 +19,7 @@ import {
   deskLocalHmsAsTraderDisplay,
   deskLocalRangeAsTraderDisplay,
 } from '@/lib/chart/traderDisplayTz'
-import { tradeifyScheduleRiskLine } from '@/lib/trading/tradeifyLeoBlock'
+import { personalScheduleRiskLine } from '@/lib/trading/tradeifyLeoBlock'
 
 const RULE = '────────────'
 
@@ -75,7 +75,7 @@ export function formatSessionScheduleBlock(
       `• Tokyo IB locks ~${deskLocalHmsAsTraderDisplay('10:00:00', s.tz, now)} (first hour) — entry ${ibWin}`,
       `• Lunch confirm ${lunchConfirm}`,
       `• Session END (cash close) ${close}`,
-      `• ${tradeifyScheduleRiskLine()} · SL beyond range · TP 1.5R (1:1.5) · ±10 of H / L after active range locks`,
+      `• ${personalScheduleRiskLine()} · SL beyond range · TP 1.5R (1:1.5) · ±10 of H / L after active range locks`,
     ].join('\n')
   }
 
@@ -100,7 +100,7 @@ export function formatSessionScheduleBlock(
     `• IB locks ~${deskLocalHmsAsTraderDisplay('10:30:00', s.tz, now)} · entry ${ibWin}`,
     `• Lunch confirm ${lunchConfirm} (morning books — IB stay open past confirm)`,
     `• Session END (cash close) ${close}`,
-    `• ${tradeifyScheduleRiskLine()} · SL beyond range · TP 1.5R (1:1.5) · ±10 of H / L after active range locks · Open range optional`,
+    `• ${personalScheduleRiskLine()} · SL beyond range · TP 1.5R (1:1.5) · ±10 of H / L after active range locks · Open range optional`,
   ].join('\n')
 }
 

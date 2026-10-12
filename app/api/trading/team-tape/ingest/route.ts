@@ -9,9 +9,9 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { DEV_USER_ID, resolveDeskUser } from '@/lib/utils/devAuth'
 import { getTodayAttendance } from '@/lib/trading/deskAttendance'
 import {
-  loadTradeifySessionSnapshot,
+  loadPersonalSessionSnapshot,
 } from '@/lib/trading/tradeifySessionState'
-import { resolveTradeifyPlace } from '@/lib/trading/tradeifyGrowth50k'
+import { resolvePersonalPlace } from '@/lib/trading/tradeifyGrowth50k'
 import {
   buildTeamCopyAdvice,
   parseTeamTapeIngest,
@@ -89,10 +89,10 @@ export async function POST(request: Request) {
   }
 
   const [snap, attendance] = await Promise.all([
-    loadTradeifySessionSnapshot(supabase, userId, now),
+    loadPersonalSessionSnapshot(supabase, userId, now),
     getTodayAttendance(supabase, userId, 'NY', now),
   ])
-  const place = resolveTradeifyPlace(snap)
+  const place = resolvePersonalPlace(snap)
   const advice = withSignalTarget(
     buildTeamCopyAdvice({
       place,

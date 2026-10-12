@@ -107,7 +107,7 @@ export function buildTeamCopyAdvice(args: {
       mustFlatten: true,
       headline: 'Do not copy. Flatten now.',
       detail:
-        'Cannot hold overnight. Close positions and cancel working orders (16:59 ET / 12:59 holiday).',
+        'Session closed. Close positions and cancel working orders.',
       target1_5R: null,
     }
   }
@@ -149,7 +149,7 @@ export function buildTeamCopyAdvice(args: {
     clockedIn: true,
     mustFlatten: false,
     headline: 'You may copy.',
-    detail: `Size $${riskDollars} on DOW or NASDAQ (one only, same side). Close at 1.5R or flatten 16:59 ET. Their share count is their own book.`,
+    detail: `Size $${riskDollars} on DOW or NASDAQ (one only, same side). Close at 1.5R. Their share count is their own book.`,
     target1_5R: null,
   }
 }

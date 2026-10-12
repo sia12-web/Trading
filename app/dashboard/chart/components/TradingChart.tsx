@@ -386,7 +386,7 @@ import {
   overlayNumbers,
   overlayPlace,
 } from '@/lib/chart/overlayLayout'
-import { resolveTradeifyPlace } from '@/lib/trading/tradeifyGrowth50k'
+import { resolvePersonalPlace } from '@/lib/trading/tradeifyGrowth50k'
 import {
   didPriceTouchAlert,
   formatPriceTouchAlert,
@@ -971,7 +971,7 @@ function generateCandles(basePrice: number, tfSeconds: number): OHLCV[] {
 // ─── OHLCV tooltip component ──────────────────────────────────────────────────
 
 function OHLCVTooltip({ data, color }: { data: TooltipData | null; color: string }) {
-  if (!data) {
+  if (!data || data.open == null || data.high == null || data.low == null || data.close == null) {
     return (
       <div className="flex items-center flex-nowrap whitespace-nowrap gap-x-3.5 text-xs price-mono select-none pointer-events-none opacity-0 invisible" aria-hidden="true">
         <span className="text-gray-600">00:00:00</span>
@@ -986,26 +986,26 @@ function OHLCVTooltip({ data, color }: { data: TooltipData | null; color: string
     )
   }
 
-  const isUp = data.change >= 0
+  const isUp = (data.change ?? 0) >= 0
 
   return (
     <div className="flex items-center flex-nowrap whitespace-nowrap gap-x-3.5 text-xs price-mono select-none pointer-events-none">
-      <span className="text-gray-600">{data.time}</span>
-      <span className="text-gray-500">O <span className="text-gray-300">{data.open.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
-      <span className="text-gray-500">H <span className="text-green-400">{data.high.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
-      <span className="text-gray-500">L <span className="text-red-400">{data.low.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
-      <span className="text-gray-500">C <span style={{ color }}>{data.close.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
-      {data.volume > 0 && (
+      <span className="text-gray-600">{data.time || ''}</span>
+      <span className="text-gray-500">O <span className="text-gray-300">{data.open != null ? data.open.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</span></span>
+      <span className="text-gray-500">H <span className="text-green-400">{data.high != null ? data.high.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</span></span>
+      <span className="text-gray-500">L <span className="text-red-400">{data.low != null ? data.low.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</span></span>
+      <span className="text-gray-500">C <span style={{ color }}>{data.close != null ? data.close.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</span></span>
+      {data.volume != null && data.volume > 0 && (
         <span className="text-gray-500">
           V <span className="text-cyan-400 font-semibold">{data.volume >= 1000 ? `${(data.volume / 1000).toFixed(1)}k` : data.volume.toLocaleString()}</span>
         </span>
       )}
-      {data.cvd !== undefined && (
+      {data.cvd !== undefined && data.cvd !== null && (
         <span className="text-gray-500">
           CVD <span className={`font-semibold ${data.cvd >= 0 ? 'text-cyan-400' : 'text-rose-400'}`}>
             {data.cvd >= 0 ? '+' : ''}{Math.abs(data.cvd) >= 1000 ? `${(data.cvd / 1000).toFixed(1)}k` : data.cvd.toLocaleString()}
           </span>
-          {data.barDelta !== undefined && (
+          {data.barDelta !== undefined && data.barDelta !== null && (
             <span className={`text-[10px] ml-1 ${data.barDelta >= 0 ? 'text-cyan-300' : 'text-rose-300'}`}>
               (Δ {data.barDelta >= 0 ? '+' : ''}{Math.abs(data.barDelta) >= 1000 ? `${(data.barDelta / 1000).toFixed(1)}k` : data.barDelta.toLocaleString()})
             </span>
@@ -1013,7 +1013,7 @@ function OHLCVTooltip({ data, color }: { data: TooltipData | null; color: string
         </span>
       )}
       <span className={isUp ? 'text-green-400' : 'text-red-400'}>
-        {isUp ? '▲' : '▼'} {Math.abs(data.changePct).toFixed(2)}%
+        {isUp ? '▲' : '▼'} {data.changePct != null ? Math.abs(data.changePct).toFixed(2) : '0.00'}%
       </span>
     </div>
   )
@@ -3526,10 +3526,11 @@ export function TradingChart({
         else volStr = ` · Vol ${Math.round(totalVol)}`
       }
 
-      // 6. Floating High-Precision Badge
-      const ptsFormatted = dPriceAbs >= 1000
-        ? dPriceAbs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-        : dPriceAbs.toFixed(2)
+      const ptsFormatted = Number.isFinite(dPriceAbs)
+        ? (dPriceAbs >= 1000
+            ? dPriceAbs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+            : dPriceAbs.toFixed(2))
+        : '0.00'
       const line1 = `${arrow} ${sign}${ptsFormatted} pts (${sign}${Math.abs(pctChange).toFixed(2)}%)`
       const line2 = `${barsCount} bar${barsCount > 1 ? 's' : ''}, ${timeStr}${volStr}`
 
@@ -4043,8 +4044,8 @@ export function TradingChart({
 
           ctx.font = 'bold 10px ui-monospace, SFMono-Regular, monospace'
           ctx.fillStyle = isSupplyDraft ? '#fef08a' : '#bae6fd'
-          ctx.fillText(`📐 Wyckoff ${roleDraft} P1: ${p1.price.toLocaleString()}`, x1 + 8, y1 - 4)
-          ctx.fillText(`📐 P2: ${p2.price.toLocaleString()} (${p2.price >= p1.price ? '+' : ''}${(p2.price - p1.price).toFixed(1)} pts)`, x2 + 8, y2 - 4)
+          ctx.fillText(`📐 Wyckoff ${roleDraft} P1: ${p1?.price != null ? p1.price.toLocaleString() : '—'}`, x1 + 8, y1 - 4)
+          ctx.fillText(`📐 P2: ${p2?.price != null ? p2.price.toLocaleString() : '—'} (${p1?.price != null && p2?.price != null ? (p2.price >= p1.price ? '+' : '') + (p2.price - p1.price).toFixed(1) + ' pts' : '—'})`, x2 + 8, y2 - 4)
         } else if (activeDrawingTool === 'RANGE') {
           const minX = Math.min(x1, p2.x)
           const maxX = Math.max(x1, p2.x)
@@ -4061,12 +4062,12 @@ export function TradingChart({
           ctx.strokeRect(minX, topY, boxW, boxH)
           ctx.setLineDash([])
 
-          const highP = Math.max(p1.price, p2.price)
-          const lowP = Math.min(p1.price, p2.price)
+          const highP = p1?.price != null && p2?.price != null ? Math.max(p1.price, p2.price) : 0
+          const lowP = p1?.price != null && p2?.price != null ? Math.min(p1.price, p2.price) : 0
           ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
           ctx.fillStyle = '#f3e8ff'
-          ctx.fillText(`Range High: ${highP.toLocaleString()} (${Math.round(highP - lowP)} pts)`, minX + 6, topY - 4)
-          ctx.fillText(`Range Low: ${lowP.toLocaleString()} (Click to lock)`, minX + 6, botY + 12)
+          ctx.fillText(`Range High: ${highP != null ? highP.toLocaleString() : '—'} (${Math.round(highP - lowP)} pts)`, minX + 6, topY - 4)
+          ctx.fillText(`Range Low: ${lowP != null ? lowP.toLocaleString() : '—'} (Click to lock)`, minX + 6, botY + 12)
         } else if (activeDrawingTool === 'FRVP') {
           const minX = Math.min(x1, x2)
           const maxX = Math.max(x1, x2)
@@ -5691,10 +5692,10 @@ export function TradingChart({
           {
             id: '5m-avwap-benchmark',
             label: `5M AVWAP (${instrument})`,
-            value: `${v.toLocaleString()} (Delta: ${diff})`,
+            value: `${v != null ? v.toLocaleString() : '—'} (Delta: ${diff})`,
             tier: 'LT',
             category: 'VWAP',
-            description: `5-Month CME Globex Anchored VWAP is ${v.toLocaleString()}. Current Price is ${p.toLocaleString()} (${Number(diff) >= 0 ? '+' : ''}${diff} pts vs AVWAP). Bands: +1σ ${avwap5mBenchmark?.sigma1Upper?.toLocaleString() ?? 'N/A'}, -1σ ${avwap5mBenchmark?.sigma1Lower?.toLocaleString() ?? 'N/A'}, +2σ ${avwap5mBenchmark?.sigma2Upper?.toLocaleString() ?? 'N/A'}, -2σ ${avwap5mBenchmark?.sigma2Lower?.toLocaleString() ?? 'N/A'}, +3σ ${avwap5mBenchmark?.sigma3Upper?.toLocaleString() ?? 'N/A'}, -3σ ${avwap5mBenchmark?.sigma3Lower?.toLocaleString() ?? 'N/A'}.`,
+            description: `5-Month CME Globex Anchored VWAP is ${v != null ? v.toLocaleString() : '—'}. Current Price is ${p != null ? p.toLocaleString() : '—'} (${Number(diff) >= 0 ? '+' : ''}${diff} pts vs AVWAP). Bands: +1σ ${avwap5mBenchmark?.sigma1Upper?.toLocaleString() ?? 'N/A'}, -1σ ${avwap5mBenchmark?.sigma1Lower?.toLocaleString() ?? 'N/A'}, +2σ ${avwap5mBenchmark?.sigma2Upper?.toLocaleString() ?? 'N/A'}, -2σ ${avwap5mBenchmark?.sigma2Lower?.toLocaleString() ?? 'N/A'}, +3σ ${avwap5mBenchmark?.sigma3Upper?.toLocaleString() ?? 'N/A'}, -3σ ${avwap5mBenchmark?.sigma3Lower?.toLocaleString() ?? 'N/A'}.`,
           },
         ])
         setLeoPanelOpen(true)
@@ -5753,7 +5754,7 @@ export function TradingChart({
             value: `${m.direction} (${m.slopePtsPer5mBar >= 0 ? '+' : ''}${m.slopePtsPer5mBar} pts/5m)`,
             tier: 'DRAWING',
             category: 'TRENDLINE',
-            description: `${tlTypeLabel}: From ${tl.p1.price.toLocaleString()} (${formatEtTime(tl.p1.time)}) to ${tl.p2.price.toLocaleString()} (${formatEtTime(tl.p2.time)}). Projected: ${m.projectedPrice.toLocaleString()}. Price is ${m.priceRelation} (${m.distancePts != null ? `${m.distancePts} pts` : 'N/A'}). ${runwayStr} ${velocityStr}`,
+            description: `${tlTypeLabel}: From ${tl?.p1?.price != null ? tl.p1.price.toLocaleString() : '—'} (${formatEtTime(tl.p1.time)}) to ${tl?.p2?.price != null ? tl.p2.price.toLocaleString() : '—'} (${formatEtTime(tl.p2.time)}). Projected: ${m?.projectedPrice != null ? m.projectedPrice.toLocaleString() : '—'}. Price is ${m.priceRelation} (${m.distancePts != null ? `${m.distancePts} pts` : 'N/A'}). ${runwayStr} ${velocityStr}`,
           },
         ])
         setLeoPanelOpen(true)
@@ -5769,11 +5770,11 @@ export function TradingChart({
           {
             id: rb.id,
             label: rb.label || 'Range Box',
-            value: `${m.heightPts} pts (${m.priceHigh.toLocaleString()} – ${m.priceLow.toLocaleString()})`,
+            value: `${m.heightPts} pts (${m?.priceHigh != null ? m.priceHigh.toLocaleString() : '—'} – ${m?.priceLow != null ? m.priceLow.toLocaleString() : '—'})`,
             tier: 'DRAWING',
             category: 'RANGE',
             volume: m.totalVolume,
-            description: `User Range Box: High ${m.priceHigh.toLocaleString()}, Low ${m.priceLow.toLocaleString()}, Mid ${m.midPrice.toLocaleString()}. Position: ${m.priceRelation} (${m.positionPct}%). Height: ${m.heightPts} pts. Duration: ${m.durationMin}m.${volDesc}`,
+            description: `User Range Box: High ${m?.priceHigh != null ? m.priceHigh.toLocaleString() : '—'}, Low ${m?.priceLow != null ? m.priceLow.toLocaleString() : '—'}, Mid ${m?.midPrice != null ? m.midPrice.toLocaleString() : '—'}. Position: ${m.priceRelation} (${m.positionPct}%). Height: ${m.heightPts} pts. Duration: ${m.durationMin}m.${volDesc}`,
           },
         ])
         setLeoPanelOpen(true)
@@ -5785,11 +5786,11 @@ export function TradingChart({
           {
             id: fp.id,
             label: fp.label || 'Manual FRVP',
-            value: `POC ${fp.poc.toLocaleString()} | VAH ${fp.vah.toLocaleString()} | VAL ${fp.val.toLocaleString()}`,
+            value: `POC ${fp?.poc != null ? fp.poc.toLocaleString() : '—'} | VAH ${fp?.vah != null ? fp.vah.toLocaleString() : '—'} | VAL ${fp?.val != null ? fp.val.toLocaleString() : '—'}`,
             tier: 'DRAWING',
             category: 'FRVP',
-            volume: fp.totalVolume.toLocaleString(),
-            description: `Manual Fixed Range Volume Profile: POC ${fp.poc.toLocaleString()}, VAH ${fp.vah.toLocaleString()}, VAL ${fp.val.toLocaleString()}. Total Vol: ${fp.totalVolume.toLocaleString()}, Buy Delta: ${buyDeltaPct}%. Range: ${formatEtTime(fp.timeStart)} to ${formatEtTime(fp.timeEnd)}.`,
+            volume: fp?.totalVolume != null ? fp.totalVolume.toLocaleString() : '0',
+            description: `Manual Fixed Range Volume Profile: POC ${fp?.poc != null ? fp.poc.toLocaleString() : '—'}, VAH ${fp?.vah != null ? fp.vah.toLocaleString() : '—'}, VAL ${fp?.val != null ? fp.val.toLocaleString() : '—'}. Total Vol: ${fp?.totalVolume != null ? fp.totalVolume.toLocaleString() : '0'}, Buy Delta: ${buyDeltaPct}%. Range: ${formatEtTime(fp.timeStart)} to ${formatEtTime(fp.timeEnd)}.`,
           },
         ])
         setLeoPanelOpen(true)
@@ -7413,7 +7414,7 @@ export function TradingChart({
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
           axisLabelVisible: true,
-          title: '→ ' + price.toLocaleString('en-US', { minimumFractionDigits: 0 }),
+          title: '→ ' + (price != null ? price.toLocaleString('en-US', { minimumFractionDigits: 0 }) : ''),
         })
         jumpMarkerRef.current = marker
         setTimeout(() => {
@@ -7549,7 +7550,7 @@ export function TradingChart({
         marketOutcome: l.marketOutcome,
         testedCount: l.testedCount,
         successCount: l.successCount,
-        label: `${watchTag}${rank} ${side} ${starLabel} · ${l.level.toLocaleString()}`,
+        label: `${watchTag}${rank} ${side} ${starLabel} · ${l?.level != null ? l.level.toLocaleString() : '—'}`,
       })
     }
 
@@ -10800,7 +10801,7 @@ export function TradingChart({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           instrument: inst,
-          transcript: `I drew a custom ${drawnZoneSide} zone named ${zoneName} on ${inst} between ${drawnZone.priceLow.toLocaleString()} and ${drawnZone.priceHigh.toLocaleString()}. What do you think of this level?`,
+          transcript: `I drew a custom ${drawnZoneSide} zone named ${zoneName} on ${inst} between ${drawnZone?.priceLow != null ? drawnZone.priceLow.toLocaleString() : '—'} and ${drawnZone?.priceHigh != null ? drawnZone.priceHigh.toLocaleString() : '—'}. What do you think of this level?`,
           customPin: {
             price: mid,
             side: drawnZoneSide,
@@ -10877,15 +10878,15 @@ export function TradingChart({
     const detailedTranscript = `USER HIGHLIGHTED PRICE MOVE (${label}): "${sessionSpanStr}".
 Time Window: ${fullStartStr} (${tzLabel}) to ${fullEndStr} (${tzLabel}).
 Highlighted Click Move Details:
-- 1st Click (Start Price): ${clickStartP.toLocaleString()}
-- 2nd Click (Finish Price): ${clickEndP.toLocaleString()}
+- 1st Click (Start Price): ${clickStartP != null ? clickStartP.toLocaleString() : '—'}
+- 2nd Click (Finish Price): ${clickEndP != null ? clickEndP.toLocaleString() : '—'}
 - Clicked Move: ${pts >= 0 ? '+' : ''}${pts.toFixed(2)} pts (${pts >= 0 ? '+' : ''}${pct.toFixed(2)}%)
-- Period High (Resistance): ${rHigh.toLocaleString()}
-- Period Low (Support): ${rLow.toLocaleString()}
-- Underlying Bar Open: ${openP.toLocaleString()} | Bar Close: ${closeP.toLocaleString()}
+- Period High (Resistance): ${rHigh != null ? rHigh.toLocaleString() : '—'}
+- Period Low (Support): ${rLow != null ? rLow.toLocaleString() : '—'}
+- Underlying Bar Open: ${openP != null ? openP.toLocaleString() : '—'} | Bar Close: ${closeP != null ? closeP.toLocaleString() : '—'}
 - 5m Bar Count: ${drawnTime.candleCount ?? 'N/A'}
 
-Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${clickEndP.toLocaleString()}, market structure, price action, volume, and session context during this period.`
+Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.toLocaleString() : '—'} to ${clickEndP != null ? clickEndP.toLocaleString() : '—'}, market structure, price action, volume, and session context during this period.`
 
     try {
       const res = await fetch('/api/trading/live-voice/turn', {
@@ -11331,7 +11332,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             type: 'RANGE',
             id: newRange.id,
             label: newRange.label || 'Range Box',
-            summary: `High ${highP.toLocaleString()} – Low ${lowP.toLocaleString()} (${Math.round(highP - lowP)} pts)`,
+            summary: `High ${highP != null ? highP.toLocaleString() : '—'} – Low ${lowP != null ? lowP.toLocaleString() : '—'} (${Math.round(highP - lowP)} pts)`,
           })
         } else if (activeDrawingTool === 'FRVP') {
           const computed = computeCustomFixedRangeVolumeProfile(
@@ -11353,7 +11354,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               type: 'FRVP',
               id: computed.id,
               label: computed.label || 'Manual FRVP',
-              summary: `POC: ${computed.poc.toLocaleString()} | VAH: ${computed.vah.toLocaleString()} | VAL: ${computed.val.toLocaleString()}`,
+              summary: `POC: ${computed?.poc != null ? computed.poc.toLocaleString() : '—'} | VAH: ${computed?.vah != null ? computed.vah.toLocaleString() : '—'} | VAL: ${computed?.val != null ? computed.val.toLocaleString() : '—'}`,
             })
           }
         } else if (activeDrawingTool === 'MEASURE') {
@@ -12121,7 +12122,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       lineWidth: 2,
       lineStyle: 0,
       axisLabelVisible: true,
-      title: `◆ ENTRY ${riskBox.direction} @ ${riskBox.entryPrice.toLocaleString()}`,
+      title: `◆ ENTRY ${riskBox.direction} @ ${riskBox.entryPrice != null ? riskBox.entryPrice.toLocaleString() : '—'}`,
     })
 
     const lineSl = host.createPriceLine({
@@ -12130,7 +12131,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       lineWidth: 2,
       lineStyle: 2,
       axisLabelVisible: true,
-      title: `▁ SL @ ${riskBox.stopLoss.toLocaleString()}`,
+      title: `▁ SL @ ${riskBox.stopLoss != null ? riskBox.stopLoss.toLocaleString() : '—'}`,
     })
 
     const lineTp = host.createPriceLine({
@@ -12139,7 +12140,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       lineWidth: 2,
       lineStyle: 2,
       axisLabelVisible: true,
-      title: `▔ TP @ ${riskBox.profitTarget.toLocaleString()}`,
+      title: `▔ TP @ ${riskBox.profitTarget != null ? riskBox.profitTarget.toLocaleString() : '—'}`,
     })
 
     riskBoxLinesRef.current = [lineEntry, lineSl, lineTp]
@@ -12209,10 +12210,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       lineStyle: armed ? 2 : 1,
       axisLabelVisible: true,
       title: !armed
-        ? `🔔 FIRED @ ${priceAlert.price.toLocaleString()}`
+        ? `🔔 FIRED @ ${priceAlert?.price != null ? priceAlert.price.toLocaleString() : '—'}`
         : pending
-          ? `🔔 ARMING @ ${priceAlert.price.toLocaleString()}`
-          : `🔔 ALERT @ ${priceAlert.price.toLocaleString()}`,
+          ? `🔔 ARMING @ ${priceAlert?.price != null ? priceAlert.price.toLocaleString() : '—'}`
+          : `🔔 ALERT @ ${priceAlert?.price != null ? priceAlert.price.toLocaleString() : '—'}`,
     })
     priceAlertLineRef.current = line
   }, [priceAlert, chartReady, instrument, clearPriceAlertLine])
@@ -12327,8 +12328,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     )
 
     const autoReason = discussedWithLeo
-      ? `Manual ${direction} Limit Zone (Discussed with Leo): Level @ ${entryPrice.toLocaleString()}, SL @ ${stopLoss.toLocaleString()}, TP @ ${profitTarget.toLocaleString()}`
-      : `Manual ${direction} entry: Technical structure limit @ ${entryPrice.toLocaleString()} | SL/TP rationale: Protective SL @ ${stopLoss.toLocaleString()}, Target TP @ ${profitTarget.toLocaleString()}`
+      ? `Manual ${direction} Limit Zone (Discussed with Leo): Level @ ${entryPrice != null ? entryPrice.toLocaleString() : '—'}, SL @ ${stopLoss != null ? stopLoss.toLocaleString() : '—'}, TP @ ${profitTarget != null ? profitTarget.toLocaleString() : '—'}`
+      : `Manual ${direction} entry: Technical structure limit @ ${entryPrice != null ? entryPrice.toLocaleString() : '—'} | SL/TP rationale: Protective SL @ ${stopLoss != null ? stopLoss.toLocaleString() : '—'}, Target TP @ ${profitTarget != null ? profitTarget.toLocaleString() : '—'}`
 
     onLevelSelect?.(entryPrice, {
       source: 'manual',
@@ -12537,8 +12538,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       return
     }
 
-    const fmt = (n: number) =>
-      n.toLocaleString('en-US', { maximumFractionDigits: 0 })
+    const fmt = (n?: number | null) =>
+      n != null && Number.isFinite(n) ? n.toLocaleString('en-US', { maximumFractionDigits: 0 }) : '—'
 
     const paint = (
       entries: Array<{ price: number; color: string; label: string; style: LineStyle; width: 1 | 2 | 3 | 4 }>
@@ -12571,7 +12572,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
         {
           price: filledBook?.entry ?? ov.entryPrice,
           color: '#1d4ed8',
-          label: `Entry ${ov.direction.toUpperCase()} ${fmt(filledBook?.entry ?? ov.entryPrice)}${size}`,
+          label: `Entry ${(ov.direction || 'long').toUpperCase()} ${fmt(filledBook?.entry ?? ov.entryPrice)}${size}`,
           style: LineStyle.Solid,
           width: 3,
         },
@@ -12598,8 +12599,8 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
     if (asiaLive && asiaOco) {
       const inst = String(asiaOco.instrument)
       const frac = inst === 'SILVER' ? 3 : inst === 'GOLD' ? 1 : (inst === 'CRUDE' || inst === 'NASDAQ') ? 2 : 0
-      const fmtA = (n: number) =>
-        n.toLocaleString('en-US', { maximumFractionDigits: frac })
+      const fmtA = (n?: number | null) =>
+        n != null && Number.isFinite(n) ? n.toLocaleString('en-US', { maximumFractionDigits: frac }) : '—'
       paint([
         {
           price: asiaOco.asiaHigh,
@@ -12878,7 +12879,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
       onDeskAlert({
         kind: 'call_setup',
         title: `SETUP ${instrument} · CALL ${call.side}`,
-        body: `${call.rangeKey} legal ±10 ${call.entryEdge.toUpperCase()} @ ${call.entryPrice.toLocaleString()}`,
+        body: `${call.rangeKey} legal ±10 ${call.entryEdge.toUpperCase()} @ ${call.entryPrice != null ? call.entryPrice.toLocaleString() : '—'}`,
         telegram,
         instrument,
         dedupeKey: deskNoteClaimKey(
@@ -13650,9 +13651,10 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
             </span>
             {currentCvdLegend ? (
               <div className="flex items-center gap-2 font-mono text-[11px]">
-                <span className={currentCvdLegend.close >= 0 ? 'text-cyan-400 font-bold' : 'text-rose-400 font-bold'}>
+                <span className={(currentCvdLegend.close ?? 0) >= 0 ? 'text-cyan-400 font-bold' : 'text-rose-400 font-bold'}>
                   {(() => {
                     const val = currentCvdLegend.close
+                    if (val == null) return '—'
                     const sign = val >= 0 ? '+' : ''
                     const abs = Math.abs(val)
                     if (abs >= 1_000_000) return `${sign}${(val / 1_000_000).toFixed(2)}M`
@@ -13662,8 +13664,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 </span>
                 <span className="text-zinc-600">|</span>
                 <span className="text-zinc-400 text-[10.5px]">
-                  Bar Δ: <strong className={currentCvdLegend.close >= currentCvdLegend.open ? 'text-cyan-400' : 'text-rose-400'}>
+                  Bar Δ: <strong className={(currentCvdLegend.close ?? 0) >= (currentCvdLegend.open ?? 0) ? 'text-cyan-400' : 'text-rose-400'}>
                     {(() => {
+                      if (currentCvdLegend.close == null || currentCvdLegend.open == null) return '—'
                       const delta = currentCvdLegend.close - currentCvdLegend.open
                       const sign = delta >= 0 ? '+' : ''
                       const abs = Math.abs(delta)
@@ -13675,7 +13678,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 </span>
                 <span className="text-zinc-600 hidden sm:inline">|</span>
                 <span className="text-zinc-400 text-[10px] hidden md:inline">
-                  O: <span className="text-zinc-200">{currentCvdLegend.open.toLocaleString()}</span> H: <span className="text-zinc-200">{currentCvdLegend.high.toLocaleString()}</span> L: <span className="text-zinc-200">{currentCvdLegend.low.toLocaleString()}</span> C: <span className="text-zinc-200">{currentCvdLegend.close.toLocaleString()}</span>
+                  O: <span className="text-zinc-200">{currentCvdLegend.open != null ? currentCvdLegend.open.toLocaleString() : '—'}</span> H: <span className="text-zinc-200">{currentCvdLegend.high != null ? currentCvdLegend.high.toLocaleString() : '—'}</span> L: <span className="text-zinc-200">{currentCvdLegend.low != null ? currentCvdLegend.low.toLocaleString() : '—'}</span> C: <span className="text-zinc-200">{currentCvdLegend.close != null ? currentCvdLegend.close.toLocaleString() : '—'}</span>
                 </span>
               </div>
             ) : (
@@ -14051,7 +14054,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                               </span>
                             </div>
                             <div className="text-[10px] text-slate-400 truncate">
-                              {tl.p1.price.toLocaleString()} → {tl.p2.price.toLocaleString()} ({isSpring ? 'Spring Origin' : 'Upthrust Origin'})
+                              {tl?.p1?.price != null ? tl.p1.price.toLocaleString() : '—'} → {tl?.p2?.price != null ? tl.p2.price.toLocaleString() : '—'} ({isSpring ? 'Spring Origin' : 'Upthrust Origin'})
                             </div>
                           </div>
                         <div className="flex items-center gap-1 shrink-0">
@@ -14102,7 +14105,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                               <span className="text-[10px] text-purple-400 font-mono">({pts} pts)</span>
                             </div>
                             <div className="text-[10px] text-slate-400 truncate">
-                              High {hi.toLocaleString()} · Low {lo.toLocaleString()}
+                              High {hi != null ? hi.toLocaleString() : '—'} · Low {lo != null ? lo.toLocaleString() : '—'}
                             </div>
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
@@ -14168,7 +14171,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                             <span className="truncate">{fp.label || 'Manual FRVP'}</span>
                           </div>
                           <div className="text-[10px] text-amber-400/90 truncate font-mono">
-                            POC {fp.poc.toLocaleString()} · VAH {fp.vah.toLocaleString()} · VAL {fp.val.toLocaleString()}
+                            POC {fp?.poc != null ? fp.poc.toLocaleString() : '—'} · VAH {fp?.vah != null ? fp.vah.toLocaleString() : '—'} · VAL {fp?.val != null ? fp.val.toLocaleString() : '—'}
                           </div>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
@@ -14219,7 +14222,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                               </span>
                             </div>
                             <div className="text-[10px] text-slate-400 truncate">
-                              {m.p1.price.toLocaleString()} → {m.p2.price.toLocaleString()}
+                              {m?.p1?.price != null ? m.p1.price.toLocaleString() : '—'} → {m?.p2?.price != null ? m.p2.price.toLocaleString() : '—'}
                             </div>
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
@@ -14577,9 +14580,9 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                       </span>
                     </div>
                     <div className="grid grid-cols-2 gap-1 text-[10px] font-mono pt-0.5">
-                      <div><span className="text-rose-400 font-semibold">News H:</span> {matchedMove.newsHigh.toLocaleString()}</div>
-                      <div><span className="text-emerald-400 font-semibold">News L:</span> {matchedMove.newsLow.toLocaleString()}</div>
-                      <div><span className="text-violet-300">Base:</span> {matchedMove.basePrice.toLocaleString()}</div>
+                      <div><span className="text-rose-400 font-semibold">News H:</span> {matchedMove?.newsHigh != null ? matchedMove.newsHigh.toLocaleString() : '—'}</div>
+                      <div><span className="text-emerald-400 font-semibold">News L:</span> {matchedMove?.newsLow != null ? matchedMove.newsLow.toLocaleString() : '—'}</div>
+                      <div><span className="text-violet-300">Base:</span> {matchedMove?.basePrice != null ? matchedMove.basePrice.toLocaleString() : '—'}</div>
                       <div><span className="text-amber-300">Range:</span> {matchedMove.moveRange.toFixed(1)} pts</div>
                     </div>
                     <div className="text-[10px] text-purple-200/90 pt-0.5 border-t border-purple-800/40">
@@ -14944,7 +14947,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           const entryPx = positionOverlay.entryPrice
           const stopPx = positionOverlay.stopLoss
           const tpPx = positionOverlay.profitTarget
-          const pnlPts = isLong ? curPx - entryPx : entryPx - curPx
+          const pnlPts = curPx != null && entryPx != null ? (isLong ? curPx - entryPx : entryPx - curPx) : 0
           const isProfit = pnlPts > 0
           const isFlat = Math.abs(pnlPts) < 0.25
 
@@ -14953,12 +14956,12 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           const sz = positionOverlay.positionSize ?? 1
           const pnlUsd = pnlPts * sz * pointVal
 
-          const distTp = isLong ? tpPx - curPx : curPx - tpPx
-          const distSl = isLong ? curPx - stopPx : stopPx - curPx
-          const totalTpSpan = Math.abs(tpPx - entryPx)
+          const distTp = tpPx != null && curPx != null ? (isLong ? tpPx - curPx : curPx - tpPx) : 0
+          const distSl = stopPx != null && curPx != null ? (isLong ? curPx - stopPx : stopPx - curPx) : 0
+          const totalTpSpan = tpPx != null && entryPx != null ? Math.abs(tpPx - entryPx) : 0
           const tpProgress = totalTpSpan > 0 ? Math.max(0, Math.min(100, Math.round((pnlPts / totalTpSpan) * 100))) : 0
 
-          const riskSpan = Math.abs(entryPx - stopPx)
+          const riskSpan = stopPx != null && entryPx != null ? Math.abs(entryPx - stopPx) : 0
           const currentR = riskSpan > 0 ? (pnlPts / riskSpan).toFixed(2) : '0.00'
 
           if (positionHudMinimized) {
@@ -15062,24 +15065,28 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               <div className="grid grid-cols-2 gap-1.5 text-[10px] font-mono">
                 <div className="p-1.5 rounded-lg bg-neutral-900/60 border border-neutral-800/60">
                   <span className="text-neutral-500 text-[8.5px] block">ENTRY</span>
-                  <span className="text-blue-400 font-bold">{entryPx.toLocaleString()}</span>
+                  <span className="text-blue-400 font-bold">{entryPx != null ? entryPx.toLocaleString() : '—'}</span>
                 </div>
                 <div className="p-1.5 rounded-lg bg-neutral-900/60 border border-neutral-800/60">
                   <span className="text-neutral-500 text-[8.5px] block">LIVE PRICE</span>
-                  <span className="text-white font-bold">{curPx.toLocaleString()}</span>
+                  <span className="text-white font-bold">{curPx != null ? curPx.toLocaleString() : '—'}</span>
                 </div>
                 <div className="p-1.5 rounded-lg bg-neutral-900/60 border border-emerald-950/60">
                   <span className="text-emerald-500 text-[8.5px] block">TARGET (TP)</span>
                   <div className="flex items-baseline justify-between">
-                    <span className="text-emerald-400 font-bold">{tpPx.toLocaleString()}</span>
-                    <span className="text-[8.5px] text-neutral-400">{distTp >= 0 ? `+${distTp.toFixed(1)}` : `${distTp.toFixed(1)}`}</span>
+                    <span className="text-emerald-400 font-bold">{tpPx != null ? tpPx.toLocaleString() : '—'}</span>
+                    {tpPx != null && (
+                      <span className="text-[8.5px] text-neutral-400">{distTp >= 0 ? `+${distTp.toFixed(1)}` : `${distTp.toFixed(1)}`}</span>
+                    )}
                   </div>
                 </div>
                 <div className="p-1.5 rounded-lg bg-neutral-900/60 border border-rose-950/60">
                   <span className="text-rose-500 text-[8.5px] block">PROTECTIVE STOP</span>
                   <div className="flex items-baseline justify-between">
-                    <span className="text-rose-400 font-bold">{stopPx.toLocaleString()}</span>
-                    <span className="text-[8.5px] text-neutral-400">{distSl >= 0 ? `-${distSl.toFixed(1)}` : `+${Math.abs(distSl).toFixed(1)}`}</span>
+                    <span className="text-rose-400 font-bold">{stopPx != null ? stopPx.toLocaleString() : '—'}</span>
+                    {stopPx != null && (
+                      <span className="text-[8.5px] text-neutral-400">{distSl >= 0 ? `-${distSl.toFixed(1)}` : `+${Math.abs(distSl).toFixed(1)}`}</span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -15174,7 +15181,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               <div className="space-y-0.5">
                 <span className="text-[10px] text-gray-500 uppercase tracking-wide">Range</span>
                 <p className="font-mono text-sm font-bold text-white">
-                  {drawnZone.priceLow.toLocaleString()} – {drawnZone.priceHigh.toLocaleString()}
+                  {drawnZone?.priceLow != null ? drawnZone.priceLow.toLocaleString() : '—'} – {drawnZone?.priceHigh != null ? drawnZone.priceHigh.toLocaleString() : '—'}
                 </p>
               </div>
               <span className="text-[10px] font-mono text-gray-500">
@@ -15255,7 +15262,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
 
         {/* TradingView Order Line Overlay Badges (Attached Directly to Price Lines on Chart) */}
         {riskBox && (() => {
-          const place = resolveTradeifyPlace({
+          const place = resolvePersonalPlace({
             fillsUsed: attemptsUsed,
             stopOutsToday: stopHits,
           })
@@ -15297,7 +15304,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
               >
                 <div className="flex items-center rounded border border-dashed border-emerald-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-emerald-300 shadow-md group-hover:border-emerald-300 transition">
                   <span className="text-emerald-400">
-                    +{profitVal} · {riskBox.profitTarget.toLocaleString()}
+                    +{profitVal} · {riskBox?.profitTarget != null ? riskBox.profitTarget.toLocaleString() : '—'}
                   </span>
                   <span className="text-emerald-600 mx-1.5">|</span>
                   <button
@@ -15389,11 +15396,11 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   top: 0,
                   transform: OVERLAY_HIDDEN_TRANSFORM,
                 }}
-                title={`Drag Stop Loss @ ${riskBox.stopLoss.toLocaleString()} — $${lossVal} risk (fill ${fillN}/3)`}
+                title={`Drag Stop Loss @ ${riskBox?.stopLoss != null ? riskBox.stopLoss.toLocaleString() : '—'} — $${lossVal} risk (fill ${fillN}/3)`}
               >
                 <div className="flex items-center rounded border border-dashed border-amber-400/90 bg-[#161b22]/95 px-2.5 py-0.5 text-xs font-mono font-bold text-amber-300 shadow-md group-hover:border-amber-300 transition">
                   <span className="text-amber-400">
-                    −{lossVal} · {riskBox.stopLoss.toLocaleString()} · {fillN}/3
+                    −{lossVal} · {riskBox?.stopLoss != null ? riskBox.stopLoss.toLocaleString() : '—'} · {fillN}/3
                   </span>
                   <span className="text-amber-600 mx-1.5">|</span>
                   <button
@@ -15447,7 +15454,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                     {!armed ? 'Fired' : pending ? 'Arming' : 'Alert'}
                   </span>
                   <span className="text-violet-400 mx-1.5">@</span>
-                  <span>{priceAlert.price.toLocaleString()}</span>
+                  <span>{priceAlert?.price != null ? priceAlert.price.toLocaleString() : '—'}</span>
                   <span className="text-violet-500/60 mx-1.5">|</span>
                   <button
                     type="button"
@@ -15482,139 +15489,145 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           const entryPx = ov.entryPrice
           const stopPx = ov.stopLoss
           const tpPx = ov.profitTarget
-          const pnlPts = isLong ? curPx - entryPx : entryPx - curPx
+          const pnlPts = curPx != null && entryPx != null ? (isLong ? curPx - entryPx : entryPx - curPx) : 0
           const pointVal =
             instrument === 'NASDAQ' ? 2 : instrument === 'DOW' ? 0.5 : instrument === 'GOLD' ? 10 : instrument === 'CRUDE' ? 100 : instrument === 'SILVER' ? 1000 : instrument === 'NIKKEI' ? 5 : 5
           const sz = ov.positionSize ?? 1
           const pnlUsd = pnlPts * sz * pointVal
 
-          const distTpPts = isLong ? tpPx - curPx : curPx - tpPx
+          const distTpPts = tpPx != null && curPx != null ? (isLong ? tpPx - curPx : curPx - tpPx) : 0
           const distTpUsd = distTpPts * sz * pointVal
-          const distSlPts = isLong ? curPx - stopPx : stopPx - curPx
+          const distSlPts = stopPx != null && curPx != null ? (isLong ? curPx - stopPx : stopPx - curPx) : 0
           const distSlUsd = distSlPts * sz * pointVal
           const saving = bracketAdjustStatus === 'saving'
 
           return (
             <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden">
               {/* Take Profit Line Pill */}
-              <div
-                data-ov-price={tpPx}
-                data-ov-dy={-14}
-                onMouseDown={onAdjustBrackets && !saving ? onBracketLineMouseDown('TP') : undefined}
-                className={`absolute flex items-center pointer-events-auto select-none z-30 group ${
-                  onAdjustBrackets && !saving ? 'cursor-ns-resize' : 'cursor-default'
-                }`}
-                style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
-                title={onAdjustBrackets ? `Drag Take Profit @ ${tpPx.toLocaleString()} — saves on release` : `Take Profit @ ${tpPx.toLocaleString()}`}
-              >
-                <div className="flex items-center rounded-md border border-[#363a45] bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm transition-all group-hover:border-emerald-500/70">
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
-                    <span className="font-semibold text-neutral-300">
-                      {isLong ? 'Limit Sell' : 'Limit Buy'}
-                    </span>
-                    <span className="text-emerald-400 font-bold">
-                      {distTpPts >= 0 ? `+${distTpPts.toFixed(1)} pts` : `${distTpPts.toFixed(1)} pts`} ({distTpUsd >= 0 ? `+$${distTpUsd.toFixed(2)}` : `-$${Math.abs(distTpUsd).toFixed(2)}`})
-                    </span>
+              {tpPx != null && (
+                <div
+                  data-ov-price={tpPx}
+                  data-ov-dy={-14}
+                  onMouseDown={onAdjustBrackets && !saving ? onBracketLineMouseDown('TP') : undefined}
+                  className={`absolute flex items-center pointer-events-auto select-none z-30 group ${
+                    onAdjustBrackets && !saving ? 'cursor-ns-resize' : 'cursor-default'
+                  }`}
+                  style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
+                  title={onAdjustBrackets ? `Drag Take Profit @ ${tpPx != null ? tpPx.toLocaleString() : '—'} — saves on release` : `Take Profit @ ${tpPx != null ? tpPx.toLocaleString() : '—'}`}
+                >
+                  <div className="flex items-center rounded-md border border-[#363a45] bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm transition-all group-hover:border-emerald-500/70">
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
+                      <span className="font-semibold text-neutral-300">
+                        {isLong ? 'Limit Sell' : 'Limit Buy'}
+                      </span>
+                      <span className="text-emerald-400 font-bold">
+                        {distTpPts >= 0 ? `+${distTpPts.toFixed(1)} pts` : `${distTpPts.toFixed(1)} pts`} ({distTpUsd >= 0 ? `+$${distTpUsd.toFixed(2)}` : `-$${Math.abs(distTpUsd).toFixed(2)}`})
+                      </span>
+                    </div>
+                    <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#f23645]' : 'bg-[#089981]'}`}>
+                      {isLong ? `-${sz}` : `+${sz}`}
+                    </div>
+                    {onClosePosition && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          void onClosePosition('Trader closed position via TP badge')
+                        }}
+                        className="px-2 py-1 text-neutral-400 hover:text-white hover:bg-[#2a2e39] transition border-l border-[#363a45] cursor-pointer"
+                        title="Close Position"
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
-                  <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#f23645]' : 'bg-[#089981]'}`}>
-                    {isLong ? `-${sz}` : `+${sz}`}
-                  </div>
-                  {onClosePosition && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        void onClosePosition('Trader closed position via TP badge')
-                      }}
-                      className="px-2 py-1 text-neutral-400 hover:text-white hover:bg-[#2a2e39] transition border-l border-[#363a45] cursor-pointer"
-                      title="Close Position"
-                    >
-                      ✕
-                    </button>
+                  {onAdjustBrackets && (
+                    <div className="w-2.5 h-2.5 ml-1.5 rounded-full bg-emerald-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
                   )}
                 </div>
-                {onAdjustBrackets && (
-                  <div className="w-2.5 h-2.5 ml-1.5 rounded-full bg-emerald-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
-                )}
-              </div>
+              )}
 
               {/* Position Entry Line Pill */}
-              <div
-                data-ov-price={entryPx}
-                data-ov-dy={-14}
-                className="absolute flex items-center pointer-events-auto select-none z-30 group cursor-default"
-                style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
-                title={`Position Entry @ ${entryPx.toLocaleString()}`}
-              >
-                <div className="flex items-center rounded-md border border-[#363a45] bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm transition-all group-hover:border-blue-500/70">
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
-                    <span className="font-semibold text-neutral-300">
-                      {isLong ? 'Market Buy' : 'Market Sell'}
-                    </span>
-                    <span className={`font-bold ${pnlPts >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {pnlUsd >= 0 ? `+$${pnlUsd.toFixed(2)}` : `-$${Math.abs(pnlUsd).toFixed(2)}`} ({pnlPts >= 0 ? `+${pnlPts.toFixed(1)}` : pnlPts.toFixed(1)} pts)
-                    </span>
+              {entryPx != null && (
+                <div
+                  data-ov-price={entryPx}
+                  data-ov-dy={-14}
+                  className="absolute flex items-center pointer-events-auto select-none z-30 group cursor-default"
+                  style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
+                  title={`Position Entry @ ${entryPx != null ? entryPx.toLocaleString() : '—'}`}
+                >
+                  <div className="flex items-center rounded-md border border-[#363a45] bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm transition-all group-hover:border-blue-500/70">
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
+                      <span className="font-semibold text-neutral-300">
+                        {isLong ? 'Market Buy' : 'Market Sell'}
+                      </span>
+                      <span className={`font-bold ${pnlPts >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {pnlUsd >= 0 ? `+$${pnlUsd.toFixed(2)}` : `-$${Math.abs(pnlUsd).toFixed(2)}`} ({pnlPts >= 0 ? `+${pnlPts.toFixed(1)}` : pnlPts.toFixed(1)} pts)
+                      </span>
+                    </div>
+                    <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#089981]' : 'bg-[#f23645]'}`}>
+                      {isLong ? `+${sz}` : `-${sz}`}
+                    </div>
+                    {onClosePosition && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          void onClosePosition('Trader flattened position via on-chart badge')
+                        }}
+                        className="px-2 py-1 bg-rose-950/70 hover:bg-rose-600 text-rose-300 hover:text-white font-bold transition border-l border-[#363a45] cursor-pointer"
+                        title="Flatten / Close Position at Market"
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
-                  <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#089981]' : 'bg-[#f23645]'}`}>
-                    {isLong ? `+${sz}` : `-${sz}`}
-                  </div>
-                  {onClosePosition && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        void onClosePosition('Trader flattened position via on-chart badge')
-                      }}
-                      className="px-2 py-1 bg-rose-950/70 hover:bg-rose-600 text-rose-300 hover:text-white font-bold transition border-l border-[#363a45] cursor-pointer"
-                      title="Flatten / Close Position at Market"
-                    >
-                      ✕
-                    </button>
-                  )}
                 </div>
-              </div>
+              )}
 
               {/* Stop Loss Line Pill */}
-              <div
-                data-ov-price={stopPx}
-                data-ov-dy={-14}
-                onMouseDown={onAdjustBrackets && !saving ? onBracketLineMouseDown('SL') : undefined}
-                className={`absolute flex items-center pointer-events-auto select-none z-30 group ${
-                  onAdjustBrackets && !saving ? 'cursor-ns-resize' : 'cursor-default'
-                }`}
-                style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
-                title={onAdjustBrackets ? `Drag Stop Loss @ ${stopPx.toLocaleString()} — saves on release` : `Stop Loss @ ${stopPx.toLocaleString()}`}
-              >
-                <div className="flex items-center rounded-md border border-[#363a45] bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm transition-all group-hover:border-red-500/70">
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
-                    <span className="font-semibold text-neutral-300">
-                      {isLong ? 'Stop Market Sell' : 'Stop Market Buy'}
-                    </span>
-                    <span className="text-rose-400 font-bold">
-                      -{distSlPts.toFixed(1)} pts (-${distSlUsd.toFixed(2)})
-                    </span>
+              {stopPx != null && (
+                <div
+                  data-ov-price={stopPx}
+                  data-ov-dy={-14}
+                  onMouseDown={onAdjustBrackets && !saving ? onBracketLineMouseDown('SL') : undefined}
+                  className={`absolute flex items-center pointer-events-auto select-none z-30 group ${
+                    onAdjustBrackets && !saving ? 'cursor-ns-resize' : 'cursor-default'
+                  }`}
+                  style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
+                  title={onAdjustBrackets ? `Drag Stop Loss @ ${stopPx != null ? stopPx.toLocaleString() : '—'} — saves on release` : `Stop Loss @ ${stopPx != null ? stopPx.toLocaleString() : '—'}`}
+                >
+                  <div className="flex items-center rounded-md border border-[#363a45] bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm transition-all group-hover:border-red-500/70">
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
+                      <span className="font-semibold text-neutral-300">
+                        {isLong ? 'Stop Market Sell' : 'Stop Market Buy'}
+                      </span>
+                      <span className="text-rose-400 font-bold">
+                        -{distSlPts.toFixed(1)} pts (-${distSlUsd.toFixed(2)})
+                      </span>
+                    </div>
+                    <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#f23645]' : 'bg-[#089981]'}`}>
+                      {isLong ? `-${sz}` : `+${sz}`}
+                    </div>
+                    {onClosePosition && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          void onClosePosition('Trader closed position via SL badge')
+                        }}
+                        className="px-2 py-1 text-neutral-400 hover:text-white hover:bg-[#2a2e39] transition border-l border-[#363a45] cursor-pointer"
+                        title="Close Position"
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
-                  <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#f23645]' : 'bg-[#089981]'}`}>
-                    {isLong ? `-${sz}` : `+${sz}`}
-                  </div>
-                  {onClosePosition && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        void onClosePosition('Trader closed position via SL badge')
-                      }}
-                      className="px-2 py-1 text-neutral-400 hover:text-white hover:bg-[#2a2e39] transition border-l border-[#363a45] cursor-pointer"
-                      title="Close Position"
-                    >
-                      ✕
-                    </button>
+                  {onAdjustBrackets && (
+                    <div className="w-2.5 h-2.5 ml-1.5 rounded-full bg-red-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
                   )}
                 </div>
-                {onAdjustBrackets && (
-                  <div className="w-2.5 h-2.5 ml-1.5 rounded-full bg-red-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
-                )}
-              </div>
+              )}
 
               {(bracketAdjustStatus === 'saving' ||
                 bracketAdjustStatus === 'error' ||
@@ -15657,7 +15670,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   data-ov-dy={-14}
                   className="absolute flex items-center pointer-events-auto select-none z-30 group cursor-default"
                   style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
-                  title={`Planned Take Profit @ ${sitTp.toLocaleString()}`}
+                  title={`Planned Take Profit @ ${sitTp != null ? sitTp.toLocaleString() : '—'}`}
                 >
                   <div className="flex items-center rounded-md border border-[#363a45] bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm">
                     <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
@@ -15680,7 +15693,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                 data-ov-dy={-14}
                 className="absolute flex items-center pointer-events-auto select-none z-30 group cursor-default"
                 style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
-                title={`Armed Situation Trigger Level @ ${sitTarget.toLocaleString()}`}
+                title={`Armed Situation Trigger Level @ ${sitTarget != null ? sitTarget.toLocaleString() : '—'}`}
               >
                 <div className="flex items-center rounded-md border border-cyan-500/60 bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm">
                   <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
@@ -15719,7 +15732,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                   data-ov-dy={-14}
                   className="absolute flex items-center pointer-events-auto select-none z-30 group cursor-default"
                   style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
-                  title={`Planned Stop Loss @ ${sitSl.toLocaleString()}`}
+                  title={`Planned Stop Loss @ ${sitSl != null ? sitSl.toLocaleString() : '—'}`}
                 >
                   <div className="flex items-center rounded-md border border-[#363a45] bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm">
                     <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
@@ -15744,105 +15757,111 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
           const pend = editablePending ?? pendingLimit!
           const isLong = (pend.direction || 'long').toLowerCase() === 'long'
           const curPx = livePrice ?? pend.price
-          const distToLimit = Math.abs(curPx - pend.price)
-          const distTpPts = Math.abs(pend.profitTarget - pend.price)
-          const distSlPts = Math.abs(pend.price - pend.stopLoss)
+          const distToLimit = pend.price != null && curPx != null ? Math.abs(curPx - pend.price) : 0
+          const distTpPts = pend.profitTarget != null && pend.price != null ? Math.abs(pend.profitTarget - pend.price) : 0
+          const distSlPts = pend.price != null && pend.stopLoss != null ? Math.abs(pend.price - pend.stopLoss) : 0
           const saving = workingBracketAdjustStatus === 'saving'
 
           return (
             <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden">
               {/* Working TP */}
-              <div
-                data-ov-price={pend.profitTarget}
-                data-ov-dy={-14}
-                onMouseDown={onAdjustWorkingBrackets && !saving ? onWorkingTpMouseDown : undefined}
-                className={`absolute flex items-center pointer-events-auto select-none z-30 group ${
-                  onAdjustWorkingBrackets && !saving ? 'cursor-ns-resize' : 'cursor-default'
-                }`}
-                style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
-                title={`Drag Take Profit @ ${pend.profitTarget.toLocaleString()}`}
-              >
-                <div className="flex items-center rounded border border-[#363a45] bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm">
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
-                    <span className="font-semibold text-neutral-300">
-                      {isLong ? 'Limit Sell' : 'Limit Buy'}
-                    </span>
-                    <span className="text-emerald-400 font-bold">+{distTpPts.toFixed(1)} pts</span>
+              {pend.profitTarget != null && (
+                <div
+                  data-ov-price={pend.profitTarget}
+                  data-ov-dy={-14}
+                  onMouseDown={onAdjustWorkingBrackets && !saving ? onWorkingTpMouseDown : undefined}
+                  className={`absolute flex items-center pointer-events-auto select-none z-30 group ${
+                    onAdjustWorkingBrackets && !saving ? 'cursor-ns-resize' : 'cursor-default'
+                  }`}
+                  style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
+                  title={`Drag Take Profit @ ${pend.profitTarget != null ? pend.profitTarget.toLocaleString() : '—'}`}
+                >
+                  <div className="flex items-center rounded border border-[#363a45] bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm">
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
+                      <span className="font-semibold text-neutral-300">
+                        {isLong ? 'Limit Sell' : 'Limit Buy'}
+                      </span>
+                      <span className="text-emerald-400 font-bold">+{distTpPts.toFixed(1)} pts</span>
+                    </div>
+                    <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#f23645]' : 'bg-[#089981]'}`}>
+                      {isLong ? '-1' : '+1'}
+                    </div>
+                    {onCancelPending && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onCancelPending()
+                        }}
+                        className="px-2 py-1 text-neutral-400 hover:text-white hover:bg-[#2a2e39] transition border-l border-[#363a45] cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
-                  <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#f23645]' : 'bg-[#089981]'}`}>
-                    {isLong ? '-1' : '+1'}
-                  </div>
-                  {onCancelPending && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onCancelPending()
-                      }}
-                      className="px-2 py-1 text-neutral-400 hover:text-white hover:bg-[#2a2e39] transition border-l border-[#363a45] cursor-pointer"
-                    >
-                      ✕
-                    </button>
+                  {onAdjustWorkingBrackets && (
+                    <div className="w-2.5 h-2.5 ml-1.5 rounded-full bg-emerald-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
                   )}
                 </div>
-                {onAdjustWorkingBrackets && (
-                  <div className="w-2.5 h-2.5 ml-1.5 rounded-full bg-emerald-400 border border-white shadow-sm group-hover:scale-125 transition-transform" />
-                )}
-              </div>
+              )}
 
               {/* Working Limit Entry */}
-              <div
-                data-ov-price={pend.price}
-                data-ov-dy={-14}
-                className="absolute flex items-center pointer-events-auto select-none z-30 group cursor-default"
-                style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
-              >
-                <div className="flex items-center rounded border border-sky-500/60 bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm">
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
-                    <span className="font-semibold text-sky-300">
-                      {isLong ? 'Limit Buy' : 'Limit Sell'}
-                    </span>
-                    <span className="text-sky-400 font-bold">{distToLimit.toFixed(1)} pts away</span>
+              {pend.price != null && (
+                <div
+                  data-ov-price={pend.price}
+                  data-ov-dy={-14}
+                  className="absolute flex items-center pointer-events-auto select-none z-30 group cursor-default"
+                  style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
+                >
+                  <div className="flex items-center rounded border border-sky-500/60 bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm">
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
+                      <span className="font-semibold text-sky-300">
+                        {isLong ? 'Limit Buy' : 'Limit Sell'}
+                      </span>
+                      <span className="text-sky-400 font-bold">{distToLimit.toFixed(1)} pts away</span>
+                    </div>
+                    <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#089981]' : 'bg-[#f23645]'}`}>
+                      {isLong ? '+1' : '-1'}
+                    </div>
+                    {onCancelPending && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onCancelPending()
+                        }}
+                        className="px-2 py-1 bg-rose-950/70 hover:bg-rose-600 text-rose-300 hover:text-white font-bold transition border-l border-[#363a45] cursor-pointer"
+                        title="Cancel Limit Order"
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
-                  <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#089981]' : 'bg-[#f23645]'}`}>
-                    {isLong ? '+1' : '-1'}
-                  </div>
-                  {onCancelPending && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onCancelPending()
-                      }}
-                      className="px-2 py-1 bg-rose-950/70 hover:bg-rose-600 text-rose-300 hover:text-white font-bold transition border-l border-[#363a45] cursor-pointer"
-                      title="Cancel Limit Order"
-                    >
-                      ✕
-                    </button>
-                  )}
                 </div>
-              </div>
+              )}
 
               {/* Working SL */}
-              <div
-                data-ov-price={pend.stopLoss}
-                data-ov-dy={-14}
-                className="absolute flex items-center pointer-events-none select-none z-30 opacity-90"
-                style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
-              >
-                <div className="flex items-center rounded border border-dotted border-red-500/60 bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm">
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
-                    <span className="font-semibold text-neutral-300">
-                      {isLong ? 'Stop Market Sell' : 'Stop Market Buy'}
-                    </span>
-                    <span className="text-rose-400 font-bold">-{distSlPts.toFixed(1)} pts</span>
-                    <span className="text-[9px] uppercase text-amber-300">locked</span>
-                  </div>
-                  <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#f23645]' : 'bg-[#089981]'}`}>
-                    {isLong ? '-1' : '+1'}
+              {pend.stopLoss != null && (
+                <div
+                  data-ov-price={pend.stopLoss}
+                  data-ov-dy={-14}
+                  className="absolute flex items-center pointer-events-none select-none z-30 opacity-90"
+                  style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
+                >
+                  <div className="flex items-center rounded border border-dotted border-red-500/60 bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm">
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
+                      <span className="font-semibold text-neutral-300">
+                        {isLong ? 'Stop Market Sell' : 'Stop Market Buy'}
+                      </span>
+                      <span className="text-rose-400 font-bold">-{distSlPts.toFixed(1)} pts</span>
+                      <span className="text-[9px] uppercase text-amber-300">locked</span>
+                    </div>
+                    <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#f23645]' : 'bg-[#089981]'}`}>
+                      {isLong ? '-1' : '+1'}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               {(workingBracketAdjustStatus === 'saving' ||
                 workingBracketAdjustStatus === 'error' ||
@@ -15933,7 +15952,7 @@ Please evaluate this highlighted move from ${clickStartP.toLocaleString()} to ${
                         </span>
                       </div>
                       <div className="price-mono mt-1 text-base font-bold tracking-tight text-white">
-                        {l.price.toLocaleString()}
+                        {l?.price != null ? l.price.toLocaleString() : '—'}
                       </div>
                       <p className="mt-1.5 line-clamp-3 text-[10px] leading-snug text-gray-400 normal-case">
                         {why}

@@ -336,8 +336,7 @@ export async function POST(request: Request) {
     }
     const stopLossPrice = stopGuard.stop
 
-    // Server-authoritative risk: Tradeify $400/$250/$150 when profile is on,
-    // Tradeify $400 → $250 → $150. Ignore client-claimed size/risk.
+    // Server-authoritative risk: Personal Futures $400 → $250 → $150 ladder. Ignore client-claimed size/risk.
     let size: number
     let risk: number
     let accountForRow = account
