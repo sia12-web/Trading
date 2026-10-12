@@ -20,6 +20,25 @@ type WallParts = {
 }
 
 const partsCache = new Map<string, WallParts>()
+const dtfCache = new Map<string, Intl.DateTimeFormat>()
+
+function getDtf(timeZone: string): Intl.DateTimeFormat {
+  let dtf = dtfCache.get(timeZone)
+  if (!dtf) {
+    dtf = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    })
+    dtfCache.set(timeZone, dtf)
+  }
+  return dtf
+}
 
 function wallParts(unixSec: number, timeZone: string): WallParts {
   const key = `${Math.floor(unixSec)}|${timeZone}`
@@ -27,17 +46,7 @@ function wallParts(unixSec: number, timeZone: string): WallParts {
   if (hit) return hit
   if (partsCache.size > 24_000) partsCache.clear()
 
-  const dtf = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  })
-  const parts = dtf.formatToParts(new Date(unixSec * 1000))
+  const parts = getDtf(timeZone).formatToParts(new Date(unixSec * 1000))
   const get = (type: Intl.DateTimeFormatPartTypes) =>
     Number(parts.find((p) => p.type === type)?.value || 0)
   let h = get('hour')

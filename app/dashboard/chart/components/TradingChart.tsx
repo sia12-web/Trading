@@ -75,7 +75,6 @@ import {
   applyTickToFormingBar,
   dropImplausibleDeskBars,
   mergeHistoryWithLiveTip,
-  closedHistoryOhlcChanged,
   isPlausibleRealtimeTick,
   isPlausibleDeskTick,
   LIVE_MAX_TIP_JUMP_PCT,
@@ -887,6 +886,7 @@ function normalizeCandleTimes(candles: OHLCV[], tf: DeskTimeframe = '5m'): OHLCV
 
 /** Series time: equally-spaced BusinessDay on 1D, Montreal-shifted unix otherwise. */
 function toSeriesTime(unixSec: number, timeframe: DeskTimeframe, tz: string): Time {
+  if (!Number.isFinite(unixSec) || unixSec <= 0) return 0 as UTCTimestamp
   if (timeframe === '1D') return unixToBusinessDay(unixSec)
   return toChartTime(unixSec, tz) as UTCTimestamp
 }
@@ -9838,7 +9838,7 @@ export function TradingChart({
         try {
           candleRef.current.update(toChartCandle(b))
           // Keep the live volume bar in sync with the forming candle
-          if (volumeSeriesRef.current && (b.volume ?? 0) > 0) {
+          if (volumeSeriesRef.current) {
             const volTime = toSeriesTime(b.time as number, timeframe, chartTzRef.current)
             const volColor =
               b.close >= b.open
@@ -9893,6 +9893,24 @@ export function TradingChart({
       const isNewBar = (last.time as number) !== (bar.time as number)
       if (isNewBar) {
         next.push(bar)
+        // Immediately paint new bar into Lightweight Charts with zero latency
+        try {
+          candleRef.current?.update(toChartCandle(bar))
+          if (volumeSeriesRef.current) {
+            const volTime = toSeriesTime(bar.time as number, timeframe, chartTzRef.current)
+            const volColor =
+              bar.close >= bar.open
+                ? 'rgba(8, 153, 129, 0.7)'
+                : 'rgba(242, 54, 69, 0.7)'
+            volumeSeriesRef.current.update({
+              time: volTime,
+              value: bar.volume ?? 0,
+              color: volColor,
+            } as any)
+          }
+        } catch {
+          /* ignore */
+        }
       } else {
         next[next.length - 1] = {
           ...last,
@@ -9966,11 +9984,14 @@ export function TradingChart({
           // Advancing to a new candle bucket: allow standard market opening gap up to LIVE_MAX_TIP_JUMP_PCT (8%)
           isPlausible = isPlausibleDeskTick(tip.close, price, LIVE_MAX_TIP_JUMP_PCT)
         } else {
+          const now = Date.now()
+          const elapsedSec = lastTickPublishAt > 0 ? Math.max(0, (now - lastTickPublishAt) / 1000) : 0
           isPlausible = isPlausibleRealtimeTick(
             tip.close,
             price,
             instrument,
-            trustedExchange
+            trustedExchange,
+            elapsedSec
           )
         }
       }
@@ -10115,7 +10136,8 @@ export function TradingChart({
         tfSec,
         instrument,
         trustedExchange,
-        forceAccept
+        forceAccept,
+        lastTickPublishAt > 0 ? Math.max(0, (Date.now() - lastTickPublishAt) / 1000) : 0
       )
       const fills: OHLCV[] = stepped.gapFills.map((g) => ({
         time: g.time as UTCTimestamp,
@@ -10137,7 +10159,7 @@ export function TradingChart({
           : null
       const bar: OHLCV = {
         time: stepped.last.time as UTCTimestamp,
-        open: stepped.last.open,
+        open: exactExchangeMinute ? exactExchangeMinute.open : stepped.last.open,
         high: exactExchangeMinute
           ? Math.max(stepped.last.high, exactExchangeMinute.high)
           : stepped.last.high,
@@ -10247,35 +10269,32 @@ export function TradingChart({
         if (fetchGen !== candleFetchGenRef.current) return
 
         const prev = candlesRef.current
-        const tipOwned = !!(live && streamLive)
-        const structureChanged =
-          prev.length !== nextBars.length ||
-          (prev.length > 0 &&
-            nextBars.length > 0 &&
-            (prev[0]!.time as number) !== (nextBars[0]!.time as number)) ||
-          (prev.length >= 2 &&
-            nextBars.length >= 2 &&
-            (prev[prev.length - 2]!.time as number) !==
-            (nextBars[nextBars.length - 2]!.time as number))
-        const closedChanged = closedHistoryOhlcChanged(
-          prev.map((c) => ({
-            time: c.time as number,
-            open: c.open,
-            high: c.high,
-            low: c.low,
-            close: c.close,
-            volume: c.volume,
-          })),
-          nextBars.map((c) => ({
-            time: c.time as number,
-            open: c.open,
-            high: c.high,
-            low: c.low,
-            close: c.close,
-            volume: c.volume,
-          })),
-          tipOwned
-        )
+        let requiresFullSetData = false
+        if (prev.length === 0 || nextBars.length < prev.length) {
+          requiresFullSetData = true
+        } else if ((prev[0]!.time as number) !== (nextBars[0]!.time as number)) {
+          requiresFullSetData = true
+        } else if (nextBars.length - prev.length > 10) {
+          requiresFullSetData = true
+        } else {
+          // Check if historical bars before the trailing bars changed
+          const stableEnd = Math.max(0, prev.length - 2)
+          const checkStart = Math.max(0, stableEnd - 12)
+          for (let i = checkStart; i < stableEnd; i++) {
+            const a = prev[i]!
+            const b = nextBars[i]!
+            if (
+              (a.time as number) !== (b.time as number) ||
+              Math.abs(a.open - b.open) > 0.1 ||
+              Math.abs(a.high - b.high) > 0.1 ||
+              Math.abs(a.low - b.low) > 0.1 ||
+              Math.abs(a.close - b.close) > 0.1
+            ) {
+              requiresFullSetData = true
+              break
+            }
+          }
+        }
 
         lastCandleRef.current = nextBars[nextBars.length - 1]!
         candlesRef.current = nextBars
@@ -10284,12 +10303,13 @@ export function TradingChart({
         paintUserDrawingsRef.current?.()
 
         // REST owns closed bars: replace gap-fill flats and heal incomplete bars when history reconciles
-        if (structureChanged || closedChanged) {
+        if (requiresFullSetData) {
           try {
             const tz = chartTzRef.current
             const ordered = normalizeCandleTimes(nextBars, timeframe)
             const seenTimes = new Set<string>()
             const candleData: CandlestickData[] = []
+            const volumeData: any[] = []
             for (const c of ordered) {
               const t = toSeriesTime(c.time as number, timeframe, tz)
               const key = isBusinessDay(t) ? `${t.year}-${t.month}-${t.day}` : String(t)
@@ -10302,26 +10322,50 @@ export function TradingChart({
                   low: c.low,
                   close: c.close,
                 })
+                volumeData.push({
+                  time: t,
+                  value: Number.isFinite(c.volume) ? (c.volume ?? 0) : 0,
+                  color: c.close >= c.open ? 'rgba(8, 153, 129, 0.7)' : 'rgba(242, 54, 69, 0.7)',
+                })
               }
             }
             candleData.sort((a, b) => chartTimeToUnix(a.time) - chartTimeToUnix(b.time))
+            volumeData.sort((a, b) => chartTimeToUnix(a.time) - chartTimeToUnix(b.time))
             candleRef.current?.setData(candleData)
+            volumeSeriesRef.current?.setData(volumeData)
           } catch {
             /* ignore */
           }
           setCandles(nextBars)
         } else {
-          const tip = nextBars[nextBars.length - 1]!
-          try {
-            candleRef.current?.update({
-              time: toSeriesTime(tip.time as number, timeframe, chartTzRef.current),
-              open: tip.open,
-              high: tip.high,
-              low: tip.low,
-              close: tip.close,
-            })
-          } catch {
-            setCandles(nextBars)
+          // Smooth incremental reconciliation: update trailing bars without wiping the chart canvas
+          const tz = chartTzRef.current
+          const startIndex = Math.max(0, prev.length - 1)
+          for (let i = startIndex; i < nextBars.length; i++) {
+            const b = nextBars[i]!
+            const t = toSeriesTime(b.time as number, timeframe, tz)
+            try {
+              candleRef.current?.update({
+                time: t,
+                open: b.open,
+                high: b.high,
+                low: b.low,
+                close: b.close,
+              })
+            } catch {
+              /* ignore */
+            }
+            if (volumeSeriesRef.current) {
+              try {
+                volumeSeriesRef.current.update({
+                  time: t,
+                  value: Number.isFinite(b.volume) ? (b.volume ?? 0) : 0,
+                  color: b.close >= b.open ? 'rgba(8, 153, 129, 0.7)' : 'rgba(242, 54, 69, 0.7)',
+                } as any)
+              } catch {
+                /* ignore */
+              }
+            }
           }
         }
         setDataMode('live')

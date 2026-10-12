@@ -88,16 +88,23 @@ export function isPlausibleRealtimeTick(
   lastClose: number,
   price: number,
   instrument?: string | null,
-  trustedExchange: boolean = false
+  trustedExchange: boolean = false,
+  elapsedSec?: number
 ): boolean {
   if (!(price > 0)) return false
   if (!(lastClose > 0)) return true
   if (trustedExchange) {
     return Math.abs(price - lastClose) / lastClose <= LIVE_MAX_TIP_JUMP_PCT
   }
-  const maxPts = instrument
+  let maxPts = instrument
     ? (MAX_SINGLE_TICK_PTS[instrument] ?? lastClose * 0.02)
     : lastClose * 0.02
+  // If internet latency or network pause occurred (> 3 seconds without quotes),
+  // expand tolerance proportionally so valid fast-market breakout ticks are not rejected.
+  if (elapsedSec && elapsedSec > 3) {
+    const timeFactor = Math.min(4, 1 + (elapsedSec - 3) * 0.25)
+    maxPts *= timeFactor
+  }
   return Math.abs(price - lastClose) <= maxPts
 }
 
@@ -126,7 +133,8 @@ export function applyTickToFormingBar(
   barSec: number = DESK_LIVE_BAR_SEC,
   instrument?: string | null,
   trustedExchange: boolean = false,
-  forceAccept: boolean = false
+  forceAccept: boolean = false,
+  elapsedSec?: number
 ): { last: FormingBar; rolled: boolean; gapFills: FormingBar[] } {
   const lastT = last.time
   const bucket = deskBarOpenUnix(quoteUnix, barSec)
@@ -143,7 +151,7 @@ export function applyTickToFormingBar(
 
   if (bucket === lastT) {
     // Outlier guard within forming bar: prevent rogue multi-hundred point jumps from creating phantom tails
-    if (!forceAccept && !isPlausibleRealtimeTick(last.close, price, instrument, trustedExchange)) {
+    if (!forceAccept && !isPlausibleRealtimeTick(last.close, price, instrument, trustedExchange, elapsedSec)) {
       return { last, rolled: false, gapFills: [] }
     }
 

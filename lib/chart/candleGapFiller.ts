@@ -34,22 +34,22 @@ const TIMEFRAME_SECONDS: Record<string, number> = {
 /** Max gap slots to fill in one go to prevent infinite loops (e.g. 5 days of 1m = 7,200 bars) */
 const MAX_GAP_FILL_BARS = 10_000
 
+const cmeHaltDtf = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  weekday: 'short',
+  hour: 'numeric',
+  minute: 'numeric',
+  hour12: false,
+})
+
 /**
  * Checks if a given UTC timestamp falls during the daily CME maintenance halt
  * (5:00 PM to 6:00 PM US Eastern Time) or weekend market close (Fri 5:00 PM ET to Sun 6:00 PM ET).
  */
 export function isCmeMarketHalt(unixSec: number): boolean {
+  if (!Number.isFinite(unixSec) || unixSec <= 0) return false
   const date = new Date(unixSec * 1000)
-
-  // Format date parts in US Eastern Time
-  const options: Intl.DateTimeFormatOptions = {
-    timeZone: 'America/New_York',
-    weekday: 'short',
-    hour: 'numeric',
-    minute: 'numeric',
-    hour12: false,
-  }
-  const parts = new Intl.DateTimeFormat('en-US', options).formatToParts(date)
+  const parts = cmeHaltDtf.formatToParts(date)
 
   let weekday = ''
   let hour = 0
