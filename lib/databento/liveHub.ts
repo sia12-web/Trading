@@ -154,10 +154,14 @@ export async function ensureDatabentoSidecarRunning(): Promise<boolean> {
       spawnFailed = true
       console.warn(`[Databento LiveHub] Cannot start sidecar (${pythonBin}):`, err.message)
     })
+    child.on('exit', (code) => {
+      if (code !== 0) spawnFailed = true
+    })
     child.unref()
 
     // Give it 3 seconds to install its handler, bind the socket and reach the gateway
     for (let i = 0; i < 5; i++) {
+      if (spawnFailed) break
       await new Promise((r) => setTimeout(r, 600))
       if (spawnFailed) break
       // The failure backoff would otherwise make every probe in this loop a no-op

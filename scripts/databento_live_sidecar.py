@@ -167,8 +167,8 @@ def get_active_gold_contract(now=None) -> str:
 SILVER_MONTH_CODES = {3: "H", 5: "K", 7: "N", 9: "U", 12: "Z"}
 
 
-def get_active_silver_contract(now=None) -> str:
-    """Volume-lead Micro Silver month (Yahoo SIL=F / SI=F / CME), not calendar SIL.c.0."""
+def get_active_silver_contract(now=None, root: str = "SIL") -> str:
+    """Volume-lead Micro / Standard Silver month (Yahoo SIL=F / SI=F / CME), not calendar SIL.c.0."""
     if now is None:
         now = (
             datetime.datetime.now(ZoneInfo("America/New_York"))
@@ -188,8 +188,8 @@ def get_active_silver_contract(now=None) -> str:
         fnd = _gold_first_notice(cy, cm)
         roll = _business_days_before(fnd, roll_lead_bd)
         if today <= roll:
-            return f"SIL{code}{str(cy)[-1]}"
-    return f"SILZ{str(y)[-1]}"
+            return f"{root}{code}{str(cy)[-1]}"
+    return f"{root}Z{str(y)[-1]}"
 
 
 DESK_SYMBOLS = {
@@ -197,6 +197,7 @@ DESK_SYMBOLS = {
     "MYM.c.0": "DOW",
     "MGC.c.0": "GOLD",
     "CL.c.0": "CRUDE",
+    "MCL.c.0": "CRUDE",
     "NIY.c.0": "NIKKEI",
     "NKD.c.0": "NIKKEI",
     "SIL.c.0": "SILVER",
@@ -414,6 +415,7 @@ def desk_raw_symbols():
         get_active_cl_contract(): "CRUDE",
         get_active_gold_contract(): "GOLD",
         get_active_silver_contract(): "SILVER",
+        get_active_silver_contract(root="SI"): "SILVER",
     }
 
 

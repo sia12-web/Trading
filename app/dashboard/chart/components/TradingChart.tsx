@@ -7349,7 +7349,7 @@ export function TradingChart({
     })
     return (
       gate.open ||
-      activeDeskSessionsAt(Math.floor(Date.now() / 1000)).length > 0
+      activeDeskSessionsAt(Math.floor(Date.now() / 1000), instrument).length > 0
     )
   }, [instrument, deskAttended, focusTick, clockReady])
 
@@ -9813,12 +9813,16 @@ export function TradingChart({
     let sseHealthy = false
     let lastSseMessageAt = 0
     const SSE_STALE_MS = 3_000
+    let formingBarBucketTime = 0
+    let accumulatedFormingVol = 0
+    let lastExchangeMinuteTime = 0
+    let lastExchangeMinuteVol = 0
 
     /** Live quote stream active during cash/focus hours and active sessions (Asia, London, NY) */
     const tipOpen = () =>
       tipStreamActive &&
       (isChartStreamAllowed(instrument).open ||
-        activeDeskSessionsAt(Math.floor(Date.now() / 1000)).length > 0)
+        activeDeskSessionsAt(Math.floor(Date.now() / 1000), instrument).length > 0)
 
     const toChartCandle = (bar: OHLCV) => {
       const v = ensureVisibleCandleRange(bar, instrument)
@@ -10163,9 +10167,55 @@ export function TradingChart({
         exchangeBucket === stepped.last.time
           ? exchangeBar
           : null
+      // Live volume accumulation on multi-minute charts (5m, 15m, 30m, 1H)
+      const currentBucketTime = stepped.last.time as number
+      if (stepped.rolled) {
+        formingBarBucketTime = currentBucketTime
+        if (exactExchangeMinute) {
+          accumulatedFormingVol = exactExchangeMinute.volume
+          lastExchangeMinuteTime = exactExchangeMinute.time
+          lastExchangeMinuteVol = exactExchangeMinute.volume
+        } else {
+          accumulatedFormingVol = 0
+          lastExchangeMinuteTime = 0
+          lastExchangeMinuteVol = 0
+        }
+      } else if (formingBarBucketTime !== currentBucketTime) {
+        formingBarBucketTime = currentBucketTime
+        accumulatedFormingVol = stepped.last.volume ?? last.volume ?? 0
+        if (exactExchangeMinute) {
+          lastExchangeMinuteTime = exactExchangeMinute.time
+          lastExchangeMinuteVol = exactExchangeMinute.volume
+          if (accumulatedFormingVol === 0) {
+            accumulatedFormingVol = exactExchangeMinute.volume
+          }
+        } else {
+          lastExchangeMinuteTime = 0
+          lastExchangeMinuteVol = 0
+        }
+      } else if (exactExchangeMinute) {
+        if (lastExchangeMinuteTime === 0) {
+          lastExchangeMinuteTime = exactExchangeMinute.time
+          lastExchangeMinuteVol = exactExchangeMinute.volume
+          accumulatedFormingVol = Math.max(accumulatedFormingVol, exactExchangeMinute.volume)
+        } else if (exactExchangeMinute.time === lastExchangeMinuteTime) {
+          const delta = Math.max(0, exactExchangeMinute.volume - lastExchangeMinuteVol)
+          accumulatedFormingVol += delta
+          lastExchangeMinuteVol = Math.max(lastExchangeMinuteVol, exactExchangeMinute.volume)
+        } else if (exactExchangeMinute.time > lastExchangeMinuteTime) {
+          accumulatedFormingVol += exactExchangeMinute.volume
+          lastExchangeMinuteTime = exactExchangeMinute.time
+          lastExchangeMinuteVol = exactExchangeMinute.volume
+        }
+      }
+
       const bar: OHLCV = {
         time: stepped.last.time as UTCTimestamp,
-        open: exactExchangeMinute ? exactExchangeMinute.open : stepped.last.open,
+        open:
+          exactExchangeMinute &&
+          (tfSec === 60 || exactExchangeMinute.time === stepped.last.time)
+            ? exactExchangeMinute.open
+            : stepped.last.open,
         high: exactExchangeMinute
           ? Math.max(stepped.last.high, exactExchangeMinute.high)
           : stepped.last.high,
@@ -10174,9 +10224,11 @@ export function TradingChart({
           : stepped.last.low,
         close: stepped.last.close,
         volume:
-          tfSec === 60 && exactExchangeMinute
-            ? exactExchangeMinute.volume
-            : stepped.last.volume ?? last.volume ?? 0,
+          tfSec === 60
+            ? exactExchangeMinute
+              ? exactExchangeMinute.volume
+              : stepped.last.volume ?? last.volume ?? 0
+            : Math.max(accumulatedFormingVol, stepped.last.volume ?? 0),
       }
       commitTipBar(bar, fills)
     }
@@ -10309,6 +10361,19 @@ export function TradingChart({
 
         lastCandleRef.current = nextBars[nextBars.length - 1]!
         candlesRef.current = nextBars
+        const lastBar = lastCandleRef.current
+        if (lastBar) {
+          const t = lastBar.time as number
+          const v = lastBar.volume ?? 0
+          if (t === formingBarBucketTime) {
+            accumulatedFormingVol = Math.max(accumulatedFormingVol, v)
+          } else {
+            formingBarBucketTime = t
+            accumulatedFormingVol = v
+            lastExchangeMinuteTime = 0
+            lastExchangeMinuteVol = 0
+          }
+        }
         syncDeskPlaybookRangesRef.current(nextBars)
         refreshSessionHighlightsRef.current?.()
         paintUserDrawingsRef.current?.()

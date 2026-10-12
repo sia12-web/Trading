@@ -90,7 +90,7 @@ export async function GET(request: Request) {
   }
 
   const streamGate = isChartStreamAllowed(instrument)
-  const active = activeDeskSessionsAt(Math.floor(Date.now() / 1000))
+  const active = activeDeskSessionsAt(Math.floor(Date.now() / 1000), instrument)
   if (!streamGate.open && active.length === 0) {
     return new Response(
       JSON.stringify({ error: streamGate.reason, stream: false, frozen: true }),

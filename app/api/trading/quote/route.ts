@@ -92,7 +92,7 @@ export async function GET(request: Request) {
 
     // Focus window OR active desk session (Asia, London, NY) — live CME futures quotes
     const stream = isChartStreamAllowed(instrument)
-    const active = activeDeskSessionsAt(Math.floor(Date.now() / 1000))
+    const active = activeDeskSessionsAt(Math.floor(Date.now() / 1000), instrument)
     if (!stream.open && active.length === 0) {
       return NextResponse.json(
         { error: stream.reason, instrument, price: null, frozen: true },

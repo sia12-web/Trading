@@ -1068,7 +1068,7 @@ export function resolveSessionGate(input: SessionGateInput = {}): SessionGateRes
       }
     }
     const nowUnix = Math.floor(now.getTime() / 1000)
-    const activeSessions = activeDeskSessionsAt(nowUnix)
+    const activeSessions = activeDeskSessionsAt(nowUnix, 'NIKKEI')
     const isMarketOpen = !isCmeMarketHalt(nowUnix)
     const isAsiaActive = isAsiaDeskChartWindow(now) || activeSessions.includes('Asia')
     if (isAsiaActive || isMarketOpen) {
