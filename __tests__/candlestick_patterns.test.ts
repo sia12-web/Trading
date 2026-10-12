@@ -125,3 +125,84 @@ test('detectCandlestickPatterns - Shared Zone POC & Structural Confluence Rules'
   assert.equal(resBearBelowOnePoc.bearEng, false)
 })
 
+test('detectCandlestickPatterns - Auction Market Theory Multi-POC Strategy', () => {
+  // Scenario: Intraday NQ with multiple session POCs (Asia: 20440, Yesterday: 20500, Overnight: 20550)
+  // Price tests Yesterday VAL at 20460 and forms a Bullish Engulfing (open: 20456, close: 20485)
+  const bars: Candle[] = [
+    { time: 100, open: 20480, high: 20485, low: 20455, close: 20458, volume: 500 },
+    { time: 105, open: 20456, high: 20488, low: 20452, close: 20485, volume: 800 }, // Bullish Engulfing (close 20485 > open1 20480)
+  ]
+
+  const activePocs = [20440, 20500, 20550]
+  const importantLevels = [20460, 20500, 20550, 20580]
+
+  // With AMT options: Price 20485 is at Yesterday VAL 20460 and below Yesterday POC 20500 & ON POC 20550
+  // Bullish pattern MUST trigger (targeting 20500 / 20550) despite being above Asia POC 20440
+  const resAmt = detectCandlestickPatterns(bars, 1, 5, 0.05, {
+    pocs: activePocs,
+    importantLevels,
+  })
+
+  assert.equal(resAmt.bullEng, true)
+  // Directional pattern takes precedence over Doji
+  assert.equal(resAmt.doji, false)
+})
+
+test('detectCandlestickPatterns - Doji Confluence & Anti-Chop Rules', () => {
+  // 1. Pure Doji candle in meaningless chop (far from structural levels)
+  const chopBars: Candle[] = [
+    { time: 100, open: 21500, high: 21505, low: 21495, close: 21500.2, volume: 100 },
+  ]
+
+  const resChop = detectCandlestickPatterns(chopBars, 0, 5, 0.05, {
+    importantLevels: [21400, 21600], // 100 pts away
+    pocs: [21450],
+  })
+  // Must be filtered out because it is NOT at an important structural level
+  assert.equal(resChop.doji, false)
+
+  // 2. Pure Doji candle AT an important structural level (Yesterday VAH: 21500)
+  const resAtLevel = detectCandlestickPatterns(chopBars, 0, 5, 0.05, {
+    importantLevels: [21500],
+    pocs: [21450],
+  })
+  // Must be KEPT because it signifies hesitation/equilibrium at key resistance
+  assert.equal(resAtLevel.doji, true)
+
+  // 3. Candle with small body that also qualifies as Hammer at support (requires at least 2 bars for c1)
+  const hammerBars: Candle[] = [
+    { time: 95, open: 21510, high: 21515, low: 21490, close: 21495, volume: 100 },
+    { time: 100, open: 21500, high: 21505, low: 21460, close: 21501, volume: 200 },
+  ]
+  const resHammer = detectCandlestickPatterns(hammerBars, 1, 5, 0.05, {
+    importantLevels: [21500],
+    pocs: [21550],
+  })
+  assert.equal(resHammer.hammer, true)
+  // Doji must be SUPPRESSED because Hammer directional pattern takes precedence
+  assert.equal(resHammer.doji, false)
+})
+
+test('detectCandlestickPatterns - Commodity Instrument-Aware Proximity Tolerance', () => {
+  // Crude Oil bar around $72.50
+  const clBars: Candle[] = [
+    { time: 100, open: 72.8, high: 72.85, low: 72.3, close: 72.35, volume: 100 },
+    { time: 105, open: 72.32, high: 72.9, low: 72.3, close: 72.85, volume: 150 }, // Bullish Engulfing
+  ]
+
+  // Level 72.60 is within ~0.36 tolerance of Crude Oil
+  const resClNear = detectCandlestickPatterns(clBars, 1, 5, 0.05, {
+    importantLevels: [72.6],
+    pocs: [73.5],
+  })
+  assert.equal(resClNear.bullEng, true)
+
+  // Level 70.00 is $2.85 away (far outside Crude Oil ~0.36 tolerance)
+  const resClFar = detectCandlestickPatterns(clBars, 1, 5, 0.05, {
+    importantLevels: [70.0],
+    pocs: [73.5],
+  })
+  assert.equal(resClFar.bullEng, false)
+})
+
+

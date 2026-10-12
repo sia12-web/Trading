@@ -61,6 +61,25 @@ export interface PatternFilterOptions {
   importantLevels?: Array<number | null | undefined>
   /** Optional custom proximity tolerance in price points */
   tolerance?: number
+  /**
+   * If true, requires price to be strictly below ALL POCs for bullish and strictly above ALL POCs for bearish.
+   * If false/undefined (standard Dalton AMT strategy):
+   *   - Bullish: Price is below or testing at least one reference POC (targeting overhead POC value) and not strictly above all POCs.
+   *   - Bearish: Price is above or testing at least one reference POC (targeting lower POC value) and not strictly below all POCs.
+   */
+  strictAllPocs?: boolean
+}
+
+/**
+ * Computes an instrument-aware proximity tolerance based on price scale.
+ * Avoids distorting low-value commodities (e.g. Crude Oil @ $70) with index-scale buffers.
+ */
+export function getDefaultTolerance(price: number): number {
+  if (!Number.isFinite(price) || price <= 0) return 1.0
+  if (price > 10000) return Math.max(10, price * 0.0008) // e.g. NQ ~16 pts, Dow ~33 pts
+  if (price > 2000) return Math.max(3, price * 0.0008)   // e.g. ES/MES ~4.5 pts, Gold ~3 pts
+  if (price > 200) return Math.max(1, price * 0.001)     // e.g. Russell 2000 ~2.2 pts
+  return Math.max(0.25, price * 0.005)                   // e.g. Crude Oil CL ~0.35 pts
 }
 
 /**
@@ -273,12 +292,17 @@ export function detectCandlestickPatterns(
  * and key structural levels (Yesterday, Inventory, 5-Day FRVP).
  *
  * Rules:
- * 1. Strict POC Direction Filter:
- *    - Bullish patterns are ONLY returned when price is BELOW ALL active reference POCs of yesterday, inventory, and last 5 days.
- *    - Bearish patterns are ONLY returned when price is ABOVE ALL active reference POCs of yesterday, inventory, and last 5 days.
- * 2. Structural Level / Node Confluence Filter:
- *    - Patterns are ONLY displayed at important places: Low Volume Node (LVN), High Volume Node (HVN),
- *      or near the High / Low / VAH / VAL of Yesterday, Inventory, or Last 5 Days.
+ * 1. Structural Confluence Filter:
+ *    - Patterns (including Doji) are ONLY displayed at key structural levels:
+ *      High / Low / VAH / VAL / LVN / HVN or reference POCs of Yesterday, Inventory, or Last 5 Days.
+ * 2. Dalton Auction Market Theory POC Alignment:
+ *    - Bullish reversal patterns (Bullish Engulfing, Hammer, Excess Tail, etc.) require price to be
+ *      below or testing at least one reference POC (targeting overhead value) and not extended above all POCs.
+ *    - Bearish reversal patterns (Bearish Engulfing, Shooting Star, Excess Tail, etc.) require price to be
+ *      above or testing at least one reference POC (targeting lower value) and not extended below all POCs.
+ * 3. Doji Strategy & Precedence:
+ *    - Dojis in meaningless chop with no structural confluence are filtered out as noise.
+ *    - Directional patterns take precedence over Dojis when present on the same candle.
  */
 export function filterCandlestickPatternsByPoc(
   result: CandlestickPatternResult,
@@ -291,12 +315,15 @@ export function filterCandlestickPatternsByPoc(
   let pocs: number[] = []
   let importantLevels: number[] = []
   let customTolerance: number | undefined
+  let strictAllPocs = false
 
   if (Array.isArray(pocsOrOptions)) {
     pocs = pocsOrOptions.filter((p): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0)
     if (importantLevelsParam && Array.isArray(importantLevelsParam)) {
       importantLevels = importantLevelsParam.filter((p): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0)
     }
+    // Backward-compatibility: raw POC array without explicit options enforces strict multi-POC shared zone
+    strictAllPocs = true
   } else if (typeof pocsOrOptions === 'object') {
     if (Array.isArray(pocsOrOptions.pocs)) {
       pocs = pocsOrOptions.pocs.filter((p): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0)
@@ -305,26 +332,15 @@ export function filterCandlestickPatternsByPoc(
       importantLevels = pocsOrOptions.importantLevels.filter((p): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0)
     }
     customTolerance = pocsOrOptions.tolerance
+    strictAllPocs = !!pocsOrOptions.strictAllPocs
   }
 
-  // 1. Strict POC Direction Filter:
-  // - Bullish patterns must be BELOW ALL active POCs (price <= minPoc)
-  // - Bearish patterns must be ABOVE ALL active POCs (price >= maxPoc)
-  let isBelowAllPocs = true
-  let isAboveAllPocs = true
+  const tolerance = customTolerance ?? getDefaultTolerance(candle.close)
 
-  if (pocs.length > 0) {
-    const minPoc = Math.min(...pocs)
-    const maxPoc = Math.max(...pocs)
-    isBelowAllPocs = candle.close <= minPoc
-    isAboveAllPocs = candle.close >= maxPoc
-  }
-
-  // 2. Important Places Confluence Filter (High/Low, VAH/VAL, LVN, HVN of Yesterday, Inventory, or 5-Day):
+  // 1. Structural Confluence Filter:
   let isAtImportantPlace = true
 
   if (importantLevels.length > 0) {
-    const tolerance = customTolerance ?? Math.max(12, candle.close * 0.0015)
     isAtImportantPlace = importantLevels.some((lvl) => {
       return (
         (candle.low - tolerance <= lvl && candle.high + tolerance >= lvl) ||
@@ -333,9 +349,36 @@ export function filterCandlestickPatternsByPoc(
     })
   }
 
+  // 2. POC Direction Filter:
+  let isBullishPocValid = true
+  let isBearishPocValid = true
+
+  if (pocs.length > 0) {
+    const minPoc = Math.min(...pocs)
+    const maxPoc = Math.max(...pocs)
+
+    if (strictAllPocs) {
+      isBullishPocValid = candle.close <= minPoc
+      isBearishPocValid = candle.close >= maxPoc
+    } else {
+      // Dalton Auction Market Theory Strategy:
+      // Bullish reversal: Price is below or testing at least one reference POC (targeting overhead value)
+      // and not extended above all reference POCs.
+      isBullishPocValid =
+        candle.close <= maxPoc + tolerance &&
+        pocs.some((poc) => candle.close <= poc + tolerance || candle.low <= poc + tolerance)
+
+      // Bearish reversal: Price is above or testing at least one reference POC (targeting lower value)
+      // and not extended below all reference POCs.
+      isBearishPocValid =
+        candle.close >= minPoc - tolerance &&
+        pocs.some((poc) => candle.close >= poc - tolerance || candle.high >= poc - tolerance)
+    }
+  }
+
   const filtered: CandlestickPatternResult = { ...result }
 
-  if (!isBelowAllPocs || !isAtImportantPlace) {
+  if (!isBullishPocValid || !isAtImportantPlace) {
     filtered.bullEng = false
     filtered.buyingExcess = false
     filtered.hammer = false
@@ -347,7 +390,7 @@ export function filterCandlestickPatternsByPoc(
     filtered.bullBelt = false
   }
 
-  if (!isAboveAllPocs || !isAtImportantPlace) {
+  if (!isBearishPocValid || !isAtImportantPlace) {
     filtered.bearEng = false
     filtered.sellingExcess = false
     filtered.shootingStar = false
@@ -355,6 +398,34 @@ export function filterCandlestickPatternsByPoc(
     filtered.eveningStar = false
     filtered.bearHarami = false
     filtered.bearKick = false
+  }
+
+  // 3. Doji Strategy & Precedence:
+  // - If structural levels or POCs are provided, Doji MUST be at an important structural level.
+  //   Indecision in meaningless chop is noise.
+  // - If any directional pattern is valid on this bar, directional pattern takes precedence.
+  const hasDirectionalPattern =
+    filtered.bullEng ||
+    filtered.bearEng ||
+    filtered.buyingExcess ||
+    filtered.sellingExcess ||
+    filtered.hammer ||
+    filtered.invHammer ||
+    filtered.shootingStar ||
+    filtered.hangingMan ||
+    filtered.morningStar ||
+    filtered.eveningStar ||
+    filtered.bullHarami ||
+    filtered.bearHarami ||
+    filtered.bullKick ||
+    filtered.bearKick ||
+    filtered.piercing ||
+    filtered.bullBelt
+
+  if (importantLevels.length > 0 && !isAtImportantPlace) {
+    filtered.doji = false
+  } else if (hasDirectionalPattern) {
+    filtered.doji = false
   }
 
   return filtered

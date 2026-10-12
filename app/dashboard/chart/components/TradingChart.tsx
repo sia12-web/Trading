@@ -4104,6 +4104,7 @@ export function TradingChart({
       ].filter((p): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0)
 
       const importantLevels = [
+        ...activePocs,
         yesterdayNyc?.yh,
         yesterdayNyc?.yl,
         yesterdayNyc?.vah,
@@ -5498,6 +5499,7 @@ export function TradingChart({
             frvp5d?.poc,
           ].filter((p): p is number => typeof p === 'number' && Number.isFinite(p) && p > 0)
           const importantLevels = [
+            ...activePocs,
             yesterdayNyc?.yh,
             yesterdayNyc?.yl,
             yesterdayNyc?.vah,
