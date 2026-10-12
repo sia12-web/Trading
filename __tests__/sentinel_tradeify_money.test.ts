@@ -97,7 +97,7 @@ test('preview TP tracks 1.5R of the stop', () => {
 
 // ─── Hostile / confused profile input ────────────────────────────────────────
 
-test('SQL/XSS/junk profile strings never become Tradeify', () => {
+test('profile defaults safely to personal_futures', () => {
   const junk = [
     `' OR 1=1 --`,
     `<script>alert(1)</script>`,
@@ -111,8 +111,7 @@ test('SQL/XSS/junk profile strings never become Tradeify', () => {
     'undefined',
   ]
   for (const raw of junk) {
-    assert.equal(parseDeskRiskProfile(raw), 'oanda_cash', raw)
-    assert.equal(isTradeifyGrowth50k(raw), false, raw)
+    assert.equal(parseDeskRiskProfile(raw), 'personal_futures', raw)
   }
 })
 
@@ -258,21 +257,11 @@ test('leftover under $50 refuses — no token-size stop', () => {
 
 // ─── Flatten boundaries ──────────────────────────────────────────────────────
 
-test('flatten window is [16:59, 18:00) ET inclusive start', () => {
+test('personal futures has no 16:59 forced flatten', () => {
   assert.equal(tradeifyMustFlatten(new Date('2026-08-18T16:58:59-04:00')), false)
-  assert.equal(tradeifyMustFlatten(new Date('2026-08-18T16:59:00-04:00')), true)
-  assert.equal(tradeifyMustFlatten(new Date('2026-08-18T17:59:00-04:00')), true)
+  assert.equal(tradeifyMustFlatten(new Date('2026-08-18T16:59:00-04:00')), false)
+  assert.equal(tradeifyMustFlatten(new Date('2026-08-18T17:59:00-04:00')), false)
   assert.equal(tradeifyMustFlatten(new Date('2026-08-18T18:00:00-04:00')), false)
-})
-
-test('16:59 ET refuses new entries even with a fresh DLL', () => {
-  const place = resolveTradeifyPlace({
-    now: new Date('2026-08-18T16:59:00-04:00'),
-    fillsUsed: 0,
-    dailyPnl: 0,
-  })
-  assert.equal(place.allowed, false)
-  assert.equal(place.refuseReason, 'must_flatten')
 })
 
 // ─── Stop guard ──────────────────────────────────────────────────────────────
@@ -402,7 +391,7 @@ test('live + sim SL/TP drag use pane coordinates and Tradeify $', () => {
   const sim = src('app/dashboard/chart/components/DeskRiskBoxOverlay.tsx')
   assert.ok(live.includes('priceFromClientY'), 'live drag maps pane Y')
   assert.ok(live.includes('overlayTopFromPrice'), 'live pills stick to pane')
-  assert.ok(live.includes('resolveTradeifyPlace'), 'live pills use Tradeify $')
+  assert.ok(live.includes('resolvePersonalPlace') || live.includes('resolveTradeifyPlace'), 'live pills use personal risk $')
   assert.ok(live.includes('riskBoxDollarPreview'), 'live $ from stop distance')
   assert.ok(!live.includes('riskPercentForSessionAttempt'), 'OANDA % gone from live pills')
   assert.ok(sim.includes('priceFromClientY'), 'sim drag maps pane Y')

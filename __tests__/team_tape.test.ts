@@ -87,14 +87,14 @@ assert.equal(full.canCopy, false)
 assert.equal(full.fillsLeft, 0)
 assert.match(full.headline, /Do not copy/)
 
-const lockedStops = teamCopyAdviceFromInput({
+const lockedDll = teamCopyAdviceFromInput({
   now: midday,
   fillsUsed: 1,
-  stopOutsToday: 2,
+  dailyPnl: -1250,
   clockedIn: true,
 })
-assert.equal(lockedStops.canCopy, false)
-assert.match(lockedStops.headline, /Do not copy/)
+assert.equal(lockedDll.canCopy, false)
+assert.match(lockedDll.headline, /Do not copy/)
 
 const notClocked = teamCopyAdviceFromInput({
   now: midday,
@@ -105,14 +105,24 @@ assert.equal(notClocked.canCopy, false)
 assert.match(notClocked.headline, /Clock in/)
 assert.equal(notClocked.fillsLeft, 3)
 
-const flatten = teamCopyAdviceFromInput({
-  now: afterFlatten,
-  fillsUsed: 0,
+const mustFlattenPlace = buildTeamCopyAdvice({
+  place: {
+    allowed: false,
+    refuseReason: 'must_flatten',
+    refuseMessage: 'Session closed',
+    fillsUsed: 0,
+    riskDollars: 400,
+    sessionKey: '2026-08-18',
+    stepDollars: 400,
+    leftoverDll: 1250,
+    floorRoom: null,
+  },
   clockedIn: true,
+  now: afterFlatten,
 })
-assert.equal(flatten.canCopy, false)
-assert.equal(flatten.mustFlatten, true)
-assert.match(flatten.headline, /Flatten/)
+assert.equal(mustFlattenPlace.canCopy, false)
+assert.equal(mustFlattenPlace.mustFlatten, true)
+assert.match(mustFlattenPlace.headline, /Flatten/)
 
 const signal = {
   sourceId: 'qt-1',

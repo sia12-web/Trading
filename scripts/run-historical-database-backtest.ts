@@ -11,7 +11,7 @@
 import fs from 'fs'
 import path from 'path'
 import { calculateFuturesContractSize } from '../lib/trading/positionSizing'
-import { TRADEIFY_STARTING_BALANCE } from '../lib/trading/tradeifyGrowth50k'
+import { PERSONAL_STARTING_BALANCE } from '../lib/trading/tradeifyGrowth50k'
 
 interface Bar {
     time: number // Unix seconds
@@ -119,7 +119,7 @@ async function runBacktest() {
     const tradingDays = Array.from(datesSet).sort()
     console.log(`📅 Backtesting across ${tradingDays.length} valid trading weekdays (July 28 - Aug 26, 2026)...`)
 
-    let accountEquity = TRADEIFY_STARTING_BALANCE
+    let accountEquity = PERSONAL_STARTING_BALANCE
     let tradeCounter = 1
     const trades: TradeResult[] = []
 

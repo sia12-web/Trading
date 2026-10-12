@@ -10,7 +10,7 @@
  * 4. Take Profit: 1.50 * Risk Distance (1.5R)
  */
 
-import { TRADEIFY_PROFIT_TARGET } from '../lib/trading/tradeifyGrowth50k'
+import { PERSONAL_STARTING_BALANCE } from '../lib/trading/tradeifyGrowth50k'
 
 console.log('----------------------------------------------------------------------')
 console.log('📈 9-MONTH BACKTEST: DOW (YM) ASIA NARROW RANGE (<80 PTS) BREAKOUT EDGE')
@@ -114,5 +114,5 @@ console.log(`Wins / Losses:                      ${totalWins} Wins / ${totalLoss
 console.log(`Win Rate:                           ${((totalWins / totalTrades) * 100).toFixed(1)}%`)
 console.log(`Total Net Profit:                   +$${totalNetPnlDollars.toLocaleString('en-US')}.00`)
 console.log(`Average Profit Per Trade:          +$${(totalNetPnlDollars / totalTrades).toFixed(2)}`)
-console.log(`Tradeify $50K Evaluation Impact:   Passes 3x over (+${(totalNetPnlDollars / TRADEIFY_PROFIT_TARGET).toFixed(1)}x profit target)`)
+console.log(`Personal Futures $50k Return:       +$${totalNetPnlDollars.toLocaleString('en-US')}.00 (+${((totalNetPnlDollars / PERSONAL_STARTING_BALANCE) * 100).toFixed(1)}% account return)`)
 console.log('======================================================================\n')

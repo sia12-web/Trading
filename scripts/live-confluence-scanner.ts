@@ -5,7 +5,7 @@
  * 1. Checks Market Profile (Yesterday VAL, VAH, POC) + Session VWAP ±1σ bands
  * 2. Scans for John Kurisko Fast/Slow Stochastic (14,3,3) Divergences
  * 3. Triggers Audible Chime & Visual Alarms when an entry setup confirms
- * 4. Outputs exact Tradeify 50k Brackets (Entry, Stop Loss, 70% TP1, 30% TP2 Runner)
+ * 4. Outputs exact Personal Futures 50k Brackets (Entry, Stop Loss, 70% TP1, 30% TP2 Runner)
  * 5. Saves active alerts to data/active-signals.json
  */
 

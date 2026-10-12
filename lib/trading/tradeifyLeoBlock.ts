@@ -1,6 +1,6 @@
 /**
  * Personal Futures Desk Risk copy for Leo + Telegram.
- * Clean personal risk model — no prop firm eval rules.
+ * Personal risk model with $1,250 Daily Loss Limit.
  */
 
 import { deskLocalHmsAsTraderDisplay } from '@/lib/chart/traderDisplayTz'

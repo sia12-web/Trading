@@ -1,6 +1,6 @@
 /**
  * Personal Futures Desk Risk & Position Limits.
- * Clean personal risk model — no prop firm eval rules, no trailing drawdown ratchets.
+ * Personal risk model with $1,250 Daily Loss Limit.
  *
  * Session: 18:00 ET roll.
  * Nikkei night and NY morning share one session_key.

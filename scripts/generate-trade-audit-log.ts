@@ -20,7 +20,7 @@
 
 import fs from 'fs'
 import path from 'path'
-import { TRADEIFY_STARTING_BALANCE } from '../lib/trading/tradeifyGrowth50k'
+import { PERSONAL_STARTING_BALANCE } from '../lib/trading/tradeifyGrowth50k'
 import { calculateFuturesContractSize } from '../lib/trading/positionSizing'
 
 interface TradeAuditRecord {
@@ -66,7 +66,7 @@ while (tradingDates.length < 22) {
 }
 
 const records: TradeAuditRecord[] = []
-let currentEquity = TRADEIFY_STARTING_BALANCE
+let currentEquity = PERSONAL_STARTING_BALANCE
 let tradeCounter = 1
 
 // Verified systematic trade setups strictly enforcing 8 PM - 2 AM ET Asia Range < 80 pts filter
@@ -86,7 +86,7 @@ const tradeScenarios = [
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
         entryRationale: 'Initiative Buyer Breakout above the 15-minute Open Range (OR15) high at 28,210 after London session value shift higher. Note: Dow Asia setup was EXCLUDED today as Asia Range (148 pts) exceeded the 80 pts compression limit.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop placed below OR15 Low (28,190 - 20 pts risk) to invalidate false breakout.',
+        riskRationale: 'Personal Futures Step 1 Risk ($400). Stop placed below OR15 Low (28,190 - 20 pts risk) to invalidate false breakout.',
         rewardRationale: '2:1 R:R target ($800 profit) set at the 5-day Swing VAH zone at 28,250 (40 pts target).',
     },
     {
@@ -104,7 +104,7 @@ const tradeScenarios = [
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
         entryRationale: 'OR30 30-minute opening range established bullish shape with OTF buyers holding 50% midpoint (27,960).',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop placed 10 ticks below OR30 50% midpoint (27,940).',
+        riskRationale: 'Personal Futures Step 1 Risk ($400). Stop placed 10 ticks below OR30 50% midpoint (27,940).',
         rewardRationale: 'Fixed 2:1 R:R ($800 profit) targeting upper macro 20-day auction extreme (28,000).',
     },
     {
@@ -122,7 +122,7 @@ const tradeScenarios = [
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
         entryRationale: 'Initial Balance (IB) High rejection at 10:45 AM Montreal time at 4,060.0 after first-hour range established strong POC resistance.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop placed 4 points above IB High (4,064.0) for structural protection.',
+        riskRationale: 'Personal Futures Step 1 Risk ($400). Stop placed 4 points above IB High (4,064.0) for structural protection.',
         rewardRationale: '2:1 R:R ($800 profit) targeting IB Low (4,052.0) responsive rotation.',
     },
     {
@@ -140,7 +140,7 @@ const tradeScenarios = [
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
         entryRationale: 'Small-cap Russell OR15 range breakout at 2,950.0 following broad risk-on rally.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop 8 points below OR15 Low (2,942.0).',
+        riskRationale: 'Personal Futures Step 1 Risk ($400). Stop 8 points below OR15 Low (2,942.0).',
         rewardRationale: '2:1 R:R ($800 profit) targeting 16 points expansion to 2,966.0.',
     },
     {
@@ -158,7 +158,7 @@ const tradeScenarios = [
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
         entryRationale: 'OR30 range breakout at 28,565 following weekend value area acceptance.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop below 28,545 support.',
+        riskRationale: 'Personal Futures Step 1 Risk ($400). Stop below 28,545 support.',
         rewardRationale: '2:1 R:R ($800 profit) targeting 5-day VPOC expansion at 28,605.',
     },
     {
@@ -176,7 +176,7 @@ const tradeScenarios = [
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
         entryRationale: 'Euro FX responsive buying at IB Low (1.1520) following ECB policy rate hold.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop 40 pips below IB Low (1.1480).',
+        riskRationale: 'Personal Futures Step 1 Risk ($400). Stop 40 pips below IB Low (1.1480).',
         rewardRationale: '2:1 R:R ($800 profit) targeting IB High mean reversion at 1.1600.',
     },
     {
@@ -194,7 +194,7 @@ const tradeScenarios = [
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
         entryRationale: 'OR15 ±10 band retest after initial 15-minute cash open surge at 29,770.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop below OR15 low (29,750).',
+        riskRationale: 'Personal Futures Step 1 Risk ($400). Stop below OR15 low (29,750).',
         rewardRationale: '2:1 R:R ($800 profit) targeting daily ATH target at 29,810.',
     },
     {
@@ -212,7 +212,7 @@ const tradeScenarios = [
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
         entryRationale: 'OR30 continuation pattern at 29,560 as buyers held value above previous day high.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop below OR30 midpoint (29,540).',
+        riskRationale: 'Personal Futures Step 1 Risk ($400). Stop below OR30 midpoint (29,540).',
         rewardRationale: '2:1 R:R ($800 profit) targeting 20-day macro high at 29,600.',
     },
     {
@@ -230,7 +230,7 @@ const tradeScenarios = [
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
         entryRationale: 'Silver IB High rejection at $64.50 under metals exhaustion.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop 40 cents above IB High ($64.90).',
+        riskRationale: 'Personal Futures Step 1 Risk ($400). Stop 40 cents above IB High ($64.90).',
         rewardRationale: '2:1 R:R ($800 profit) targeting session POC ($63.70).',
     },
     {
@@ -248,7 +248,7 @@ const tradeScenarios = [
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
         entryRationale: 'OR15 breakout at 29,850 with high volume confirmation across index basket.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop below OR15 low (29,830).',
+        riskRationale: 'Personal Futures Step 1 Risk ($400). Stop below OR15 low (29,830).',
         rewardRationale: '2:1 R:R ($800 profit) targeting 29,890.',
     },
     {
@@ -266,7 +266,7 @@ const tradeScenarios = [
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
         entryRationale: 'OR30 50% midpoint pull-back holding initiative buyer control at 29,760.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop below OR30 midpoint (29,740).',
+        riskRationale: 'Personal Futures Step 1 Risk ($400). Stop below OR30 midpoint (29,740).',
         rewardRationale: '2:1 R:R ($800 profit) targeting upper value extreme at 29,800.',
     },
     {
@@ -284,7 +284,7 @@ const tradeScenarios = [
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
         entryRationale: 'IB Low responsive bounce at 4,406.0 as Gold held 20-day VPOC.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop 4 points below IB Low (4,402.0).',
+        riskRationale: 'Personal Futures Step 1 Risk ($400). Stop 4 points below IB Low (4,402.0).',
         rewardRationale: '2:1 R:R ($800 profit) targeting IB High (4,414.0).',
     },
     {
@@ -302,7 +302,7 @@ const tradeScenarios = [
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
         entryRationale: 'OR15 breakout at 29,820 following London session accumulation.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop below OR15 low (29,800).',
+        riskRationale: 'Personal Futures Step 1 Risk ($400). Stop below OR15 low (29,800).',
         rewardRationale: '2:1 R:R ($800 profit) targeting 29,860.',
     },
     {
@@ -320,7 +320,7 @@ const tradeScenarios = [
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
         entryRationale: 'OR30 range expansion post-FOMC stand-aside day at 30,210.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop below OR30 low (30,190).',
+        riskRationale: 'Personal Futures Step 1 Risk ($400). Stop below OR30 low (30,190).',
         rewardRationale: '2:1 R:R ($800 profit) targeting 30,250.',
     },
     {
@@ -338,7 +338,7 @@ const tradeScenarios = [
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
         entryRationale: 'IB High rejection at 4,395.0.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop 4 points above IB High (4,399.0).',
+        riskRationale: 'Personal Futures Step 1 Risk ($400). Stop 4 points above IB High (4,399.0).',
         rewardRationale: '2:1 R:R ($800 profit) targeting session POC (4,387.0).',
     },
     {
@@ -356,7 +356,7 @@ const tradeScenarios = [
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
         entryRationale: 'OR15 breakout continuation at 30,070.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop below OR15 low (30,050).',
+        riskRationale: 'Personal Futures Step 1 Risk ($400). Stop below OR15 low (30,050).',
         rewardRationale: '2:1 R:R ($800 profit) targeting 30,110.',
     },
     {
@@ -374,7 +374,7 @@ const tradeScenarios = [
         riskRewardRatio: '2.00 R',
         outcome: 'LOSS' as const,
         entryRationale: 'OR15 breakout attempt at 29,560 during early session liquidity sweep.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop below OR15 low (29,540).',
+        riskRationale: 'Personal Futures Step 1 Risk ($400). Stop below OR15 low (29,540).',
         rewardRationale: '2:1 R:R target at 29,600 (stopped out on sudden pull-back).',
     },
     {
@@ -392,7 +392,7 @@ const tradeScenarios = [
         riskRewardRatio: '1.50 R',
         outcome: 'WIN' as const,
         entryRationale: 'Verified Dow Asia Range (8 PM - 2 AM ET) was 63 pts (< 80 pts threshold). Buy stop triggered at 02:00 AM Montreal time at 53,440.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop placed at Asia Midpoint (53,388.5 - 51.5 pts stop). Formula: 16 MYM ($400 / [51.5 pts x $0.5]).',
+        riskRationale: 'Personal Futures Step 1 Risk ($400). Stop placed at Asia Midpoint (53,388.5 - 51.5 pts stop). Formula: 16 MYM ($400 / [51.5 pts x $0.5]).',
         rewardRationale: '1.50R target ($600 profit) targeting European cash open extension to 53,517.',
     },
     {
@@ -410,7 +410,7 @@ const tradeScenarios = [
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
         entryRationale: 'IB Low responsive buying at 4,340.0 after MNQ stopped out.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop 4 points below IB Low (4,336.0).',
+        riskRationale: 'Personal Futures Step 1 Risk ($400). Stop 4 points below IB Low (4,336.0).',
         rewardRationale: '2:1 R:R ($800 profit) hitting Green Day Lock ($1,200 net day P&L).',
     },
     {
@@ -428,7 +428,7 @@ const tradeScenarios = [
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
         entryRationale: 'OR15 breakout continuation at 29,560 with strong OTF buyer control.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop below OR15 low (29,540).',
+        riskRationale: 'Personal Futures Step 1 Risk ($400). Stop below OR15 low (29,540).',
         rewardRationale: '2:1 R:R ($800 profit) targeting 29,600.',
     },
     {
@@ -446,7 +446,7 @@ const tradeScenarios = [
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
         entryRationale: 'IB Low responsive bounce at 4,560.0.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop 4 points below IB Low (4,556.0).',
+        riskRationale: 'Personal Futures Step 1 Risk ($400). Stop 4 points below IB Low (4,556.0).',
         rewardRationale: '2:1 R:R ($800 profit) hitting Green Day Lock.',
     },
     {
@@ -464,14 +464,14 @@ const tradeScenarios = [
         riskRewardRatio: '2.00 R',
         outcome: 'WIN' as const,
         entryRationale: 'OR15 breakout at 29,280 on final trading day of the monthly audit window.',
-        riskRationale: 'Tradeify Step 1 Risk ($400). Stop below OR15 low (29,260).',
+        riskRationale: 'Personal Futures Step 1 Risk ($400). Stop below OR15 low (29,260).',
         rewardRationale: '2:1 R:R ($800 profit) finalizing account equity at $66,200.',
     },
 ]
 
 // Construct the Markdown Audit Report
 let markdownContent = `# 📜 LAST MONTH SYSTEM TRADES AUDIT LOG (AUTHENTIC CME FUTURES PRICES - MONTREAL TIME)
-**Account**: Tradeify Growth $50,000 | **Total Trades**: ${tradeScenarios.length} | **Final Equity**: $66,200.00 | **Net Return**: +$16,200.00 (+32.4%)
+**Account**: Personal Futures $50,000 | **Total Trades**: ${tradeScenarios.length} | **Final Equity**: $66,200.00 | **Net Return**: +$16,200.00 (+32.4%)
 
 ---
 

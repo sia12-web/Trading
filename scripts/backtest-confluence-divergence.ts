@@ -138,7 +138,7 @@ async function runBacktestForInstrument(
   const trades: SimulatedTrade[] = []
   let tradeId = 1
   const pointValue = POINT_VALUES[instrument] || 1.0
-  const contracts = 2 // Standard 2-contract bracket for Tradeify 50k
+  const contracts = 2 // Standard 2-contract bracket for Personal Futures 50k
 
   for (let d = 1; d < dayKeys.length; d++) {
     const priorDayKey = dayKeys[d - 1]!

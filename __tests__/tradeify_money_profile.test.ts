@@ -7,29 +7,29 @@ import assert from 'node:assert/strict'
 import { mergeMoneyRiskProfile } from '../lib/trading/tradeifyProfile'
 
 assert.equal(
-  mergeMoneyRiskProfile('oanda_cash', 'tradeify_growth_50k'),
-  'tradeify_growth_50k',
-  'persisted Tradeify beats client OANDA'
+  mergeMoneyRiskProfile('oanda_cash', 'personal_futures'),
+  'personal_futures',
+  'persisted personal_futures beats client OANDA'
 )
 assert.equal(
-  mergeMoneyRiskProfile(null, 'tradeify_growth_50k'),
-  'tradeify_growth_50k',
-  'missing client hint still Tradeify when persisted'
+  mergeMoneyRiskProfile(null, 'personal_futures'),
+  'personal_futures',
+  'missing client hint still personal_futures when persisted'
 )
 assert.equal(
-  mergeMoneyRiskProfile('tradeify_growth_50k', 'oanda_cash'),
-  'tradeify_growth_50k',
-  'client Tradeify beats persisted OANDA'
+  mergeMoneyRiskProfile('personal_futures', 'oanda_cash'),
+  'personal_futures',
+  'client personal_futures beats persisted OANDA'
 )
 assert.equal(
   mergeMoneyRiskProfile('oanda_cash', 'oanda_cash'),
-  'tradeify_growth_50k',
-  'desk is Tradeify only — OANDA hints are ignored'
+  'personal_futures',
+  'desk is personal_futures only — OANDA hints are ignored'
 )
 assert.equal(
   mergeMoneyRiskProfile(undefined, undefined),
-  'tradeify_growth_50k',
-  'empty defaults to Tradeify'
+  'personal_futures',
+  'empty defaults to personal_futures'
 )
 
 console.log('tradeify_money_profile.test.ts: all assertions passed')

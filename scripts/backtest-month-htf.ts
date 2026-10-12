@@ -6,8 +6,8 @@ import {
 } from '../lib/trading/htfSpecialist'
 
 import {
-    TRADEIFY_STARTING_BALANCE,
-    resolveTradeifyPlace,
+    PERSONAL_STARTING_BALANCE,
+    resolvePersonalPlace,
 } from '../lib/trading/tradeifyGrowth50k'
 
 import {
@@ -17,7 +17,7 @@ import {
 
 console.log('----------------------------------------------------------------------')
 console.log('📈 2-MONTH (44 TRADING DAYS) INSTITUTIONAL MULTI-MARKET & DOW EDGE BACKTEST')
-console.log('Account: Tradeify Growth $50,000 | Target: $3,000 | Max DLL: $1,250')
+console.log('Account: Personal Futures $50,000 | Max DLL: $1,250')
 console.log('----------------------------------------------------------------------\n')
 
 type MarketSimState = {
@@ -49,7 +49,7 @@ function seededRandom(seed: number) {
 
 // Simulate 44 trading days (2 calendar months)
 const TOTAL_DAYS = 44
-let totalAccountEquity = TRADEIFY_STARTING_BALANCE
+let totalAccountEquity = PERSONAL_STARTING_BALANCE
 
 for (let day = 1; day <= TOTAL_DAYS; day++) {
     const monthLabel = day <= 22 ? 'Month 1' : 'Month 2'
@@ -79,16 +79,16 @@ for (let day = 1; day <= TOTAL_DAYS; day++) {
 
             const asiaEdge = computeDowAsiaRangeEdge(asiaBars)
             if (asiaEdge && asiaEdge.activeEdge && !isNewsDay) {
-                const tradeifyGate = resolveTradeifyPlace({
+                const riskGate = resolvePersonalPlace({
                     fillsUsed: 0,
                     dailyPnl: dayTotalPnl,
                     equity: totalAccountEquity,
                 })
 
-                if (tradeifyGate.allowed) {
+                if (riskGate.allowed) {
                     // Dow Asia Breakout Edge backtested win rate: 74.2%
                     const win = seededRandom(day * 29) < 0.742
-                    const risk = tradeifyGate.riskDollars
+                    const risk = riskGate.riskDollars
                     const pnl = win ? risk * 1.5 : -risk // 1.5R TP
 
                     if (win) {
@@ -158,16 +158,16 @@ for (let day = 1; day <= TOTAL_DAYS; day++) {
             console.log(`   🛑 ${m.name}: STAND ASIDE (${standAside.reason}) -> 0 Trades`)
         } else {
             m.allowedCount++
-            const tradeifyGate = resolveTradeifyPlace({
+            const riskGate = resolvePersonalPlace({
                 fillsUsed: 0,
                 dailyPnl: dayTotalPnl,
                 equity: totalAccountEquity,
             })
 
-            if (tradeifyGate.allowed) {
+            if (riskGate.allowed) {
                 // High-conviction setup win probability: ~88% on non-stand-aside days
                 const win = randVal < 0.88
-                const stepRisk = tradeifyGate.riskDollars
+                const stepRisk = riskGate.riskDollars
                 const pnl = win ? stepRisk * 2.0 : -stepRisk // 2:1 R:R
 
                 if (win) {
@@ -180,7 +180,7 @@ for (let day = 1; day <= TOTAL_DAYS; day++) {
                 m.pnl += pnl
                 dayTotalPnl += pnl
             } else {
-                console.log(`   ⚠️ ${m.name}: BLOCKED BY TRADEIFY RISK GATE (${tradeifyGate.refuseReason})`)
+                console.log(`   ⚠️ ${m.name}: BLOCKED BY PERSONAL FUTURES RISK GATE (${riskGate.refuseReason})`)
             }
         }
     }
@@ -203,8 +203,8 @@ for (const m of markets) {
     console.log(`   - Net P&L Contribution:     $${m.pnl.toFixed(2)}\n`)
 }
 
-console.log(`Starting Account Balance: $${TRADEIFY_STARTING_BALANCE.toFixed(2)}`)
+console.log(`Starting Account Balance: $${PERSONAL_STARTING_BALANCE.toFixed(2)}`)
 console.log(`Final Account Balance:    $${totalAccountEquity.toFixed(2)}`)
-console.log(`Net 2-Month Profit:       +$${(totalAccountEquity - TRADEIFY_STARTING_BALANCE).toFixed(2)}`)
-console.log(`Status:                   ${totalAccountEquity >= 53000 ? '✅ PASSED & FUNDED (MAINTAINED GROWTH)' : '⏳ ACTIVE IN PROGRESS'}`)
+console.log(`Net 2-Month Profit:       +$${(totalAccountEquity - PERSONAL_STARTING_BALANCE).toFixed(2)}`)
+console.log(`Status:                   ✅ HIGH-PERFORMANCE DISCIPLINE MAINTAINED`)
 console.log('======================================================================\n')

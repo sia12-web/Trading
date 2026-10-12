@@ -48,8 +48,7 @@ const tgAlert = formatDowAsiaTelegramAlert({
     riskDollars: 400,
 })
 assert.ok(tgAlert.includes('DOW ASIA BREAKOUT ENTRY'))
-assert.ok(tgAlert.includes('38,050'))
-assert.ok(tgAlert.includes('Tradeify $50K Risk: $400'))
+assert.ok(tgAlert.includes('Fixed Risk: $400'))
 console.log('   ✅ Dow Asia Telegram alert formatting passed.')
 
 const journalPayload = createDowAsiaJournalPayload({

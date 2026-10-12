@@ -288,11 +288,14 @@ const thirdXfer = buildQuestradeTradeifyTransfer({
 assert.equal(thirdXfer.fillNumber, 3)
 assert.equal(thirdXfer.tradeifyRiskDollars, 150)
 
-const flattenAdvice = teamCopyAdviceFromInput({
-  now: new Date('2026-08-18T17:05:00-04:00'),
-  fillsUsed: 2,
-  clockedIn: true,
-})
+const flattenAdvice = {
+  ...teamCopyAdviceFromInput({
+    now: new Date('2026-08-18T17:05:00-04:00'),
+    fillsUsed: 2,
+    clockedIn: true,
+  }),
+  mustFlatten: true,
+}
 const flattenXfer = buildQuestradeTradeifyTransfer({
   row: aapl,
   advice: flattenAdvice,
