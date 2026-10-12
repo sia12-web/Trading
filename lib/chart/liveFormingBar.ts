@@ -1,4 +1,4 @@
-import { fillCandleGaps, isCmeMarketHalt } from '@/lib/chart/candleGapFiller'
+import { isCmeMarketHalt } from '@/lib/chart/candleGapFiller'
 
 export type FormingBar = {
   time: number
@@ -282,7 +282,7 @@ export function mergeHistoryWithLiveTip<T extends FormingBar>(
   }
   if (liveT > lastT) {
     if (!isPlausibleDeskTick(last.close, alignedLive.close, 0.08)) return history
-    return fillCandleGaps([...history, alignedLive], timeframe, (instrument as any) ?? 'NASDAQ')
+    return [...history, alignedLive]
   }
   if (liveT < lastT) return history
   if (!isPlausibleDeskTick(last.close, alignedLive.close, 0.15)) return history
@@ -297,7 +297,7 @@ export function mergeHistoryWithLiveTip<T extends FormingBar>(
   }
   const out = history.slice()
   out[out.length - 1] = next
-  return fillCandleGaps(out, timeframe, (instrument as any) ?? 'NASDAQ')
+  return out
 }
 
 /**

@@ -80,7 +80,6 @@ import {
   LIVE_MAX_TIP_JUMP_PCT,
   quoteUnixForBucket,
 } from '@/lib/chart/liveFormingBar'
-import { fillCandleGaps } from '@/lib/chart/candleGapFiller'
 import {
   compute5MonthAnchoredVwap,
   compute5DayFixedRangeVolumeProfile,
@@ -257,6 +256,7 @@ import {
   DESK_CANDLE_DOWN,
   DESK_CANDLE_UP,
   DESK_CHART_THEME,
+  ensureVisibleCandleRange,
   getDeskChartThemeOptions,
 } from '@/lib/chart/deskChartTheme'
 import {
@@ -840,7 +840,7 @@ function toDeskCandles(
  * lightweight-charts requires strictly ascending unique times.
  * Yahoo (and merges) can return duplicates or slightly out-of-order bars.
  */
-function normalizeCandleTimes(candles: OHLCV[], tf: DeskTimeframe = '5m'): OHLCV[] {
+function normalizeCandleTimes(candles: OHLCV[], tf: DeskTimeframe = '5m', instrument?: string | null): OHLCV[] {
   if (!Array.isArray(candles) || candles.length === 0) return []
   const step = barSecondsForTimeframe(tf)
   const sorted = [...candles].sort(
@@ -855,15 +855,20 @@ function normalizeCandleTimes(candles: OHLCV[], tf: DeskTimeframe = '5m'): OHLCV
     const l = Number(c.low)
     const cl = Number(c.close)
     if (!Number.isFinite(rawT) || !Number.isFinite(o) || !Number.isFinite(h) || !Number.isFinite(l) || !Number.isFinite(cl)) continue
+    // Strip synthetic zero-volume carry-price flat bars that render as dashes
+    const isSyntheticFlat = (c.volume ?? 0) === 0 && o === cl && h === l
+    if (isSyntheticFlat && sorted.length > 2) continue
+
     // Daily bars: NY session date at UTC midnight. Yahoo stamps some days at 13:00/14:00 UTC
     // (shortened sessions) which would otherwise plot as a second candle on the same day.
     const t = tf === '1D' ? snapDailyUnix(rawT) : Math.floor(rawT / step) * step
+    const visible = ensureVisibleCandleRange({ open: o, high: Math.max(o, h, l, cl), low: Math.min(o, h, l, cl), close: cl }, instrument)
     const safeCandle: OHLCV = {
       time: t as UTCTimestamp,
-      open: o,
-      high: Math.max(o, h, l, cl),
-      low: Math.min(o, h, l, cl),
-      close: cl,
+      open: visible.open,
+      high: visible.high,
+      low: visible.low,
+      close: visible.close,
       volume: Number.isFinite(c.volume) ? Number(c.volume) : 0,
     }
     const prev = out[out.length - 1]
@@ -880,8 +885,7 @@ function normalizeCandleTimes(candles: OHLCV[], tf: DeskTimeframe = '5m'): OHLCV
     if (prev && t <= (prev.time as number)) continue
     out.push(safeCandle)
   }
-  const filled = tf === '1D' ? out : fillCandleGaps(out.map((c) => ({ ...c, time: c.time as number })), tf)
-  return filled.map((c) => ({ ...c, time: c.time as UTCTimestamp }))
+  return out
 }
 
 /** Series time: equally-spaced BusinessDay on 1D, Montreal-shifted unix otherwise. */
@@ -8434,7 +8438,7 @@ export function TradingChart({
     // Set data immediately if cached or from candles
     let barsToSet = cachedCvdBarsRef.current
     if (barsToSet.length === 0 && candlesRef.current.length > 0) {
-      const ordered = normalizeCandleTimes(candlesRef.current, timeframe)
+      const ordered = normalizeCandleTimes(candlesRef.current, timeframe, instrument)
       const cvdBars = computeCvdCandleBars(
         ordered.map((c) => ({
           time: c.time as number,
@@ -8578,7 +8582,7 @@ export function TradingChart({
             close: c.close,
             volume: c.volume ?? 0,
           }))
-          const trimmed = normalizeCandleTimes(toDeskCandles(mapped, instrument, timeframe), timeframe)
+          const trimmed = normalizeCandleTimes(toDeskCandles(mapped, instrument, timeframe), timeframe, instrument)
           setCandles(trimmed)
           candlesRef.current = trimmed
           const feedSource =
@@ -9068,7 +9072,7 @@ export function TradingChart({
   useEffect(() => {
     if (!candleRef.current || !chartRef.current || candles.length === 0) return
 
-    const ordered = normalizeCandleTimes(candles, timeframe)
+    const ordered = normalizeCandleTimes(candles, timeframe, instrument)
     const tz = chartTzRef.current
     const seenTimes = new Set<string>()
     const candleData: CandlestickData[] = []
@@ -9819,13 +9823,16 @@ export function TradingChart({
       (isChartStreamAllowed(instrument).open ||
         activeDeskSessionsAt(Math.floor(Date.now() / 1000)).length > 0)
 
-    const toChartCandle = (bar: OHLCV) => ({
-      time: toSeriesTime(bar.time as number, timeframe, chartTzRef.current),
-      open: bar.open,
-      high: bar.high,
-      low: bar.low,
-      close: bar.close,
-    })
+    const toChartCandle = (bar: OHLCV) => {
+      const v = ensureVisibleCandleRange(bar, instrument)
+      return {
+        time: toSeriesTime(bar.time as number, timeframe, chartTzRef.current),
+        open: v.open,
+        high: v.high,
+        low: v.low,
+        close: v.close,
+      }
+    }
 
     let lastOverlayTickPaint = 0
     const paintTipBar = (bar: OHLCV) => {
@@ -9875,6 +9882,8 @@ export function TradingChart({
       }
       const next = bars
       for (const g of fills) {
+        // Skip synthetic zero-volume carry-price flat fills that render as horizontal dashes
+        if ((g.volume ?? 0) === 0 && g.high === g.low) continue
         const prev = next[next.length - 1]
         // Ensure gap fills strictly advance time
         if (prev && (g.time as number) <= (prev.time as number)) continue
@@ -10229,7 +10238,7 @@ export function TradingChart({
           close: c.close,
           volume: c.volume ?? 0,
         }))
-        const trimmed = normalizeCandleTimes(toDeskCandles(mapped, instrument, timeframe), timeframe)
+        const trimmed = normalizeCandleTimes(toDeskCandles(mapped, instrument, timeframe), timeframe, instrument)
         if (trimmed.length === 0) return
 
         const live = lastCandleRef.current
@@ -10306,7 +10315,7 @@ export function TradingChart({
         if (requiresFullSetData) {
           try {
             const tz = chartTzRef.current
-            const ordered = normalizeCandleTimes(nextBars, timeframe)
+            const ordered = normalizeCandleTimes(nextBars, timeframe, instrument)
             const seenTimes = new Set<string>()
             const candleData: CandlestickData[] = []
             const volumeData: any[] = []
@@ -10343,14 +10352,17 @@ export function TradingChart({
           const startIndex = Math.max(0, prev.length - 1)
           for (let i = startIndex; i < nextBars.length; i++) {
             const b = nextBars[i]!
+            // Skip synthetic zero-volume carry-price flat bars that render as dashes
+            if ((b.volume ?? 0) === 0 && b.high === b.low && b.open === b.close) continue
+            const v = ensureVisibleCandleRange(b, instrument)
             const t = toSeriesTime(b.time as number, timeframe, tz)
             try {
               candleRef.current?.update({
                 time: t,
-                open: b.open,
-                high: b.high,
-                low: b.low,
-                close: b.close,
+                open: v.open,
+                high: v.high,
+                low: v.low,
+                close: v.close,
               })
             } catch {
               /* ignore */

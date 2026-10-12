@@ -118,3 +118,38 @@ export const DESK_CHART_THEME = {
     touch: true,
   },
 } as const
+
+/** Minimum tick spread per instrument to guarantee vertical candlestick definition */
+export const INSTRUMENT_MIN_TICK_SPREAD: Record<string, number> = {
+  NASDAQ: 0.25,
+  DOW: 1.0,
+  NIKKEI: 5.0,
+  GOLD: 0.10,
+  CRUDE: 0.01,
+  SILVER: 0.005,
+}
+
+/**
+ * Ensures any candlestick rendered on Lightweight Charts has a non-zero vertical range.
+ * When open === high === low === close (zero-range bar, e.g. single trade or flat tick),
+ * Lightweight Charts collapses it into a 1px flat horizontal dash.
+ * This guarantees a subtle vertical wick definition like TradingView so bars never look like dashes.
+ */
+export function ensureVisibleCandleRange(
+  candle: { open: number; high: number; low: number; close: number },
+  instrument?: string | null
+): { open: number; high: number; low: number; close: number } {
+  let { open, high, low, close } = candle
+  if (!Number.isFinite(open) || !Number.isFinite(close) || !(close > 0)) {
+    return candle
+  }
+  high = Math.max(high, open, close)
+  low = Math.min(low, open, close)
+  const minSpread = instrument ? (INSTRUMENT_MIN_TICK_SPREAD[instrument] ?? 0.05) : 0.05
+  if (high - low < minSpread * 0.5) {
+    const half = (minSpread * 0.5) / 2
+    high = Math.max(open, close) + half
+    low = Math.min(open, close) - half
+  }
+  return { open, high, low, close }
+}
