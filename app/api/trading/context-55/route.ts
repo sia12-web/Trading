@@ -21,6 +21,7 @@ export const revalidate = 0
 interface CacheEntry {
   benchmark: AnchoredVwapBenchmark5M
   timestamp: number
+  source: string
 }
 
 const cache = new Map<string, CacheEntry>()
@@ -48,15 +49,15 @@ export async function GET(request: Request) {
         instrument,
         avwap5m: cached.benchmark,
         cached: true,
-        source: instrument === 'NIKKEI' ? 'yahoo_jp225' : 'cme_globex',
+        source: cached.source,
       })
     }
 
     let dailyBars: ContextBar[] = []
     let source = 'cme_globex'
 
-    if (instrument === 'NIKKEI') {
-      const yahoo = await getYahooCandles('NIKKEI', 'D', 180)
+    try {
+      const yahoo = await getYahooCandles(instrument, 'D', 180)
       if (yahoo?.candles?.length) {
         dailyBars = yahoo.candles.map((c) => ({
           time: c.time,
@@ -66,10 +67,15 @@ export async function GET(request: Request) {
           close: c.close,
           volume: c.volume,
         }))
-        source = 'yahoo_jp225'
+        source = instrument === 'NIKKEI' ? 'yahoo_jp225' : 'yahoo_cme'
       }
-    } else {
+    } catch {
+      /* fallback below */
+    }
+
+    if (!dailyBars || dailyBars.length === 0) {
       dailyBars = getCmeDailyBars(instrument)
+      source = 'cme_globex'
     }
 
     if (!dailyBars || dailyBars.length === 0) {
@@ -88,7 +94,7 @@ export async function GET(request: Request) {
       )
     }
 
-    cache.set(instrument, { benchmark, timestamp: now })
+    cache.set(instrument, { benchmark, timestamp: now, source })
 
     return NextResponse.json({
       ok: true,

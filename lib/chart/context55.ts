@@ -240,25 +240,41 @@ export function get5DayAnchorUnix(
 }
 
 /**
+ * Format the civil date (YYYY-MM-DD) for a unix timestamp in a given timeZone.
+ * For timestamps aligned to exact midnight UTC (such as daily bars), samples at noon UTC
+ * to prevent negative timezone offsets (e.g. EDT -4h) from slipping into the previous calendar day.
+ */
+export function barCivilDate(unixSec: number, timeZone: string): string {
+  const isMidnightUtc = unixSec % 86400 === 0
+  const adjusted = isMidnightUtc ? unixSec + 43200 : unixSec
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(adjusted * 1000))
+}
+
+/**
  * Identify the 5-month anchor timestamp (cash open of first trading day 5 months prior).
  */
 export function get5MonthAnchorUnix(
   asOfUnix: number,
   clock: DeskClock = NY_DESK_CLOCK
 ): number {
-  const dt = new Date(asOfUnix * 1000)
-  dt.setUTCMonth(dt.getUTCMonth() - 5)
+  const asOfYmd = barCivilDate(asOfUnix, clock.timeZone)
+  const [y, m, d] = asOfYmd.split('-').map(Number)
 
-  let ymd = new Intl.DateTimeFormat('en-CA', {
-    timeZone: clock.timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(dt)
+  const targetYear = m! - 5 <= 0 ? y! - 1 : y!
+  const targetMonth = m! - 5 <= 0 ? m! - 5 + 12 : m! - 5
+  const daysInTargetMonth = new Date(Date.UTC(targetYear, targetMonth, 0)).getUTCDate()
+  const clampedDay = Math.min(d!, daysInTargetMonth)
+
+  let ymd = `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(clampedDay).padStart(2, '0')}`
 
   while (!isWeekdayYmd(ymd, clock.timeZone)) {
-    const [y, m, d] = ymd.split('-').map(Number)
-    const next = new Date(Date.UTC(y!, m! - 1, d! + 1, 12, 0, 0))
+    const [cy, cm, cd] = ymd.split('-').map(Number)
+    const next = new Date(Date.UTC(cy!, cm! - 1, cd! + 1, 12, 0, 0))
     ymd = next.toISOString().slice(0, 10)
   }
 
@@ -466,12 +482,8 @@ export function compute5MonthAnchoredVwapFromDailyBars(
   const tipTime = asOfUnix ?? dailyBars[dailyBars.length - 1]!.time
   const anchorUnix = get5MonthAnchorUnix(tipTime, clock)
 
-  const anchorYmd = new Intl.DateTimeFormat('en-CA', {
-    timeZone: clock.timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date(anchorUnix * 1000))
+  const anchorYmd = barCivilDate(anchorUnix, clock.timeZone)
+  const tipYmd = barCivilDate(tipTime, clock.timeZone)
 
   let sumPV = 0
   let sumP2V = 0
@@ -481,8 +493,10 @@ export function compute5MonthAnchoredVwapFromDailyBars(
   const sorted = [...dailyBars].sort((a, b) => a.time - b.time)
 
   for (const b of sorted) {
-    if (b.time < anchorUnix - 86400) continue
-    if (b.time > tipTime) continue
+    const barYmd = barCivilDate(b.time, clock.timeZone)
+
+    if (barYmd < anchorYmd) continue
+    if (barYmd > tipYmd && b.time > tipTime) continue
 
     const price = (b.high + b.low + b.close) / 3
     const vol = b.volume > 0 ? b.volume : 1
@@ -539,6 +553,7 @@ export function compute5MonthAnchoredVwap(args: {
   const clock = deskClockFor(instrument)
   const tipTime = args.asOfUnix ?? bars[bars.length - 1]!.time
   const anchorUnix = baseline?.startUnix ?? get5MonthAnchorUnix(tipTime, clock)
+  const anchorYmd = barCivilDate(anchorUnix, clock.timeZone)
 
   let sumPV = baseline?.sumPV ?? 0
   let sumV = baseline?.sumV ?? 0
@@ -552,19 +567,24 @@ export function compute5MonthAnchoredVwap(args: {
   const upper3: { time: UTCTimestamp; value: number }[] = []
   const lower3: { time: UTCTimestamp; value: number }[] = []
 
-  // For intraday bar series without a historical baseline, apply alpha = 0.997
-  // so VWAP curves dynamically with price action instead of dampening into a flat line.
-  const alpha = bars.length > 200 && !baseline ? 0.997 : 1.0
+  const isDaily = bars.length > 1 && (bars[1]!.time - bars[0]!.time >= 86400 * 0.7)
 
   for (const c of bars) {
-    if (c.time < anchorUnix && !baseline) continue
+    if (!baseline) {
+      if (isDaily) {
+        const barYmd = barCivilDate(c.time, clock.timeZone)
+        if (barYmd < anchorYmd) continue
+      } else {
+        if (c.time < anchorUnix) continue
+      }
+    }
 
     const price = (c.high + c.low + c.close) / 3
     const vol = c.volume > 0 ? c.volume : 1
 
-    sumPV = sumPV * alpha + price * vol
-    sumP2V = sumP2V * alpha + price * price * vol
-    sumV = sumV * alpha + vol
+    sumPV = sumPV + price * vol
+    sumP2V = sumP2V + price * price * vol
+    sumV = sumV + vol
 
     if (sumV <= 0) continue
 

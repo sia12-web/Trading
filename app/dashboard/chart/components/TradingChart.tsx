@@ -52,7 +52,6 @@ import {
   nyDeskSessionAt,
   isWeekdayYmd,
   zonedCivilToUnix,
-  computeAnchoredVwap,
   lastNTradingSessions as trimDeskCandles,
   type SessionBar,
 } from '@/lib/chart/sessionVwap'
@@ -2760,10 +2759,16 @@ export function TradingChart({
     if (!show5mAvwapOnChart) return
 
     const bm = avwap5mBenchmark
-    const fallbackPrice =
-      timeframe === '1D' && latestVwapBandsRef.current?.lastVwap ? latestVwapBandsRef.current.lastVwap : null
-    const price = bm?.vwap ?? fallbackPrice
+    const fallbackBands = timeframe === '1D' ? latestVwapBandsRef.current : null
+    const price = bm?.vwap ?? fallbackBands?.lastVwap
     if (!host || !price) return
+
+    const s1U = bm?.sigma1Upper ?? (fallbackBands?.upper1?.length ? fallbackBands.upper1[fallbackBands.upper1.length - 1]?.value : null)
+    const s1L = bm?.sigma1Lower ?? (fallbackBands?.lower1?.length ? fallbackBands.lower1[fallbackBands.lower1.length - 1]?.value : null)
+    const s2U = bm?.sigma2Upper ?? (fallbackBands?.upper2?.length ? fallbackBands.upper2[fallbackBands.upper2.length - 1]?.value : null)
+    const s2L = bm?.sigma2Lower ?? (fallbackBands?.lower2?.length ? fallbackBands.lower2[fallbackBands.lower2.length - 1]?.value : null)
+    const s3U = bm?.sigma3Upper ?? (fallbackBands?.upper3?.length ? fallbackBands.upper3[fallbackBands.upper3.length - 1]?.value : null)
+    const s3L = bm?.sigma3Lower ?? (fallbackBands?.lower3?.length ? fallbackBands.lower3[fallbackBands.lower3.length - 1]?.value : null)
 
     try {
       // 1. Central 5-Month Anchored VWAP (Macro Benchmark)
@@ -2778,76 +2783,76 @@ export function TradingChart({
       avwap5mLinesRef.current.push(vwapLine)
 
       // 2. Standard Deviation Bands (±1σ, ±2σ, and optional ±3σ)
-      if (bm && showSdBands) {
+      if (showSdBands) {
         // ±1σ Bands (68% Value Area)
-        if (Number.isFinite(bm.sigma1Upper)) {
+        if (s1U != null && Number.isFinite(s1U)) {
           const u1 = host.createPriceLine({
-            price: Number(bm.sigma1Upper.toFixed(2)),
+            price: Number(s1U.toFixed(2)),
             color: '#34d399',
             lineWidth: 1,
             lineStyle: LineStyle.Dashed,
             axisLabelVisible: true,
-            title: `5M +1σ ${bm.sigma1Upper.toLocaleString()}`,
+            title: `5M +1σ ${s1U.toLocaleString()}`,
           })
           avwap5mLinesRef.current.push(u1)
         }
-        if (Number.isFinite(bm.sigma1Lower)) {
+        if (s1L != null && Number.isFinite(s1L)) {
           const l1 = host.createPriceLine({
-            price: Number(bm.sigma1Lower.toFixed(2)),
+            price: Number(s1L.toFixed(2)),
             color: '#34d399',
             lineWidth: 1,
             lineStyle: LineStyle.Dashed,
             axisLabelVisible: true,
-            title: `5M -1σ ${bm.sigma1Lower.toLocaleString()}`,
+            title: `5M -1σ ${s1L.toLocaleString()}`,
           })
           avwap5mLinesRef.current.push(l1)
         }
 
         // ±2σ Bands (95% Value Area / Exhaustion Extremes)
-        if (Number.isFinite(bm.sigma2Upper)) {
+        if (s2U != null && Number.isFinite(s2U)) {
           const u2 = host.createPriceLine({
-            price: Number(bm.sigma2Upper.toFixed(2)),
+            price: Number(s2U.toFixed(2)),
             color: '#06b6d4',
             lineWidth: 1,
             lineStyle: LineStyle.Dashed,
             axisLabelVisible: true,
-            title: `5M +2σ ${bm.sigma2Upper.toLocaleString()}`,
+            title: `5M +2σ ${s2U.toLocaleString()}`,
           })
           avwap5mLinesRef.current.push(u2)
         }
-        if (Number.isFinite(bm.sigma2Lower)) {
+        if (s2L != null && Number.isFinite(s2L)) {
           const l2 = host.createPriceLine({
-            price: Number(bm.sigma2Lower.toFixed(2)),
+            price: Number(s2L.toFixed(2)),
             color: '#06b6d4',
             lineWidth: 1,
             lineStyle: LineStyle.Dashed,
             axisLabelVisible: true,
-            title: `5M -2σ ${bm.sigma2Lower.toLocaleString()}`,
+            title: `5M -2σ ${s2L.toLocaleString()}`,
           })
           avwap5mLinesRef.current.push(l2)
         }
 
         // ±3σ Bands (99.7% Tail Extreme - rendered in 3-band mode)
         if (avwap5mBandCount === 3) {
-          if (bm.sigma3Upper && Number.isFinite(bm.sigma3Upper)) {
+          if (s3U != null && Number.isFinite(s3U)) {
             const u3 = host.createPriceLine({
-              price: Number(bm.sigma3Upper.toFixed(2)),
+              price: Number(s3U.toFixed(2)),
               color: '#818cf8',
               lineWidth: 1,
               lineStyle: LineStyle.LargeDashed,
               axisLabelVisible: true,
-              title: `5M +3σ ${bm.sigma3Upper.toLocaleString()}`,
+              title: `5M +3σ ${s3U.toLocaleString()}`,
             })
             avwap5mLinesRef.current.push(u3)
           }
-          if (bm.sigma3Lower && Number.isFinite(bm.sigma3Lower)) {
+          if (s3L != null && Number.isFinite(s3L)) {
             const l3 = host.createPriceLine({
-              price: Number(bm.sigma3Lower.toFixed(2)),
+              price: Number(s3L.toFixed(2)),
               color: '#818cf8',
               lineWidth: 1,
               lineStyle: LineStyle.LargeDashed,
               axisLabelVisible: true,
-              title: `5M -3σ ${bm.sigma3Lower.toLocaleString()}`,
+              title: `5M -3σ ${s3L.toLocaleString()}`,
             })
             avwap5mLinesRef.current.push(l3)
           }
@@ -9155,8 +9160,7 @@ export function TradingChart({
       }
     }
 
-    // 5-Month Anchored VWAP on 1D; Dynamic Session/5D Anchored VWAP with bands on intraday
-    const clock = deskClockFor(instrument)
+    // 5-Month Anchored VWAP
     const mappedBars = ordered.map((c) => ({
       time: c.time as number,
       open: c.open,
@@ -9172,7 +9176,29 @@ export function TradingChart({
             instrument,
             baseline: null,
           })
-        : computeAnchoredVwap(mappedBars, clock)
+        : avwap5mBenchmark?.baseline
+        ? compute5MonthAnchoredVwap({
+            bars: mappedBars,
+            instrument,
+            baseline: avwap5mBenchmark.baseline,
+          })
+        : avwap5mBenchmark
+        ? {
+            anchorUnix: avwap5mBenchmark.anchorUnix,
+            vwap: mappedBars.map((b) => ({ time: b.time as UTCTimestamp, value: avwap5mBenchmark.vwap })),
+            upper1: mappedBars.map((b) => ({ time: b.time as UTCTimestamp, value: avwap5mBenchmark.sigma1Upper })),
+            lower1: mappedBars.map((b) => ({ time: b.time as UTCTimestamp, value: avwap5mBenchmark.sigma1Lower })),
+            upper2: mappedBars.map((b) => ({ time: b.time as UTCTimestamp, value: avwap5mBenchmark.sigma2Upper })),
+            lower2: mappedBars.map((b) => ({ time: b.time as UTCTimestamp, value: avwap5mBenchmark.sigma2Lower })),
+            upper3: avwap5mBenchmark.sigma3Upper
+              ? mappedBars.map((b) => ({ time: b.time as UTCTimestamp, value: avwap5mBenchmark.sigma3Upper! }))
+              : undefined,
+            lower3: avwap5mBenchmark.sigma3Lower
+              ? mappedBars.map((b) => ({ time: b.time as UTCTimestamp, value: avwap5mBenchmark.sigma3Lower! }))
+              : undefined,
+            lastVwap: avwap5mBenchmark.vwap,
+          }
+        : null
     latestVwapBandsRef.current = bands
     if (bands?.vwap?.length) {
       const last = bands.vwap[bands.vwap.length - 1]
@@ -9420,7 +9446,6 @@ export function TradingChart({
     const list = candlesRef.current
     if (!list || list.length === 0) return
 
-    const clock = deskClockFor(instrument)
     const mappedBars = list.map((c) => ({
       time: c.time as number,
       open: c.open,
@@ -9436,7 +9461,29 @@ export function TradingChart({
             instrument,
             baseline: null,
           })
-        : computeAnchoredVwap(mappedBars, clock)
+        : avwap5mBenchmark?.baseline
+        ? compute5MonthAnchoredVwap({
+            bars: mappedBars,
+            instrument,
+            baseline: avwap5mBenchmark.baseline,
+          })
+        : avwap5mBenchmark
+        ? {
+            anchorUnix: avwap5mBenchmark.anchorUnix,
+            vwap: mappedBars.map((b) => ({ time: b.time as UTCTimestamp, value: avwap5mBenchmark.vwap })),
+            upper1: mappedBars.map((b) => ({ time: b.time as UTCTimestamp, value: avwap5mBenchmark.sigma1Upper })),
+            lower1: mappedBars.map((b) => ({ time: b.time as UTCTimestamp, value: avwap5mBenchmark.sigma1Lower })),
+            upper2: mappedBars.map((b) => ({ time: b.time as UTCTimestamp, value: avwap5mBenchmark.sigma2Upper })),
+            lower2: mappedBars.map((b) => ({ time: b.time as UTCTimestamp, value: avwap5mBenchmark.sigma2Lower })),
+            upper3: avwap5mBenchmark.sigma3Upper
+              ? mappedBars.map((b) => ({ time: b.time as UTCTimestamp, value: avwap5mBenchmark.sigma3Upper! }))
+              : undefined,
+            lower3: avwap5mBenchmark.sigma3Lower
+              ? mappedBars.map((b) => ({ time: b.time as UTCTimestamp, value: avwap5mBenchmark.sigma3Lower! }))
+              : undefined,
+            lastVwap: avwap5mBenchmark.vwap,
+          }
+        : null
     latestVwapBandsRef.current = bands
     if (bands?.vwap?.length) {
       const last = bands.vwap[bands.vwap.length - 1]
