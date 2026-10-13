@@ -207,31 +207,15 @@ export async function GET(request: Request) {
             ? Math.max(days, 3)
             : Math.max(days, AVWAP_CANDLE_FETCH_CALENDAR_DAYS)
 
-        // 1. For NIKKEI, prefer Databento CME Globex MDP 3.0 when configured:
-        //    official continuous CME exchange tape with zero dropped off-peak/Asian sessions.
-        if (instrument === 'NIKKEI' && isDatabentoConfigured()) {
-          try {
-            const databento = await getDatabentoCandles(instrument, resolution, fetchDays)
-            if (databento?.candles?.length && databento.candles.length >= 20) {
-              candles = databento.candles
-              source = 'databento'
-            }
-          } catch (err) {
-            logger.warn(`[Candles] Databento fetch failed for ${instrument}, falling back to Yahoo`, err)
+        // 1. Direct CME Globex futures candles (MYM=F, MNQ=F, NKD=F, MGC=F, CL=F) matching CME & TradingView
+        try {
+          const yahoo = await getYahooCandles(instrument, resolution, fetchDays)
+          if (yahoo?.candles?.length) {
+            candles = yahoo.candles
+            source = 'yahoo'
           }
-        }
-
-        // 2. Direct CME Globex futures candles (MYM=F, MNQ=F, NKD=F, MGC=F, CL=F) matching CME & TradingView
-        if (!candles || candles.length === 0) {
-          try {
-            const yahoo = await getYahooCandles(instrument, resolution, fetchDays)
-            if (yahoo?.candles?.length) {
-              candles = yahoo.candles
-              source = 'yahoo'
-            }
-          } catch (err) {
-            logger.warn(`[Candles] Yahoo CME fetch failed for ${instrument}, falling back to Databento/OANDA`, err)
-          }
+        } catch (err) {
+          logger.warn(`[Candles] Yahoo CME fetch failed for ${instrument}, falling back to Databento/OANDA`, err)
         }
 
         // 3. Fallback to CME Globex MDP 3.0 candles via Databento archive when Yahoo unavailable

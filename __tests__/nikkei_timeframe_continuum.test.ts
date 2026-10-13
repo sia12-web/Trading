@@ -44,6 +44,12 @@ test('Nikkei 225 symbology and continuum integrity', async (t) => {
     // Check that volume exists on bars
     const positiveVolBars = json.candles.filter((c: any) => c.volume && c.volume > 0)
     assert.ok(positiveVolBars.length / json.candles.length > 0.90, 'over 90% of bars should have positive volume')
+
+    // Verify freshness: during active market hours, latest 5m candle must not be stale by hours
+    const lastBar = json.candles[json.candles.length - 1]
+    const nowSec = Math.floor(Date.now() / 1000)
+    const lagMinutes = Math.round((nowSec - lastBar.time) / 60)
+    assert.ok(lagMinutes <= 60, `latest 5m candle is stale by ${lagMinutes} minutes (must be <= 60 min during active market)`)
   })
 
   await t.test('serves complete 1m candles with zero missing market slots', async () => {
