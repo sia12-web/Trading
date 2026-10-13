@@ -13,6 +13,7 @@ import {
   liveQuoteDisagreesWithReference,
   mergeHistoryWithLiveTip,
   quoteUnixForBucket,
+  timeframeToSeconds,
   LIVE_MAX_GAP_FILLS,
 } from '../lib/chart/liveFormingBar'
 
@@ -262,6 +263,88 @@ const t0 = 1_700_000_000 - (1_700_000_000 % 300)
   assert.equal(rolledNext.last.time, t0 + 300)
   assert.equal(rolledNext.last.open, 90.6, 'new bar opens at previous bar close')
   assert.equal(rolledNext.last.close, 90.4)
+}
+
+{
+  // Multi-timeframe step resolution:
+  assert.equal(timeframeToSeconds('1m'), 60)
+  assert.equal(timeframeToSeconds('5m'), 300)
+  assert.equal(timeframeToSeconds('15m'), 900)
+  assert.equal(timeframeToSeconds('30m'), 1800)
+  assert.equal(timeframeToSeconds('1H'), 3600)
+  assert.equal(timeframeToSeconds('4H'), 14400)
+  assert.equal(timeframeToSeconds('1D'), 86400)
+}
+
+{
+  // 15m chart: mergeHistoryWithLiveTip must use 900s step and not inject 5m (300s) intermediate bars
+  const t15 = 1_700_000_000 - (1_700_000_000 % 900)
+  const hist15 = [
+    { time: t15, open: 100, high: 102, low: 99, close: 101, volume: 50 },
+  ]
+  const live15 = {
+    time: t15 + 900,
+    open: 101,
+    high: 103,
+    low: 100.5,
+    close: 102.5,
+    volume: 30,
+  }
+  const merged15 = mergeHistoryWithLiveTip(hist15, live15, '15m')
+  assert.equal(merged15.length, 2, '15m chart merges next bucket without intermediate 5m bars')
+  assert.equal(merged15[0]!.time, t15)
+  assert.equal(merged15[1]!.time, t15 + 900)
+
+  // When live is 2 buckets ahead on 15m, intermediate bar must have exactly 900s step
+  const live15TwoAhead = {
+    time: t15 + 1800,
+    open: 101,
+    high: 103,
+    low: 100.5,
+    close: 102.5,
+    volume: 30,
+  }
+  const merged15Gap = mergeHistoryWithLiveTip(hist15, live15TwoAhead, '15m')
+  assert.equal(merged15Gap.length, 3)
+  assert.equal(merged15Gap[1]!.time, t15 + 900, 'intermediate gap fill is 15m (900s), not 5m (300s)')
+  assert.equal(merged15Gap[2]!.time, t15 + 1800)
+}
+
+{
+  // 1H chart: mergeHistoryWithLiveTip must use 3600s step
+  const t1h = 1_700_000_000 - (1_700_000_000 % 3600)
+  const hist1h = [
+    { time: t1h, open: 200, high: 205, low: 198, close: 202, volume: 100 },
+  ]
+  const live1h = {
+    time: t1h + 3600,
+    open: 202,
+    high: 206,
+    low: 201,
+    close: 204,
+    volume: 40,
+  }
+  const merged1h = mergeHistoryWithLiveTip(hist1h, live1h, '1H')
+  assert.equal(merged1h.length, 2, '1H chart merges next bucket without intermediate 5m bars')
+  assert.equal(merged1h[1]!.time, t1h + 3600)
+}
+
+{
+  // closedHistoryOhlcChanged detects modified closed bar up to 50 bars ago
+  const tip = { time: t0 + 30 * 300, open: 100, high: 101, low: 99, close: 100.5 }
+  const barsA: Array<{ time: number; open: number; high: number; low: number; close: number }> = []
+  for (let i = 0; i < 30; i++) {
+    barsA.push({ time: t0 + i * 300, open: 100, high: 101, low: 99, close: 100 })
+  }
+  barsA.push(tip)
+  const barsB = barsA.map((b) => ({ ...b }))
+  // Modify bar 20 bars ago (which was outside the old 12-bar window)
+  barsB[10]!.close = 101.5
+  assert.equal(
+    closedHistoryOhlcChanged(barsA, barsB, true),
+    true,
+    'modifications 20 bars back are cleanly detected'
+  )
 }
 
 console.log('live_forming_bar: all passed')

@@ -261,6 +261,39 @@ export function dropImplausibleDeskBars<T extends FormingBar>(
   return out.length > 0 ? out : bars
 }
 
+export function timeframeToSeconds(tf: string): number {
+  switch (tf) {
+    case '1m':
+    case '1':
+      return 60
+    case '3m':
+    case '3':
+      return 180
+    case '5m':
+    case '5':
+      return 300
+    case '15m':
+    case '15':
+      return 900
+    case '30m':
+    case '30':
+      return 1800
+    case '1H':
+    case '60':
+    case '60m':
+      return 3600
+    case '4H':
+    case '240':
+    case '240m':
+      return 14400
+    case '1D':
+    case 'D':
+      return 86400
+    default:
+      return 300
+  }
+}
+
 /**
  * REST history owns closed bars. The tick tip owns the forming bar's open + close
  * so a delayed Yahoo/OANDA 5m print cannot repaint green vs red.
@@ -272,15 +305,9 @@ export function mergeHistoryWithLiveTip<T extends FormingBar>(
   instrument?: string | null
 ): T[] {
   if (!live || history.length === 0) return history
-  const step =
-    timeframe === '1m'
-      ? 60
-      : timeframe === '30m'
-      ? 1800
-      : timeframe === '1D'
-      ? 86400
-      : 300
-  const liveT = timeframe === '1D' ? live.time : Math.floor(live.time / step) * step
+  const step = timeframeToSeconds(timeframe)
+  const isDaily = timeframe === '1D' || timeframe === 'D'
+  const liveT = isDaily ? live.time : Math.floor(live.time / step) * step
   const alignedLive: T = { ...live, time: liveT }
   const last = history[history.length - 1]!
   const lastT = last.time
@@ -344,16 +371,16 @@ export function closedHistoryOhlcChanged<T extends FormingBar>(
   if (prev.length === 0) return false
   const tipSkip = tipOwned && prev.length > 0 && next.length > 0
   const end = tipSkip ? prev.length - 1 : prev.length
-  const start = Math.max(0, end - 12)
+  const start = Math.max(0, end - 50)
   for (let i = start; i < end; i++) {
     const a = prev[i]!
     const b = next[i]!
     if (a.time !== b.time) return true
     if (
-      Math.abs(a.open - b.open) > 0.1 ||
-      Math.abs(a.high - b.high) > 0.1 ||
-      Math.abs(a.low - b.low) > 0.1 ||
-      Math.abs(a.close - b.close) > 0.1
+      Math.abs(a.open - b.open) > 0.05 ||
+      Math.abs(a.high - b.high) > 0.05 ||
+      Math.abs(a.low - b.low) > 0.05 ||
+      Math.abs(a.close - b.close) > 0.05
     ) {
       return true
     }

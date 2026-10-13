@@ -10027,11 +10027,11 @@ export function TradingChart({
     ) => {
       // Guard rogue ticks, cross-feed scale bleeds, and delayed outliers.
       // Calibrated per instrument to eliminate false massive tails without blocking real volatility
-      const tip = lastCandleRef.current
+      const tip = lastCandleRef.current ?? (candlesRef.current.length > 0 ? candlesRef.current[candlesRef.current.length - 1] : null)
       if (
-        trustedExchange &&
         timeframe !== '1D' &&
         tip &&
+        quoteTs > 0 &&
         Math.floor(quoteTs / barSeconds) * barSeconds <
           (tip.time as number)
       ) {
@@ -10104,8 +10104,9 @@ export function TradingChart({
 
       // Advance candle tip whenever the chart stream is open (incl. afternoon)
       if (!streamLive) return
-      const last = lastCandleRef.current
+      const last = lastCandleRef.current ?? (candlesRef.current.length > 0 ? candlesRef.current[candlesRef.current.length - 1] : null)
       if (!last || !candleRef.current) return
+      if (!lastCandleRef.current) lastCandleRef.current = last
 
       if (timeframe === '1D') {
         const quoteDay = snapDailyUnix(quoteTs)
@@ -10266,6 +10267,7 @@ export function TradingChart({
         }
       }
 
+      const isRoll = stepped.rolled
       const bar: OHLCV = {
         time: stepped.last.time as UTCTimestamp,
         open:
@@ -10274,10 +10276,14 @@ export function TradingChart({
             ? exactExchangeMinute.open
             : stepped.last.open,
         high: exactExchangeMinute
-          ? Math.max(stepped.last.high, exactExchangeMinute.high)
+          ? tfSec === 60 || isRoll
+            ? Math.max(exactExchangeMinute.high, price)
+            : Math.max(stepped.last.high, exactExchangeMinute.high)
           : stepped.last.high,
         low: exactExchangeMinute
-          ? Math.min(stepped.last.low, exactExchangeMinute.low)
+          ? tfSec === 60 || isRoll
+            ? Math.min(exactExchangeMinute.low, price)
+            : Math.min(stepped.last.low, exactExchangeMinute.low)
           : stepped.last.low,
         close: stepped.last.close,
         volume:
@@ -10390,28 +10396,47 @@ export function TradingChart({
 
         const prev = candlesRef.current
         let requiresFullSetData = false
-        if (prev.length === 0 || nextBars.length < prev.length) {
+        if (prev.length === 0 || nextBars.length === 0 || nextBars.length < prev.length) {
           requiresFullSetData = true
         } else if ((prev[0]!.time as number) !== (nextBars[0]!.time as number)) {
           requiresFullSetData = true
-        } else if (nextBars.length - prev.length > 10) {
+        } else if (nextBars.length - prev.length > 1) {
+          // More than 1 new bar arrived from server history (gap-fill, multi-bar reconnect)
           requiresFullSetData = true
         } else {
-          // Check if historical bars before the trailing bars changed
-          const stableEnd = Math.max(0, prev.length - 2)
-          const checkStart = Math.max(0, stableEnd - 12)
-          for (let i = checkStart; i < stableEnd; i++) {
+          // Compare all closed bars that exist in both history sets (all bars except the active tip).
+          // If any closed bar differs in timestamp, OHLC, or volume, we must setData to reconcile history.
+          const closedCount = Math.min(prev.length - 1, nextBars.length - 1)
+          const checkStart = Math.max(0, closedCount - 50)
+          for (let i = checkStart; i < closedCount; i++) {
             const a = prev[i]!
             const b = nextBars[i]!
             if (
               (a.time as number) !== (b.time as number) ||
-              Math.abs(a.open - b.open) > 0.1 ||
-              Math.abs(a.high - b.high) > 0.1 ||
-              Math.abs(a.low - b.low) > 0.1 ||
-              Math.abs(a.close - b.close) > 0.1
+              Math.abs(a.open - b.open) > 0.05 ||
+              Math.abs(a.high - b.high) > 0.05 ||
+              Math.abs(a.low - b.low) > 0.05 ||
+              Math.abs(a.close - b.close) > 0.05 ||
+              Math.abs((a.volume ?? 0) - (b.volume ?? 0)) > 5
             ) {
               requiresFullSetData = true
               break
+            }
+          }
+          // If a new bar was added (nextBars.length === prev.length + 1),
+          // the previously forming bar at prev.length - 1 is now closed on the server.
+          // Compare it against the server's finalized version of that bar.
+          if (!requiresFullSetData && nextBars.length === prev.length + 1) {
+            const prevTip = prev[prev.length - 1]!
+            const serverClosed = nextBars[prev.length - 1]!
+            if (
+              (prevTip.time as number) !== (serverClosed.time as number) ||
+              Math.abs(prevTip.open - serverClosed.open) > 0.05 ||
+              Math.abs(prevTip.high - serverClosed.high) > 0.05 ||
+              Math.abs(prevTip.low - serverClosed.low) > 0.05 ||
+              Math.abs(prevTip.close - serverClosed.close) > 0.05
+            ) {
+              requiresFullSetData = true
             }
           }
         }
@@ -10464,8 +10489,17 @@ export function TradingChart({
             }
             candleData.sort((a, b) => chartTimeToUnix(a.time) - chartTimeToUnix(b.time))
             volumeData.sort((a, b) => chartTimeToUnix(a.time) - chartTimeToUnix(b.time))
+            const timeScale = chartRef.current?.timeScale()
+            const logicalRange = timeScale?.getVisibleLogicalRange()
             candleRef.current?.setData(candleData)
             volumeSeriesRef.current?.setData(volumeData)
+            if (logicalRange && timeScale) {
+              try {
+                timeScale.setVisibleLogicalRange(logicalRange)
+              } catch {
+                /* ignore */
+              }
+            }
           } catch {
             /* ignore */
           }
@@ -10474,6 +10508,7 @@ export function TradingChart({
           // Smooth incremental reconciliation: update trailing bars without wiping the chart canvas
           const tz = chartTzRef.current
           const startIndex = Math.max(0, prev.length - 1)
+          let incrementalFailed = false
           for (let i = startIndex; i < nextBars.length; i++) {
             const b = nextBars[i]!
             const v = ensureVisibleCandleRange(b, instrument)
@@ -10487,7 +10522,7 @@ export function TradingChart({
                 close: v.close,
               })
             } catch {
-              /* ignore */
+              incrementalFailed = true
             }
             if (volumeSeriesRef.current) {
               try {
@@ -10499,6 +10534,49 @@ export function TradingChart({
               } catch {
                 /* ignore */
               }
+            }
+          }
+          if (incrementalFailed) {
+            try {
+              const ordered = normalizeCandleTimes(nextBars, timeframe, instrument)
+              const seenTimes = new Set<string>()
+              const candleData: CandlestickData[] = []
+              const volumeData: any[] = []
+              for (const c of ordered) {
+                const t = toSeriesTime(c.time as number, timeframe, tz)
+                const key = isBusinessDay(t) ? `${t.year}-${t.month}-${t.day}` : String(t)
+                if (!seenTimes.has(key)) {
+                  seenTimes.add(key)
+                  candleData.push({
+                    time: t,
+                    open: c.open,
+                    high: c.high,
+                    low: c.low,
+                    close: c.close,
+                  })
+                  volumeData.push({
+                    time: t,
+                    value: Number.isFinite(c.volume) ? (c.volume ?? 0) : 0,
+                    color: c.close >= c.open ? 'rgba(8, 153, 129, 0.7)' : 'rgba(242, 54, 69, 0.7)',
+                  })
+                }
+              }
+              candleData.sort((a, b) => chartTimeToUnix(a.time) - chartTimeToUnix(b.time))
+              volumeData.sort((a, b) => chartTimeToUnix(a.time) - chartTimeToUnix(b.time))
+              const timeScale = chartRef.current?.timeScale()
+              const logicalRange = timeScale?.getVisibleLogicalRange()
+              candleRef.current?.setData(candleData)
+              volumeSeriesRef.current?.setData(volumeData)
+              if (logicalRange && timeScale) {
+                try {
+                  timeScale.setVisibleLogicalRange(logicalRange)
+                } catch {
+                  /* ignore */
+                }
+              }
+              setCandles(nextBars)
+            } catch {
+              /* ignore */
             }
           }
         }
