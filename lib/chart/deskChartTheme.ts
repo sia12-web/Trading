@@ -123,7 +123,7 @@ export const DESK_CHART_THEME = {
 export const INSTRUMENT_MIN_TICK_SPREAD: Record<string, number> = {
   NASDAQ: 0.25,
   DOW: 1.0,
-  NIKKEI: 5.0,
+  NIKKEI: 10.0,
   GOLD: 0.10,
   CRUDE: 0.01,
   SILVER: 0.005,

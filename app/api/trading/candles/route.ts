@@ -35,6 +35,7 @@ import type { Instrument } from '@/types/price-feed'
 import { getDatabentoCandles, getDatabentoRecent1m, isDatabentoConfigured } from '@/lib/databento/client'
 import { fetchDatabentoLiveBars, resolveDatabentoLiveQuote } from '@/lib/databento/liveHub'
 import { liveTapeHasVendorGap, mergeTapeBars, overlayVendorWithTape } from '@/lib/databento/liveOverlay'
+import { fillCandleGaps } from '@/lib/chart/candleGapFiller'
 import { logger } from '@/lib/utils/logger'
 
 export const dynamic = 'force-dynamic'
@@ -170,10 +171,31 @@ export async function GET(request: Request) {
     } else {
       if (isDaily) {
         // Daily chart: fetch full multi-year daily history directly from Yahoo Finance in ~50ms
-        const yahoo = await getYahooCandles(instrument, 'D', days)
-        if (yahoo?.candles?.length) {
-          candles = yahoo.candles
-          source = 'yahoo'
+        try {
+          const yahoo = await getYahooCandles(instrument, 'D', days)
+          if (yahoo?.candles?.length) {
+            candles = yahoo.candles
+            source = 'yahoo'
+          }
+        } catch (err) {
+          logger.warn(`[Candles] Yahoo daily fetch failed for ${instrument}`, err)
+        }
+
+        // Fallback for daily: OANDA continuous CFD shifted by CME basis
+        if ((!candles || candles.length === 0) && isOandaConfigured()) {
+          try {
+            const oanda = await getOandaCandles(instrument, 'D', days)
+            if (oanda?.candles?.length) {
+              let basis = getCmeBasis(instrument) ?? getLastKnownCmeBasis(instrument)
+              if (basis == null) {
+                basis = await warmCmeBasis(instrument)
+              }
+              candles = applyCmeBasisToCandles(oanda.candles, basis)
+              source = 'oanda'
+            }
+          } catch (err) {
+            logger.warn(`[Candles] OANDA daily fetch failed for ${instrument}`, err)
+          }
         }
       } else {
         // Intraday (1m, 5m, 15m, 30m, 1H, 4H):
@@ -185,18 +207,34 @@ export async function GET(request: Request) {
             ? Math.max(days, 3)
             : Math.max(days, AVWAP_CANDLE_FETCH_CALENDAR_DAYS)
 
-        // 1. Direct CME Globex futures candles (MYM=F, MNQ=F, NKD=F, MGC=F, CL=F) matching CME & TradingView
-        try {
-          const yahoo = await getYahooCandles(instrument, resolution, fetchDays)
-          if (yahoo?.candles?.length) {
-            candles = yahoo.candles
-            source = 'yahoo'
+        // 1. For NIKKEI, prefer Databento CME Globex MDP 3.0 when configured:
+        //    official continuous CME exchange tape with zero dropped off-peak/Asian sessions.
+        if (instrument === 'NIKKEI' && isDatabentoConfigured()) {
+          try {
+            const databento = await getDatabentoCandles(instrument, resolution, fetchDays)
+            if (databento?.candles?.length && databento.candles.length >= 20) {
+              candles = databento.candles
+              source = 'databento'
+            }
+          } catch (err) {
+            logger.warn(`[Candles] Databento fetch failed for ${instrument}, falling back to Yahoo`, err)
           }
-        } catch (err) {
-          logger.warn(`[Candles] Yahoo CME fetch failed for ${instrument}, falling back to Databento/OANDA`, err)
         }
 
-        // 2. Fallback to CME Globex MDP 3.0 candles via Databento archive when Yahoo unavailable
+        // 2. Direct CME Globex futures candles (MYM=F, MNQ=F, NKD=F, MGC=F, CL=F) matching CME & TradingView
+        if (!candles || candles.length === 0) {
+          try {
+            const yahoo = await getYahooCandles(instrument, resolution, fetchDays)
+            if (yahoo?.candles?.length) {
+              candles = yahoo.candles
+              source = 'yahoo'
+            }
+          } catch (err) {
+            logger.warn(`[Candles] Yahoo CME fetch failed for ${instrument}, falling back to Databento/OANDA`, err)
+          }
+        }
+
+        // 3. Fallback to CME Globex MDP 3.0 candles via Databento archive when Yahoo unavailable
         if ((!candles || candles.length === 0) && isDatabentoConfigured()) {
           try {
             const databento = await getDatabentoCandles(instrument, resolution, fetchDays)
@@ -209,7 +247,7 @@ export async function GET(request: Request) {
           }
         }
 
-        // 3. Fallback to OANDA 24/7 continuous CFDs shifted by CME basis if CME direct feeds unavailable
+        // 4. Fallback to OANDA 24/7 continuous CFDs shifted by CME basis if CME direct feeds unavailable
         if ((!candles || candles.length === 0) && isOandaConfigured()) {
           try {
             const oanda = await getOandaCandles(instrument, resolution, fetchDays)
@@ -228,6 +266,11 @@ export async function GET(request: Request) {
 
         if (candles?.length) {
           candles = clipAfternoonBars(candles, instrument)
+        }
+
+        // Fill intraday dropouts during active CME market hours to guarantee unbroken continuum
+        if (candles?.length && !isDaily) {
+          candles = fillCandleGaps(candles, timeframe, instrument)
         }
 
         // 4. Overlay the tail with real CME Globex 1m prints. Yahoo/OANDA lag the

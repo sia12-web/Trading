@@ -205,10 +205,10 @@ export function resolveYahooSymbol(
   resolution: string
 ): string | null {
   if (
-    (instrument === 'GOLD' || instrument === 'SILVER') &&
+    (instrument === 'GOLD' || instrument === 'SILVER' || instrument === 'NIKKEI') &&
     (resolution === 'D' || resolution === '1D' || resolution === '1d')
   ) {
-    return instrument === 'GOLD' ? 'GC=F' : 'SI=F'
+    return instrument === 'GOLD' ? 'GC=F' : instrument === 'SILVER' ? 'SI=F' : 'NKD=F'
   }
   return YAHOO_SYMBOLS[instrument] ?? null
 }

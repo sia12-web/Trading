@@ -143,13 +143,15 @@ export function fillCandleGaps<T extends BaseCandle>(
       while (cursorTime < targetTime && filledCount < MAX_GAP_FILL_BARS) {
         if (!isCmeMarketHalt(cursorTime)) {
           const carryPrice = prev.close
+          const prevVol = Number(prev.volume) || 0
+          const syntheticVol = prevVol > 0 ? Math.max(1, Math.round(prevVol * 0.05)) : 1
           const gapBar: BaseCandle = {
             time: cursorTime,
             open: carryPrice,
             high: carryPrice,
             low: carryPrice,
             close: carryPrice,
-            volume: 0,
+            volume: syntheticVol,
           }
           result.push(gapBar as T)
           filledCount++

@@ -866,7 +866,7 @@ function normalizeCandleTimes(candles: OHLCV[], tf: DeskTimeframe = '5m', instru
       high: visible.high,
       low: visible.low,
       close: visible.close,
-      volume: Number.isFinite(c.volume) ? Number(c.volume) : 0,
+      volume: (Number.isFinite(c.volume) && Number(c.volume) > 0) ? Number(c.volume) : (tf !== '1D' ? 1 : (Number(c.volume) || 0)),
     }
     const prev = out[out.length - 1]
     if (prev && (prev.time as number) === t) {
@@ -9108,9 +9108,11 @@ export function TradingChart({
           close: c.close,
         })
         const isUp = c.close >= c.open
+        const rawVol = Number.isFinite(c.volume) ? (c.volume ?? 0) : 0
+        const volVal = rawVol > 0 ? rawVol : (timeframe !== '1D' ? 1 : 0)
         volumeData.push({
           time: t,
-          value: Number.isFinite(c.volume) ? (c.volume ?? 0) : 0,
+          value: volVal,
           color: isUp ? 'rgba(8, 153, 129, 0.7)' : 'rgba(242, 54, 69, 0.7)',
         })
         const d = cvdByUnix.get(c.time as number)

@@ -9,7 +9,7 @@ import type { Instrument } from '@/types/price-feed'
 export const YAHOO_CME_SYMBOLS: Record<Instrument, string> = {
   DOW: 'MYM=F',
   NASDAQ: 'MNQ=F',
-  NIKKEI: 'NIY=F',
+  NIKKEI: 'NKD=F',
   GOLD: 'MGC=F',
   CRUDE: 'CL=F',
   SILVER: 'SIL=F',
