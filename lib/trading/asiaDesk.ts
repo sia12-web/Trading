@@ -124,25 +124,28 @@ export function isAsiaDeskStreamWindow(now: Date = new Date()): boolean {
   return mins >= ASIA_OPEN_MINS || mins < ASIA_STREAM_END_MINS
 }
 
-/** Railway scan + place Telegram: 02:00–03:40 Montreal weekdays. */
+/** Scan window: 02:00–06:00 Montreal/ET (Asia Lock 02:00, Cancel 03:30, London Open Judas 03:00–05:00, Gold LBMA Relief 03:30–06:00). */
 export function isAsiaDeskScanWindow(now: Date = new Date()): boolean {
   if (!isAsiaMontrealWeekday(now)) return false
   const { mins } = asiaMontrealMins(now)
-  return mins >= ASIA_LOCK_MINS && mins < ASIA_FILL_CUTOFF_MINS + 10
+  return mins >= ASIA_LOCK_MINS && mins < 6 * 60 // 02:00 to 06:00 ET
 }
 
 export function isAsiaDeskFlattenWindow(now: Date = new Date()): boolean {
   if (!isAsiaMontrealWeekday(now)) return false
   const { mins } = asiaMontrealMins(now)
-  return mins >= ASIA_FLAT_MINS && mins < ASIA_FLAT_MINS + 15
+  return mins >= ASIA_FLAT_MINS && mins < ASIA_FLAT_MINS + 20
 }
 
-/** Nasdaq Dalton Prior Day POC Reversion window: 18:00–20:00 Montreal/ET weekdays. */
-export function isAsiaDeskNasdaqWindow(now: Date = new Date()): boolean {
+/** Evening window: 18:00–21:00 Montreal/ET (Nasdaq POC Reversion 18:00–20:00 & Nikkei Tokyo Cash Open 19:00–21:00). */
+export function isAsiaDeskEveningWindow(now: Date = new Date()): boolean {
   if (!isAsiaMontrealWeekday(now)) return false
   const { mins } = asiaMontrealMins(now)
-  return mins >= 18 * 60 && mins < 20 * 60
+  return mins >= 18 * 60 && mins < 21 * 60
 }
+
+/** Alias for backward compatibility */
+export const isAsiaDeskNasdaqWindow = isAsiaDeskEveningWindow
 
 export function asiaDeskEventForClock(
   session: AsiaSession | null,

@@ -35,9 +35,8 @@ export async function register() {
     logger.error('boot.env_incomplete', { missing: env.missing })
   }
 
-  const isRailway = Boolean(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID)
   const isBuild = process.env.NEXT_PHASE === 'phase-production-build'
-  if (isRailway && process.env.NODE_ENV === 'production' && !isBuild) {
+  if (!isBuild) {
     const { startAsiaDeskWatch } = await import('./lib/trading/asiaDeskWatch')
     startAsiaDeskWatch()
   }

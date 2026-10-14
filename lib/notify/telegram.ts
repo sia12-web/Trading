@@ -263,3 +263,120 @@ export async function sendAsianEdgeOutingAlert(args: {
 
   return sendTelegramMessage(text)
 }
+
+/**
+ * Dispatch Nikkei 225 Tokyo Cash session trade alert (Gap-Fade Long or Breakdown Short).
+ */
+export async function sendNikkeiTradeAlert(args: {
+  action: 'BUY_GAP_FADE_LONG' | 'SELL_BREAKDOWN_SHORT'
+  entry: number
+  stopLoss: number
+  takeProfit1: number
+  takeProfit2: number
+  gapPct: number
+  riskPts: number
+  contracts?: number
+  timeNote?: string
+  note?: string
+}): Promise<TelegramSendResult> {
+  const icon = args.action.includes('BUY') ? '🟢' : '🔴'
+  const actionLabel =
+    args.action === 'BUY_GAP_FADE_LONG'
+      ? 'BUY / GO LONG (Tokyo Gap-Fade Absorption)'
+      : 'SELL / GO SHORT (Breakdown Continuation)'
+  const contracts = args.contracts ?? 1
+  const riskCash = args.riskPts * 5.0 * contracts // NKD $5/pt multiplier
+
+  const text = [
+    `🇯🇵 *[TOKYO DESK] Execution Alert — Nikkei 225 (NKD / ^N225)*`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `${icon} *Action:* \`${actionLabel}\``,
+    `📊 *Opening Gap:* \`${args.gapPct >= 0 ? '+' : ''}${args.gapPct.toFixed(2)}%\` _(USD/JPY buffer active)_`,
+    ``,
+    `🎯 *Execution Entry:* \`${args.entry.toFixed(0)}\``,
+    `🛑 *Stop Loss:* \`${args.stopLoss.toFixed(0)}\` _(${args.riskPts.toFixed(0)} pts risk / ~$${riskCash.toFixed(0)})_`,
+    `🏆 *Take Profit 1:* \`${args.takeProfit1.toFixed(0)}\` _(Half Gap Fill)_`,
+    `🏆 *Take Profit 2:* \`${args.takeProfit2.toFixed(0)}\` _(Full Gap Fill / Tokyo VWAP)_`,
+    ``,
+    `📦 *Position Size:* \`${contracts} NKD contract\` ($5/pt)`,
+    `⏱️ *Trading Window:* ${args.timeNote ?? '19:15 – 21:00 ET (Tokyo Morning Drive)'}`,
+    args.note ? `📝 *Desk Directive:* ${args.note}` : '',
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `_TradePulse Tokyo Execution Desk Protocol_`,
+  ].filter(Boolean).join('\n')
+
+  return sendTelegramMessage(text)
+}
+
+/**
+ * Dispatch London Session Judas Trap / Liquidity Sweep alert (Nasdaq or Dow).
+ */
+export async function sendLondonJudasAlert(args: {
+  instrument: string
+  contract: string
+  pointValue: number
+  entry: number
+  stopLoss: number
+  takeProfit: number
+  riskPts: number
+  contracts?: number
+  timeNote?: string
+  note?: string
+}): Promise<TelegramSendResult> {
+  const contracts = args.contracts ?? 1
+  const riskCash = args.riskPts * args.pointValue * contracts
+
+  const text = [
+    `🇬🇧 *[LONDON DESK] Execution Alert — ${args.instrument}*`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `🟢 *Action:* \`BUY / GO LONG (Judas Swing Liquidity Reclaim)\``,
+    `⚡ *Condition:* Overnight Low Swept & Reclaimed with Positive Rejection`,
+    ``,
+    `🎯 *Execution Entry:* \`${args.entry.toFixed(1)}\``,
+    `🛑 *Stop Loss:* \`${args.stopLoss.toFixed(1)}\` _(${args.riskPts.toFixed(1)} pts risk / ~$${riskCash.toFixed(0)})_`,
+    `🏆 *Take Profit Target:* \`${args.takeProfit.toFixed(1)}\` _(Overnight Midpoint / VWAP)_`,
+    ``,
+    `📦 *Position Size:* \`${contracts} ${args.contract} contract\``,
+    `⏱️ *Trading Window:* ${args.timeNote ?? '03:00 – 05:00 ET (European Cash Open)'}`,
+    args.note ? `📝 *Desk Directive:* ${args.note}` : '',
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `_TradePulse London Desk Protocol_`,
+  ].filter(Boolean).join('\n')
+
+  return sendTelegramMessage(text)
+}
+
+/**
+ * Dispatch Gold London LBMA Physical Relief Bounce alert.
+ */
+export async function sendGoldLondonReliefAlert(args: {
+  entry: number
+  stopLoss: number
+  takeProfit: number
+  riskPts: number
+  contracts?: number
+  timeNote?: string
+  note?: string
+}): Promise<TelegramSendResult> {
+  const contracts = args.contracts ?? 1
+  const riskCash = args.riskPts * 10.0 * contracts // MGC $10/pt
+
+  const text = [
+    `🇬🇧 *[LONDON DESK] Execution Alert — Micro Gold (MGC / XAU/USD)*`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `🟢 *Action:* \`BUY / GO LONG (LBMA Physical Relief Bounce)\``,
+    `⚡ *Condition:* Round-Number Support Tested with Dip Absorption`,
+    ``,
+    `🎯 *Execution Entry:* \`$${args.entry.toFixed(1)}\``,
+    `🛑 *Stop Loss:* \`$${args.stopLoss.toFixed(1)}\` _($${args.riskPts.toFixed(1)} risk / ~$${riskCash.toFixed(0)})_`,
+    `🏆 *Take Profit Target:* \`$${args.takeProfit.toFixed(1)}\` _(Relief Target to Prior Value)_`,
+    ``,
+    `📦 *Position Size:* \`${contracts} MGC contract\` ($10/pt)`,
+    `⏱️ *Trading Window:* ${args.timeNote ?? '03:30 – 06:00 ET (European Morning)'}`,
+    args.note ? `📝 *Desk Directive:* ${args.note}` : '',
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `_TradePulse London Desk Protocol_`,
+  ].filter(Boolean).join('\n')
+
+  return sendTelegramMessage(text)
+}
