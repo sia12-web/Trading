@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { AsianEdgePanel } from '../chart/components/AsianEdgePanel'
+import { AsianEdgePanel } from './AsianEdgePanel'
 
 interface CashPrice {
   price: number

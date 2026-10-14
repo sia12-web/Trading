@@ -5018,7 +5018,6 @@ export function TradingChart({
 
   // ── Leo AI Desk Assistant Live State & Telemetry Context ──────────────────
   const [leoPanelOpen, setLeoPanelOpen] = useState(false)
-  const [leoInitialTab, setLeoInitialTab] = useState<'CHAT' | 'STRATEGY_RULES' | 'ASIAN_EDGE'>('CHAT')
   const [leoExternalPoints, setLeoExternalPoints] = useState<LeoDataPoint[]>([])
   const [leoAutoPrompt, setLeoAutoPrompt] = useState<string | null>(null)
   const [showQuestioningModal, setShowQuestioningModal] = useState(false)
@@ -13546,24 +13545,6 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
                   )}
                 </button>
               )}
-
-              {/* Asian Edge Institutional Desk Button */}
-              <button
-                type="button"
-                onClick={() => {
-                  setLeoInitialTab('ASIAN_EDGE')
-                  setLeoPanelOpen(true)
-                }}
-                className={`flex items-center gap-1.5 select-none px-2 py-1 rounded font-bold transition shadow-sm active:scale-95 cursor-pointer ${
-                  leoPanelOpen && leoInitialTab === 'ASIAN_EDGE'
-                    ? 'bg-amber-500/25 text-amber-200 border border-amber-400/60 shadow-sm font-semibold'
-                    : 'bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 text-amber-300 hover:text-white'
-                }`}
-                title="Open Asian Edge Desk: Execution, Outing, SL/TP notes, and Telegram notifications"
-              >
-                <span className="leading-none">🌙</span>
-                <span className="leading-none">Asian Edge</span>
-              </button>
             </div>
 
             {/* Live price ticker */}
@@ -16384,7 +16365,6 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
           context={leoContext}
           candles={candlesRef.current.length > 0 ? candlesRef.current : candles}
           isOpen={leoPanelOpen}
-          initialTab={leoInitialTab}
           onToggleOpen={() => setLeoPanelOpen((prev) => !prev)}
           onClose={() => setLeoPanelOpen(false)}
           externalAttachedPoints={leoExternalPoints}

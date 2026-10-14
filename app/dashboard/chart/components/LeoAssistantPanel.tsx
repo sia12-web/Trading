@@ -39,7 +39,6 @@ import {
 } from '@/lib/trading/trendlineStrategy'
 import type { UserTrendline } from '@/lib/trading/userDrawings'
 import { WyckoffRulesPanel } from './WyckoffRulesPanel'
-import { AsianEdgePanel } from './AsianEdgePanel'
 
 export interface ArmedDeskRule {
   id: string
@@ -117,7 +116,7 @@ interface LeoAssistantPanelProps {
   context: LeoChatContext
   candles?: any[]
   isOpen?: boolean
-  initialTab?: 'CHAT' | 'STRATEGY_RULES' | 'ASIAN_EDGE'
+  initialTab?: 'CHAT' | 'STRATEGY_RULES'
   onToggleOpen?: () => void
   onClose?: () => void
   onSelectDataPoint?: (point: LeoDataPoint) => void
@@ -281,8 +280,8 @@ export function LeoAssistantPanel({
     }
   }, [inputPrompt])
 
-  // Active Panel Tab: Chat vs Wyckoff Strategy Rules vs Asian Edge Desk
-  const [activeTab, setActiveTab] = useState<'CHAT' | 'STRATEGY_RULES' | 'ASIAN_EDGE'>(
+  // Active Panel Tab: Chat vs Wyckoff Strategy Rules
+  const [activeTab, setActiveTab] = useState<'CHAT' | 'STRATEGY_RULES'>(
     initialTab || 'CHAT'
   )
 
@@ -2028,7 +2027,7 @@ export function LeoAssistantPanel({
             )}
           </div>
 
-          {/* ── Mode Switcher Tabs (Leo Chat vs Wyckoff Rules vs Asian Edge) ── */}
+          {/* ── Mode Switcher Tabs (Leo Chat vs Wyckoff Rules) ── */}
           <div className="flex items-center border-b border-neutral-800/80 bg-neutral-950/90 px-2 py-1.5 gap-1 shrink-0">
             <button
               type="button"
@@ -2053,18 +2052,6 @@ export function LeoAssistantPanel({
             >
               <span>📜</span>
               <span>22 Rules</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('ASIAN_EDGE')}
-              className={`flex-1 py-1.5 px-1.5 rounded-lg text-[10px] font-mono font-bold transition-all flex items-center justify-center gap-1 ${
-                activeTab === 'ASIAN_EDGE'
-                  ? 'bg-amber-950/80 text-amber-200 border border-amber-500/60 shadow-sm'
-                  : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900/60 border border-transparent'
-              }`}
-            >
-              <span>🌙</span>
-              <span>Asian Edge</span>
             </button>
           </div>
 
@@ -2959,19 +2946,9 @@ export function LeoAssistantPanel({
             </div>
           </div>
         </>
-      ) : activeTab === 'STRATEGY_RULES' ? (
+      ) : (
         <WyckoffRulesPanel
           instrument={context.instrument}
-          onAskLeo={(prompt: string) => {
-            setActiveTab('CHAT')
-            handleSendMessage(prompt)
-          }}
-        />
-      ) : (
-        <AsianEdgePanel
-          instrument={context.instrument}
-          currentPrice={context.currentPrice ?? undefined}
-          candles={candles}
           onAskLeo={(prompt: string) => {
             setActiveTab('CHAT')
             handleSendMessage(prompt)
