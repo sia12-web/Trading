@@ -174,7 +174,9 @@ import {
   type UserRangeBox,
   type UserManualFRVP,
   type UserMeasure,
+  type UserAnchoredVwap,
   computeCustomFixedRangeVolumeProfile,
+  computeUserAnchoredVwapSeries,
   computeTrendlineMetrics,
   computeRangeMetrics,
   formatEtTime,
@@ -1347,8 +1349,8 @@ export function TradingChart({
     defaultTakeProfitFixed50: number
   }>>(new Map())
 
-  // ── User Interactive Drawing Tools (Wyckoff Structure Line, Range, Manual FRVP, Measure) ────────
-  type DrawingToolType = 'NONE' | 'TRENDLINE' | 'RANGE' | 'FRVP' | 'MEASURE'
+  // ── User Interactive Drawing Tools (Wyckoff Structure Line, Range, Manual FRVP, Measure, AVWAP) ────────
+  type DrawingToolType = 'NONE' | 'TRENDLINE' | 'RANGE' | 'FRVP' | 'MEASURE' | 'AVWAP'
   const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingToolType>('NONE')
   const [trendlines, setTrendlines] = useState<UserTrendline[]>(() => {
     if (typeof window === 'undefined') return []
@@ -1406,6 +1408,24 @@ export function TradingChart({
   })
   const measureBadgeHitsRef = useRef<Map<string, { x: number; y: number; w: number; h: number }>>(new Map())
 
+  // User Anchored VWAPs (Professional Standard with ±1σ/±2σ/±3σ Bands & Clouds)
+  const [anchoredVwaps, setAnchoredVwaps] = useState<UserAnchoredVwap[]>(() => {
+    if (typeof window === 'undefined') return []
+    try {
+      const saved = localStorage.getItem('trading_desk_avwaps_v1')
+      if (!saved) return []
+      const parsed = JSON.parse(saved)
+      return Array.isArray(parsed) ? parsed.filter((v) => v && typeof v === 'object' && v.type === 'AVWAP') : []
+    } catch {
+      return []
+    }
+  })
+  const [selectedAvwapId, setSelectedAvwapId] = useState<string | null>(null)
+  const selectedAvwapIdRef = useRef<string | null>(null)
+  selectedAvwapIdRef.current = selectedAvwapId
+  const avwapAnchorHitsRef = useRef<Map<string, { x: number; y: number; r: number }>>(new Map())
+  const avwapDeleteBtnHitsRef = useRef<Map<string, { x: number; y: number; w: number; h: number }>>(new Map())
+
   // ── Leo Long-Term Memory Architecture & TradingView Alarms ────────────────
   const [memories, setMemories] = useState<LeoLongTermMemory[]>(() => loadLongTermMemories())
   const [memoryModalOpen, setMemoryModalOpen] = useState(false)
@@ -1438,6 +1458,13 @@ export function TradingChart({
       console.warn('Failed to save user drawings to localStorage:', e)
     }
   }, [trendlines, rangeBoxes, manualFrvps, measures])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('trading_desk_avwaps_v1', JSON.stringify(anchoredVwaps))
+    } catch {}
+  }, [anchoredVwaps])
+
   const [drawingDraft, setDrawingDraft] = useState<{
     time: number
     price: number
@@ -1447,7 +1474,7 @@ export function TradingChart({
   const draftMousePosRef = useRef<{ time: number; price: number; x: number; y: number } | null>(null)
   const [drawingsPanelOpen, setDrawingsPanelOpen] = useState(false)
   const [drawingToast, setDrawingToast] = useState<{
-    type: 'TRENDLINE' | 'RANGE' | 'FRVP' | 'AVWAP_5M'
+    type: 'TRENDLINE' | 'RANGE' | 'FRVP' | 'AVWAP_5M' | 'AVWAP'
     id: string
     label: string
     summary: string
@@ -1827,6 +1854,10 @@ export function TradingChart({
   const activeMeasures = useMemo(
     () => (Array.isArray(measures) ? measures : []).filter((m) => m && (!m.instrument || m.instrument === instrument)),
     [measures, instrument]
+  )
+  const activeAnchoredVwaps = useMemo(
+    () => (Array.isArray(anchoredVwaps) ? anchoredVwaps : []).filter((v) => v && (!v.instrument || v.instrument === instrument)),
+    [anchoredVwaps, instrument]
   )
 
 
@@ -4015,6 +4046,275 @@ export function TradingChart({
         }
       }
 
+    // 3.5. Render User Drawn Anchored VWAPs (Professional Standard with ±1σ, ±2σ, ±3σ Bands & Clouds)
+    avwapAnchorHitsRef.current.clear()
+    avwapDeleteBtnHitsRef.current.clear()
+
+    for (const av of activeAnchoredVwaps) {
+      const computed = computeUserAnchoredVwapSeries(list, av)
+      if (!computed || computed.points.length === 0) continue
+
+      const pts = computed.points
+      const isSelected = selectedAvwapId === av.id
+      const mainColor = av.color || '#06b6d4'
+      const lineW = av.lineWidth || 2
+
+      type ScreenPt = {
+        x: number
+        yVwap: number
+        yUp1: number
+        yLo1: number
+        yUp2: number
+        yLo2: number
+        yUp3: number
+        yLo3: number
+        raw: (typeof pts)[0]
+      }
+      const screenPts: ScreenPt[] = []
+
+      for (const pt of pts) {
+        const x = timeToX(chart.timeScale(), toChartTime(pt.time, tz), candleTimes, false, barSeconds)
+        if (x == null || !Number.isFinite(x)) continue
+        const yVwap = series.priceToCoordinate(pt.vwap)
+        if (yVwap == null || !Number.isFinite(yVwap)) continue
+
+        const yUp1 = series.priceToCoordinate(pt.upper1) ?? yVwap
+        const yLo1 = series.priceToCoordinate(pt.lower1) ?? yVwap
+        const yUp2 = series.priceToCoordinate(pt.upper2) ?? yUp1
+        const yLo2 = series.priceToCoordinate(pt.lower2) ?? yLo1
+        const yUp3 = series.priceToCoordinate(pt.upper3) ?? yUp2
+        const yLo3 = series.priceToCoordinate(pt.lower3) ?? yLo2
+
+        screenPts.push({ x, yVwap, yUp1, yLo1, yUp2, yLo2, yUp3, yLo3, raw: pt })
+      }
+
+      if (screenPts.length === 0) continue
+
+      const bands = av.bands || {
+        band1Enabled: true,
+        band1Mult: 1.0,
+        band2Enabled: true,
+        band2Mult: 2.0,
+        band3Enabled: false,
+        band3Mult: 3.0,
+        fillEnabled: true,
+      }
+
+      // A. Shaded Band Clouds
+      if (bands.fillEnabled && screenPts.length > 1) {
+        // Outer Cloud (Upper 2σ to Upper 1σ)
+        if (bands.band2Enabled && bands.band1Enabled) {
+          ctx.beginPath()
+          ctx.moveTo(screenPts[0]!.x, screenPts[0]!.yUp2)
+          for (let i = 1; i < screenPts.length; i++) ctx.lineTo(screenPts[i]!.x, screenPts[i]!.yUp2)
+          for (let i = screenPts.length - 1; i >= 0; i--) ctx.lineTo(screenPts[i]!.x, screenPts[i]!.yUp1)
+          ctx.closePath()
+          ctx.fillStyle = 'rgba(16, 185, 129, 0.05)'
+          ctx.fill()
+
+          // Lower Cloud (Lower 1σ to Lower 2σ)
+          ctx.beginPath()
+          ctx.moveTo(screenPts[0]!.x, screenPts[0]!.yLo1)
+          for (let i = 1; i < screenPts.length; i++) ctx.lineTo(screenPts[i]!.x, screenPts[i]!.yLo1)
+          for (let i = screenPts.length - 1; i >= 0; i--) ctx.lineTo(screenPts[i]!.x, screenPts[i]!.yLo2)
+          ctx.closePath()
+          ctx.fillStyle = 'rgba(244, 63, 94, 0.05)'
+          ctx.fill()
+        }
+
+        // Inner Cloud (Upper 1σ to Lower 1σ: Value Cloud)
+        if (bands.band1Enabled) {
+          ctx.beginPath()
+          ctx.moveTo(screenPts[0]!.x, screenPts[0]!.yUp1)
+          for (let i = 1; i < screenPts.length; i++) ctx.lineTo(screenPts[i]!.x, screenPts[i]!.yUp1)
+          for (let i = screenPts.length - 1; i >= 0; i--) ctx.lineTo(screenPts[i]!.x, screenPts[i]!.yLo1)
+          ctx.closePath()
+          ctx.fillStyle = 'rgba(6, 182, 212, 0.08)'
+          ctx.fill()
+        }
+      }
+
+      // B. Standard Deviation Band Lines
+      // Band 3 (±3σ)
+      if (bands.band3Enabled && screenPts.length > 1) {
+        ctx.save()
+        ctx.strokeStyle = bands.band3Color || 'rgba(168, 85, 247, 0.65)'
+        ctx.lineWidth = 1.2
+        ctx.setLineDash([2, 4])
+        ctx.beginPath()
+        ctx.moveTo(screenPts[0]!.x, screenPts[0]!.yUp3)
+        for (let i = 1; i < screenPts.length; i++) ctx.lineTo(screenPts[i]!.x, screenPts[i]!.yUp3)
+        ctx.stroke()
+        ctx.beginPath()
+        ctx.moveTo(screenPts[0]!.x, screenPts[0]!.yLo3)
+        for (let i = 1; i < screenPts.length; i++) ctx.lineTo(screenPts[i]!.x, screenPts[i]!.yLo3)
+        ctx.stroke()
+        ctx.restore()
+      }
+
+      // Band 2 (±2σ)
+      if (bands.band2Enabled && screenPts.length > 1) {
+        ctx.save()
+        ctx.lineWidth = 1.5
+        ctx.setLineDash([4, 4])
+        ctx.strokeStyle = bands.band2Color || '#10b981'
+        ctx.beginPath()
+        ctx.moveTo(screenPts[0]!.x, screenPts[0]!.yUp2)
+        for (let i = 1; i < screenPts.length; i++) ctx.lineTo(screenPts[i]!.x, screenPts[i]!.yUp2)
+        ctx.stroke()
+
+        ctx.strokeStyle = '#f43f5e'
+        ctx.beginPath()
+        ctx.moveTo(screenPts[0]!.x, screenPts[0]!.yLo2)
+        for (let i = 1; i < screenPts.length; i++) ctx.lineTo(screenPts[i]!.x, screenPts[i]!.yLo2)
+        ctx.stroke()
+        ctx.restore()
+      }
+
+      // Band 1 (±1σ)
+      if (bands.band1Enabled && screenPts.length > 1) {
+        ctx.save()
+        ctx.strokeStyle = bands.band1Color || 'rgba(56, 189, 248, 0.85)'
+        ctx.lineWidth = 1.5
+        ctx.setLineDash([])
+        ctx.beginPath()
+        ctx.moveTo(screenPts[0]!.x, screenPts[0]!.yUp1)
+        for (let i = 1; i < screenPts.length; i++) ctx.lineTo(screenPts[i]!.x, screenPts[i]!.yUp1)
+        ctx.stroke()
+        ctx.beginPath()
+        ctx.moveTo(screenPts[0]!.x, screenPts[0]!.yLo1)
+        for (let i = 1; i < screenPts.length; i++) ctx.lineTo(screenPts[i]!.x, screenPts[i]!.yLo1)
+        ctx.stroke()
+        ctx.restore()
+      }
+
+      // C. Center AVWAP Line
+      ctx.save()
+      if (isSelected) {
+        ctx.strokeStyle = 'rgba(6, 182, 212, 0.35)'
+        ctx.lineWidth = lineW + 6
+        ctx.beginPath()
+        ctx.moveTo(screenPts[0]!.x, screenPts[0]!.yVwap)
+        for (let i = 1; i < screenPts.length; i++) ctx.lineTo(screenPts[i]!.x, screenPts[i]!.yVwap)
+        ctx.stroke()
+      }
+      ctx.strokeStyle = mainColor
+      ctx.lineWidth = lineW
+      ctx.setLineDash([])
+      ctx.beginPath()
+      ctx.moveTo(screenPts[0]!.x, screenPts[0]!.yVwap)
+      for (let i = 1; i < screenPts.length; i++) ctx.lineTo(screenPts[i]!.x, screenPts[i]!.yVwap)
+      ctx.stroke()
+      ctx.restore()
+
+      // D. Anchor Marker Badge
+      const p0 = screenPts[0]!
+      avwapAnchorHitsRef.current.set(av.id, { x: p0.x, y: p0.yVwap, r: 16 })
+
+      ctx.save()
+      ctx.fillStyle = mainColor
+      ctx.shadowColor = mainColor
+      ctx.shadowBlur = isSelected ? 12 : 6
+      ctx.beginPath()
+      ctx.arc(p0.x, p0.yVwap, isSelected ? 6.5 : 4.5, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
+
+      const anchorLabel = `⚓ ${av.label || 'AVWAP'} (${formatEtTime(av.anchorTime)})`
+      ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
+      const badgeW = ctx.measureText(anchorLabel).width + 16
+      const badgeH = 18
+      const badgeX = Math.max(6, p0.x - 8)
+      const badgeY = Math.max(6, p0.yVwap - 24)
+
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.92)'
+      ctx.beginPath()
+      if (typeof (ctx as any).roundRect === 'function') {
+        (ctx as any).roundRect(badgeX, badgeY, badgeW, badgeH, 4)
+      } else {
+        ctx.rect(badgeX, badgeY, badgeW, badgeH)
+      }
+      ctx.fill()
+      ctx.strokeStyle = isSelected ? '#38bdf8' : mainColor
+      ctx.lineWidth = isSelected ? 1.8 : 1
+      ctx.stroke()
+
+      ctx.fillStyle = isSelected ? '#ffffff' : '#e0f2fe'
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(anchorLabel, badgeX + 7, badgeY + badgeH * 0.5)
+
+      if (isSelected) {
+        const btnX = badgeX + badgeW + 3
+        const btnY = badgeY
+        const btnW = 18
+        const btnH = 18
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.9)'
+        ctx.beginPath()
+        if (typeof (ctx as any).roundRect === 'function') {
+          (ctx as any).roundRect(btnX, btnY, btnW, btnH, 4)
+        } else {
+          ctx.rect(btnX, btnY, btnW, btnH)
+        }
+        ctx.fill()
+        ctx.fillStyle = '#ffffff'
+        ctx.font = 'bold 11px sans-serif'
+        ctx.fillText('✕', btnX + 5, btnY + 10)
+        avwapDeleteBtnHitsRef.current.set(av.id, { x: btnX, y: btnY, w: btnW, h: btnH })
+      }
+
+      // E. Right-Edge Terminal Price Tags
+      const pLast = screenPts[screenPts.length - 1]!
+      if (pLast.x >= 0 && pLast.x <= plotW + 10) {
+        const tagX = Math.min(plotW - 65, pLast.x + 4)
+        ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'middle'
+
+        // Core AVWAP Tag
+        const vText = `⚓ ${pLast.raw.vwap.toLocaleString()}`
+        const vW = ctx.measureText(vText).width + 8
+        ctx.fillStyle = mainColor
+        ctx.fillRect(tagX, pLast.yVwap - 7, vW, 14)
+        ctx.fillStyle = '#0f172a'
+        ctx.fillText(vText, tagX + 4, pLast.yVwap)
+
+        // Upper 2σ Tag
+        if (bands.band2Enabled) {
+          const u2Text = `+2σ ${pLast.raw.upper2.toLocaleString()}`
+          const u2W = ctx.measureText(u2Text).width + 6
+          ctx.fillStyle = 'rgba(16, 185, 129, 0.85)'
+          ctx.fillRect(tagX, pLast.yUp2 - 6, u2W, 12)
+          ctx.fillStyle = '#ffffff'
+          ctx.fillText(u2Text, tagX + 3, pLast.yUp2)
+
+          const l2Text = `-2σ ${pLast.raw.lower2.toLocaleString()}`
+          const l2W = ctx.measureText(l2Text).width + 6
+          ctx.fillStyle = 'rgba(244, 63, 94, 0.85)'
+          ctx.fillRect(tagX, pLast.yLo2 - 6, l2W, 12)
+          ctx.fillStyle = '#ffffff'
+          ctx.fillText(l2Text, tagX + 3, pLast.yLo2)
+        }
+
+        // Upper 1σ Tag
+        if (bands.band1Enabled) {
+          const u1Text = `+1σ ${pLast.raw.upper1.toLocaleString()}`
+          const u1W = ctx.measureText(u1Text).width + 6
+          ctx.fillStyle = 'rgba(56, 189, 248, 0.85)'
+          ctx.fillRect(tagX, pLast.yUp1 - 6, u1W, 12)
+          ctx.fillStyle = '#0f172a'
+          ctx.fillText(u1Text, tagX + 3, pLast.yUp1)
+
+          const l1Text = `-1σ ${pLast.raw.lower1.toLocaleString()}`
+          const l1W = ctx.measureText(l1Text).width + 6
+          ctx.fillStyle = 'rgba(56, 189, 248, 0.85)'
+          ctx.fillRect(tagX, pLast.yLo1 - 6, l1W, 12)
+          ctx.fillStyle = '#0f172a'
+          ctx.fillText(l1Text, tagX + 3, pLast.yLo1)
+        }
+      }
+    }
+
     // 4. In-progress Drawing Draft Preview
     if (drawingDraft && draftMousePosRef.current) {
       const p1 = drawingDraft
@@ -4091,6 +4391,55 @@ export function TradingChart({
         } else if (activeDrawingTool === 'MEASURE') {
           paintMeasureOverlay(p1, p2, undefined, true)
         }
+      }
+    }
+
+    // In-progress AVWAP Anchor Guide / Crosshair Target
+    if (activeDrawingTool === 'AVWAP' && draftMousePosRef.current) {
+      const p = draftMousePosRef.current
+      const x = timeToX(chart.timeScale(), toChartTime(p.time, tz), candleTimes, false, barSeconds) ?? p.x
+      const y = series.priceToCoordinate(p.price) ?? p.y
+      if (x != null && y != null && Number.isFinite(x) && Number.isFinite(y)) {
+        ctx.save()
+        ctx.strokeStyle = 'rgba(6, 182, 212, 0.75)'
+        ctx.lineWidth = 1.5
+        ctx.setLineDash([3, 3])
+        ctx.beginPath()
+        ctx.moveTo(x, 0)
+        ctx.lineTo(x, plotH)
+        ctx.stroke()
+
+        ctx.shadowColor = '#06b6d4'
+        ctx.shadowBlur = 10
+        ctx.fillStyle = '#06b6d4'
+        ctx.beginPath()
+        ctx.arc(x, y, 6, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.restore()
+
+        const guideText = `⚓ Drop Anchor Here · ${formatEtTime(p.time)}`
+        ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
+        const gW = ctx.measureText(guideText).width + 16
+        const gH = 18
+        const gX = Math.max(10, Math.min(plotW - gW - 10, x - gW / 2))
+        const gY = Math.max(10, y - 28)
+
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.95)'
+        ctx.beginPath()
+        if (typeof (ctx as any).roundRect === 'function') {
+          (ctx as any).roundRect(gX, gY, gW, gH, 4)
+        } else {
+          ctx.rect(gX, gY, gW, gH)
+        }
+        ctx.fill()
+        ctx.strokeStyle = '#06b6d4'
+        ctx.lineWidth = 1.3
+        ctx.stroke()
+
+        ctx.fillStyle = '#67e8f9'
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(guideText, gX + 8, gY + gH * 0.5)
       }
     }
 
@@ -4212,7 +4561,7 @@ export function TradingChart({
     }
 
     ctx.restore()
-  }, [activeTrendlines, activeRangeBoxes, activeManualFrvps, activeMeasures, drawingDraft, activeDrawingTool, showCandlestickPatterns, hideTrendlineBadges, barSeconds, yesterdayNyc, ydayProfile, overnightInventory, frvp5d])
+  }, [activeTrendlines, activeRangeBoxes, activeManualFrvps, activeMeasures, activeAnchoredVwaps, selectedAvwapId, drawingDraft, activeDrawingTool, showCandlestickPatterns, hideTrendlineBadges, barSeconds, yesterdayNyc, ydayProfile, overnightInventory, frvp5d])
 
   useEffect(() => {
     paintUserDrawingsRef.current = paintUserDrawings
@@ -5679,9 +6028,9 @@ export function TradingChart({
     frame.style.cursor = hit ? 'pointer' : ''
   }, [leoPanelOpen])
 
-  // ── Ask Leo about a user-drawn tool (Trendline, Range, FRVP) ───────────────
+  // ── Ask Leo about a user-drawn tool (Trendline, Range, FRVP, AVWAP) ───────────────
   const handleAskLeoAboutDrawing = useCallback(
-    (type: 'TRENDLINE' | 'RANGE' | 'FRVP' | 'AVWAP_5M', id: string) => {
+    (type: 'TRENDLINE' | 'RANGE' | 'FRVP' | 'AVWAP_5M' | 'AVWAP', id: string) => {
       const curPrice =
         livePrice ??
         lastCandleRef.current?.close ??
@@ -5701,6 +6050,34 @@ export function TradingChart({
             tier: 'LT',
             category: 'VWAP',
             description: `5-Month CME Globex Anchored VWAP is ${v != null ? v.toLocaleString() : '—'}. Current Price is ${p != null ? p.toLocaleString() : '—'} (${Number(diff) >= 0 ? '+' : ''}${diff} pts vs AVWAP). Bands: +1σ ${avwap5mBenchmark?.sigma1Upper?.toLocaleString() ?? 'N/A'}, -1σ ${avwap5mBenchmark?.sigma1Lower?.toLocaleString() ?? 'N/A'}, +2σ ${avwap5mBenchmark?.sigma2Upper?.toLocaleString() ?? 'N/A'}, -2σ ${avwap5mBenchmark?.sigma2Lower?.toLocaleString() ?? 'N/A'}, +3σ ${avwap5mBenchmark?.sigma3Upper?.toLocaleString() ?? 'N/A'}, -3σ ${avwap5mBenchmark?.sigma3Lower?.toLocaleString() ?? 'N/A'}.`,
+          },
+        ])
+        setLeoPanelOpen(true)
+        return
+      }
+
+      if (type === 'AVWAP') {
+        const av = anchoredVwaps.find((v) => v.id === id)
+        if (!av) return
+        const computed = computeUserAnchoredVwapSeries(candlesRef.current, av)
+        const latest = computed?.latest
+        const v = latest?.vwap ?? 0
+        const diff = (curPrice - v).toFixed(2)
+        const sigma = latest?.sigma ?? 0
+        const u1 = latest?.upper1 ?? 0
+        const l1 = latest?.lower1 ?? 0
+        const u2 = latest?.upper2 ?? 0
+        const l2 = latest?.lower2 ?? 0
+        const zScore = sigma > 0 ? (Number(diff) / sigma).toFixed(2) : '0'
+
+        setLeoExternalPoints([
+          {
+            id: `avwap-${id}`,
+            label: `Anchored VWAP · ${formatEtTime(av.anchorTime)} (${instrument})`,
+            value: `VWAP: ${v.toLocaleString()} (Delta: ${Number(diff) >= 0 ? '+' : ''}${diff})`,
+            tier: 'DRAWING',
+            category: 'VWAP',
+            description: `User Anchored VWAP anchored to ${formatEtTime(av.anchorTime)}. Current Price: ${curPrice.toLocaleString()} (${Number(diff) >= 0 ? '+' : ''}${diff} pts vs VWAP). Standard Deviation (σ): ${sigma} pts. Bands: +1σ ${u1.toLocaleString()}, -1σ ${l1.toLocaleString()}, +2σ ${u2.toLocaleString()}, -2σ ${l2.toLocaleString()}. Price Stretch: ${zScore}σ from anchored mean.`,
           },
         ])
         setLeoPanelOpen(true)
@@ -5874,17 +6251,35 @@ export function TradingChart({
     requestAnimationFrame(() => paintUserDrawingsRef.current())
   }, [])
 
+  const handleDeleteAvwap = useCallback((id: string) => {
+    setAnchoredVwaps((prev) => prev.filter((v) => v.id !== id))
+    if (selectedAvwapIdRef.current === id) setSelectedAvwapId(null)
+    avwapAnchorHitsRef.current.delete(id)
+    avwapDeleteBtnHitsRef.current.delete(id)
+    requestAnimationFrame(() => paintUserDrawingsRef.current())
+  }, [])
+
+  const handleUpdateAvwap = useCallback((id: string, updater: (prev: UserAnchoredVwap) => UserAnchoredVwap) => {
+    setAnchoredVwaps((prev) => prev.map((v) => (v.id === id ? updater(v) : v)))
+    requestAnimationFrame(() => paintUserDrawingsRef.current())
+  }, [])
+
   const handleClearAllDrawings = useCallback(() => {
     setTrendlines([])
     setRangeBoxes([])
     setManualFrvps([])
     setMeasures([])
+    setAnchoredVwaps([])
+    setSelectedAvwapId(null)
     setDrawingDraft(null)
     draftMousePosRef.current = null
     measureBadgeHitsRef.current.clear()
     confirmedBreakoutsRef.current.clear()
+    avwapAnchorHitsRef.current.clear()
+    avwapDeleteBtnHitsRef.current.clear()
     try {
       localStorage.removeItem('trading_desk_measures_v1')
+      localStorage.removeItem('trading_desk_avwaps_v1')
     } catch {}
     requestAnimationFrame(() => paintUserDrawingsRef.current())
   }, [])
@@ -11376,6 +11771,60 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
       e.preventDefault()
       e.stopPropagation()
 
+      if (activeDrawingTool === 'AVWAP') {
+        const list = candlesRef.current || []
+        let closestBar = list[0]
+        let minDiff = Infinity
+        for (const b of list) {
+          const diff = Math.abs(b.time - time)
+          if (diff < minDiff) {
+            minDiff = diff
+            closestBar = b
+          }
+        }
+
+        const anchorTime = closestBar ? (closestBar.time as number) : time
+        const anchorPrice = closestBar ? (closestBar.high + closestBar.low + closestBar.close) / 3 : price
+
+        const newAvwap: UserAnchoredVwap = {
+          id: `avwap-${Date.now()}`,
+          type: 'AVWAP',
+          anchorTime,
+          anchorPrice,
+          instrument,
+          label: `AVWAP · ${formatEtTime(anchorTime)}`,
+          color: '#06b6d4',
+          lineWidth: 2,
+          bands: {
+            band1Enabled: true,
+            band1Mult: 1.0,
+            band1Color: '#38bdf8',
+            band2Enabled: true,
+            band2Mult: 2.0,
+            band2Color: '#10b981',
+            band3Enabled: false,
+            band3Mult: 3.0,
+            band3Color: '#a855f7',
+            fillEnabled: true,
+          },
+        }
+
+        setAnchoredVwaps((prev) => [...prev, newAvwap])
+        setSelectedAvwapId(newAvwap.id)
+        playTradingViewChime()
+        setDrawingToast({
+          type: 'AVWAP',
+          id: newAvwap.id,
+          label: 'Anchored VWAP Placed',
+          summary: `Anchored to ${formatEtTime(anchorTime)} · ±1.0σ & ±2.0σ institutional bands active`,
+        })
+        setActiveDrawingTool('NONE')
+        setDrawingDraft(null)
+        draftMousePosRef.current = null
+        requestAnimationFrame(() => paintUserDrawingsRef.current())
+        return
+      }
+
       if (!drawingDraft) {
         // First click: save anchor draft
         setDrawingDraft({ time, price, x, y })
@@ -11704,6 +12153,28 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
         }
       }
 
+      // 1.5. Check if user clicked on AVWAP [✕] delete button
+      for (const [id, hit] of avwapDeleteBtnHitsRef.current.entries()) {
+        if (mouseX >= hit.x && mouseX <= hit.x + hit.w && mouseY >= hit.y && mouseY <= hit.y + hit.h) {
+          e.preventDefault()
+          e.stopPropagation()
+          handleDeleteAvwap(id)
+          return
+        }
+      }
+
+      // 1.6. Check if user clicked on AVWAP anchor badge (select)
+      for (const [id, hit] of avwapAnchorHitsRef.current.entries()) {
+        const distSq = (mouseX - hit.x) ** 2 + (mouseY - hit.y) ** 2
+        if (distSq <= hit.r ** 2) {
+          e.preventDefault()
+          e.stopPropagation()
+          setSelectedAvwapId(id)
+          paintUserDrawingsRef.current()
+          return
+        }
+      }
+
       // 2. TradingView-style Shift + Click to instantly start Measure Tool
       if (e.shiftKey) {
         const curPrice = priceAtY(e.clientY)
@@ -11720,8 +12191,16 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
 
       const hit = getHandleAt(e.clientX, e.clientY)
       if (!hit) {
+        let changed = false
         if (selectedTrendlineIdRef.current) {
           setSelectedTrendlineId(null)
+          changed = true
+        }
+        if (selectedAvwapIdRef.current) {
+          setSelectedAvwapId(null)
+          changed = true
+        }
+        if (changed) {
           paintUserDrawingsRef.current()
         }
         return
@@ -11884,17 +12363,33 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
           (activeEl as HTMLElement).isContentEditable)
       if (isInputActive) return
 
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTrendlineIdRef.current) {
-        e.preventDefault()
-        const targetId = selectedTrendlineIdRef.current
-        handleDeleteTrendline(targetId)
-        setSelectedTrendlineId(null)
-        setDrawingToast({
-          type: 'TRENDLINE',
-          id: targetId,
-          label: 'Trendline Deleted',
-          summary: 'Drawing removed from chart',
-        })
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedTrendlineIdRef.current) {
+          e.preventDefault()
+          const targetId = selectedTrendlineIdRef.current
+          handleDeleteTrendline(targetId)
+          setSelectedTrendlineId(null)
+          setDrawingToast({
+            type: 'TRENDLINE',
+            id: targetId,
+            label: 'Trendline Deleted',
+            summary: 'Drawing removed from chart',
+          })
+          return
+        }
+        if (selectedAvwapIdRef.current) {
+          e.preventDefault()
+          const targetId = selectedAvwapIdRef.current
+          handleDeleteAvwap(targetId)
+          setSelectedAvwapId(null)
+          setDrawingToast({
+            type: 'AVWAP',
+            id: targetId,
+            label: 'Anchored VWAP Deleted',
+            summary: 'Anchored VWAP removed from chart',
+          })
+          return
+        }
       }
     }
 
@@ -11920,7 +12415,7 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
       hoveredHandleRef.current = null
       activeDraggingTlRef.current = null
     }
-  }, [activeDrawingTool, activeTrendlines, chartReady, barSeconds, handleDeleteTrendline, handleDeleteMeasure])
+  }, [activeDrawingTool, activeTrendlines, chartReady, barSeconds, handleDeleteTrendline, handleDeleteMeasure, handleDeleteAvwap, activeAnchoredVwaps])
 
   // Clear risk box chart lines
   const clearRiskBoxLines = useCallback(() => {
@@ -12522,6 +13017,8 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
         }
       } else if (key === 'u') {
         e.preventDefault()
+        setActiveDrawingTool((prev) => (prev === 'AVWAP' ? 'NONE' : 'AVWAP'))
+        setDrawingDraft(null)
       } else if (key === 'r') {
         e.preventDefault()
         if (isOr30Instrument(instrument)) {
@@ -12564,6 +13061,10 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
         if (selectedTrendlineId) {
           e.preventDefault()
           setSelectedTrendlineId(null)
+          requestAnimationFrame(() => paintUserDrawingsRef.current())
+        } else if (selectedAvwapId) {
+          e.preventDefault()
+          setSelectedAvwapId(null)
           requestAnimationFrame(() => paintUserDrawingsRef.current())
         } else if (activeDrawingTool !== 'NONE' || drawingDraft) {
           e.preventDefault()
@@ -12634,6 +13135,8 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
     clearDrawnZoneLines,
     cancelDrawnTime,
     instrument,
+    selectedTrendlineId,
+    selectedAvwapId,
     riskBoxActive,
     riskBox,
     cancelRiskBox,
@@ -13977,6 +14480,24 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
               <span>📏</span>
             </button>
 
+            {/* Anchored VWAP (AVWAP / Hotkey: U) */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveDrawingTool((prev) => (prev === 'AVWAP' ? 'NONE' : 'AVWAP'))
+                setDrawingDraft(null)
+              }}
+              className={`flex h-9 px-2 items-center justify-center gap-1 rounded-lg text-xs font-bold transition-all ${
+                activeDrawingTool === 'AVWAP'
+                  ? 'bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/40 ring-2 ring-cyan-300 font-extrabold'
+                  : 'text-cyan-300 hover:bg-slate-800 hover:text-cyan-100 bg-slate-900/60 border border-cyan-500/30'
+              }`}
+              title="Anchored VWAP (Hotkey: U · Click any candle to drop institutional anchor & ±1σ / ±2σ bands)"
+            >
+              <span className="text-sm">⚓</span>
+              <span className="hidden sm:inline font-mono text-[11px]">AVWAP</span>
+            </button>
+
             {/* Candlestick Patterns Toggle */}
             <button
               type="button"
@@ -14028,25 +14549,25 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
               type="button"
               onClick={() => setDrawingsPanelOpen((prev) => !prev)}
               className={`group relative flex h-9 w-9 items-center justify-center rounded-lg text-base transition-all ${
-                drawingsPanelOpen || activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length + activeMeasures.length > 0
+                drawingsPanelOpen || activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length + activeMeasures.length + activeAnchoredVwaps.length > 0
                   ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
                   : 'text-slate-400 hover:bg-slate-800 hover:text-cyan-300'
               }`}
               title="Manage Drawings"
             >
               <span>🎨</span>
-              {activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length + activeMeasures.length > 0 && (
+              {activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length + activeMeasures.length + activeAnchoredVwaps.length > 0 && (
                 <span className="absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-cyan-500 px-0.5 text-[9px] font-bold text-slate-950 shadow">
-                  {activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length + activeMeasures.length}
+                  {activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length + activeMeasures.length + activeAnchoredVwaps.length}
                 </span>
               )}
               <span className="pointer-events-none absolute top-full mt-2 left-1/2 -translate-x-1/2 hidden whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs font-semibold text-cyan-200 shadow-xl border border-slate-800 group-hover:block z-50">
-                Manage Tools ({activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length + activeMeasures.length})
+                Manage Tools ({activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length + activeMeasures.length + activeAnchoredVwaps.length})
               </span>
             </button>
 
             {/* Quick Clear — only when drawings exist */}
-            {activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length + activeMeasures.length > 0 && (
+            {activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length + activeMeasures.length + activeAnchoredVwaps.length > 0 && (
               <button
                 type="button"
                 onClick={handleClearAllDrawings}
@@ -14074,6 +14595,7 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
               {activeDrawingTool === 'RANGE' && '⬛ Drawing Range Box (Click 2 corners)'}
               {activeDrawingTool === 'FRVP' && '📊 Drawing Custom FRVP (Click start & end bars)'}
               {activeDrawingTool === 'MEASURE' && '📏 Drawing Measure (Click 1st point, then 2nd point to pin · Hold Shift anytime)'}
+              {activeDrawingTool === 'AVWAP' && '⚓ Drawing Anchored VWAP (Click any candle to drop anchor & calculate ±1σ / ±2σ bands)'}
             </span>
             <button
               type="button"
@@ -14097,7 +14619,7 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
                 <span>🎨</span>
                 <span>User Tools & Drawings ({instrument})</span>
                 <span className="text-[11px] text-slate-400 font-normal">
-                  ({activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length + activeMeasures.length})
+                  ({activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length + activeMeasures.length + activeAnchoredVwaps.length})
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -14121,7 +14643,7 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
                 >
                   {hideTrendlineBadges ? '🙈 Text Off' : '🏷️ Text On'}
                 </button>
-                {activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length + activeMeasures.length > 0 && (
+                {activeTrendlines.length + activeRangeBoxes.length + activeManualFrvps.length + activeMeasures.length + activeAnchoredVwaps.length > 0 && (
                   <button
                     type="button"
                     onClick={handleClearAllDrawings}
@@ -14142,15 +14664,16 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
             </div>
 
             <div className="flex-1 overflow-y-auto p-2 space-y-2 text-xs divide-y divide-slate-800/60">
-              {activeTrendlines.length === 0 && activeRangeBoxes.length === 0 && activeManualFrvps.length === 0 && activeMeasures.length === 0 && (
+              {activeTrendlines.length === 0 && activeRangeBoxes.length === 0 && activeManualFrvps.length === 0 && activeMeasures.length === 0 && activeAnchoredVwaps.length === 0 && (
                 <div className="py-6 text-center text-slate-500 space-y-1">
-                  <div className="text-2xl">📐 🎯 ⬛ 📊 📏</div>
+                  <div className="text-2xl">📐 🎯 ⬛ 📊 📏 ⚓</div>
                   <div className="font-semibold text-slate-400">No active drawings on {instrument}</div>
                   <div className="text-[11px] text-slate-500">
                     Press <span className="text-sky-300 font-mono">W</span> or <span className="text-sky-300 font-mono">X</span> for Trendline,{' '}
                     <span className="text-purple-300 font-mono">D</span> for Range,{' '}
-                    <span className="text-amber-300 font-mono">V</span> for FRVP, or{' '}
-                    <span className="text-emerald-300 font-mono">M</span> (Shift+Click) for Measure.
+                    <span className="text-amber-300 font-mono">V</span> for FRVP,{' '}
+                    <span className="text-emerald-300 font-mono">M</span> (Shift+Click) for Measure, or{' '}
+                    <span className="text-cyan-300 font-mono">U</span> for AVWAP.
                   </div>
                 </div>
               )}
@@ -14368,10 +14891,209 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
                   </div>
                 </div>
               )}
+
+              {/* Anchored VWAPs */}
+              {activeAnchoredVwaps.length > 0 && (
+                <div className="pt-1.5 first:pt-0">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 mb-1 px-1 flex items-center justify-between">
+                    <span>Anchored VWAPs ({activeAnchoredVwaps.length})</span>
+                    <span className="text-[9px] text-cyan-300/70 font-mono">±1σ & ±2σ bands</span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {activeAnchoredVwaps.map((av) => {
+                      const isSelected = selectedAvwapId === av.id
+                      const b1 = av.bands?.band1Enabled ?? true
+                      const b2 = av.bands?.band2Enabled ?? true
+                      const b3 = av.bands?.band3Enabled ?? false
+                      const fill = av.bands?.fillEnabled ?? true
+
+                      return (
+                        <div
+                          key={av.id}
+                          onClick={() => {
+                            setSelectedAvwapId(av.id)
+                            requestAnimationFrame(() => paintUserDrawingsRef.current())
+                          }}
+                          className={`group p-2 rounded-lg transition border cursor-pointer ${
+                            isSelected
+                              ? 'bg-cyan-950/50 border-cyan-500/80 shadow-lg shadow-cyan-950/60 ring-1 ring-cyan-500/50'
+                              : 'bg-slate-800/40 hover:bg-slate-800/80 border-slate-700/40'
+                          }`}
+                        >
+                          {/* Header row: title, Ask Leo, delete */}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 font-semibold text-cyan-300 truncate text-[11px]">
+                                <span>⚓</span>
+                                <span className="truncate">{av.label || `AVWAP (${formatEtTime(av.anchorTime)})`}</span>
+                              </div>
+                              <div className="text-[10px] text-slate-400 truncate">
+                                Anchor: {formatEtTime(av.anchorTime)} · Ref: {av.anchorPrice ? av.anchorPrice.toFixed(2) : '—'}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                onClick={() => handleAskLeoAboutDrawing('AVWAP', av.id)}
+                                className="px-2 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 font-medium text-[11px] border border-cyan-500/30 transition"
+                                title="Send AVWAP context to Leo AI"
+                              >
+                                Ask Leo
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteAvwap(av.id)}
+                                className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                                title="Delete AVWAP"
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Professional Band Toggles & Value Cloud */}
+                          <div className="mt-2 pt-1.5 border-t border-slate-700/50 flex flex-wrap items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                            <span className="text-[9px] uppercase tracking-wider text-slate-400 font-semibold mr-0.5">Bands:</span>
+                            
+                            {/* Band 1 toggle */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleUpdateAvwap(av.id, (prev) => ({
+                                  ...prev,
+                                  bands: { ...prev.bands, band1Enabled: !b1 },
+                                }))
+                              }}
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition border ${
+                                b1
+                                  ? 'bg-sky-500/20 text-sky-300 border-sky-500/50 shadow-sm'
+                                  : 'bg-slate-800 text-slate-500 border-slate-700 hover:text-slate-300'
+                              }`}
+                              title="Toggle ±1.0 Standard Deviation Band (Value Area 68% volume distribution)"
+                            >
+                              ±1.0σ
+                            </button>
+
+                            {/* Band 2 toggle */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleUpdateAvwap(av.id, (prev) => ({
+                                  ...prev,
+                                  bands: { ...prev.bands, band2Enabled: !b2 },
+                                }))
+                              }}
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition border ${
+                                b2
+                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-sm'
+                                  : 'bg-slate-800 text-slate-500 border-slate-700 hover:text-slate-300'
+                              }`}
+                              title="Toggle ±2.0 Standard Deviation Band (Exhaustion / 95% volume distribution)"
+                            >
+                              ±2.0σ
+                            </button>
+
+                            {/* Band 3 toggle */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleUpdateAvwap(av.id, (prev) => ({
+                                  ...prev,
+                                  bands: { ...prev.bands, band3Enabled: !b3 },
+                                }))
+                              }}
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition border ${
+                                b3
+                                  ? 'bg-purple-500/20 text-purple-300 border-purple-500/50 shadow-sm'
+                                  : 'bg-slate-800 text-slate-500 border-slate-700 hover:text-slate-300'
+                              }`}
+                              title="Toggle ±3.0 Standard Deviation Band (Tail / 99.7% volume distribution)"
+                            >
+                              ±3.0σ
+                            </button>
+
+                            {/* Cloud Fill toggle */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleUpdateAvwap(av.id, (prev) => ({
+                                  ...prev,
+                                  bands: { ...prev.bands, fillEnabled: !fill },
+                                }))
+                              }}
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition border ${
+                                fill
+                                  ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-sm'
+                                  : 'bg-slate-800 text-slate-500 border-slate-700 hover:text-slate-300'
+                              }`}
+                              title="Toggle Institutional Shaded Value Cloud"
+                            >
+                              ☁️ Cloud
+                            </button>
+                          </div>
+
+                          {/* Color Palette Presets & Line Width */}
+                          <div className="mt-1.5 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                            <span className="text-[9px] uppercase tracking-wider text-slate-400 font-semibold mr-0.5">Color:</span>
+                            {[
+                              { label: 'Cyan', color: '#06b6d4' },
+                              { label: 'Gold', color: '#f59e0b' },
+                              { label: 'Purple', color: '#a855f7' },
+                              { label: 'Emerald', color: '#10b981' },
+                              { label: 'Rose', color: '#f43f5e' },
+                              { label: 'White', color: '#f8fafc' },
+                            ].map((preset) => (
+                              <button
+                                key={preset.color}
+                                type="button"
+                                onClick={() => {
+                                  handleUpdateAvwap(av.id, (prev) => ({
+                                    ...prev,
+                                    color: preset.color,
+                                  }))
+                                }}
+                                className={`w-3.5 h-3.5 rounded-full transition transform hover:scale-125 border ${
+                                  av.color === preset.color ? 'ring-2 ring-white scale-110' : 'border-slate-600'
+                                }`}
+                                style={{ backgroundColor: preset.color }}
+                                title={preset.label}
+                              />
+                            ))}
+
+                            {/* Line Width */}
+                            <div className="ml-auto flex items-center gap-1 text-[9px] text-slate-400 font-mono">
+                              <span>Width:</span>
+                              {[1, 2, 3].map((w) => (
+                                <button
+                                  key={w}
+                                  type="button"
+                                  onClick={() => {
+                                    handleUpdateAvwap(av.id, (prev) => ({
+                                      ...prev,
+                                      lineWidth: w,
+                                    }))
+                                  }}
+                                  className={`px-1 rounded transition ${
+                                    (av.lineWidth || 2) === w
+                                      ? 'bg-cyan-500 text-slate-950 font-bold'
+                                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                                  }`}
+                                >
+                                  {w}px
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="border-t border-slate-800/80 px-3 py-1.5 bg-slate-900/60 text-[10px] text-slate-400 flex items-center justify-between">
-              <span>Hotkeys: W (Trend) · D (Range) · V (FRVP) · M (Measure)</span>
+              <span>Hotkeys: W (Trend) · D (Range) · V (FRVP) · M (Measure) · U (AVWAP)</span>
               <span>Esc cancels / clears</span>
             </div>
           </div>
@@ -14384,6 +15106,7 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
               {drawingToast.type === 'TRENDLINE' && '📐'}
               {drawingToast.type === 'RANGE' && '⬛'}
               {drawingToast.type === 'FRVP' && '📊'}
+              {drawingToast.type === 'AVWAP' && '⚓'}
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">

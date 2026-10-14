@@ -64,11 +64,60 @@ export interface UserMeasure {
   instrument?: string
 }
 
+export interface UserAnchoredVwapBands {
+  band1Enabled: boolean
+  band1Mult: number
+  band1Color?: string
+  band2Enabled: boolean
+  band2Mult: number
+  band2Color?: string
+  band3Enabled: boolean
+  band3Mult: number
+  band3Color?: string
+  fillEnabled: boolean
+}
+
+export interface UserAnchoredVwap {
+  id: string
+  type: 'AVWAP'
+  anchorTime: number
+  anchorPrice?: number
+  instrument?: string
+  label?: string
+  color: string
+  lineWidth?: number
+  bands: UserAnchoredVwapBands
+}
+
+export interface ComputedAvwapPoint {
+  time: number
+  typicalPrice: number
+  vwap: number
+  sigma: number
+  upper1: number
+  lower1: number
+  upper2: number
+  lower2: number
+  upper3: number
+  lower3: number
+}
+
+export interface ComputedUserAvwapResult {
+  id: string
+  anchorTime: number
+  color: string
+  lineWidth: number
+  bands: UserAnchoredVwapBands
+  points: ComputedAvwapPoint[]
+  latest: ComputedAvwapPoint | null
+}
+
 export interface UserDrawingsState {
   trendlines: UserTrendline[]
   ranges: UserRangeBox[]
   frvps: UserManualFRVP[]
   measures?: UserMeasure[]
+  avwaps?: UserAnchoredVwap[]
 }
 
 function bucketWidth(mid: number): number {
@@ -427,6 +476,81 @@ export function computeRangeMetrics(
     delta,
     buyRatioPct,
     poc,
+  }
+}
+
+/**
+ * Computes institutional Anchored VWAP and ±1σ, ±2σ, ±3σ volume-weighted standard deviation bands.
+ * Anchored strictly from `avwap.anchorTime` forward to the latest available bar.
+ */
+export function computeUserAnchoredVwapSeries(
+  bars: Array<{ time: number; high: number; low: number; close: number; volume?: number }>,
+  avwap: UserAnchoredVwap
+): ComputedUserAvwapResult | null {
+  if (!bars || bars.length === 0) return null
+
+  // Filter bars from anchorTime forward
+  const scoped = bars.filter(
+    (b) => b.time >= avwap.anchorTime && Number.isFinite(b.high) && Number.isFinite(b.low) && Number.isFinite(b.close)
+  )
+  if (scoped.length === 0) return null
+
+  let sumPV = 0
+  let sumV = 0
+  let sumP2V = 0
+
+  const m1 = avwap.bands?.band1Mult ?? 1.0
+  const m2 = avwap.bands?.band2Mult ?? 2.0
+  const m3 = avwap.bands?.band3Mult ?? 3.0
+
+  const points: ComputedAvwapPoint[] = []
+
+  for (const b of scoped) {
+    const p = (b.high + b.low + b.close) / 3
+    const v = Math.max(1, b.volume && b.volume > 0 ? b.volume : 1)
+
+    sumPV += p * v
+    sumP2V += p * p * v
+    sumV += v
+
+    if (sumV <= 0) continue
+
+    const currentVwap = sumPV / sumV
+    const variance = Math.max(0, sumP2V / sumV - currentVwap * currentVwap)
+    const sigma = Math.sqrt(variance)
+
+    points.push({
+      time: b.time,
+      typicalPrice: Number(p.toFixed(2)),
+      vwap: Number(currentVwap.toFixed(2)),
+      sigma: Number(sigma.toFixed(2)),
+      upper1: Number((currentVwap + m1 * sigma).toFixed(2)),
+      lower1: Number((currentVwap - m1 * sigma).toFixed(2)),
+      upper2: Number((currentVwap + m2 * sigma).toFixed(2)),
+      lower2: Number((currentVwap - m2 * sigma).toFixed(2)),
+      upper3: Number((currentVwap + m3 * sigma).toFixed(2)),
+      lower3: Number((currentVwap - m3 * sigma).toFixed(2)),
+    })
+  }
+
+  if (points.length === 0) return null
+
+  return {
+    id: avwap.id,
+    anchorTime: avwap.anchorTime,
+    color: avwap.color || '#06b6d4',
+    lineWidth: avwap.lineWidth || 2,
+    bands: avwap.bands || {
+      band1Enabled: true,
+      band1Mult: 1.0,
+      band2Enabled: true,
+      band2Mult: 2.0,
+      band3Enabled: false,
+      band3Mult: 3.0,
+      fillEnabled: true,
+    },
+    points,
+    latest: points[points.length - 1] ?? null,
   }
 }
 
