@@ -5835,6 +5835,44 @@ export function TradingChart({
             priceRelation: priceRel,
           }
         }),
+        avwaps: activeAnchoredVwaps.map((av) => {
+          const rawBars = candlesRef.current || []
+          const res = computeUserAnchoredVwapSeries(rawBars, av)
+          const pts = res?.points ?? []
+          const latest = pts.length > 0 ? pts[pts.length - 1] : null
+          const v: number = latest?.vwap ?? (curPrice ?? av.anchorPrice ?? 0)
+          const sigma = latest?.sigma ?? 0
+          const diff = curPrice != null ? Number((curPrice - v).toFixed(2)) : 0
+          const zScore = sigma > 0 ? Number((diff / sigma).toFixed(2)) : 0
+          const priceRel: 'ABOVE' | 'BELOW' | 'AT_MEAN' =
+            Math.abs(diff) <= (sigma > 0 ? sigma * 0.1 : 2)
+              ? 'AT_MEAN'
+              : diff > 0
+              ? 'ABOVE'
+              : 'BELOW'
+
+          return {
+            id: av.id,
+            label: av.label,
+            anchorTimeEt: formatEtTime(av.anchorTime),
+            anchorPrice: av.anchorPrice,
+            currentVwap: Number(v.toFixed(2)),
+            sigma: Number(sigma.toFixed(2)),
+            deltaPts: diff,
+            zScore,
+            priceRelation: priceRel,
+            band1Upper: latest?.upper1 ? Number(latest.upper1.toFixed(2)) : undefined,
+            band1Lower: latest?.lower1 ? Number(latest.lower1.toFixed(2)) : undefined,
+            band2Upper: latest?.upper2 ? Number(latest.upper2.toFixed(2)) : undefined,
+            band2Lower: latest?.lower2 ? Number(latest.lower2.toFixed(2)) : undefined,
+            band3Upper: latest?.upper3 ? Number(latest.upper3.toFixed(2)) : undefined,
+            band3Lower: latest?.lower3 ? Number(latest.lower3.toFixed(2)) : undefined,
+            band1Enabled: av.bands?.band1Enabled,
+            band2Enabled: av.bands?.band2Enabled,
+            band3Enabled: av.bands?.band3Enabled,
+            fillEnabled: av.bands?.fillEnabled,
+          }
+        }),
       },
       candlestickPatterns: candles.length > 0 ? {
         activePatterns: (() => {

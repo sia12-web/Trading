@@ -51,6 +51,8 @@ export type PricePattern =
   | 'BREAKOUT_RETEST'
   | 'MOMENTUM_EXPANSION'
   | 'TRENDLINE_BREAKOUT_5M'
+  | 'AVWAP_RECLAIM'
+  | 'AVWAP_BAND_EXHAUSTION'
 
 export interface ArmedRuleCondition {
   targetReference?: string
@@ -69,6 +71,7 @@ export interface ArmedRuleCondition {
   maxMinutes?: number
   requireProfitPoints?: number
   trendlineId?: string
+  avwapId?: string
   borningZoneScore?: number
   borningZoneGrade?: string
   higherLowCount?: number

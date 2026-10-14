@@ -122,6 +122,27 @@ export interface LeoUserDrawingsContext {
     distancePocPts: number | null
     priceRelation: 'AT_POC' | 'INSIDE_VALUE' | 'ABOVE_VAH' | 'BELOW_VAL'
   }>
+  avwaps?: Array<{
+    id: string
+    label?: string
+    anchorTimeEt: string
+    anchorPrice?: number
+    currentVwap: number
+    sigma: number
+    deltaPts: number
+    zScore: number
+    priceRelation: 'ABOVE' | 'BELOW' | 'AT_MEAN'
+    band1Upper?: number
+    band1Lower?: number
+    band2Upper?: number
+    band2Lower?: number
+    band3Upper?: number
+    band3Lower?: number
+    band1Enabled?: boolean
+    band2Enabled?: boolean
+    band3Enabled?: boolean
+    fillEnabled?: boolean
+  }>
 }
 
 export interface LeoSessionDetails {
@@ -695,6 +716,18 @@ export function extractChartDataPoints(ctx: LeoChatContext): LeoDataPoint[] {
         description: `Manual FRVP: POC ${f.poc.toLocaleString()} | VAH ${f.vah.toLocaleString()} | VAL ${f.val.toLocaleString()} (${f.startTimeEt}–${f.endTimeEt}). Volume: ${f.totalVolume.toLocaleString()} (${f.buyRatioPct ?? 50}% buy). Price is ${(f.priceRelation || 'INSIDE_VALUE').replace('_', ' ')}.`,
       })
     }
+    if (ctx.userDrawings.avwaps) {
+      for (const av of ctx.userDrawings.avwaps) {
+        points.push({
+          id: `user-avwap-${av.id}`,
+          label: `⚓ ${av.label || `AVWAP (${av.anchorTimeEt})`}`,
+          value: `VWAP ${av.currentVwap.toLocaleString()} (Δ ${av.deltaPts >= 0 ? '+' : ''}${av.deltaPts} pts · ${av.zScore}σ)`,
+          tier: 'DRAWING',
+          category: 'VWAP',
+          description: `Manual Anchored VWAP anchored to ${av.anchorTimeEt} (Ref Price: ${av.anchorPrice != null ? av.anchorPrice.toFixed(2) : '—'}). Current VWAP: ${av.currentVwap.toFixed(2)} | Current Price is ${av.priceRelation} mean by ${Math.abs(av.deltaPts).toFixed(2)} pts (z-score: ${av.zScore}σ, σ = ${av.sigma.toFixed(2)} pts). Bands: ±1σ [${av.band1Lower?.toFixed(2) ?? '—'}, ${av.band1Upper?.toFixed(2) ?? '—'}] | ±2σ [${av.band2Lower?.toFixed(2) ?? '—'}, ${av.band2Upper?.toFixed(2) ?? '—'}].`,
+        })
+      }
+    }
   }
 
   // 6b. Range Volume Comparison Dossiers
@@ -941,6 +974,12 @@ Trendline break alone = NO TRADE.
 Trendline break counts only when it is the same event as one of the four structures above.
 The platform never draws the line. If the trader asks to arm monitoring on their line, emit ARM_TRENDLINE_STRATEGY as a hypothesis watch. Do not attach a fixed point target.
 
+User Anchored VWAP (AVWAP): A manually placed Anchored VWAP represents the volume-weighted moving average price from a chosen anchor bar (e.g. Session Open, Cash Open 09:30 ET, swing high/low, or major news event) using Typical Price (H+L+C)/3.
+- Center AVWAP Line: The volume-weighted equilibrium mean since the anchor bar. Reclaims of AVWAP from below or tests from above serve as dynamic confluence for Spring/Breakout structures.
+- ±1.0σ Band (Value Area): Represents ~68% of cumulative volume distribution. Price inside ±1σ is in balance; tests of +1σ or -1σ often act as dynamic support/resistance.
+- ±2.0σ Band (Exhaustion / Statistical Stretch): Represents ~95% of cumulative volume distribution. Price touching or extending past ±2.0σ without aggressive volume continuation indicates exhaustion/tail stretch. Look for absorption or mean reversion back to the AVWAP mean.
+- AVWAP is dynamic structural confluence; it never triggers on its own without one of the four execution structures.
+
 Candlestick patterns, including a bullish engulfing at a low-volume node, are supporting evidence only.
 A valid long hypothesis still requires a failed breakdown plus reclaim, or a successful breakout and retest.
 A candlestick never overrides structural invalidation. It can improve a setup. It is not the setup. Do not enter on the engulfing close.
@@ -1175,7 +1214,8 @@ ${
   ctx.userDrawings &&
   (ctx.userDrawings.trendlines.length > 0 ||
     ctx.userDrawings.ranges.length > 0 ||
-    ctx.userDrawings.frvps.length > 0)
+    ctx.userDrawings.frvps.length > 0 ||
+    (ctx.userDrawings.avwaps && ctx.userDrawings.avwaps.length > 0))
     ? [
         ...(ctx.userDrawings.trendlines.length > 0
           ? [
@@ -1201,6 +1241,15 @@ ${
               ...ctx.userDrawings.frvps.map(
                 (f) =>
                   `- ${f.label || 'Manual FRVP'}: Range ${f.startTimeEt} to ${f.endTimeEt} | POC: ${f.poc} | VAH: ${f.vah} | VAL: ${f.val} | Range: ${f.low} - ${f.high} | Volume: ${f.totalVolume.toLocaleString()} (${f.buyRatioPct ?? 50}% buy). Status: ${(f.priceRelation || 'INSIDE_VALUE').replace('_', ' ')} (Distance to POC: ${f.distancePocPts != null ? `${f.distancePocPts} pts` : 'N/A'}).`
+              ),
+            ]
+          : []),
+        ...(ctx.userDrawings.avwaps && ctx.userDrawings.avwaps.length > 0
+          ? [
+              'MANUAL ANCHORED VWAPS (AVWAP):',
+              ...ctx.userDrawings.avwaps.map(
+                (a) =>
+                  `- ${a.label || 'AVWAP'}: Anchored at ${a.anchorTimeEt} (Anchor Ref Price: ${a.anchorPrice != null ? a.anchorPrice.toFixed(2) : '—'}). Current Anchored VWAP: ${a.currentVwap.toFixed(2)} | Current price is ${a.priceRelation} mean (${a.deltaPts >= 0 ? '+' : ''}${a.deltaPts.toFixed(2)} pts, stretch: ${a.zScore}σ, σ: ${a.sigma.toFixed(2)} pts). Value Area ±1σ: [${a.band1Lower?.toFixed(2) ?? '—'} to ${a.band1Upper?.toFixed(2) ?? '—'}] · Exhaustion ±2σ: [${a.band2Lower?.toFixed(2) ?? '—'} to ${a.band2Upper?.toFixed(2) ?? '—'}].`
               ),
             ]
           : []),
@@ -1390,7 +1439,7 @@ COMMUNICATION:
 - Every number comes from verified telemetry. If it is missing, say UNAVAILABLE. Never fill a gap with a default.
 - Read-only. Notify. Do not place or flatten orders.
 - The 22-rule block is the execution doctrine: Tier 1 location, effort versus result, at least 2R, and only the four triggers.
-- User Drawings & Manual References: quote the trader's trendline, range, or manual FRVP prices exactly. A drawing is evidence. It is not a separate system.
+- User Drawings & Manual References: quote the trader's trendline, range, manual FRVP, or manual Anchored VWAP (AVWAP) levels and standard deviation bands (±1σ Value Area, ±2σ Exhaustion) exactly. A drawing is evidence and dynamic confluence. It is not a separate system.
 - If the trader asks for an alert or a situation, confirm the verified parameters and emit the execute tag.
 `
 }
