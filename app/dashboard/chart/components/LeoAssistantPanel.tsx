@@ -39,6 +39,7 @@ import {
 } from '@/lib/trading/trendlineStrategy'
 import type { UserTrendline } from '@/lib/trading/userDrawings'
 import { WyckoffRulesPanel } from './WyckoffRulesPanel'
+import { AsianEdgePanel } from './AsianEdgePanel'
 
 export interface ArmedDeskRule {
   id: string
@@ -116,6 +117,7 @@ interface LeoAssistantPanelProps {
   context: LeoChatContext
   candles?: any[]
   isOpen?: boolean
+  initialTab?: 'CHAT' | 'STRATEGY_RULES' | 'ASIAN_EDGE'
   onToggleOpen?: () => void
   onClose?: () => void
   onSelectDataPoint?: (point: LeoDataPoint) => void
@@ -143,6 +145,7 @@ export function LeoAssistantPanel({
   context,
   candles,
   isOpen: controlledIsOpen,
+  initialTab,
   onToggleOpen,
   onClose,
   externalAttachedPoints,
@@ -278,8 +281,16 @@ export function LeoAssistantPanel({
     }
   }, [inputPrompt])
 
-  // Active Panel Tab: Chat vs Wyckoff Strategy Rules (22 Rules Reference)
-  const [activeTab, setActiveTab] = useState<'CHAT' | 'STRATEGY_RULES'>('CHAT')
+  // Active Panel Tab: Chat vs Wyckoff Strategy Rules vs Asian Edge Desk
+  const [activeTab, setActiveTab] = useState<'CHAT' | 'STRATEGY_RULES' | 'ASIAN_EDGE'>(
+    initialTab || 'CHAT'
+  )
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab)
+    }
+  }, [initialTab])
 
   // Voice state (Web Speech Recognition - Continuous Mode)
   const [isListening, setIsListening] = useState(false)
@@ -723,7 +734,8 @@ export function LeoAssistantPanel({
         const entryLabel =
           pat === 'LEVEL_TOUCH' ? 'price touch at level' : pat.replace(/_/g, ' ').toLowerCase()
 
-        const ruleInst = canonicalizeInstrument(inst || d.instrument || context.instrument)
+        const attachedInst = (attachedPoints[0] as any)?.instrument
+        const ruleInst = canonicalizeInstrument(inst || d.instrument || attachedInst || context.instrument)
         const defaultSess = isAsiaDeskInstrument(ruleInst) ? 'ASIA' : 'NYC'
         const sessVal = (d as any).session ?? (isLongTerm ? '24H' : defaultSess)
 
@@ -770,7 +782,12 @@ export function LeoAssistantPanel({
           }
         }
 
-        setArmedRules((prev) => [...prev, newRule])
+        if (ruleInst === canonicalizeInstrument(context.instrument)) {
+          setArmedRules((prev) => [...prev, newRule])
+        } else {
+          const targetRules = loadRulesForMarket(ruleInst as MarketInstrument)
+          saveRulesForMarket(ruleInst as MarketInstrument, [...targetRules.filter((r) => r.id !== newRule.id), newRule as any])
+        }
         playTradingViewChime()
         warningToast(
           `🎯 Armed: ${dir} on ${entryLabel}${tfLabel}${cvdLabel} @ ${targetPx.toLocaleString()}${isLongTerm ? ' (Long-Term Memory)' : ' (NYC Session Only)'}`,
@@ -845,7 +862,8 @@ export function LeoAssistantPanel({
         setArmedRules((prev) => [...prev.filter((r) => r.type !== 'STAGNATION_TIMEOUT'), newRule])
       } else if (d.action === 'ARM_DESK_ALERT' || d.action === 'ARM_TELEGRAM_ALERT') {
         const isLongTerm = Boolean(d.isLongTerm || (d as any).longTermMemory)
-        const ruleInst = canonicalizeInstrument((d as any).instrument || context.instrument)
+        const attachedInst = (attachedPoints[0] as any)?.instrument
+        const ruleInst = canonicalizeInstrument((d as any).instrument || attachedInst || context.instrument)
         const defaultSess = isAsiaDeskInstrument(ruleInst) ? 'ASIA' : 'NYC'
         const sessVal = d.session ?? (isLongTerm ? '24H' : defaultSess)
 
@@ -897,7 +915,12 @@ export function LeoAssistantPanel({
           sessionTime: dateMeta.sessionTime,
           status: 'ARMED',
         }
-        setArmedRules((prev) => [...prev, newRule])
+        if (ruleInst === canonicalizeInstrument(context.instrument)) {
+          setArmedRules((prev) => [...prev, newRule])
+        } else {
+          const targetRules = loadRulesForMarket(ruleInst as MarketInstrument)
+          saveRulesForMarket(ruleInst as MarketInstrument, [...targetRules.filter((r) => r.id !== newRule.id), newRule as any])
+        }
         playTradingViewChime()
         warningToast(
           `🔔 Desk Alert Armed (${ruleInst}): ${d.targetReference || 'Target Level'} @ ${rangeText}${isLongTerm ? ' (Long-Term Memory)' : ` (${sessVal} Session)`}`,
@@ -999,11 +1022,11 @@ export function LeoAssistantPanel({
         const nextRules = prevRules.map((rule) => {
           if (rule.status !== 'ARMED') return rule
 
-          // 0a. Instrument Isolation Guard:
-          // Do NOT evaluate a rule for NIKKEI when viewing DOW/NASDAQ/etc. (or vice versa)!
-          const ruleInst = canonicalizeInstrument(rule.instrument || ctx.instrument)
+          // 0a. Strict Market Isolation Guard:
+          // Under NO circumstances evaluate an OIL/CRUDE alert or situation when viewing NASDAQ/DOW, or vice versa!
+          const ruleInst = canonicalizeInstrument(rule.instrument)
           const activeInst = canonicalizeInstrument(ctx.instrument)
-          if (rule.instrument && ruleInst !== activeInst) {
+          if (!rule.instrument || ruleInst !== activeInst) {
             return rule
           }
 
@@ -2005,31 +2028,43 @@ export function LeoAssistantPanel({
             )}
           </div>
 
-          {/* ── Mode Switcher Tabs (Leo Chat vs AI Stack & Big Money) ── */}
-          <div className="flex items-center border-b border-neutral-800/80 bg-neutral-950/90 px-2.5 py-1.5 gap-1.5 shrink-0">
+          {/* ── Mode Switcher Tabs (Leo Chat vs Wyckoff Rules vs Asian Edge) ── */}
+          <div className="flex items-center border-b border-neutral-800/80 bg-neutral-950/90 px-2 py-1.5 gap-1 shrink-0">
             <button
               type="button"
               onClick={() => setActiveTab('CHAT')}
-              className={`flex-1 py-1.5 px-2 rounded-lg text-[10.5px] font-mono font-bold transition-all flex items-center justify-center gap-1.5 ${
+              className={`flex-1 py-1.5 px-1.5 rounded-lg text-[10px] font-mono font-bold transition-all flex items-center justify-center gap-1 ${
                 activeTab === 'CHAT'
                   ? 'bg-purple-950/80 text-purple-200 border border-purple-500/60 shadow-sm'
                   : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900/60 border border-transparent'
               }`}
             >
               <span>🎙️</span>
-              <span>Leo Order Flow</span>
+              <span>Leo Flow</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('STRATEGY_RULES')}
-              className={`flex-1 py-1.5 px-2 rounded-lg text-[10.5px] font-mono font-bold transition-all flex items-center justify-center gap-1.5 ${
+              className={`flex-1 py-1.5 px-1.5 rounded-lg text-[10px] font-mono font-bold transition-all flex items-center justify-center gap-1 ${
                 activeTab === 'STRATEGY_RULES'
                   ? 'bg-emerald-950/80 text-emerald-200 border border-emerald-500/60 shadow-sm'
                   : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900/60 border border-transparent'
               }`}
             >
               <span>📜</span>
-              <span>Wyckoff 22 Rules</span>
+              <span>22 Rules</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('ASIAN_EDGE')}
+              className={`flex-1 py-1.5 px-1.5 rounded-lg text-[10px] font-mono font-bold transition-all flex items-center justify-center gap-1 ${
+                activeTab === 'ASIAN_EDGE'
+                  ? 'bg-amber-950/80 text-amber-200 border border-amber-500/60 shadow-sm'
+                  : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900/60 border border-transparent'
+              }`}
+            >
+              <span>🌙</span>
+              <span>Asian Edge</span>
             </button>
           </div>
 
@@ -2418,6 +2453,7 @@ export function LeoAssistantPanel({
                             tier: 'DRAWING',
                             category: 'TRENDLINE',
                             description: `${t.slopeDirection} trendline (${t.slopePtsPer5mBar} pts/5m). Price is ${t.priceRelation}.`,
+                            instrument: (t as any).instrument || context.instrument,
                           },
                         ])
                       }}
@@ -2430,7 +2466,7 @@ export function LeoAssistantPanel({
                       <button
                         type="button"
                         onClick={() => {
-                          const inst = (context.instrument || 'GOLD') as MarketInstrument
+                          const inst = ((t as any).instrument || context.instrument || 'GOLD') as MarketInstrument
                           const newRule = addRule({
                             instrument: inst,
                             type: 'TRENDLINE_BREAKOUT_SYSTEMATIC',
@@ -2499,6 +2535,7 @@ export function LeoAssistantPanel({
                             category: 'RANGE',
                             volume: r.totalVolume,
                             description: `${r.heightPts} pts span (${r.durationMin}m). Price is ${r.priceRelation} range.${volDesc}`,
+                            instrument: (r as any).instrument || context.instrument,
                           },
                         ])
                       }}
@@ -2525,6 +2562,7 @@ export function LeoAssistantPanel({
                           category: 'FRVP',
                           volume: f.totalVolume,
                           description: `Manual FRVP: POC ${f.poc} | VAH ${f.vah} | VAL ${f.val}. Price is ${f.priceRelation.replace('_', ' ')}.`,
+                          instrument: (f as any).instrument || context.instrument,
                         },
                       ])
                     }}
@@ -2921,9 +2959,19 @@ export function LeoAssistantPanel({
             </div>
           </div>
         </>
-      ) : (
+      ) : activeTab === 'STRATEGY_RULES' ? (
         <WyckoffRulesPanel
           instrument={context.instrument}
+          onAskLeo={(prompt: string) => {
+            setActiveTab('CHAT')
+            handleSendMessage(prompt)
+          }}
+        />
+      ) : (
+        <AsianEdgePanel
+          instrument={context.instrument}
+          currentPrice={context.currentPrice ?? undefined}
+          candles={candles}
           onAskLeo={(prompt: string) => {
             setActiveTab('CHAT')
             handleSendMessage(prompt)

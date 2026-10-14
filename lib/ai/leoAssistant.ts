@@ -41,6 +41,7 @@ export interface LeoDataPoint {
   retestRatio?: number
   isRetested?: boolean
   testCount?: number
+  instrument?: string
 }
 
 export interface LeoUserDrawingsContext {
@@ -290,6 +291,7 @@ export type LeoExecutionDirective =
     }
   | {
       action: 'ARM_DESK_ALERT' | 'ARM_TELEGRAM_ALERT'
+      instrument?: string
       targetReference: string
       targetPrice: number
       requireHighVolume?: boolean

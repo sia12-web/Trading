@@ -1,14 +1,9 @@
 /**
  * Scan OANDA M5 for the locked Asia recipes, persist overlays, Telegram once per event.
+ * Uses RAW OANDA CFD cash prices (no CME basis offset) so prices precisely match CMC Markets Cash.
  */
 
 import { getOandaCandles } from '@/lib/oanda/candles'
-import {
-  applyCmeBasisToCandles,
-  getCmeBasis,
-  getLastKnownCmeBasis,
-  warmCmeBasis,
-} from '@/lib/trading/cmeBasis'
 import {
   ASIA_DESK_INSTRUMENTS,
   evaluateAsiaDeskOverlay,
@@ -19,6 +14,10 @@ import {
   loadAsiaDeskBook,
   upsertAsiaOverlay,
 } from '@/lib/trading/asiaDeskStore'
+import {
+  sendAsianEdgeExecutionAlert,
+  sendAsianEdgeOutingAlert,
+} from '@/lib/notify/telegram'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { logger } from '@/lib/utils/logger'
@@ -29,12 +28,14 @@ export type AsiaScanResult = {
   telegram: Array<{ instrument: AsiaInstrument; event: string; sent: boolean; skipped?: string }>
 }
 
+// In-memory deduplicator to prevent duplicate Telegram alerts across polling ticks
+const sentTelegramKeys = new Set<string>()
+
 async function candlesFor(instrument: AsiaInstrument) {
-  await warmCmeBasis(instrument as Instrument).catch(() => null)
+  // Use raw OANDA cash candles directly without CME basis offset to match CMC Markets Cash prices
   const pack = await getOandaCandles(instrument as Instrument, '5', 2)
   if (!pack?.candles?.length) return []
-  const basis = getCmeBasis(instrument as Instrument) ?? getLastKnownCmeBasis(instrument as Instrument)
-  return applyCmeBasisToCandles(pack.candles, basis)
+  return pack.candles
 }
 
 export async function runAsiaDeskScan(args: {
@@ -59,6 +60,48 @@ export async function runAsiaDeskScan(args: {
       if (!overlay) continue
       overlays[instrument] = overlay
       await upsertAsiaOverlay(args.supabase, args.userId, overlay)
+
+      // Telegram notification dispatch (CMC Markets Cash prices)
+      if (args.notify && overlay.event && overlay.event !== 'idle' && overlay.event !== 'building') {
+        const dedupeKey = `${instrument}-${overlay.lockDate}-${overlay.event}`
+        if (!sentTelegramKeys.has(dedupeKey)) {
+          if (overlay.event === 'place_both' && overlay.qualified) {
+            const risk = overlay.buyStop - overlay.asiaMid
+            await sendAsianEdgeExecutionAlert({
+              instrument: `${instrument} (CMC Cash)`,
+              action: 'BOTH_PLACED',
+              entry: overlay.buyStop,
+              stopLoss: overlay.asiaMid,
+              takeProfit: overlay.longTp,
+              riskPts: risk,
+              contracts: overlay.contracts,
+              timeNote: '02:00–03:30 ET Execution Window',
+            })
+            sentTelegramKeys.add(dedupeKey)
+            telegram.push({ instrument, event: overlay.event, sent: true })
+          } else if (overlay.event === 'flatten') {
+            await sendAsianEdgeOutingAlert({
+              instrument: `${instrument} (CMC Cash)`,
+              reason: 'FLATTEN_1025',
+              timeNote: '10:25 ET Mandatory Outing',
+              note: 'Hard exit mandate before NY mid-day chop',
+            })
+            sentTelegramKeys.add(dedupeKey)
+            telegram.push({ instrument, event: overlay.event, sent: true })
+          } else if (overlay.event === 'cancel_unfilled') {
+            await sendAsianEdgeOutingAlert({
+              instrument: `${instrument} (CMC Cash)`,
+              reason: 'CANCEL_UNFILLED_0330',
+              timeNote: '03:30 ET Order Cutoff',
+              note: 'Unfilled breakout stops cancelled',
+            })
+            sentTelegramKeys.add(dedupeKey)
+            telegram.push({ instrument, event: overlay.event, sent: true })
+          }
+        } else {
+          telegram.push({ instrument, event: overlay.event, sent: false, skipped: 'Already sent' })
+        }
+      }
     } catch (err) {
       logger.warn('asia_desk.scan_instrument_failed', { instrument, err })
     }

@@ -454,14 +454,12 @@ export function armNasdaqOneToOneSituation(options?: {
 /** Load rules for a specific market */
 export function loadRulesForMarket(market: MarketInstrument): ArmedRule[] {
   if (typeof window === 'undefined') {
-    return seedDefaultMarketSituations(market)
+    return []
   }
   try {
     const raw = localStorage.getItem(`leo_armed_rules_${market}`)
     if (raw === null) {
-      const seeded = seedDefaultMarketSituations(market)
-      saveRulesForMarket(market, seeded)
-      return seeded
+      return []
     }
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) {

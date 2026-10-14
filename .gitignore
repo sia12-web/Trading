@@ -72,5 +72,6 @@ tmp-*.json
 scratch/
 data/cme_sessions/
 data/cme_multiyear/
+data/databento_6m/
 
 
