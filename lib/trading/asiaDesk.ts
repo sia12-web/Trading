@@ -87,7 +87,11 @@ export function isAsiaDeskInstrument(
 
 export function isAsiaMontrealWeekday(now: Date = new Date()): boolean {
   const w = weekdayFmt.format(now)
-  return w !== 'Sat' && w !== 'Sun'
+  const { mins } = asiaMontrealMins(now)
+  if (w === 'Sun') return mins >= 18 * 60 // Sunday Asian session opens at 18:00 ET
+  if (w === 'Fri') return mins < 17 * 60 // Friday Globex closes at 17:00 ET
+  if (w === 'Sat') return false
+  return true
 }
 
 export function asiaMontrealMins(now: Date = new Date()): { ymd: string; mins: number } {
@@ -131,6 +135,13 @@ export function isAsiaDeskFlattenWindow(now: Date = new Date()): boolean {
   if (!isAsiaMontrealWeekday(now)) return false
   const { mins } = asiaMontrealMins(now)
   return mins >= ASIA_FLAT_MINS && mins < ASIA_FLAT_MINS + 15
+}
+
+/** Nasdaq Dalton Prior Day POC Reversion window: 18:00–20:00 Montreal/ET weekdays. */
+export function isAsiaDeskNasdaqWindow(now: Date = new Date()): boolean {
+  if (!isAsiaMontrealWeekday(now)) return false
+  const { mins } = asiaMontrealMins(now)
+  return mins >= 18 * 60 && mins < 20 * 60
 }
 
 export function asiaDeskEventForClock(

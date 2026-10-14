@@ -34,26 +34,68 @@ export async function POST(request: Request) {
       : 'Active'
 
     // Compute sample CMC Cash breakout levels from live cash price
-    const sampleMid = liveCashPrice ?? (item.inst === 'GOLD' ? 4166.5 : item.inst === 'DOW' ? 51760.0 : 30690.0)
+    const sampleMid = liveCashPrice ?? (item.inst === 'GOLD' ? 4166.5 : item.inst === 'DOW' ? 51760.0 : item.inst === 'NASDAQ' ? 20450.0 : 70.5)
     const buyStop = (sampleMid + item.buffer).toFixed(item.inst === 'CRUDE' ? 2 : 1)
     const sellStop = (sampleMid - item.buffer).toFixed(item.inst === 'CRUDE' ? 2 : 1)
     const tpLong = (sampleMid + item.buffer * 2.5).toFixed(item.inst === 'CRUDE' ? 2 : 1)
     const tpShort = (sampleMid - item.buffer * 2.5).toFixed(item.inst === 'CRUDE' ? 2 : 1)
 
-    const testMessage = [
-      `🌙 *[ASIAN EDGE] Live Desk Alert — ${item.label}*`,
-      `━━━━━━━━━━━━━━━━━━━━`,
-      `💵 *CMC Markets Cash Mark:* \`${priceDisplay}\``,
-      `⚡ *Action:* \`PLACE OCO STOPS (02:00 ET Lock)\``,
-      `🟢 *Buy Stop (Long):* \`${buyStop}\``,
-      `🔴 *Sell Stop (Short):* \`${sellStop}\``,
-      `🛑 *Stop Loss:* \`${sampleMid.toFixed(1)}\` _(Asia Midpoint)_`,
-      `🎯 *Take Profit (1.5R):* \`${tpLong} / ${tpShort}\``,
-      `⏱️ *Execution Timing:* \`02:00 – 03:30 ET\``,
-      `🛑 *Outing Mandate:* \`10:25 ET (Hard Flatten)\``,
-      `━━━━━━━━━━━━━━━━━━━━`,
-      `_Prices strictly synchronized with CMC Markets Cash via OANDA feed._`,
-    ].join('\n')
+    let testMessage = ''
+
+    if (rawInst === 'NASDAQ') {
+      const priorPoc = sampleMid - 65
+      const dist = 65.0
+      testMessage = [
+        `🌙 *[ASIAN EDGE] Live Desk Alert — US NDAQ 100 - Cash (CMC / OANDA)*`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `💵 *CMC Markets Cash Mark:* \`${priceDisplay}\``,
+        `⚡ *Action:* \`DALTON PRIOR POC REVERSION (18:00 ET Open)\``,
+        `✅ *Condition:* Qualified Displacement (\`${dist.toFixed(1)}\` pts >= 50.0 pts from POC)`,
+        ``,
+        `🔴 *Setup Direction:* \`SHORT targeting POC Equilibrium\``,
+        `📍 *Entry Zone:* \`${sampleMid.toFixed(1)}\``,
+        `🛑 *Stop Loss:* \`${(sampleMid + dist).toFixed(1)}\` _(${dist.toFixed(1)} pts symmetrical risk)_`,
+        `🎯 *Take Profit:* \`${priorPoc.toFixed(1)}\` _(Resting Limit at Prior Day POC)_`,
+        ``,
+        `📦 *Position Size:* \`1 MNQ contract\` (~$130 risk)`,
+        `⏱️ *Execution Timing:* \`18:00 – 20:00 ET Window\``,
+        `🛑 *Outing Mandate:* \`02:00 ET (Asian Close Outing)\``,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `_Prices strictly synchronized with CMC Markets Cash via OANDA feed._`,
+      ].join('\n')
+    } else if (rawInst === 'OIL') {
+      testMessage = [
+        `🌙 *[ASIAN EDGE] Risk Guard Alert — Crude Oil WTI - Cash*`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `⛔ *Status:* \`ASIAN SESSION GATED (AVOID)\``,
+        `💵 *Cash Mark:* \`${priceDisplay}\``,
+        `🛡️ *Protocol:* Deactivated in Asia (Negative Expectancy Overnight)`,
+        `⏱️ *Execution Window:* Confine strictly to NY Cash (09:00–14:30 ET)`,
+        `📝 *Directive:* Preserve desk Daily Loss Limit (DLL). Zero overnight exposure.`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `_TradePulse Desk Risk Guard Active_`,
+      ].join('\n')
+    } else {
+      testMessage = [
+        `🌙 *[ASIAN EDGE] Live Desk Alert — ${item.label}*`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `💵 *CMC Markets Cash Mark:* \`${priceDisplay}\``,
+        `⚡ *Action:* \`PLACE OCO STOPS (02:00 ET Asia Box Lock)\``,
+        `✅ *Condition:* Qualified Box Compression`,
+        ``,
+        `🟢 *Buy Stop (Long):* \`${buyStop}\``,
+        `   ↳ *Take Profit (1.5R):* \`${tpLong}\``,
+        `🔴 *Sell Stop (Short):* \`${sellStop}\``,
+        `   ↳ *Take Profit (1.5R):* \`${tpShort}\``,
+        `🛑 *Stop Loss:* \`${sampleMid.toFixed(1)}\` _(Asia Midpoint)_`,
+        ``,
+        `📦 *Position Size:* \`1 ${item.contract} contract\``,
+        `⏱️ *Execution Timing:* \`02:00 – 03:30 ET\``,
+        `🛑 *Outing Mandate:* \`10:25 ET (Hard Flatten)\``,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `_Prices strictly synchronized with CMC Markets Cash via OANDA feed._`,
+      ].join('\n')
+    }
 
     const result = await sendTelegramMessage(testMessage)
 

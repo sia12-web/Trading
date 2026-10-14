@@ -112,7 +112,7 @@ export async function sendTelegramMessage(
 }
 
 /**
- * Dispatch an execution notification for the Asian Edge strategy.
+ * Dispatch an execution notification for the Asian Edge strategy (legacy / single-order fallback).
  */
 export async function sendAsianEdgeExecutionAlert(args: {
   instrument: string
@@ -142,6 +142,89 @@ export async function sendAsianEdgeExecutionAlert(args: {
 }
 
 /**
+ * Dispatch high-conviction OCO bracket alert for Asian Box Breakout (Gold & Dow).
+ */
+export async function sendAsianEdgeBracketAlert(args: {
+  instrument: string
+  contract: string
+  pointValue: number
+  asiaRange: number
+  maxRange: number
+  buyStop: number
+  sellStop: number
+  stopLoss: number
+  longTp: number
+  shortTp: number
+  riskPts: number
+  contracts: number
+  timeNote?: string
+  outingMandate?: string
+}): Promise<TelegramSendResult> {
+  const riskCash = args.riskPts * args.pointValue * args.contracts
+  const text = [
+    `🌙 *[ASIAN EDGE] Execution Alert — ${args.instrument}*`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `⚡ *Action:* \`PLACE OCO BRACKET (02:00 ET Asia Box Lock)\``,
+    `✅ *Condition:* Qualified Box Compression (Range: \`${args.asiaRange.toFixed(1)}\` <= \`${args.maxRange}\` max)`,
+    ``,
+    `🟢 *Buy Stop (Long):* \`${args.buyStop.toFixed(1)}\``,
+    `   ↳ *Take Profit (1.5R):* \`${args.longTp.toFixed(1)}\``,
+    `🔴 *Sell Stop (Short):* \`${args.sellStop.toFixed(1)}\``,
+    `   ↳ *Take Profit (1.5R):* \`${args.shortTp.toFixed(1)}\``,
+    `🛑 *Stop Loss:* \`${args.stopLoss.toFixed(1)}\` _(Asia Midpoint — ${args.riskPts.toFixed(1)} pts risk)_`,
+    ``,
+    `📦 *Position Size:* \`${args.contracts} ${args.contract}\` (~$${riskCash.toFixed(0)} risk)`,
+    `⏱️ *Execution Timing:* ${args.timeNote ?? '02:00 – 03:30 ET (Cancel unfilled at 03:30 ET)'}`,
+    `🛑 *Outing Mandate:* ${args.outingMandate ?? '10:25 ET Mandatory Hard Flat'}`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `_Synchronized with CMC Markets Cash feed • TradePulse Desk Protocol_`,
+  ].join('\n')
+
+  return sendTelegramMessage(text)
+}
+
+/**
+ * Dispatch high-conviction Dalton Prior Day POC Reversion alert (Nasdaq).
+ */
+export async function sendAsianEdgePocReversionAlert(args: {
+  instrument: string
+  contract: string
+  direction: 'LONG' | 'SHORT'
+  entry: number
+  priorPoc: number
+  stopLoss: number
+  riskPts: number
+  contracts: number
+  pointValue: number
+  displacement: number
+  minDisplacement: number
+  timeNote?: string
+  outingMandate?: string
+}): Promise<TelegramSendResult> {
+  const icon = args.direction === 'LONG' ? '🟢' : '🔴'
+  const riskCash = args.riskPts * args.pointValue * args.contracts
+  const text = [
+    `🌙 *[ASIAN EDGE] Execution Alert — ${args.instrument}*`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `⚡ *Action:* \`DALTON PRIOR POC REVERSION (18:00 ET Open)\``,
+    `✅ *Condition:* Qualified Displacement (\`${args.displacement.toFixed(1)}\` pts >= \`${args.minDisplacement}\` min)`,
+    ``,
+    `${icon} *Setup Direction:* \`${args.direction} targeting POC Equilibrium\``,
+    `📍 *Entry Zone:* \`${args.entry.toFixed(1)}\``,
+    `🛑 *Stop Loss:* \`${args.stopLoss.toFixed(1)}\` _(${args.riskPts.toFixed(1)} pts symmetrical risk)_`,
+    `🎯 *Take Profit:* \`${args.priorPoc.toFixed(1)}\` _(Resting Limit at Prior Day POC)_`,
+    ``,
+    `📦 *Position Size:* \`${args.contracts} ${args.contract}\` (~$${riskCash.toFixed(0)} risk)`,
+    `⏱️ *Execution Timing:* ${args.timeNote ?? '18:00 – 20:00 ET Window'}`,
+    `🛑 *Outing Mandate:* ${args.outingMandate ?? '02:00 ET Asian Close Outing'}`,
+    `━━━━━━━━━━━━━━━━━━━━`,
+    `_Synchronized with CMC Markets Cash feed • TradePulse Desk Protocol_`,
+  ].join('\n')
+
+  return sendTelegramMessage(text)
+}
+
+/**
  * Dispatch an outing/flattening notification when Asian/London session ends.
  */
 export async function sendAsianEdgeOutingAlert(args: {
@@ -151,16 +234,31 @@ export async function sendAsianEdgeOutingAlert(args: {
   timeNote: string
   note?: string
 }): Promise<TelegramSendResult> {
-  const icon = args.reason === 'TARGET_HIT' ? '🎉' : args.reason === 'STOP_HIT' ? '⚠️' : '🔔'
+  const icon =
+    args.reason === 'TARGET_HIT'
+      ? '🎉'
+      : args.reason === 'STOP_HIT'
+      ? '⚠️'
+      : args.reason === 'FLATTEN_1025'
+      ? '🛑'
+      : '🔔'
+  const reasonLabel =
+    args.reason === 'FLATTEN_1025'
+      ? '10:25 ET Mandatory Hard Flatten'
+      : args.reason === 'SESSION_CLOSE_0200'
+      ? '02:00 ET Asian Close Outing'
+      : args.reason === 'CANCEL_UNFILLED_0330'
+      ? '03:30 ET Order Cutoff (Cancel Unfilled)'
+      : args.reason
   const text = [
     `🌙 *[ASIAN EDGE] Outing & Exit Alert — ${args.instrument}*`,
     `━━━━━━━━━━━━━━━━━━━━`,
-    `${icon} *Event:* \`${args.reason}\``,
+    `${icon} *Event:* \`${reasonLabel}\``,
     args.price != null ? `💵 *Exit Price:* \`${args.price.toFixed(2)}\`` : '',
-    `⏱️ *Time Note:* ${args.timeNote}`,
+    `⏱️ *Time Window:* ${args.timeNote}`,
     args.note ? `📝 *Desk Directive:* ${args.note}` : '',
     `━━━━━━━━━━━━━━━━━━━━`,
-    `_Session Flat Mandate Enforced_`,
+    `_Session Flat Mandate Enforced • TradePulse Desk Protocol_`,
   ].filter(Boolean).join('\n')
 
   return sendTelegramMessage(text)

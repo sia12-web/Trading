@@ -112,7 +112,7 @@ export async function claimAsiaTelegramKey(
   const row = await loadAsiaDeskBook(supabase, userId)
   const keys = row.telegramKeys || []
   if (keys.includes(key)) return false
-  const nextKeys = [...keys, key].slice(-80)
+  const nextKeys = [...keys, key].slice(-300)
   await saveAsiaDeskBook(supabase, userId, {
     overlays: row.overlays || {},
     telegramKeys: nextKeys,

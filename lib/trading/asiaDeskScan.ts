@@ -1,23 +1,35 @@
 /**
  * Scan OANDA M5 for the locked Asia recipes, persist overlays, Telegram once per event.
  * Uses RAW OANDA CFD cash prices (no CME basis offset) so prices precisely match CMC Markets Cash.
+ * Strictly deduplicated via Supabase DB and local memory claim to eliminate duplicate alerts.
+ * Aligned 100% with high-conviction institutional models from /dashboard/asian-edge:
+ * - Gold (MGC): Asia Box Compression Breakout (< $60.00 range)
+ * - Dow (MYM): Asia Box Compression Breakout (< 80 pts range)
+ * - Nasdaq (MNQ): Dalton Prior Day POC Reversion (>= 50 pts displacement)
+ * - Oil (MCL): Risk Guard Protocol - Deactivated in Asia
  */
 
 import { getOandaCandles } from '@/lib/oanda/candles'
+import { getOandaPrice } from '@/lib/oanda/pricing'
 import {
   ASIA_DESK_INSTRUMENTS,
+  asiaMontrealMins,
   evaluateAsiaDeskOverlay,
   type AsiaDeskOverlay,
   type AsiaInstrument,
 } from '@/lib/trading/asiaDesk'
 import {
+  claimAsiaTelegramKey,
   loadAsiaDeskBook,
   upsertAsiaOverlay,
 } from '@/lib/trading/asiaDeskStore'
 import {
-  sendAsianEdgeExecutionAlert,
+  sendAsianEdgeBracketAlert,
   sendAsianEdgeOutingAlert,
+  sendAsianEdgePocReversionAlert,
 } from '@/lib/notify/telegram'
+import { claimServerDeskNoteOnce } from '@/lib/notify/deskNoteServerClaim'
+import { evaluateAsianEdgeStatus } from '@/lib/trading/asianEdgeEngine'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { logger } from '@/lib/utils/logger'
@@ -25,13 +37,32 @@ import type { Instrument } from '@/types/price-feed'
 
 export type AsiaScanResult = {
   overlays: Partial<Record<AsiaInstrument, AsiaDeskOverlay>>
-  telegram: Array<{ instrument: AsiaInstrument; event: string; sent: boolean; skipped?: string }>
+  telegram: Array<{ instrument: string; event: string; sent: boolean; skipped?: string }>
 }
 
-// In-memory deduplicator to prevent duplicate Telegram alerts across polling ticks
-const sentTelegramKeys = new Set<string>()
+/**
+ * Durable deduplicator:
+ * 1. Synchronous in-memory claim blocks concurrent requests within the same process.
+ * 2. Persistent Supabase DB claim blocks across serverless cold-starts & container restarts.
+ */
+async function tryClaimDedupe(
+  supabase: SupabaseClient | null,
+  userId: string,
+  dedupeKey: string
+): Promise<boolean> {
+  // 1. In-process claim
+  if (!claimServerDeskNoteOnce(dedupeKey)) {
+    return false
+  }
+  // 2. Persistent Supabase DB claim
+  if (supabase && userId) {
+    const claimed = await claimAsiaTelegramKey(supabase, userId, dedupeKey)
+    if (!claimed) return false
+  }
+  return true
+}
 
-async function candlesFor(instrument: AsiaInstrument) {
+async function candlesFor(instrument: string) {
   // Use raw OANDA cash candles directly without CME basis offset to match CMC Markets Cash prices
   const pack = await getOandaCandles(instrument as Instrument, '5', 2)
   if (!pack?.candles?.length) return []
@@ -45,9 +76,15 @@ export async function runAsiaDeskScan(args: {
   notify?: boolean
 }): Promise<AsiaScanResult> {
   const now = args.now ?? new Date()
+  const { ymd, mins } = asiaMontrealMins(now)
   const overlays: Partial<Record<AsiaInstrument, AsiaDeskOverlay>> = {}
   const telegram: AsiaScanResult['telegram'] = []
 
+  // Load persistent desk book to check previous session claims
+  const stored = await loadAsiaDeskBook(args.supabase, args.userId)
+  const pastKeys = new Set(stored.telegramKeys || [])
+
+  // 1. Process GOLD & DOW: Asia Box Compression Breakout
   for (const instrument of ASIA_DESK_INSTRUMENTS) {
     try {
       const candles = await candlesFor(instrument)
@@ -61,45 +98,72 @@ export async function runAsiaDeskScan(args: {
       overlays[instrument] = overlay
       await upsertAsiaOverlay(args.supabase, args.userId, overlay)
 
-      // Telegram notification dispatch (CMC Markets Cash prices)
-      if (args.notify && overlay.event && overlay.event !== 'idle' && overlay.event !== 'building') {
-        const dedupeKey = `${instrument}-${overlay.lockDate}-${overlay.event}`
-        if (!sentTelegramKeys.has(dedupeKey)) {
-          if (overlay.event === 'place_both' && overlay.qualified) {
-            const risk = overlay.buyStop - overlay.asiaMid
-            await sendAsianEdgeExecutionAlert({
-              instrument: `${instrument} (CMC Cash)`,
-              action: 'BOTH_PLACED',
-              entry: overlay.buyStop,
+      if (!args.notify) continue
+
+      const pointValue = instrument === 'GOLD' ? 10.0 : 0.5
+      const instrumentLabel =
+        instrument === 'GOLD' ? 'Micro Gold (MGC / XAU/USD)' : 'Micro Dow (MYM / US30)'
+
+      // Window A: 02:00 – 03:30 ET Execution Window (Place OCO Bracket)
+      if (mins >= 120 && mins < 210) {
+        if (overlay.qualified) {
+          const dedupeKey = `asian_edge:${instrument}:${overlay.lockDate}:place_both`
+          if (await tryClaimDedupe(args.supabase, args.userId, dedupeKey)) {
+            const riskPts = Math.abs(overlay.buyStop - overlay.asiaMid)
+            await sendAsianEdgeBracketAlert({
+              instrument: instrumentLabel,
+              contract: overlay.contract,
+              pointValue,
+              asiaRange: overlay.asiaRange,
+              maxRange: overlay.maxRange,
+              buyStop: overlay.buyStop,
+              sellStop: overlay.sellStop,
               stopLoss: overlay.asiaMid,
-              takeProfit: overlay.longTp,
-              riskPts: risk,
-              contracts: overlay.contracts,
-              timeNote: '02:00–03:30 ET Execution Window',
+              longTp: overlay.longTp,
+              shortTp: overlay.shortTp,
+              riskPts,
+              contracts: overlay.contracts || 1,
+              timeNote: '02:00 – 03:30 ET Execution Window',
+              outingMandate: '10:25 ET Mandatory Hard Flat',
             })
-            sentTelegramKeys.add(dedupeKey)
-            telegram.push({ instrument, event: overlay.event, sent: true })
-          } else if (overlay.event === 'flatten') {
-            await sendAsianEdgeOutingAlert({
-              instrument: `${instrument} (CMC Cash)`,
-              reason: 'FLATTEN_1025',
-              timeNote: '10:25 ET Mandatory Outing',
-              note: 'Hard exit mandate before NY mid-day chop',
-            })
-            sentTelegramKeys.add(dedupeKey)
-            telegram.push({ instrument, event: overlay.event, sent: true })
-          } else if (overlay.event === 'cancel_unfilled') {
-            await sendAsianEdgeOutingAlert({
-              instrument: `${instrument} (CMC Cash)`,
-              reason: 'CANCEL_UNFILLED_0330',
-              timeNote: '03:30 ET Order Cutoff',
-              note: 'Unfilled breakout stops cancelled',
-            })
-            sentTelegramKeys.add(dedupeKey)
-            telegram.push({ instrument, event: overlay.event, sent: true })
+            telegram.push({ instrument, event: 'place_both', sent: true })
+          } else {
+            telegram.push({ instrument, event: 'place_both', sent: false, skipped: 'Already sent' })
           }
+        }
+      }
+
+      // Window B: 03:30 – 03:50 ET Order Cutoff Window (Cancel Unfilled Stops)
+      // ONLY if this setup was qualified for this session
+      else if (mins >= 210 && mins < 230 && overlay.qualified) {
+        const dedupeKey = `asian_edge:${instrument}:${overlay.lockDate}:cancel_unfilled`
+        if (await tryClaimDedupe(args.supabase, args.userId, dedupeKey)) {
+          await sendAsianEdgeOutingAlert({
+            instrument: instrumentLabel,
+            reason: 'CANCEL_UNFILLED_0330',
+            timeNote: '03:30 ET Order Cutoff',
+            note: '03:30 ET reached. Cancel unfilled breakout stops if not yet filled. Keep SL and 1.5R TP active if filled.',
+          })
+          telegram.push({ instrument, event: 'cancel_unfilled', sent: true })
         } else {
-          telegram.push({ instrument, event: overlay.event, sent: false, skipped: 'Already sent' })
+          telegram.push({ instrument, event: 'cancel_unfilled', sent: false, skipped: 'Already sent' })
+        }
+      }
+
+      // Window C: 10:25 – 10:45 ET Mandatory Outing / Hard Flatten Window
+      // ONLY if this setup was qualified for this session
+      else if (mins >= 625 && mins < 645 && overlay.qualified) {
+        const dedupeKey = `asian_edge:${instrument}:${overlay.lockDate}:flatten`
+        if (await tryClaimDedupe(args.supabase, args.userId, dedupeKey)) {
+          await sendAsianEdgeOutingAlert({
+            instrument: instrumentLabel,
+            reason: 'FLATTEN_1025',
+            timeNote: '10:25 ET Mandatory Outing',
+            note: 'Hard exit mandate before NY mid-day chop. Flatten all open Asian positions at market immediately.',
+          })
+          telegram.push({ instrument, event: 'flatten', sent: true })
+        } else {
+          telegram.push({ instrument, event: 'flatten', sent: false, skipped: 'Already sent' })
         }
       }
     } catch (err) {
@@ -107,9 +171,71 @@ export async function runAsiaDeskScan(args: {
     }
   }
 
-  const stored = await loadAsiaDeskBook(args.supabase, args.userId)
+  // 2. Process NASDAQ: Dalton Prior Day POC Magnet Reversion
+  if (args.notify) {
+    try {
+      // Window D: 18:00 – 20:00 ET Execution Window (Open & POC Reversion)
+      if (mins >= 18 * 60 && mins < 20 * 60) {
+        const candles = await candlesFor('NASDAQ')
+        const quote = await getOandaPrice('NASDAQ')
+        const currentPrice = quote?.price ?? candles[candles.length - 1]?.close
+        if (currentPrice) {
+          const status = evaluateAsianEdgeStatus('NASDAQ', candles, currentPrice, now)
+          if (status.qualified && status.priorPoc != null && status.stopLoss != null && status.riskPts != null) {
+            const dedupeKey = `asian_edge:NASDAQ:${ymd}:poc_reversion`
+            if (await tryClaimDedupe(args.supabase, args.userId, dedupeKey)) {
+              const direction = currentPrice > status.priorPoc ? 'SHORT' : 'LONG'
+              await sendAsianEdgePocReversionAlert({
+                instrument: 'Micro Nasdaq-100 (MNQ / NAS100)',
+                contract: 'MNQ',
+                direction,
+                entry: currentPrice,
+                priorPoc: status.priorPoc,
+                stopLoss: status.stopLoss,
+                riskPts: status.riskPts,
+                contracts: 1,
+                pointValue: 2.0,
+                displacement: status.riskPts,
+                minDisplacement: 50.0,
+                timeNote: '18:00 – 20:00 ET Execution Window',
+                outingMandate: '02:00 ET Asian Close Outing',
+              })
+              telegram.push({ instrument: 'NASDAQ', event: 'poc_reversion', sent: true })
+            } else {
+              telegram.push({ instrument: 'NASDAQ', event: 'poc_reversion', sent: false, skipped: 'Already sent' })
+            }
+          }
+        }
+      }
+
+      // Window E: 02:00 – 02:25 ET Asian Close Outing for NASDAQ
+      // ONLY if a POC reversion trade was triggered in this session
+      else if (mins >= 120 && mins < 145) {
+        const enteredKey = `asian_edge:NASDAQ:${ymd}:poc_reversion`
+        if (pastKeys.has(enteredKey)) {
+          const dedupeKey = `asian_edge:NASDAQ:${ymd}:outing_0200`
+          if (await tryClaimDedupe(args.supabase, args.userId, dedupeKey)) {
+            await sendAsianEdgeOutingAlert({
+              instrument: 'Micro Nasdaq-100 (MNQ / NAS100)',
+              reason: 'SESSION_CLOSE_0200',
+              timeNote: '02:00 ET Asian Close',
+              note: '02:00 ET Asian close reached. If target not hit, exit at market before Frankfurt open.',
+            })
+            telegram.push({ instrument: 'NASDAQ', event: 'outing_0200', sent: true })
+          } else {
+            telegram.push({ instrument: 'NASDAQ', event: 'outing_0200', sent: false, skipped: 'Already sent' })
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn('asia_desk.scan_nasdaq_failed', { err })
+    }
+  }
+
+  // Reload latest stored overlays to combine
+  const latestBook = await loadAsiaDeskBook(args.supabase, args.userId)
   return {
-    overlays: { ...(stored.overlays || {}), ...overlays },
+    overlays: { ...(latestBook.overlays || {}), ...overlays },
     telegram,
   }
 }

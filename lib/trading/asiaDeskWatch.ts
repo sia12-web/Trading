@@ -6,6 +6,7 @@
 import { logger } from '@/lib/utils/logger'
 import {
   isAsiaDeskFlattenWindow,
+  isAsiaDeskNasdaqWindow,
   isAsiaDeskScanWindow,
 } from '@/lib/trading/asiaDesk'
 
@@ -19,7 +20,7 @@ export function startAsiaDeskWatch(): void {
   const tick = async () => {
     try {
       const now = new Date()
-      if (!isAsiaDeskScanWindow(now) && !isAsiaDeskFlattenWindow(now)) return
+      if (!isAsiaDeskScanWindow(now) && !isAsiaDeskFlattenWindow(now) && !isAsiaDeskNasdaqWindow(now)) return
       const { runAsiaDeskScanForDeskUser } = await import('@/lib/trading/asiaDeskScan')
       const result = await runAsiaDeskScanForDeskUser(now)
       if (result?.telegram.some((t) => t.sent)) {
