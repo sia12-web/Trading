@@ -1890,6 +1890,9 @@ export function TradingChart({
   }, [chartThemeMode])
 
   const [candles, setCandles] = useState<OHLCV[]>([])
+  const candlesRef = useRef<OHLCV[]>([])
+  const instrumentRef = useRef<Instrument>(instrument)
+  instrumentRef.current = instrument
   const [armedSituations, setArmedSituations] = useState<ArmedRule[]>([])
 
   useEffect(() => {
@@ -5836,7 +5839,7 @@ export function TradingChart({
           }
         }),
         avwaps: activeAnchoredVwaps.map((av) => {
-          const rawBars = candlesRef.current || []
+          const rawBars = candles.length > 0 ? candles : (candlesRef.current || [])
           const res = computeUserAnchoredVwapSeries(rawBars, av)
           const pts = res?.points ?? []
           const latest = pts.length > 0 ? pts[pts.length - 1] : null
@@ -7312,9 +7315,6 @@ export function TradingChart({
       overlayRafRef.current = 0
     }
   }, [applyOverlayLayout])
-
-  const candlesRef = useRef<OHLCV[]>([])
-  const instrumentRef = useRef<Instrument>(instrument)
 
   // Ensure candlestick series colors always stay consistent institutional green/red across all markets
   useEffect(() => {
