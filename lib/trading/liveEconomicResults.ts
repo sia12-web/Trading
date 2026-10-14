@@ -323,42 +323,166 @@ async function fetchLiveBlsNfp(): Promise<BlsNfpResult | null> {
   }
 }
 
-/** Fetch breaking market headlines from Yahoo Finance RSS (zero-key fallback) */
-export async function fetchYahooFinanceHeadlines(): Promise<RawDeskHeadline[]> {
-  try {
-    const res = await fetch('https://finance.yahoo.com/news/rssindex', {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      signal: AbortSignal.timeout(5000),
-    })
-    if (!res.ok) return []
-    const xml = await res.text()
-    const items = xml.match(/<item>[\s\S]*?<\/item>/gi) || []
+/** Helper to parse a single RSS XML item */
+function parseRssItem(itemXml: string, sourceName: string): RawDeskHeadline | null {
+  const titleMatch = itemXml.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>|<title>(.*?)<\/title>/i)
+  const headline = (titleMatch ? (titleMatch[1] || titleMatch[2] || '') : '').trim()
+  if (!headline) return null
 
-    const headlines: RawDeskHeadline[] = []
-    for (const it of items.slice(0, 30)) {
-      const titleMatch = it.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>|<title>(.*?)<\/title>/i)
-      const headline = (titleMatch ? (titleMatch[1] || titleMatch[2] || '') : '').trim()
-      const linkMatch = it.match(/<link>(.*?)<\/link>/i)
-      const url = linkMatch && linkMatch[1] ? linkMatch[1].trim() : null
-      const pubMatch = it.match(/<pubDate>(.*?)<\/pubDate>/i)
-      const pubStr = pubMatch && pubMatch[1] ? pubMatch[1].trim() : null
-      const dt = pubStr ? Math.floor(Date.parse(pubStr) / 1000) : Math.floor(Date.now() / 1000)
+  const linkMatch = itemXml.match(/<link><!\[CDATA\[(.*?)\]\]><\/link>|<link>(.*?)<\/link>/i)
+  const url = linkMatch ? (linkMatch[1] || linkMatch[2] || '').trim() : null
 
-      if (headline) {
-        headlines.push({
-          headline,
-          source: 'Yahoo Finance',
-          datetime: dt,
-          url,
-          origin: 'market:general',
-        })
+  const pubMatch = itemXml.match(/<pubDate><!\[CDATA\[(.*?)\]\]><\/pubDate>|<pubDate>(.*?)<\/pubDate>/i)
+  const pubStr = pubMatch ? (pubMatch[1] || pubMatch[2] || '').trim() : null
+  const dt = pubStr ? Math.floor(Date.parse(pubStr) / 1000) : Math.floor(Date.now() / 1000)
+
+  return {
+    headline,
+    source: sourceName,
+    datetime: dt,
+    url,
+    origin: 'market:general',
+  }
+}
+
+/** Extract live CPI metrics from breaking financial wire headlines */
+export function extractCpiFromHeadlines(headlines: RawDeskHeadline[]): BlsCpiResult | null {
+  for (const h of headlines) {
+    const text = h.headline
+    if (!/\bcpi\b|consumer price/i.test(text)) continue
+
+    // e.g. "US CPI rises 0.4% in September" or "Consumer prices increase 2.4% annually"
+    const mMatch = text.match(/(?:cpi|consumer prices?|core cpi)[^,.;]*?(?:rises|rose|increases|increased|jumps|surged|falls|fell|slows|declines|cools|up|down)\s+([+-]?\d+(?:\.\d+)?%)/i)
+    const annualMatch = text.match(/(?:annual|annualized|y\/y|year-over-year|year ago)[^,.;]*?([+-]?\d+(?:\.\d+)?%)/i) ||
+                        text.match(/([+-]?\d+(?:\.\d+)?%)\s*(?:annually|annualized|y\/y|year-over-year|over the year)/i)
+
+    if (mMatch || annualMatch) {
+      return {
+        headline: text,
+        monthlyRate: (mMatch && mMatch[1]) ? mMatch[1] : null,
+        annualRate: (annualMatch && annualMatch[1]) ? annualMatch[1] : null,
+        coreMonthlyRate: null,
+        pubDate: h.datetime ? new Date(h.datetime * 1000).toISOString() : new Date().toISOString(),
+        pubMs: h.datetime ? h.datetime * 1000 : Date.now(),
+        url: h.url || 'https://www.cnbc.com/economy/',
       }
     }
-    return headlines
-  } catch (err) {
-    logger.debug('[LiveEconomic] Yahoo Finance RSS fetch error:', err)
-    return []
   }
+  return null
+}
+
+/** Extract live NFP metrics from breaking financial wire headlines */
+export function extractNfpFromHeadlines(headlines: RawDeskHeadline[]): BlsNfpResult | null {
+  for (const h of headlines) {
+    const text = h.headline
+    if (!/\b(payroll|jobs|employment|unemployment)\b/i.test(text)) continue
+
+    const payMatch = text.match(/(?:payrolls?|jobs?)\s+(?:rose|increased|grew|added|jumped|fell|dropped)\s+(?:by\s+)?([+-]?\d+(?:,\d+)?(?:k)?)/i)
+    const unempMatch = text.match(/unemployment(?:\s+rate)?\s+(?:at|ticks? up to|ticks? down to|falls? to|rises? to|holds? at)?\s*(\d+(?:\.\d+)?%)/i)
+
+    if (payMatch || unempMatch) {
+      return {
+        headline: text,
+        payrollChange: (payMatch && payMatch[1]) ? payMatch[1] : null,
+        unemploymentRate: (unempMatch && unempMatch[1]) ? unempMatch[1] : null,
+        pubDate: h.datetime ? new Date(h.datetime * 1000).toISOString() : new Date().toISOString(),
+        pubMs: h.datetime ? h.datetime * 1000 : Date.now(),
+        url: h.url || 'https://www.cnbc.com/economy/',
+      }
+    }
+  }
+  return null
+}
+
+/** Fetch breaking market headlines from fast wire RSS feeds (CNBC Economy, CNBC Finance, MarketWatch) */
+export async function fetchBreakingEconomicHeadlines(): Promise<RawDeskHeadline[]> {
+  const feeds = [
+    { url: 'https://www.cnbc.com/id/20910258/device/rss/rss.html', source: 'CNBC Economy' },
+    { url: 'https://feeds.content.dowjones.io/public/rss/mw_topstories', source: 'MarketWatch' },
+    { url: 'https://www.cnbc.com/id/10000664/device/rss/rss.html', source: 'CNBC Finance' },
+  ]
+
+  const results = await Promise.allSettled(
+    feeds.map(async (f) => {
+      const res = await fetch(f.url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+        signal: AbortSignal.timeout(4000),
+      })
+      if (!res.ok) return []
+      const xml = await res.text()
+      const items = xml.match(/<item>[\s\S]*?<\/item>/gi) || []
+      const list: RawDeskHeadline[] = []
+      for (const it of items.slice(0, 15)) {
+        const item = parseRssItem(it, f.source)
+        if (item) list.push(item)
+      }
+      return list
+    })
+  )
+
+  const combined: RawDeskHeadline[] = []
+  const seen = new Set<string>()
+
+  for (const r of results) {
+    if (r.status === 'fulfilled') {
+      for (const h of r.value) {
+        const k = h.headline.toLowerCase().replace(/[^a-z0-9]/g, '')
+        if (!seen.has(k)) {
+          seen.add(k)
+          combined.push(h)
+        }
+      }
+    }
+  }
+
+  // Sort descending by publication time
+  combined.sort((a, b) => b.datetime - a.datetime)
+  return combined
+}
+
+/** Backwards compatibility alias */
+export const fetchYahooFinanceHeadlines = fetchBreakingEconomicHeadlines
+
+/** Numeric parser for values like "2.4%", "162K", "3.75", "-0.1%" */
+function parseNumericValue(val: string | number | null | undefined): number | null {
+  if (val == null) return null
+  if (typeof val === 'number') return Number.isFinite(val) ? val : null
+  const cleaned = String(val)
+    .replace(/,/g, '')
+    .replace(/%/g, '')
+    .replace(/K/i, '')
+    .replace(/M/i, '')
+    .replace(/B/i, '')
+    .trim()
+  const num = parseFloat(cleaned)
+  return Number.isFinite(num) ? num : null
+}
+
+/** Compute economic beat/miss outcome by comparing actual vs consensus */
+export function computeEconomicOutcome(
+  eventName: string,
+  actual: string | number | null | undefined,
+  estimate: string | number | null | undefined
+): 'BEAT' | 'MISS' | 'IN_LINE' | null {
+  const act = parseNumericValue(actual)
+  const est = parseNumericValue(estimate)
+  if (act == null || est == null) return null
+
+  const diff = act - est
+  if (Math.abs(diff) < 0.0001) return 'IN_LINE'
+
+  const lower = eventName.toLowerCase()
+
+  // For Unemployment / Jobless Claims: lower number is better/beat, higher is worse/miss
+  if (lower.includes('unemployment') || lower.includes('jobless claims') || lower.includes('initial claims')) {
+    return diff < 0 ? 'BEAT' : 'MISS'
+  }
+
+  // For Inflation (CPI, Core CPI, PPI, PCE):
+  // When actual > estimate, that is a BEAT (Hot inflation). When actual < estimate, that is a MISS (Cool inflation).
+  // For Employment / Growth (NFP, GDP, Retail Sales, PMIs):
+  // When actual > estimate, that is a BEAT.
+  return diff > 0 ? 'BEAT' : 'MISS'
 }
 
 /**
@@ -380,16 +504,21 @@ export async function getLiveEconomicData(opts?: { force?: boolean; ttlMs?: numb
   lastFetchAttempt = now
 
   try {
-    const [fomc, cpi, nfp] = await Promise.all([
+    const [fomc, cpi, nfp, wireHeadlines] = await Promise.all([
       fetchLiveFedFomc(),
       fetchLiveBlsCpi(),
       fetchLiveBlsNfp(),
+      fetchBreakingEconomicHeadlines(),
     ])
+
+    // If official BLS feeds failed (e.g. Akamai bot protection), fall back to breaking wire headline extraction
+    const resolvedCpi = cpi || (wireHeadlines.length > 0 ? extractCpiFromHeadlines(wireHeadlines) : null)
+    const resolvedNfp = nfp || (wireHeadlines.length > 0 ? extractNfpFromHeadlines(wireHeadlines) : null)
 
     cachedEconomicData = {
       fomc: fomc || cachedEconomicData?.fomc || null,
-      cpi: cpi || cachedEconomicData?.cpi || null,
-      nfp: nfp || cachedEconomicData?.nfp || null,
+      cpi: resolvedCpi || cachedEconomicData?.cpi || null,
+      nfp: resolvedNfp || cachedEconomicData?.nfp || null,
       fetchedAt: now,
     }
     return cachedEconomicData
@@ -420,7 +549,6 @@ export function enrichCalendarEventWithLiveResult(
     ) {
       if (liveData.fomc) {
         const fomc = liveData.fomc
-        // Match if the statement is published and within 24h of the event schedule
         const eventMs = Date.parse(event.time)
         const isTodayEvent = !Number.isNaN(eventMs) && Math.abs(eventMs - fomc.pubMs) <= 24 * 3600 * 1000
         const isLiveOrPassed = !Number.isNaN(eventMs) && nowMs >= eventMs - 120_000
@@ -452,14 +580,17 @@ export function enrichCalendarEventWithLiveResult(
 
         if (isLiveOrPassed && (cpi.monthlyRate || cpi.annualRate)) {
           const actualVal = evName.includes('y/y') && cpi.annualRate ? cpi.annualRate : cpi.monthlyRate || cpi.annualRate
+          const outcome = computeEconomicOutcome(event.event, actualVal, event.estimate)
+          const outcomeLabel = outcome === 'BEAT' ? 'HOT INFLATION (BEAT)' : outcome === 'MISS' ? 'COOLING INFLATION (MISS)' : outcome === 'IN_LINE' ? 'IN-LINE' : ''
           return {
             ...event,
             actual: actualVal,
+            outcome,
             resultHeadline: cpi.headline,
             resultUrl: cpi.url,
             releasedAt: cpi.pubDate,
             isReleased: true,
-            deskNote: `🎯 CPI RESULT: ${cpi.headline}`,
+            deskNote: `🎯 CPI RESULT: ${actualVal}${outcomeLabel ? ` [${outcomeLabel}]` : ''} vs Est ${event.estimate ?? 'N/A'} (Prior ${event.prev ?? 'N/A'})`,
           }
         }
       }
@@ -473,14 +604,16 @@ export function enrichCalendarEventWithLiveResult(
         const isLiveOrPassed = !Number.isNaN(eventMs) && nowMs >= eventMs - 120_000
 
         if (isLiveOrPassed) {
+          const outcome = computeEconomicOutcome(event.event, nfp.payrollChange, event.estimate)
           return {
             ...event,
             actual: nfp.payrollChange,
+            outcome,
             resultHeadline: nfp.headline,
             resultUrl: nfp.url,
             releasedAt: nfp.pubDate,
             isReleased: true,
-            deskNote: `🎯 NFP RESULT: ${nfp.headline}`,
+            deskNote: `🎯 NFP RESULT: ${nfp.payrollChange} vs Est ${event.estimate ?? 'N/A'} (${nfp.headline})`,
           }
         }
       }
@@ -493,27 +626,45 @@ export function enrichCalendarEventWithLiveResult(
         const isLiveOrPassed = !Number.isNaN(eventMs) && nowMs >= eventMs - 120_000
 
         if (isLiveOrPassed) {
+          const outcome = computeEconomicOutcome(event.event, nfp.unemploymentRate, event.estimate)
           return {
             ...event,
             actual: nfp.unemploymentRate,
+            outcome,
             resultHeadline: nfp.headline,
             resultUrl: nfp.url,
             releasedAt: nfp.pubDate,
             isReleased: true,
-            deskNote: `🎯 UNEMPLOYMENT RESULT: ${nfp.unemploymentRate} (${nfp.headline})`,
+            deskNote: `🎯 UNEMPLOYMENT RESULT: ${nfp.unemploymentRate} vs Est ${event.estimate ?? 'N/A'}`,
           }
         }
       }
     }
   }
 
-  // If already has an actual (e.g. from calendar feed directly)
+  // 4. If already has an actual (e.g. from calendar feed directly, like ForexFactory or Finnhub)
   if (event.actual != null && String(event.actual).trim() !== '') {
+    const outcome = event.outcome || computeEconomicOutcome(event.event, event.actual, event.estimate)
+    const isInflation = /cpi|inflation|ppi|pce/i.test(evName)
+    let outcomeNote = ''
+    if (outcome === 'BEAT') {
+      outcomeNote = isInflation ? 'HOT (BEAT)' : 'BEAT'
+    } else if (outcome === 'MISS') {
+      outcomeNote = isInflation ? 'COOL (MISS)' : 'MISS'
+    } else if (outcome === 'IN_LINE') {
+      outcomeNote = 'IN-LINE'
+    }
+
+    const note = `🎯 RELEASED: ${event.actual}${outcomeNote ? ` [${outcomeNote}]` : ''} vs Est ${event.estimate ?? 'N/A'} (Prior ${event.prev ?? 'N/A'})`
+
     return {
       ...event,
+      outcome,
       isReleased: true,
+      deskNote: event.deskNote && event.deskNote.includes('🎯') ? event.deskNote : note,
     }
   }
 
   return event
 }
+

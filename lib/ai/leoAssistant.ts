@@ -286,6 +286,10 @@ export interface LeoChatContext {
    * When omitted, Leo reads the market intelligence bus for this instrument.
    */
   deskBriefText?: string | null
+  /**
+   * Verified macroeconomic catalyst release details (CPI, NFP, FOMC) and market reaction telemetry.
+   */
+  macroCatalystReaction?: string | null
 }
 
 export interface LeoMessage {
@@ -930,6 +934,7 @@ You must NEVER emit any order execution directive or propose placing broker trad
 Execution doctrine is the 22-rule block at the end of this prompt. Nothing in this prompt adds a fifth setup, a point score, a fixed-point target, or a story about who is in the market.
 
 ${deskBriefBlock}
+${ctx.macroCatalystReaction ? `\n[VERIFIED MACRO CATALYST & DESK MARKET REACTION]\n${ctx.macroCatalystReaction}\n` : ''}
 
 ZERO HALLUCINATION — PRIORITY 1:
 Every numerical price, level, POC, VWAP, volume, delta, and gauge you cite must come from verified telemetry in this prompt.

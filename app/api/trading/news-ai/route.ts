@@ -11,6 +11,8 @@ import {
   type DeskCalendarEvent,
   type DeskNewsCard,
 } from '@/lib/trading/deskNews'
+import { parseCalendarEventMs } from '@/lib/trading/deskNewsHazard'
+import { buildMarketReactionReport } from '@/lib/trading/marketReactionEngine'
 import { logger } from '@/lib/utils/logger'
 
 export const dynamic = 'force-dynamic'
@@ -79,13 +81,18 @@ export async function POST(request: Request) {
     let headlinesStr = 'Headline feed unavailable.'
     let calendarBlock = 'UPCOMING CALENDAR DATA UNAVAILABLE.'
     const now = new Date()
+    const nowMs = now.getTime()
+    let reactionBlock = 'MARKET REACTION ENGINE: NOT SUPPLIED'
 
     try {
       const finnhub = getFinnhubClient()
 
       const [rawHeadlines, calendarRows, dq, nq, gq, sq, cq, nkq] = await Promise.all([
         finnhub.getMarketNews('general').catch(() => null),
-        finnhub.getEconomicCalendar(ymd(now), ymd(new Date(now.getTime() + 7 * 86400000))).catch(() => null),
+        finnhub.getEconomicCalendar(
+          ymd(new Date(now.getTime() - 7 * 86400000)),
+          ymd(new Date(now.getTime() + 7 * 86400000))
+        ).catch(() => null),
         getYahooQuote('DOW').catch(() => null),
         getYahooQuote('NASDAQ').catch(() => null),
         getYahooQuote('GOLD').catch(() => null),
@@ -126,12 +133,14 @@ export async function POST(request: Request) {
               })
               .join('\n')
 
+      let fetchedCalendar: DeskCalendarEvent[] = []
       if (calendarRows == null) {
         calendarBlock = 'UPCOMING CALENDAR DATA UNAVAILABLE.'
       } else {
-        const fetchedCalendar: DeskCalendarEvent[] = calendarRows.map((row, idx) => {
+        fetchedCalendar = calendarRows.map((row, idx) => {
           const instruments = instrumentsForCalendarEvent(row.country || '', row.event || '')
           const impact = (row.impact || 'low').toLowerCase()
+          const isReleased = !!(row.isReleased || (row.actual != null && String(row.actual).trim() !== ''))
           return {
             id: `cal-${idx}-${row.event}`,
             time: row.time || '',
@@ -139,17 +148,61 @@ export async function POST(request: Request) {
             event: row.event || '',
             impact,
             instruments,
-            deskNote: deskNoteForCalendar(instruments, impact),
+            actual: row.actual ?? null,
+            estimate: row.estimate ?? null,
+            prev: row.prev ?? null,
+            outcome: row.outcome ?? null,
+            changeBps: row.changeBps ?? null,
+            targetRange: row.targetRange ?? null,
+            resultHeadline: row.resultHeadline ?? null,
+            releasedAt: row.releasedAt ?? null,
+            isReleased,
+            deskNote: deskNoteForCalendar(instruments, impact, {
+              actual: row.actual,
+              estimate: row.estimate,
+              resultHeadline: row.resultHeadline,
+              outcome: row.outcome,
+              isReleased,
+            }),
           }
         })
-        const tier1 = fetchedCalendar.filter((c) => c.impact === 'high')
-        const listed = (tier1.length > 0 ? tier1 : fetchedCalendar).slice(0, 12)
-        const lines = listed
-          .map((c) => `- ${c.time} ${c.country}: ${c.event} (Impact: ${c.impact.toUpperCase()}) [Desks: ${c.instruments.join(', ') || 'unspecified'}]`)
-          .join('\n')
-        calendarBlock = tier1.length === 0
-          ? `NO VERIFIED TIER-1 EVENT IN CURRENT CALENDAR WINDOW.\n${lines}`
-          : lines
+
+        // Separate recently released events (last 48h) from upcoming events
+        const releasedRecent = fetchedCalendar.filter((e) => {
+          if (!e.isReleased && e.actual == null) return false
+          const am = parseCalendarEventMs(e.time, nowMs)
+          return am == null || (nowMs >= am && nowMs - am <= 48 * 3600 * 1000)
+        })
+
+        const upcomingEvents = fetchedCalendar.filter((e) => {
+          if (e.isReleased || (e.actual != null && String(e.actual).trim() !== '')) return false
+          const am = parseCalendarEventMs(e.time, nowMs)
+          return am == null || am >= nowMs - 60000
+        })
+
+        const releasedLines = releasedRecent.slice(0, 10).map((c) => {
+          const act = c.actual != null ? `ACTUAL: ${c.actual}` : 'ACTUAL: RELEASED'
+          const est = c.estimate != null ? `CONSENSUS: ${c.estimate}` : 'CONSENSUS: N/A'
+          const prev = c.prev != null ? `PREVIOUS: ${c.prev}` : 'PREV: N/A'
+          const outcome = c.outcome ? ` | OUTCOME: ${c.outcome}` : ''
+          return `- [RELEASED] ${c.time} ${c.country}: ${c.event} (Impact: ${c.impact.toUpperCase()})\n  • ${act} | ${est} | ${prev}${outcome}\n  • Result: ${c.deskNote}\n  • Affected Desks: ${c.instruments.join(', ') || 'unspecified'}`
+        }).join('\n')
+
+        const tier1Upcoming = upcomingEvents.filter((c) => c.impact === 'high')
+        const listedUpcoming = (tier1Upcoming.length > 0 ? tier1Upcoming : upcomingEvents).slice(0, 8)
+        const upcomingLines = listedUpcoming.map((c) => {
+          const est = c.estimate != null ? ` | Consensus: ${c.estimate}` : ''
+          const prev = c.prev != null ? ` | Prev: ${c.prev}` : ''
+          return `- [UPCOMING] ${c.time} ${c.country}: ${c.event} (Impact: ${c.impact.toUpperCase()})${est}${prev} [Desks: ${c.instruments.join(', ') || 'unspecified'}]`
+        }).join('\n')
+
+        calendarBlock = `
+### RECENTLY RELEASED MACRO RELEASES (OFFICIAL DATA):
+${releasedLines || 'No major releases in verified 48h lookback window.'}
+
+### UPCOMING SCHEDULED CATALYSTS (VERIFIED):
+${upcomingLines || 'NO VERIFIED TIER-1 EVENT IN CURRENT UPCOMING WINDOW.'}
+`.trim()
       }
 
       quotesStr = [
@@ -160,6 +213,22 @@ export async function POST(request: Request) {
         formatQuoteForPrompt('SI', 'SIL', sq),
         formatQuoteForPrompt('CL', 'MCL', cq),
       ].join('\n')
+
+      // Calculate Market Reaction Report
+      const reactionReport = buildMarketReactionReport({
+        quotes: {
+          YM: dq,
+          NQ: nq,
+          NKD: nkq,
+          GC: gq,
+          SI: sq,
+          CL: cq,
+        },
+        calendarEvents: fetchedCalendar,
+        now,
+      })
+
+      reactionBlock = reactionReport.systemPromptBlock
     } catch (err) {
       logger.warn('[News AI] Failed to assemble news context', err)
     }
@@ -170,8 +239,8 @@ CURRENT DESK TAB SELECTION: ${tab}
 ANALYSIS MARKETS: YM, NQ, NKD, GC, SI, CL
 JPY_INTERVENTION_RISK: UNKNOWN (not supplied)
 options_implied_event_move: NOT SUPPLIED
-MARKET REACTION ENGINE: NOT SUPPLIED
-Do not infer a 5-minute or 15-minute reaction path from the last prints below.
+
+${reactionBlock}
 
 LATEST AVAILABLE QUOTES (Yahoo; not labeled real-time):
 ${quotesStr}
@@ -179,7 +248,7 @@ ${quotesStr}
 DEDUPLICATED EVENTS (one row = one headline cluster; repeats already removed):
 ${headlinesStr}
 
-VERIFIED ECONOMIC CALENDAR (fetched window only):
+VERIFIED ECONOMIC CALENDAR (fetched lookback & upcoming window):
 ${calendarBlock}
 `
 

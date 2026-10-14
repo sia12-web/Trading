@@ -168,26 +168,52 @@ export async function GET(request: Request) {
       deskEvents = deskEvents.filter((e) => e.instruments.includes(desk))
     }
 
-    // Prefer recently released high-impact events (within 45m) and upcoming HIGH impact first
-    // so a dense low-impact flood never drops FOMC/CPI/NFP/BoJ.
+    // Prefer recently released high-impact events (within 24h session window)
+    // and upcoming HIGH impact chronologically so a dense low-impact flood never drops FOMC/CPI/NFP/BoJ.
     const high = deskEvents.filter((e) => isHighImpact(e.impact))
     const rest = deskEvents.filter((e) => !isHighImpact(e.impact))
-    const byTime = (a: DeskCalendarEvent, b: DeskCalendarEvent) => {
+
+    const byTimeAsc = (a: DeskCalendarEvent, b: DeskCalendarEvent) => {
       const am = parseCalendarEventMs(a.time, nowMs) ?? Number.POSITIVE_INFINITY
       const bm = parseCalendarEventMs(b.time, nowMs) ?? Number.POSITIVE_INFINITY
       return am - bm
     }
+    const byTimeDesc = (a: DeskCalendarEvent, b: DeskCalendarEvent) => {
+      const am = parseCalendarEventMs(a.time, nowMs) ?? 0
+      const bm = parseCalendarEventMs(b.time, nowMs) ?? 0
+      return bm - am
+    }
+
+    // Recently released in last 24h (most recent first)
     const releasedRecent = high.filter((e) => {
-      if (!e.isReleased) return false
+      const isRel = !!(e.isReleased || (e.actual != null && String(e.actual).trim() !== ''))
+      if (!isRel) return false
       const am = parseCalendarEventMs(e.time, nowMs)
-      return am != null && nowMs >= am && nowMs - am <= 45 * 60 * 1000
+      return am != null && nowMs >= am && nowMs - am <= 24 * 60 * 60 * 1000
     })
-    const otherHigh = high.filter((e) => !releasedRecent.includes(e))
-    releasedRecent.sort(byTime)
-    otherHigh.sort(byTime)
-    rest.sort(byTime)
+    releasedRecent.sort(byTimeDesc)
+
+    // Upcoming high-impact events (closest first)
+    const upcomingHigh = high.filter((e) => {
+      if (releasedRecent.includes(e)) return false
+      const am = parseCalendarEventMs(e.time, nowMs)
+      return am != null && am >= nowMs - 60000
+    })
+    upcomingHigh.sort(byTimeAsc)
+
+    // Upcoming medium/low impact
+    const upcomingRest = rest.filter((e) => {
+      const am = parseCalendarEventMs(e.time, nowMs)
+      return am != null && am >= nowMs - 60000
+    })
+    upcomingRest.sort(byTimeAsc)
+
+    // Past archives
+    const historical = [...high, ...rest].filter((e) => !releasedRecent.includes(e) && !upcomingHigh.includes(e) && !upcomingRest.includes(e))
+    historical.sort(byTimeDesc)
+
     const calLimit = calendarOnly ? 300 : 100
-    const calendar = [...releasedRecent, ...otherHigh, ...rest].slice(0, calLimit)
+    const calendar = [...releasedRecent, ...upcomingHigh, ...upcomingRest, ...historical].slice(0, calLimit)
 
     return NextResponse.json(
       {

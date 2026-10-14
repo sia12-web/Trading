@@ -15,6 +15,9 @@ import {
 import { getCrossMarketVolatility } from '@/lib/trading/crossMarketVolatility'
 import { getLiveCrossMarketRadarReport } from '@/lib/trading/crossMarketRadar'
 import { syncFundamentalBusFromStores } from '@/lib/ai/fundamentalBusSync'
+import { getFinnhubClient } from '@/lib/services/finnhubClient'
+import { getYahooQuote } from '@/lib/yahoo/quote'
+import { buildMarketReactionReport } from '@/lib/trading/marketReactionEngine'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -112,6 +115,38 @@ export async function POST(req: NextRequest) {
           }
         } catch {
           // ignore volatility radar computation errors
+        }
+      }
+
+      // 5. Macro Catalyst & Market Reaction telemetry injection for Leo
+      if (!chartContext.macroCatalystReaction) {
+        try {
+          const finnhub = getFinnhubClient()
+          const today = new Date()
+          const fromYmd = new Date(today.getTime() - 3 * 86400000).toISOString().slice(0, 10)
+          const toYmd = new Date(today.getTime() + 1 * 86400000).toISOString().slice(0, 10)
+          const calendar = await finnhub.getEconomicCalendar(fromYmd, toYmd)
+
+          const [dq, nq, gq, sq, cq, nkq] = await Promise.all([
+            getYahooQuote('DOW').catch(() => null),
+            getYahooQuote('NASDAQ').catch(() => null),
+            getYahooQuote('GOLD').catch(() => null),
+            getYahooQuote('SILVER').catch(() => null),
+            getYahooQuote('CRUDE').catch(() => null),
+            getYahooQuote('NIKKEI').catch(() => null),
+          ])
+
+          const reactionReport = buildMarketReactionReport({
+            quotes: { YM: dq, NQ: nq, NKD: nkq, GC: gq, SI: sq, CL: cq },
+            calendarEvents: (calendar || []) as any,
+            now: today,
+          })
+
+          if (reactionReport.primaryEvent || reactionReport.status === 'ACTIVE_REACTION_VERIFIED') {
+            chartContext.macroCatalystReaction = reactionReport.systemPromptBlock
+          }
+        } catch {
+          // Soft-fail: never block Leo
         }
       }
     }
