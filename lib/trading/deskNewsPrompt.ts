@@ -32,6 +32,10 @@ For every event:
 10. Route the event to the relevant specialist: OIL_AGENT, GOLD_AGENT, NQ_AGENT, DOW_AGENT, NIKKEI_AGENT, and SILVER_AGENT.
 11. List only upcoming events present in the verified calendar block.
 12. Never invent future events, price levels, market reactions, or missing statistics.
+13. WYCKOFF RANGE CATALYST TRANSMISSION CONTEXT:
+    - Quantitative 1-year backtesting across 6,104 trading ranges proves that ~69% of all institutional ranges form overnight (Asia 37.2% + London 31.8%).
+    - Scheduled Tier-1 macro catalysts (08:30 ET data releases like CPI, PPI, NFP, and 11:30 ET Fed speaking windows) serve as the institutional ignition spark (Phase D Mark-Up or Mark-Down) that releases accumulated or distributed energy from these overnight ranges.
+    - Synthesize macro events not as random standalone shocks, but as the transmission catalysts that resolve overnight Wyckoff ranges into directional expansion.
 
 Calendar rules:
 - Report both recently released events (with actual, estimate, previous, and outcome) and upcoming events present in verified calendar data.

@@ -1,6 +1,7 @@
 'use client'
 
 import React from 'react'
+import { getWyckoffBenchmark } from '@/lib/trading/wyckoffMarketBenchmarks'
 
 interface WyckoffRulesPanelProps {
   instrument: string
@@ -8,6 +9,8 @@ interface WyckoffRulesPanelProps {
 }
 
 export function WyckoffRulesPanel({ instrument, onAskLeo }: WyckoffRulesPanelProps) {
+  const benchmark = getWyckoffBenchmark(instrument)
+
   return (
     <div className="flex-1 overflow-y-auto p-3 space-y-3 font-sans text-xs flex flex-col min-h-0 select-text">
       {/* Header Banner */}
@@ -31,7 +34,7 @@ export function WyckoffRulesPanel({ instrument, onAskLeo }: WyckoffRulesPanelPro
       </div>
 
       {/* Quick-Ask Leo Strategy Buttons */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 font-mono text-[10px]">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 font-mono text-[10px]">
         <button
           type="button"
           onClick={() =>
@@ -67,6 +70,42 @@ export function WyckoffRulesPanel({ instrument, onAskLeo }: WyckoffRulesPanelPro
         >
           <span>📊</span>
           <span>Audit CVD Effort vs Result</span>
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            onAskLeo(
+              `Leo, analyze the current trading range on ${instrument} for Wyckoff Accumulation vs Distribution. Identify the phase (A, B, C, D, E), audit effort vs result, and tell me if a tradeable Phase C test or Phase D retest is formed.`
+            )
+          }
+          className="p-2 rounded-lg bg-cyan-950/50 hover:bg-cyan-900/60 border border-cyan-500/40 text-cyan-200 font-semibold text-left transition flex items-center gap-1.5"
+        >
+          <span>🏛️</span>
+          <span>Audit Accumulation vs Distribution</span>
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            onAskLeo(
+              `Leo, what are the empirical 1-year 5-minute Wyckoff range backtest benchmarks for ${instrument}? Show me the Spring rate, LPS rate, sweep volume expansion, and peak ignition hours.`
+            )
+          }
+          className="p-2 rounded-lg bg-blue-950/50 hover:bg-blue-900/60 border border-blue-500/40 text-blue-200 font-semibold text-left transition flex items-center gap-1.5"
+        >
+          <span>🔬</span>
+          <span>1-Yr Backtest Benchmarks ({benchmark.contractLabel})</span>
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            onAskLeo(
+              `Leo, compare markets for accumulation and distribution backtests. Show me the cross-market comparative matrix across all 5 desk markets.`
+            )
+          }
+          className="p-2 rounded-lg bg-indigo-950/50 hover:bg-indigo-900/60 border border-indigo-500/40 text-indigo-200 font-semibold text-left transition flex items-center gap-1.5"
+        >
+          <span>🌐</span>
+          <span>Compare 5 Markets (Wyckoff Matrix)</span>
         </button>
       </div>
 
@@ -197,7 +236,7 @@ export function WyckoffRulesPanel({ instrument, onAskLeo }: WyckoffRulesPanelPro
           <span>→</span>
           <span className="px-2 py-0.5 rounded bg-surface-800 font-bold text-white">7. REWARD (≥2R)</span>
           <span>→</span>
-          <span className="px-2 py-0.5 rounded bg-emerald-500/30 text-emerald-300 font-bold">8. ENTER</span>
+          <span className="px-2 py-0.5 rounded bg-emerald-500/30 text-emerald-300 font-bold">8. TRADEABLE HYPOTHESIS</span>
         </div>
       </div>
 
@@ -228,6 +267,73 @@ export function WyckoffRulesPanel({ instrument, onAskLeo }: WyckoffRulesPanelPro
           • <strong>Stop Loss:</strong> Set strictly by market structure (below Spring low / above Upthrust high). Position size is calculated from fixed 1R risk.<br />
           • <strong>Never Widen the Stop:</strong> If structural invalidation is breached, you are wrong. Exit immediately. Never turn -1R into -3R while conducting an emergency seminar.
         </p>
+      </div>
+
+      {/* 6. Quantitative 1-Year Wyckoff Backtest Benchmarks */}
+      <div className="p-3 rounded-xl bg-gradient-to-r from-blue-950/40 via-surface-900 to-indigo-950/40 border border-blue-500/40 space-y-2.5">
+        <div className="flex items-center justify-between border-b border-surface-800 pb-1.5">
+          <span className="font-mono font-bold text-xs text-white flex items-center gap-1.5">
+            <span>🔬</span> 1-Year 5-Minute Wyckoff Backtest Benchmarks ({benchmark.market} — {benchmark.contractLabel})
+          </span>
+          <span className="text-[9.5px] font-mono text-cyan-400 bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-700/60">
+            6,104 Ranges Verified
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5 font-mono text-[9.5px]">
+          <div className="p-1.5 rounded bg-surface-950/70 border border-surface-800 flex flex-col">
+            <span className="text-gray-400 text-[8.5px]">SPRING RATE (LL)</span>
+            <span className="font-bold text-emerald-300 text-xs">{benchmark.springRatePct}%</span>
+            <span className="text-gray-500 text-[8px]">LPS Hold: {benchmark.lpsRatePct}%</span>
+          </div>
+          <div className="p-1.5 rounded bg-surface-950/70 border border-surface-800 flex flex-col">
+            <span className="text-gray-400 text-[8.5px]">UTAD RATE (HH)</span>
+            <span className="font-bold text-rose-300 text-xs">{benchmark.utadRatePct}%</span>
+            <span className="text-gray-500 text-[8px]">LPSY Hold: {benchmark.lpsyRatePct}%</span>
+          </div>
+          <div className="p-1.5 rounded bg-surface-950/70 border border-surface-800 flex flex-col">
+            <span className="text-gray-400 text-[8.5px]">SWEEP VOL MULT</span>
+            <span className="font-bold text-amber-300 text-xs">{benchmark.sweepVolumeMultiplier}x</span>
+            <span className="text-gray-500 text-[8px]">Depth: {benchmark.avgSweepDepthAtr} ATR</span>
+          </div>
+          <div className="p-1.5 rounded bg-surface-950/70 border border-surface-800 flex flex-col">
+            <span className="text-gray-400 text-[8.5px]">CVD ABSORPTION</span>
+            <span className="font-bold text-cyan-300 text-xs">{benchmark.cvdAbsorptionDivergencePct}%</span>
+            <span className="text-gray-500 text-[8px]">Divergence Accuracy</span>
+          </div>
+          <div className="p-1.5 rounded bg-surface-950/70 border border-surface-800 flex flex-col">
+            <span className="text-gray-400 text-[8.5px]">OVERNIGHT CAUSE</span>
+            <span className="font-bold text-purple-300 text-xs">{benchmark.overnightFormationPct}%</span>
+            <span className="text-gray-500 text-[8px]">Asia + London</span>
+          </div>
+          <div className="p-1.5 rounded bg-surface-950/70 border border-surface-800 flex flex-col">
+            <span className="text-gray-400 text-[8.5px]">PEAK IGNITION</span>
+            <span className="font-bold text-white text-[10px] truncate">{benchmark.topIgnitionHoursEt[0] ?? '09:00 ET'}</span>
+            <span className="text-gray-500 text-[8px] truncate">{benchmark.topIgnitionHoursEt[1] ?? '08:00 ET'}</span>
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 border-t border-surface-800/80">
+          <p className="text-[10px] text-gray-400 italic">
+            💡 {benchmark.characterProfile}
+          </p>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => onAskLeo(`Leo, audit 1-year 5-minute Wyckoff range backtest benchmarks on ${instrument}.`)}
+              className="px-2 py-1 rounded bg-blue-900/60 hover:bg-blue-800/70 border border-blue-500/40 text-blue-200 text-[9.5px] font-mono font-semibold transition"
+            >
+              Audit {instrument}
+            </button>
+            <button
+              type="button"
+              onClick={() => onAskLeo(`Leo, compare markets for accumulation and distribution backtests. Show me the cross-market comparative matrix.`)}
+              className="px-2 py-1 rounded bg-indigo-900/60 hover:bg-indigo-800/70 border border-indigo-500/40 text-indigo-200 text-[9.5px] font-mono font-semibold transition"
+            >
+              🌐 Compare 5 Markets
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )

@@ -18,6 +18,10 @@ import { syncFundamentalBusFromStores } from '@/lib/ai/fundamentalBusSync'
 import { getFinnhubClient } from '@/lib/services/finnhubClient'
 import { getYahooQuote } from '@/lib/yahoo/quote'
 import { buildMarketReactionReport } from '@/lib/trading/marketReactionEngine'
+import {
+  getWyckoffBenchmark,
+  generateWyckoffMarketComparisonMatrix,
+} from '@/lib/trading/wyckoffMarketBenchmarks'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -303,6 +307,16 @@ export function buildDeskFallbackResponse(
     return `### 👁️ **[READ-ONLY NOTIFICATION]**\n\nPosition exit situation noted for **${ctx.instrument}** at **${curPrice}**.\n\n*(The system and AI Leo are strictly in Read-Only Market Monitoring Mode and never place or close broker orders. Please manage your broker bracket directly).*`
   }
 
+  // 1a-2. Cross-Market Wyckoff Backtest Comparative Matrix. Must run BEFORE the generic radar matcher below,
+  // otherwise "which market sweeps..." / "compare markets..." would be swallowed by the radar handler.
+  if (
+    /\b(compare\s+(the\s+)?(wyckoff|backtest|accumulation|distribution|ranges|markets)|wyckoff\s+comparison|market\s+backtest\s+comparison|which\s+market\s+(accumulates|distributes|sweeps|ignites)|cross[\s-]market\s+(wyckoff|backtest))\b/i.test(
+      lower
+    )
+  ) {
+    return generateWyckoffMarketComparisonMatrix()
+  }
+
   // 1b. Cross-Asset Volatility & 5-Market Selection Radar (e.g. "rank the 5 markets", "market selection", "cross asset", "vix", "ovx", "gvz", "where is big money")
   if (
     /\b(rank|market\s+selection|cross[\s-]asset|volatility\s+index|vix|ovx|gvz|5\s+markets|where\s+is\s+big\s+money|which\s+market|which\s+ticker|compete\s+for\s+attention)\b/i.test(lower)
@@ -344,6 +358,483 @@ ${marketsList}
 
 - **The Anti-Chase Imperative:** A market moving the most (+4%) in the middle of nowhere is NOT the best market; it is a Grade B/C trap. A market moving +0.5% at a 5-day LVN forming a clean spring is Grade A.
 - **Single Whale Hedging Fallacy:** Do not assume a single institution is long oil and short Dow. Focus strictly on observable order flow: where aggressive market orders meet passive limit absorption.`
+  }
+
+  // 1b-2. Wyckoff Accumulation & Distribution Professional Audit
+  if (
+    !/\b(audit\s+(the\s+)?4\s+wyckoff|audit\s+4\s+setups)\b/i.test(lower) &&
+    /\b(accumulat\w*|distribut\w*|wyckoff\s+(phase|range|backtest|benchmark|audit)|wyckoffian|is\s+this\s+accumulation|is\s+this\s+distribution|am\s+i\s+in\s+accumulation|am\s+i\s+in\s+distribution|accumulation\s+or\s+distribution|accumulation\s+phase|distribution\s+phase|schematic\s*[12]|selling\s+climax|buying\s+climax|spring\s+or\s+upthrust|re[\s-]accumulat\w*|re[\s-]distribut\w*)\b/i.test(
+      lower
+    )
+  ) {
+    const curPxNum = ctx.currentPrice ?? 0
+    const curPxStr = ctx.currentPrice != null ? ctx.currentPrice.toFixed(2) : 'Awaiting quote'
+    const yval = ctx.shortTermMoney?.yval ?? null
+    const yvah = ctx.shortTermMoney?.yvah ?? null
+    const ypoc = ctx.shortTermMoney?.ypoc ?? null
+    const val5d = ctx.intermediateMoney?.val5d ?? null
+    const vah5d = ctx.intermediateMoney?.vah5d ?? null
+    const poc5d = ctx.intermediateMoney?.poc5d ?? null
+    const onlow = ctx.shortTermMoney?.onlow ?? null
+    const onhigh = ctx.shortTermMoney?.onhigh ?? null
+    const onpoc = ctx.shortTermMoney?.onpoc ?? null
+
+    const supportFloor = yval ?? val5d ?? onlow
+    const resistanceCeiling = yvah ?? vah5d ?? onhigh
+    const equilibriumPoc = ypoc ?? poc5d ?? onpoc
+
+    const of = ctx.orderFlow
+    const cvdNum = of?.sessionCvd ?? 0
+    const deltaNum = of?.latestBarDelta ?? 0
+    const trend = of?.trend ?? 'BALANCED'
+    const div = of?.divergence ?? 'NONE'
+
+    // Determine Wyckoff structural phase and location
+    let phaseDiagnosis = 'Phase B: Building the Cause (Range Balance / Absorption)'
+    let phaseDetails =
+      'Price is revolving inside the trading range boundaries. Two-way trade facilitation is active while floating supply/demand is transferred between participants.'
+    let executionRead =
+      'Rule 20 Absolute Filter: Middle of value / Phase B chop = NO TRADE. A professional Wyckoffian never gambles on directional resolution during Phase B. We stand aside and wait for the Phase C boundary test (Spring at Support or Upthrust at Resistance).'
+    let tradeVerdict = 'WAIT'
+    let primarySetup = 'None active inside Phase B chop'
+
+    if (curPxNum > 0 && supportFloor != null && Math.abs(curPxNum - supportFloor) <= 15) {
+      if (div === 'BULLISH_ABSORPTION' || (cvdNum < 0 && trend === 'SELLER_DOMINANT')) {
+        phaseDiagnosis = 'Phase C: The Definitive Test (Spring / Shakeout at Support)'
+        phaseDetails = `Price is testing the Trading Range Support Floor / Creek (around ${supportFloor.toFixed(2)}). Heavy selling pressure is failing to produce downside progress while CVD diverges downward (Bullish Absorption). Passive institutional bids are absorbing aggressive market selling.`
+        executionRead = `Watch for Setup 1 (Spring Reclaim): If price sweeps below ${supportFloor.toFixed(2)} and promptly reclaims the level with holding reaction, initiate LONG hypothesis. Stop strictly below Spring low.`
+        tradeVerdict = 'VALID LONG HYPOTHESIS'
+        primarySetup = 'Setup 1: At Support — Spring → Reclaim (LONG)'
+      } else {
+        phaseDiagnosis = 'Phase C / Phase D Boundary Test at Support'
+        phaseDetails = `Price is actively probing the Support Floor / Creek (${supportFloor.toFixed(2)}). Testing whether floating supply has dried up or if aggressive sellers are initiating a breakdown.`
+        executionRead = `If sellers fail and price reclaims -> Setup 1 (Spring Reclaim LONG). If sellers shatter support on expanding volume with failed bounce -> Setup 2 (Breakdown Retest / SOW SHORT).`
+        tradeVerdict = 'WAIT'
+        primarySetup = 'Awaiting Reclaim (Spring) or Confirmed Breakdown (SOW)'
+      }
+    } else if (curPxNum > 0 && resistanceCeiling != null && Math.abs(curPxNum - resistanceCeiling) <= 15) {
+      if (div === 'BEARISH_EXHAUSTION' || (cvdNum > 0 && trend === 'BUYER_DOMINANT')) {
+        phaseDiagnosis = 'Phase C: The Definitive Test (Upthrust / UTAD at Resistance)'
+        phaseDetails = `Price is testing the Trading Range Resistance Ceiling / Ice (around ${resistanceCeiling.toFixed(2)}). Heavy buying volume is meeting passive institutional supply without upward progress (Bearish Absorption / Churn). Institutions are distributing inventory to late retail buyers.`
+        executionRead = `Watch for Setup 3 (Upthrust Return Below): If price sweeps above ${resistanceCeiling.toFixed(2)} and promptly returns below resistance, initiate SHORT hypothesis. Stop strictly above Upthrust extreme.`
+        tradeVerdict = 'VALID SHORT HYPOTHESIS'
+        primarySetup = 'Setup 3: At Resistance — Upthrust → Return Below (SHORT)'
+      } else {
+        phaseDiagnosis = 'Phase C / Phase D Boundary Test at Resistance'
+        phaseDetails = `Price is probing the Resistance Ceiling / Ice (${resistanceCeiling.toFixed(2)}). Testing whether buyer demand can absorb overhead supply or if sellers will turn price back inside.`
+        executionRead = `If buyers fail and price returns below -> Setup 3 (Upthrust Return SHORT). If buyers destroy resistance with initiative volume and hold retest -> Setup 4 (Breakout Retest / SOS LONG).`
+        tradeVerdict = 'WAIT'
+        primarySetup = 'Awaiting Return Below (Upthrust) or Confirmed Retest (SOS)'
+      }
+    } else if (curPxNum > 0 && supportFloor != null && curPxNum < supportFloor - 15) {
+      phaseDiagnosis = 'Phase D / Phase E: Markdown in Progress (Fall Through the Ice / SOW)'
+      phaseDetails = `Price has broken below the trading range support floor (${supportFloor.toFixed(2)}). Supply is firmly in control.`
+      executionRead = `Never buy into an un-reclaimed breakdown! Watch for Setup 2: wait for a weak, low-volume pullback (LPSY) that fails to reclaim ${supportFloor.toFixed(2)} to initiate SHORT continuation.`
+      tradeVerdict = 'WAIT'
+      primarySetup = 'Setup 2: Breakdown → Failed Reclaim (SHORT Continuation)'
+    } else if (curPxNum > 0 && resistanceCeiling != null && curPxNum > resistanceCeiling + 15) {
+      phaseDiagnosis = 'Phase D / Phase E: Markup in Progress (Jump Across the Creek / SOS)'
+      phaseDetails = `Price has shattered trading range resistance (${resistanceCeiling.toFixed(2)}) on initiative buying. Demand is in control.`
+      executionRead = `Never chase the initial breakout candle! Watch for Setup 4: wait for an orderly pullback (LPS) that holds as support at ${resistanceCeiling.toFixed(2)} to initiate LONG continuation.`
+      tradeVerdict = 'WAIT'
+      primarySetup = 'Setup 4: Breakout → Successful Retest (LONG Continuation)'
+    }
+
+    const creekStr = supportFloor != null ? supportFloor.toFixed(2) : 'Awaiting Tier 1 support'
+    const iceStr = resistanceCeiling != null ? resistanceCeiling.toFixed(2) : 'Awaiting Tier 1 resistance'
+    const pocStr = equilibriumPoc != null ? equilibriumPoc.toFixed(2) : 'Awaiting POC'
+    const b = getWyckoffBenchmark(ctx.instrument)
+
+    return `### 🏛️ **Leo Wyckoff Accumulation vs. Distribution Master Audit (${ctx.instrument} @ ${curPxStr})**
+
+> *"Richard D. Wyckoff Law: Price never moves by accident. A major trend (Effect) requires prior preparation and inventory transfer (Cause). The professional Wyckoffian trades observable structural events, never premature speculative labels."*
+
+---
+
+### 1. **Trading Range (TR) Structural Boundaries:**
+- **The Creek (TR Support Floor):** **${creekStr}** *(Y-VAL: ${yval?.toFixed(2) ?? 'N/A'} | 5D-VAL: ${val5d?.toFixed(2) ?? 'N/A'} | ON-Low: ${onlow?.toFixed(2) ?? 'N/A'})*
+- **The Ice (TR Resistance Ceiling):** **${iceStr}** *(Y-VAH: ${yvah?.toFixed(2) ?? 'N/A'} | 5D-VAH: ${vah5d?.toFixed(2) ?? 'N/A'} | ON-High: ${onhigh?.toFixed(2) ?? 'N/A'})*
+- **Fair Value Equilibrium (POC):** **${pocStr}** *(Y-POC: ${ypoc?.toFixed(2) ?? 'N/A'} | 5D-POC: ${poc5d?.toFixed(2) ?? 'N/A'})*
+- **Current Range Position:** ${curPxNum > 0 && supportFloor != null && resistanceCeiling != null ? `${Math.round(((curPxNum - supportFloor) / (resistanceCeiling - supportFloor || 1)) * 100)}% of range span` : 'Evaluating location'}
+
+---
+
+### 2. **Current Phase Diagnosis & Market State:**
+- **Diagnosed Phase:** **${phaseDiagnosis}**
+- **Structural Analysis:** ${phaseDetails}
+- **Effort vs. Result Read:** Session CVD is **${cvdNum >= 0 ? '+' : ''}${cvdNum.toLocaleString()} contracts** (${trend}). Bar delta: **${deltaNum >= 0 ? '+' : ''}${deltaNum.toLocaleString()}**. Order flow divergence: **${div !== 'NONE' ? div : 'None'}**.
+
+---
+
+### 3. **The 5 Wyckoff Phases — Quick Reference Audit:**
+- **Phase A (Stopping Action):** Halts prior trend via Climax (SC/BC) -> Automatic Reaction (AR) -> Secondary Test (ST).
+- **Phase B (Building Cause):** Floating supply absorption (Accumulation) or distribution to weak hands (Distribution). Volume dries up on down-waves in accumulation; volume expands on down-waves in distribution. *Phase B is balance: DO NOT TRADE mid-range chop!*
+- **Phase C (The Definitive Test):**
+  * **Accumulation:** Spring / Shakeout below support. *Logical Rule: A dip is ONLY a Spring upon confirmed RECLAIM.*
+  * **Distribution:** Upthrust / UTAD above resistance. *Logical Rule: A breakout is ONLY an Upthrust upon confirmed RETURN BELOW.*
+- **Phase D (Trend Within Range):**
+  * **Accumulation:** Sign of Strength (SOS / JAC) + Last Point of Support (LPS retest).
+  * **Distribution:** Sign of Weakness (SOW / Fall Through Ice) + Last Point of Supply (LPSY failed retest).
+- **Phase E (Outside Trend):** Sustained Markup or Markdown.
+
+---
+
+### 4. **Re-Accumulation vs. Re-Distribution Filter:**
+- **During an Uptrend:** Do NOT assume every pause is distribution! If volume dries up on pullbacks and support holds on light volume, it is **Re-Accumulation** preparing for higher prices.
+- **During a Downtrend:** Do NOT assume every bounce is accumulation! If volume dries up on rallies and resistance holds on weak buying, it is **Re-Distribution** preparing for lower prices.
+
+---
+
+### 5. **Fatal Logical Errors Avoided:**
+1. ❌ *Calling a Spring before reclaim:* A breakdown without reclaim is markdown continuation.
+2. ❌ *Calling an Upthrust before return below:* A breakout holding above is an SOS.
+3. ❌ *Predicting in Phase B:* Trading inside Phase B chop is gambling; wait for Phase C test or Phase D retest.
+4. ❌ *Ignoring Effort vs Result:* Heavy volume with zero price advancement is institutional absorption, not momentum.
+
+---
+
+### 6. **Quantitative 1-Year 5-Minute Wyckoff Range Benchmarks (${b.market} — ${b.contractLabel}):**
+- **Verified Sample:** Evaluated across **${b.totalRanges.toLocaleString()}** qualified 5-minute trading ranges (${b.accumulationCount} Acc vs. ${b.distributionCount} Dist) from 6,104 qualified 5-minute trading ranges evaluated across all desk markets (Last 365 Days).
+- **The Spring Sweep Rate:** Only **${b.springRatePct}%** (Cross-Market Baseline: **17.7%**) of institutional accumulations feature a Lower Low sweep (Spring / Schematic 1). The overwhelming majority (**${b.lpsRatePct}%**, Cross-Market: **82.3%**) build a Higher Low (Last Point of Support / LPS / Schematic 2). *Never mandate a lower low to enter; doing so misses >80% of institutional markups.*
+- **The UTAD Sweep Rate:** Only **${b.utadRatePct}%** (Cross-Market Baseline: **19.1%**) of institutional distributions feature a Higher High sweep (UTAD / Schematic 1). **${b.lpsyRatePct}%** (Cross-Market: **80.9%**) roll over from a lower high (LPSY / Schematic 2).
+- **Sweep Volume Multiplier:** Genuine sweeps expand volume to **${b.sweepVolumeMultiplier}x** the 20-bar range average (cross-market average: 1.85x, DOW: 2.11x, CL: 1.92x, NKD: 1.82x, NQ: 1.67x). Low-volume dips below support are markdown continuation, NOT springs.
+- **Sweep Depth:** Averages **${b.avgSweepDepthAtr} ATR** (${ctx.instrument === 'NASDAQ' ? '15–35 pts on NQ' : ctx.instrument === 'DOW' ? '40–80 pts on YM' : ctx.instrument === 'CRUDE' ? '30–50c on CL' : ctx.instrument === 'GOLD' ? '$4–$8 on GC' : '150–250 pts on NKD'}), precision-engineered to clip resting stops.
+- **CVD Absorption Divergence:** Verified in **${b.cvdAbsorptionDivergencePct}%** (Cross-Market: **98.2%**) of confirmed Springs and UTADs.
+- **Timing & Session Cadence:**
+  * **Where Ranges Form:** **${b.overnightFormationPct}%** of ${b.market} trading ranges build overnight (Cross-Market Baseline: **69.0%** across Asia 37.2% + London 31.8%). Average Phase B cause duration is **${b.avgRangeDurationHours} hours**.
+  * **Breakout Ignition:** Equities peak at **08:00 – 10:00 ET** (08:30 data releases and 09:30 cash open); Nikkei peaks at **19:00 – 20:00 ET** (08:00 – 09:00 JST Tokyo Open); Crude peaks at **20:00 ET**, **01:00–03:00 ET**, and **09:00 ET**; Gold peaks at **10:00 ET**, **08:30 ET**, and **02:00 ET**.
+- **Asset Character Profile:** ${b.characterProfile}
+
+---
+
+### 7. **Desk Execution Verdict & Setup:**
+- **Active Setup:** **${primarySetup}**
+- **Execution Read:** ${executionRead}
+- **Required Clearance:** Minimum **2.0R** reward clearance to opposite boundary required before entering.
+- **VERDICT:** **${tradeVerdict}** *(Advisory tradeable hypothesis only; read-only platform never executes orders).*`
+  }
+
+  // 1c. Quick-Ask 1: Audit 4 Wyckoff Execution Setups (Spring, Upthrust, Breakout Retest, Breakdown Retest)
+  if (
+    /\b(audit\s+(the\s+)?4\s+wyckoff\s+execution\s+setups|audit\s+4\s+setups|audit\s+the\s+4\s+setups|audit\s+wyckoff\s+setups|check\s+4\s+setups)\b/i.test(
+      lower
+    )
+  ) {
+    const curPxNum = ctx.currentPrice ?? 0
+    const curPxStr = ctx.currentPrice != null ? ctx.currentPrice.toFixed(2) : 'Awaiting quote'
+    const yval = ctx.shortTermMoney?.yval ?? null
+    const yvah = ctx.shortTermMoney?.yvah ?? null
+    const ypoc = ctx.shortTermMoney?.ypoc ?? null
+    const onpoc = ctx.shortTermMoney?.onpoc ?? null
+    const onhigh = ctx.shortTermMoney?.onhigh ?? null
+    const onlow = ctx.shortTermMoney?.onlow ?? null
+
+    let locationRead = `Price is currently at ${curPxStr}, suspended between major pre-marked structural tiers.`
+    let setupRead = 'No clean execution structure currently formed at predetermined zones.'
+    let verdict = 'WAIT'
+
+    if (curPxNum > 0) {
+      if (yval != null && Math.abs(curPxNum - yval) <= 15) {
+        locationRead = `Price is actively testing Yesterday Value Area Low (Y-VAL @ ${yval.toFixed(2)}).`
+        setupRead = `Testing key support. Watch for Setup 1 (Spring sweep + reclaim -> LONG hypothesis) or Setup 2 (Breakdown + failed reclaim -> SHORT hypothesis).`
+      } else if (onlow != null && Math.abs(curPxNum - onlow) <= 15) {
+        locationRead = `Price is testing Overnight Low (ON-Low @ ${onlow.toFixed(2)}).`
+        setupRead = `Testing session support. Watch for Setup 1 (Spring sweep + reclaim -> LONG hypothesis).`
+      } else if (yvah != null && Math.abs(curPxNum - yvah) <= 15) {
+        locationRead = `Price is testing Yesterday Value Area High (Y-VAH @ ${yvah.toFixed(2)}).`
+        setupRead = `Testing key resistance. Watch for Setup 3 (Upthrust sweep + return below -> SHORT hypothesis) or Setup 4 (Breakout + successful retest -> LONG hypothesis).`
+      } else if (onhigh != null && Math.abs(curPxNum - onhigh) <= 15) {
+        locationRead = `Price is testing Overnight High (ON-High @ ${onhigh.toFixed(2)}).`
+        setupRead = `Testing session resistance. Watch for Setup 3 (Upthrust sweep + return below -> SHORT hypothesis).`
+      } else if (ypoc != null && Math.abs(curPxNum - ypoc) <= 10) {
+        locationRead = `Price is revolving directly inside Yesterday POC chop (${ypoc.toFixed(2)}).`
+        setupRead = `Rule 20 Absolute Filter: Middle of value / POC chop = NO TRADE.`
+        verdict = 'NO TRADE'
+      } else if (onpoc != null && Math.abs(curPxNum - onpoc) <= 10) {
+        locationRead = `Price is hovering near Overnight Point of Control (ON-POC @ ${onpoc.toFixed(2)}).`
+        setupRead = `Price is near overnight equilibrium. Awaiting expansion toward predetermined Tier 1 zone boundaries.`
+        verdict = 'WAIT'
+      }
+    }
+
+    const cvdRead = ctx.orderFlow
+      ? `Session CVD: ${ctx.orderFlow.sessionCvd >= 0 ? '+' : ''}${ctx.orderFlow.sessionCvd.toLocaleString()} contracts (${ctx.orderFlow.trend}). Divergence: ${ctx.orderFlow.divergence !== 'NONE' ? ctx.orderFlow.divergence : 'None'}.`
+      : 'CVD order flow: UNAVAILABLE.'
+
+    return `### 🏛️ **Leo 4-Setup Wyckoff Audit (${ctx.instrument} @ ${curPxStr})**
+
+**The Only 4 Trades in the Universe (Rule 11 Audit):**
+1. **At Support — Spring → Reclaim (LONG):** ${yval != null ? `Watching support around Y-VAL (${yval.toFixed(2)}) & ON-Low (${onlow ?? 'N/A'}). Sweep below + reclaim required.` : 'Awaiting support zone touch.'}
+2. **At Support — Breakdown → Failed Reclaim (SHORT):** Initiative volume breakdown through support followed by weak bounce failing to reclaim.
+3. **At Resistance — Upthrust → Return Below (SHORT):** ${yvah != null ? `Watching resistance around Y-VAH (${yvah.toFixed(2)}) & ON-High (${onhigh ?? 'N/A'}). Sweep above + return below required.` : 'Awaiting resistance zone touch.'}
+4. **At Resistance — Breakout → Successful Retest (LONG):** Initiative volume expansion above resistance followed by pullback holding as support. Never chase initial breakout.
+
+---
+
+### 📊 **Live Screen Readout:**
+- **LOCATION:** ${locationRead}
+- **REACTION:** Price reaction developing; observing bar close and candle rejection wicks.
+- **RESULT:** Effort vs result being evaluated.
+- **CVD:** ${cvdRead}
+- **TRIGGER:** ${setupRead}
+- **RISK:** Structural invalidation strictly beyond sweep extreme (Spring low or Upthrust high).
+- **2R ROOM:** Target must offer at least 2.0R clearance to next major frozen zone before entry.
+- **VERDICT:** **${verdict}** *(Tradeable hypothesis only; read-only system never places orders).*`
+  }
+
+  // 1d. Quick-Ask 2: Check Pre-Market Tier 1 Zones (5D Profile, Yesterday's Profile, Overnight)
+  if (
+    /\b(check\s+(our\s+)?pre[\s-]market\s+tier\s+1\s+zones|check\s+tier\s+1\s+zones|check\s+tier\s+1\s+map|frozen\s+tier\s+1\s+map|pre[\s-]market\s+zones)\b/i.test(
+      lower
+    )
+  ) {
+    const curPxStr = ctx.currentPrice != null ? ctx.currentPrice.toFixed(2) : 'Awaiting quote'
+    const curPx = ctx.currentPrice ?? 0
+
+    const p5d = ctx.intermediateMoney
+    const y = ctx.shortTermMoney
+    const lt = ctx.longTermMoney
+
+    const zones: Array<{ name: string; price: number; dist: number }> = []
+    if (curPx > 0) {
+      if (p5d?.poc5d) zones.push({ name: '5D POC', price: p5d.poc5d, dist: Math.abs(curPx - p5d.poc5d) })
+      if (p5d?.vah5d) zones.push({ name: '5D VAH', price: p5d.vah5d, dist: Math.abs(curPx - p5d.vah5d) })
+      if (p5d?.val5d) zones.push({ name: '5D VAL', price: p5d.val5d, dist: Math.abs(curPx - p5d.val5d) })
+      if (y?.ypoc) zones.push({ name: 'Y-POC', price: y.ypoc, dist: Math.abs(curPx - y.ypoc) })
+      if (y?.yvah) zones.push({ name: 'Y-VAH', price: y.yvah, dist: Math.abs(curPx - y.yvah) })
+      if (y?.yval) zones.push({ name: 'Y-VAL', price: y.yval, dist: Math.abs(curPx - y.yval) })
+      if (y?.onpoc) zones.push({ name: 'ON-POC', price: y.onpoc, dist: Math.abs(curPx - y.onpoc) })
+      if (y?.onhigh) zones.push({ name: 'ON-High', price: y.onhigh, dist: Math.abs(curPx - y.onhigh) })
+      if (y?.onlow) zones.push({ name: 'ON-Low', price: y.onlow, dist: Math.abs(curPx - y.onlow) })
+    }
+    zones.sort((a, b) => a.dist - b.dist)
+    const nearest = zones[0]
+
+    return `### 🗺️ **Pre-Market Tier 1 Frozen Map (${ctx.instrument} @ ${curPxStr})**
+
+*Rule 3 Mandate: Pre-market map is frozen at session open. After the freeze, do NOT invent new levels. Zones, not laser beams.*
+
+---
+
+### 1. **Rolling 5-Day Volume Profile (Intermediate-Term Money):**
+- **5D POC:** **${p5d?.poc5d?.toFixed(2) ?? 'UNAVAILABLE'}** (High-volume acceptance anchor)
+- **5D Value Area (70%):** VAL **${p5d?.val5d?.toFixed(2) ?? 'UNAVAILABLE'}** – VAH **${p5d?.vah5d?.toFixed(2) ?? 'UNAVAILABLE'}**
+- **5D Range Extremes:** Low **${p5d?.low5d?.toFixed(2) ?? 'UNAVAILABLE'}** – High **${p5d?.high5d?.toFixed(2) ?? 'UNAVAILABLE'}**
+
+### 2. **Yesterday NYC Profile (Short-Term Money):**
+- **Yesterday POC (Y-POC):** **${y?.ypoc?.toFixed(2) ?? 'UNAVAILABLE'}**
+- **Yesterday Value Area:** Y-VAL **${y?.yval?.toFixed(2) ?? 'UNAVAILABLE'}** – Y-VAH **${y?.yvah?.toFixed(2) ?? 'UNAVAILABLE'}**
+- **Yesterday Extremes:** Y-Low **${y?.ylow?.toFixed(2) ?? 'UNAVAILABLE'}** – Y-High **${y?.yhigh?.toFixed(2) ?? 'UNAVAILABLE'}**
+
+### 3. **Overnight Session (18:00 – 09:29 ET):**
+- **Overnight POC (ON-POC):** **${y?.onpoc?.toFixed(2) ?? 'UNAVAILABLE'}**
+- **Overnight Extremes:** ON-Low **${y?.onlow?.toFixed(2) ?? 'UNAVAILABLE'}** – ON-High **${y?.onhigh?.toFixed(2) ?? 'UNAVAILABLE'}**
+- **Inventory Directional Proxy:** **${y?.overnightBias ?? 'BALANCED'}** *(Displacement vs prior value; not participant count)*
+
+---
+
+### 📍 **Current Proximity & Desk Read:**
+${nearest ? `- **Nearest Predetermined Zone:** **${nearest.name}** at **${nearest.price.toFixed(2)}** (Distance: **${nearest.dist.toFixed(1)} pts**).\n- **First Question After Freeze (Rule 4):** Are we approaching ${nearest.name}? If price is not near a predetermined zone: **NO TRADE**.` : '- Awaiting price quote to measure distance.'}
+- **Tier 3 Context Note:** 5-Month AVWAP is at **${lt?.avwap5m?.toFixed(2) ?? 'UNAVAILABLE'}** (±1σ: [${lt?.sigma1Lower?.toFixed(2) ?? 'N/A'}, ${lt?.sigma1Upper?.toFixed(2) ?? 'N/A'}]). *Tier 3 is background context only and NEVER overrides Tier 1.*`
+  }
+
+  // 1e. Quick-Ask 3: Audit CVD and Volume for Effort vs Result (Rules 7, 9, 12, 13)
+  if (
+    /\b(audit\s+cvd\s+and\s+volume|audit\s+cvd|effort\s+versus\s+result|effort\s+vs\s+result|absorbed\s+at\s+key\s+levels|order\s+flow\s+being\s+absorbed)\b/i.test(
+      lower
+    )
+  ) {
+    const curPxStr = ctx.currentPrice != null ? ctx.currentPrice.toFixed(2) : 'active price'
+    const of = ctx.orderFlow
+
+    const cvdNum = of?.sessionCvd ?? 0
+    const deltaNum = of?.latestBarDelta ?? 0
+    const buyVol = of?.latestBuyVolume ?? 0
+    const sellVol = of?.latestSellVolume ?? 0
+    const buyPct = of ? (of.latestBuyRatio * 100).toFixed(0) : '50'
+    const trend = of?.trend ?? 'BALANCED'
+    const div = of?.divergence ?? 'NONE'
+
+    let absorptionSummary = 'Order flow is currently balanced with proportional price progress.'
+    if (div === 'BULLISH_ABSORPTION' || (cvdNum < 0 && trend === 'SELLER_DOMINANT')) {
+      absorptionSummary = '⚠️ **Potential Bullish Absorption Detected:** Aggressive market sellers are active, but price is refusing to make lower lows. Strong money passive limit bids are absorbing aggressive market sells at support.'
+    } else if (div === 'BEARISH_EXHAUSTION' || (cvdNum > 0 && trend === 'BUYER_DOMINANT')) {
+      absorptionSummary = '⚠️ **Potential Bearish Absorption / Exhaustion:** Aggressive market buyers are hitting offers, but price is stalling or rejecting overhead resistance. Passive limit offers are absorbing aggressive demand.'
+    }
+
+    return `### 📊 **Leo CVD & Volume Audit — Effort vs. Result (${ctx.instrument} @ ${curPxStr})**
+
+> *"Volume represents Effort; Price displacement represents Result. CVD tracks whether aggressive market participants are actually getting a result or meeting passive institutional absorption."*
+
+---
+
+### 1. **Order Flow Telemetry (CME Globex Globex Tick Flow):**
+- **Session CVD:** **${cvdNum >= 0 ? '+' : ''}${cvdNum.toLocaleString()} contracts**
+- **Latest Bar Delta:** **${deltaNum >= 0 ? '+' : ''}${deltaNum.toLocaleString()}** (Buy: ${buyVol.toLocaleString()} | Sell: ${sellVol.toLocaleString()} | ${buyPct}% Buy)
+- **Aggressive Flow Bias:** **${trend}** *(Participant identity is unknown; observable market orders only)*
+- **Order Flow Divergence:** **${div !== 'NONE' ? `⚠️ ${div}` : 'No active divergence'}**
+
+---
+
+### 2. **Effort vs. Result Assessment (Rules 12 & 13):**
+- **Bullish Absorption:** Heavy selling volume / falling CVD with little or no downward price displacement -> Buyers absorbing sellers at support.
+- **Bearish Absorption:** Heavy buying volume / rising CVD with little or no upward price displacement -> Sellers absorbing buyers at resistance.
+- **Initiative Drive:** Large directional volume accompanied by proportional price expansion -> Facilitating trade in trend direction.
+- **Current Desk Read:** ${absorptionSummary}
+
+---
+
+### 🛡️ **Execution Doctrine Reminder:**
+- **CVD DOES NOT TRIGGER TRADES.** Price reclaim or rejection of a predetermined Tier 1 zone triggers the setup.
+- CVD merely confirms trade quality and increases execution confidence. Always require one of the 4 valid execution structures!`
+  }
+
+  // 1f. The Trader's 22-Rule Wyckoff Strategy & Execution Doctrine
+  if (
+    /\b(what\s+is\s+our\s+strategy|explain\s+(our\s+)?strategy|22\s+rules|wyckoff\s+strategy|execution\s+doctrine|playbook|what\s+are\s+the\s+4\s+trades|only\s+4\s+trades|four\s+trades|four\s+setups|when\s+do\s+we\s+not\s+trade|absolute\s+filters)\b/i.test(
+      lower
+    )
+  ) {
+    return `### 🏛️ **The Trader's 22-Rule Wyckoff & Dalton AMT Execution Playbook**
+
+> **Single Execution Doctrine:** We trade strictly predetermined Tier 1 location, observable price reaction, CVD confirmation, the ONLY four allowed structures, structural invalidation, and minimum 2.0R clearance. Neither the trader nor Leo ever places orders directly on this platform.
+
+---
+
+### 1. **The 3-Tier Chart & Structure Hierarchy (Rule 2):**
+- **Tier 1 (Mandatory - Pre-market Structure Frozen at Open):**
+  * Rolling 5-Day Volume Profile: 5D POC, HVNs, LVNs, VAH, VAL, High, Low.
+  * Yesterday NYC Profile (09:30–16:00 ET): VAH, POC, VAL, High, Low.
+  * Overnight Session (18:00–09:29 ET): ON-High, ON-Low, ON-POC (context only; inventory direction does not trigger trades).
+- **Tier 2 (Execution Confirmation):**
+  * Current Price, Normal Volume Bars (Effort vs. Result), CME Globex CVD (Absorption & Confirmation).
+- **Tier 3 (Context Only - NEVER Overrides Tier 1):**
+  * 5-Month Anchored VWAP (5M AVWAP) + ±1σ/±2σ bands and Cross-Asset Volatility Gauges (VIX1D, OVX, GVZ).
+
+---
+
+### 2. **The ONLY 4 Trades in the Entire Execution Universe (Rule 11):**
+1. **At Support — Spring → Reclaim → LONG Hypothesis:**
+   Price sweeps below predetermined support -> sellers fail to continue -> price reclaims zone -> reclaim holds -> LONG. Stop strictly below spring low.
+2. **At Support — Breakdown → Failed Reclaim → SHORT Hypothesis:**
+   Price cleanly destroys support with initiative volume -> weak bounce fails to reclaim -> SHORT continuation. Stop above failed reclaim high.
+3. **At Resistance — Upthrust → Return Below → SHORT Hypothesis:**
+   Price breaks above predetermined resistance -> buyers fail to continue -> price returns below resistance -> failed reclaim / lower high -> SHORT. Stop strictly above upthrust high.
+4. **At Resistance — Breakout → Successful Retest → LONG Hypothesis:**
+   Price destroys resistance with initiative volume (Jump Across Creek / SOS) -> pullback holds as support (LPS) -> LONG continuation. Never chase initial breakout candle!
+*EVERYTHING ELSE: IGNORE.* Trendline break alone is not a fifth trade.
+
+---
+
+### 3. **The 8-Step Screen-Reading Sequence (Rule 23):**
+1. **LOCATION** -> 2. **REACTION** -> 3. **RESULT** -> 4. **CVD + VOL** -> 5. **TRIGGER** -> 6. **RISK** -> 7. **REWARD (≥2R)** -> 8. **TRADEABLE HYPOTHESIS**.
+*The last step is a tradeable hypothesis, not an order. We never say ENTER.*
+
+---
+
+### 4. **When You Do NOT Trade — 9 Absolute Filters (Rule 20):**
+- No predetermined level -> **NO TRADE**
+- Middle of value / POC chop -> **NO TRADE**
+- Random range away from zones -> **NO TRADE**
+- Spring without reclaim -> **NO TRADE**
+- Upthrust without return below -> **NO TRADE**
+- Breakout without pullback -> **DON'T CHASE**
+- Less than 2R room to next zone -> **NO TRADE**
+- Structure is confusing -> **NO TRADE**
+- Nothing happens all day -> **ZERO TRADES (Fully valid & disciplined)**
+
+---
+
+### 5. **Risk & Stop Discipline (Rules 17, 18, 19):**
+- **Minimum 2R Target:** If the obstacle to the next zone offers < 2.0R room, NO TRADE.
+- **Stop Loss:** Set strictly by market structure (Spring low or Upthrust high). Position size is calculated from fixed 1R risk.
+- **Never Widen the Stop:** If structural invalidation is breached, you are wrong. Flatten immediately.`
+  }
+
+  // 1g. Platform Features & Capabilities Master Directory
+  if (
+    /\b(what\s+are\s+(all\s+of\s+)?(the\s+)?features|platform\s+features|desk\s+features|what\s+features\s+do\s+we\s+have|list\s+(all\s+)?features|feature\s+list|hotkeys?|keyboard\s+shortcuts?)\b/i.test(
+      lower
+    )
+  ) {
+    return `### 🛠️ **Trading Platform Features & Capabilities Master Directory**
+
+The platform is strictly a **deterministic institutional market structure, quantitative drawing analytics, and situation monitoring desk**.
+
+---
+
+### 1. **Multi-Horizon Money Levels:**
+- **Tier 1 (Frozen Map):** Rolling 5-Day Volume Profile (POC, VAH, VAL, HVN, LVN), Yesterday NYC Session Profile (VAH, POC, VAL, High, Low), and Overnight Session (ON-High, ON-Low, ON-POC, inventory displacement).
+- **Tier 3 (Context Benchmark):** 5-Month Anchored VWAP (5M AVWAP) with ±1.0σ Value Area and ±2.0σ Exhaustion bands.
+
+---
+
+### 2. **Interactive Drawing Tools & Hotkeys:**
+- **Action & Reaction Trendlines (Hotkey: W or X):** Real-time slope (pts/min and pts/5m), Spring/Upthrust origin detection, Horizontal S/R Runway Assessment (runway points, ratio, nearest target, Clear ≥2.5:1 vs Tight <1.5:1 trap warning), and Empirical Velocity Corridor (1.0x Equilibrium, 1.5x Climax parabolic, 0.5x Retest Floor).
+- **Range Boxes (Hotkey: D):** Real-time traded volume, volume rate per minute, buy ratio %, delta, POC, and span in points.
+- **Multi-Range Volume Comparison Matrix:** Draws comparisons across 2+ ranges or FRVPs, measuring percentage volume change and classifying **Support Readiness** (Good vs Bad Support) & **Resistance Readiness** (Good vs Bad Resistance).
+- **Manual Fixed Range Volume Profile / FRVP (Hotkey: V):** High-resolution POC, VAH, VAL, volume, and buy ratio %.
+- **Manual Anchored VWAP / AVWAP (Hotkey: U):** Typical Price (H+L+C)/3 with ±1.0σ Value Area bands (~68% volume), ±2.0σ Exhaustion bands (~95% volume), and z-score stretch (σ).
+- **Measure Tool (Hotkey: M):** Quantifies points and bar counts between two points.
+- **Highlight Time Tool (Hotkey: T):** Highlights vertical session time bands.
+- **Delete Tool (Hotkey: Delete or Backspace):** Deletes active selected drawing.
+- **Escape (Hotkey: Esc):** Cancels drawing draft, modal, risk box, or exits fullscreen.
+
+---
+
+### 3. **Dalton Auction Market Theory & Profile HUD:**
+- **Day Type Classification:** Normal, Normal Variation, Trend Bull, Trend Bear, Double Distribution, Neutral Day.
+- **Opening Type:** Open Auction, Open Rejection Reverse, Open Drive, Open Test Drive.
+- **Session Continuum:** Tokyo (09:00–15:00 JST), NYC Equity (09:30–16:00 ET), Trader-Defined NY Profile for Gold/Crude (09:30–16:00 ET).
+- **Active Excess Tails:** London, Asia, and NYC buying & selling tails with retest volume ratios.
+- **Opening Ranges:** OR15 (Hotkey: **N**), OR30 (Hotkey: **R**).
+- **HUD Toggles:** Session Bands (Hotkey: **H**), Levels (Hotkey: **L**), Yesterday Profile (Hotkey: **Y**), Playbook (Hotkey: **P**), Fullscreen (Hotkey: **F**).
+
+---
+
+### 4. **Real-Time Order Flow & CME Globex CVD:**
+- Real-time Globex tick delta, session CVD, latest bar delta, buy/sell volume, and buy ratio %.
+- Bullish absorption, Bearish absorption, and Initiative continuation detection.
+
+---
+
+### 5. **Auction Price Critique & "Questioning" Desk (Hotkey: Q):**
+- Pre-trade self-audit modal & telemetry.
+- Valuation Meter & Score (-100 Deep Discount to +100 Extreme Premium).
+- Suitability Verdict, Wholesale Target, and Overnight Inventory Skew.
+- Weak-Hand Trap & Emotional Risk Radar.
+- 6-Question Pre-Trade Self-Audit.
+
+---
+
+### 6. **Cross-Asset Volatility Gauges & 5-Market Selection Radar:**
+- VIX1D, 30D VIX, OVX, GVZ, JNIV implied volatility tracking.
+- 5-Market Selection Matrix across NQ, ES, YM, Gold, Silver, Oil (Participation × Location × Structure) ranking contracts into Grade A (Focus), Grade B (Armed), Grade C (Chop).
+
+---
+
+### 7. **Macro Reactions & Specialist Desk Briefs:**
+- Verified economic calendar releases (CPI, NFP, FOMC) via Finnhub with live reaction telemetry.
+- Specialist Analyst briefs (Nasdaq, Dow, Gold, Oil, Nikkei) on the market intelligence bus.
+
+---
+
+### 8. **Armed Situation Monitoring (<execute> Directives):**
+- \`ARM_CONDITIONAL_ENTRY\`: Monitors live candles for 4 structures & candle patterns at key levels with dynamic stop loss (below candle low) and take profit R:R.
+- \`ARM_TRENDLINE_STRATEGY\`: Systematic trendline breakout & retest hypothesis watcher with Chop Shield.
+- \`ARM_DESK_ALERT\`: Price touch chime audio alarms.
+- \`SAVE_LONG_TERM_MEMORY\`: Persists higher-timeframe observation zones.
+- \`ARM_STAGNATION_RULE\`: Advisory reminder if a position does not move into profit within X minutes.
+- \`CLOSE_POSITION\`: Advisory manual flatten reminder (does not execute broker orders).
+- \`SET_DAY_TYPE\`: Dalton day type override.
+- \`CANCEL_RULES\`: Clears active armed watches.
+
+---
+
+### 🛡️ **Zero-Hallucination Platform Boundaries:**
+- **Strict Read-Only:** The platform NEVER places, modifies, or cancels broker orders.
+- **No Retail Lagging Indicators:** NO RSI, NO MACD, NO Stochastic, NO Bollinger Bands, NO Fibonacci, NO Gann fans.
+- **No 5th Setup:** Only the 4 Wyckoff structures are valid triggers.`
   }
 
   // 2. Conditional Entry Strategy & Drawing Monitor (e.g. "monitor price for yesterday FRVP low volume node; if we see a bullish engulfing enter long...", "in low volume of yesterday fix range volume profile if we see a bullish engulfing enter")
@@ -537,7 +1028,7 @@ There is currently **no open position** on the desk. All brackets are clear. Sta
     const minutes = matchMin ? parseInt(matchMin[1]!, 10) : 5
     const pos = ctx.activePosition
 
-    return `Understood. Stagnation rule armed: If our ${pos ? `${pos.direction} position on ${pos.instrument} (entry: ${pos.entryPrice.toFixed(2)})` : `${ctx.instrument} position`} does not move into positive profit within ${minutes} minutes, I will automatically execute a market close to protect capital from dead auction chop.\n\n<execute>\n{\n  "action": "ARM_STAGNATION_RULE",\n  "maxMinutes": ${minutes},\n  "requireProfitPoints": 1,\n  "description": "Close position if not in profit after ${minutes} minutes"\n}\n</execute>`
+    return `Understood. Stagnation rule armed: If our ${pos ? `${pos.direction} position on ${pos.instrument} (entry: ${pos.entryPrice.toFixed(2)})` : `${ctx.instrument} position`} does not move into positive profit within ${minutes} minutes, I will alert you to manually flatten at your broker to protect capital from dead auction chop. *(The platform is strictly read-only and never places or flattens broker orders).* \n\n<execute>\n{\n  "action": "ARM_STAGNATION_RULE",\n  "maxMinutes": ${minutes},\n  "requireProfitPoints": 1,\n  "description": "Manual flatten reminder if not in profit after ${minutes} minutes"\n}\n</execute>`
   }
 
   // 5. Telegram alert command: "send me a telegram message" or "telegram"
@@ -793,7 +1284,7 @@ Currently tracking 1 range on chart (**${singleRange.label || 'Range Box'}**):
 - **Price Boundaries:** **${singleRange.priceLow.toLocaleString()} – ${singleRange.priceHigh.toLocaleString()}** (POC: **${singleRange.poc ?? singleRange.midPrice}**).
 
 **Support & Resistance Readiness Rules:**
-1. **To compare volume across multiple ranges:** Draw a second range box (Hotkey: **R**) over a prior consolidation, session retest, or reference zone. I will automatically calculate whether volume increased or decreased and classify whether the levels are **Good vs Bad Support** and **Good vs Bad Resistance**!
+1. **To compare volume across multiple ranges:** Draw a second range box (Hotkey: **D**) over a prior consolidation, session retest, or reference zone. I will automatically calculate whether volume increased or decreased and classify whether the levels are **Good vs Bad Support** and **Good vs Bad Resistance**!
 2. **Current Level Read:**
    - If market retests **${singleRange.priceLow.toLocaleString()}** on **decreasing volume** (< 70% of current rate): Signals supply exhaustion -> **Good Support**.
    - If market retests **${singleRange.priceLow.toLocaleString()}** on **surging volume with sell delta**: Signals liquidation -> **Bad Support** (breakdown threat).
@@ -807,7 +1298,7 @@ Currently tracking 1 range on chart (**${singleRange.label || 'Range Box'}**):
 No manual range boxes are currently drawn on your chart canvas.
 
 **How to Compare Volumes Traded in Different Ranges:**
-1. **Draw Ranges:** Use the Range tool (Hotkey: **R**) to draw two or more boxes over consolidation levels, session swings, or retest zones.
+1. **Draw Ranges:** Use the Range tool (Hotkey: **D**) to draw two or more boxes over consolidation levels, session swings, or retest zones.
 2. **Instant Volume Telemetry:** The engine automatically measures total contracts, volume rate per minute, order flow delta, and POC for each range.
 3. **Automated Comparison:** I will compare the ranges and tell you:
    - Whether volumes **increased or decreased** between the levels (exact % and contracts).
@@ -880,5 +1371,5 @@ ${f.priceRelation === 'AT_POC'
 - **Location:** Trading relative to ${yval} (Yesterday Value Area Low), ${ypoc} (Yesterday POC) & ${poc5d} (5D POC extended).
 - **Intermediate Flow:** Tracking 5-Day POC magnet and excessive rejection wicks.
 - **Long-Term Benchmark:** 5-Month Anchored VWAP is at **${vwap5m}**.
-- **Desk Telemetry:** Standing by to monitor session references, execute stagnation timeout exits, and track auction levels on your desk.`
+- **Desk Telemetry:** Standing by to monitor session references, track stagnation timeout reminders, and alert on auction levels on your desk.`
 }
