@@ -133,31 +133,30 @@ export function AsianEdgePanel({
         </div>
       </div>
 
-      {/* ── Instrument Switcher Strip ── */}
-      <div className="grid grid-cols-5 gap-1.5 font-mono text-[10px]">
-        {(['GOLD', 'DOW', 'NASDAQ', 'NIKKEI', 'OIL'] as const).map((inst) => {
-          const cfg = ASIAN_EDGE_CONFIGS[inst]!
+      {/* ── High-Conviction Core Models: Gold & Dow ── */}
+      <div className="grid grid-cols-2 gap-2 font-mono">
+        {(['GOLD', 'DOW'] as const).map((inst) => {
           const isSelected = selectedInst === inst
-          const isGated = cfg.status === 'GATED_AVOID'
 
           return (
             <button
               key={inst}
               type="button"
               onClick={() => setSelectedInst(inst)}
-              className={`p-1.5 rounded-lg border text-center transition flex flex-col items-center justify-center gap-0.5 ${
+              className={`p-2 rounded-xl border text-center transition flex flex-col items-center justify-center gap-1 shadow-sm ${
                 isSelected
-                  ? 'bg-amber-950/80 border-amber-500/80 text-amber-200 shadow-md font-bold'
-                  : isGated
-                  ? 'bg-neutral-900/60 border-neutral-800 text-neutral-500 hover:text-neutral-400'
+                  ? 'bg-amber-950/90 border-amber-500 text-amber-200 shadow-md font-bold ring-1 ring-amber-500/50'
                   : 'bg-surface-900 border-neutral-800 text-neutral-300 hover:border-neutral-700'
               }`}
             >
-              <span className="font-bold text-[10px]">
-                {inst === 'GOLD' ? 'MGC Gold' : inst === 'DOW' ? 'MYM Dow' : inst === 'NASDAQ' ? 'MNQ NQ' : inst === 'NIKKEI' ? 'NKD Nikkei' : 'MCL Oil'}
-              </span>
-              <span className={`text-[8px] ${isGated ? 'text-red-400' : 'text-emerald-400'}`}>
-                {inst === 'GOLD' ? 'PF 3.11' : inst === 'DOW' ? 'PF 1.53' : inst === 'NASDAQ' ? 'PF 1.24' : inst === 'NIKKEI' ? 'OR15 Fade' : 'GATED'}
+              <div className="flex items-center gap-1.5">
+                <span className="text-base">{inst === 'GOLD' ? '🥇' : '🥈'}</span>
+                <span className="font-bold text-xs">
+                  {inst === 'GOLD' ? 'Micro Gold (MGC)' : 'Micro Dow (MYM)'}
+                </span>
+              </div>
+              <span className="text-[10px] text-emerald-400 font-mono">
+                {inst === 'GOLD' ? 'PF 3.11 • 69.2% WR (<$60 Range)' : 'PF 1.53 - 2.15 • (<80 pts Range)'}
               </span>
             </button>
           )
