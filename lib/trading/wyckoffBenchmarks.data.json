@@ -1,0 +1,150 @@
+{
+  "metadata": {
+    "title": "1-Year 5-Minute Wyckoff Range Accumulation & Distribution Backtest",
+    "generatedAt": "2026-10-15T21:15:34.756Z",
+    "timeframe": "5m",
+    "samplePeriod": "Last 365 Days"
+  },
+  "overall": {
+    "totalRangesAnalyzed": 6104,
+    "accumulationRanges": 3232,
+    "distributionRanges": 2872,
+    "overallSpringRatePct": 17.7,
+    "overallUtadRatePct": 19.1,
+    "overallCvdAbsorptionPct": 18.5,
+    "avgAtrExpansionOnBreakout": 0.98,
+    "sweepDepthAvgAtr": 0.73
+  },
+  "byMarket": {
+    "NASDAQ": {
+      "market": "NASDAQ (NQ)",
+      "totalRanges": 1985,
+      "accumulationCount": 1088,
+      "distributionCount": 897,
+      "accumulationSpringRatePct": 17.3,
+      "distributionUtadRatePct": 20.1,
+      "bullishAbsorptionCvdRatePct": 17.3,
+      "bearishAbsorptionCvdRatePct": 20.1,
+      "avgRangeDurationHours": 4.2,
+      "avgAtrExpansionRatio": 0.98,
+      "avgSweepVolumeRatio": 1.67,
+      "topBreakoutHoursEt": [
+        "9:00 ET (129 ranges)",
+        "8:00 ET (115 ranges)",
+        "4:00 ET (112 ranges)",
+        "1:00 ET (109 ranges)"
+      ],
+      "topFormationSessions": [
+        "ASIA (696)",
+        "LONDON (574)",
+        "NY_AM (347)",
+        "NY_PM (299)",
+        "POST_SETTLE (69)"
+      ]
+    },
+    "DOW": {
+      "market": "DOW (YM)",
+      "totalRanges": 1861,
+      "accumulationCount": 946,
+      "distributionCount": 915,
+      "accumulationSpringRatePct": 19.5,
+      "distributionUtadRatePct": 18.1,
+      "bullishAbsorptionCvdRatePct": 19.5,
+      "bearishAbsorptionCvdRatePct": 18.1,
+      "avgRangeDurationHours": 4.2,
+      "avgAtrExpansionRatio": 0.97,
+      "avgSweepVolumeRatio": 2.11,
+      "topBreakoutHoursEt": [
+        "9:00 ET (121 ranges)",
+        "1:00 ET (107 ranges)",
+        "7:00 ET (99 ranges)",
+        "20:00 ET (98 ranges)"
+      ],
+      "topFormationSessions": [
+        "ASIA (619)",
+        "LONDON (550)",
+        "NY_AM (339)",
+        "NY_PM (287)",
+        "POST_SETTLE (66)"
+      ]
+    },
+    "CRUDE": {
+      "market": "CRUDE (CL)",
+      "totalRanges": 1865,
+      "accumulationCount": 992,
+      "distributionCount": 873,
+      "accumulationSpringRatePct": 17.7,
+      "distributionUtadRatePct": 19.7,
+      "bullishAbsorptionCvdRatePct": 17.8,
+      "bearishAbsorptionCvdRatePct": 19.9,
+      "avgRangeDurationHours": 4.3,
+      "avgAtrExpansionRatio": 0.99,
+      "avgSweepVolumeRatio": 1.92,
+      "topBreakoutHoursEt": [
+        "20:00 ET (110 ranges)",
+        "1:00 ET (107 ranges)",
+        "3:00 ET (107 ranges)",
+        "9:00 ET (102 ranges)"
+      ],
+      "topFormationSessions": [
+        "ASIA (610)",
+        "LONDON (567)",
+        "NY_AM (326)",
+        "NY_PM (297)",
+        "POST_SETTLE (65)"
+      ]
+    },
+    "GOLD": {
+      "market": "GOLD (GC)",
+      "totalRanges": 136,
+      "accumulationCount": 70,
+      "distributionCount": 66,
+      "accumulationSpringRatePct": 5.7,
+      "distributionUtadRatePct": 10.6,
+      "bullishAbsorptionCvdRatePct": 10,
+      "bearishAbsorptionCvdRatePct": 16.7,
+      "avgRangeDurationHours": 25.1,
+      "avgAtrExpansionRatio": 0.91,
+      "avgSweepVolumeRatio": 0.68,
+      "topBreakoutHoursEt": [
+        "10:00 ET (12 ranges)",
+        "2:00 ET (8 ranges)",
+        "6:00 ET (8 ranges)",
+        "9:00 ET (8 ranges)"
+      ],
+      "topFormationSessions": [
+        "NY_AM (41)",
+        "ASIA (41)",
+        "LONDON (33)",
+        "NY_PM (18)",
+        "POST_SETTLE (3)"
+      ]
+    },
+    "NIKKEI": {
+      "market": "NIKKEI 225 (NKD)",
+      "totalRanges": 257,
+      "accumulationCount": 136,
+      "distributionCount": 121,
+      "accumulationSpringRatePct": 15.4,
+      "distributionUtadRatePct": 19,
+      "bullishAbsorptionCvdRatePct": 16.2,
+      "bearishAbsorptionCvdRatePct": 19,
+      "avgRangeDurationHours": 4.5,
+      "avgAtrExpansionRatio": 0.95,
+      "avgSweepVolumeRatio": 1.82,
+      "topBreakoutHoursEt": [
+        "19:00 ET (18 ranges)",
+        "2:00 ET (17 ranges)",
+        "8:00 ET (16 ranges)",
+        "4:00 ET (13 ranges)"
+      ],
+      "topFormationSessions": [
+        "ASIA (81)",
+        "LONDON (72)",
+        "NY_AM (55)",
+        "NY_PM (38)",
+        "POST_SETTLE (11)"
+      ]
+    }
+  }
+}

@@ -18,6 +18,8 @@ import { formatDeskBriefForInstrument } from '@/lib/ai/marketIntelligenceBus'
 import {
   getWyckoffBenchmark,
   generateWyckoffMarketComparisonMatrix,
+  formatWyckoffBaselineForPrompt,
+  WYCKOFF_CROSS_MARKET_BASELINE,
 } from '../trading/wyckoffMarketBenchmarks'
 
 export interface LeoDataPoint {
@@ -1524,24 +1526,18 @@ You must follow this strategy EXACTLY. No speculative hedging narratives, no dea
     - Re-Accumulation vs Distribution: When a range forms after an uptrend, do not assume distribution. Check volume on pullbacks: if volume dries up and support holds on a Spring/LPS, it is Re-accumulation.
     - Re-Distribution vs Accumulation: When a range forms after a downtrend, do not assume accumulation. Check volume on bounces: if volume dries up and resistance holds on an Upthrust/LPSY, it is Re-distribution.
     - Professional Wyckoffian Execution: A Wyckoffian trades ONLY Phase C (Spring Reclaim, Upthrust Return) or Phase D (Breakout Retest / LPS, Breakdown Retest / LPSY). Never guess in Phase B. Always require structural invalidation and ≥2R room.
-    - Quantitative 1-Year 5-Minute Wyckoff Range Backtest Benchmarks (6,104 Ranges Evaluated Across All 5 Desk Markets):
-      * Global Cross-Market Empirical Baseline:
-        - The Lower Low Sweep Illusion: ONLY 17.7% of institutional accumulations make a Lower Low sweep (Spring / Schematic 1). The overwhelming majority (82.3%) build a Higher Low (Last Point of Support / LPS / Schematic 2). Never mandate a lower low to enter; doing so misses >80% of institutional markups.
-        - The Higher High Sweep Trap: ONLY 19.1% of institutional distributions make a Higher High sweep (UTAD / Schematic 1). 80.9% roll over from a lower high (LPSY / Schematic 2).
-        - Boundary Sweep Volume Spike: When a true Spring or UTAD occurs, volume spikes to 1.67x (NQ) up to 2.11x (YM) of the 20-bar range average volume (CL: 1.92x, NKD: 1.82x). A low-volume dip below support is markdown continuation, NOT a Spring.
-        - Boundary Sweep Depth: Sweeps average 0.73 ATR beyond range boundaries (15-35 pts on NQ, 40-80 pts on YM, 30-50c on CL), specifically targeted to clip resting stops.
-        - CVD Absorption Divergence: Verified in 98.2% of confirmed Springs and UTADs. Price sweeps to new extreme, but CVD refuses to follow, proving passive limit absorption.
-        - ATR Volatility Dynamics: Volatility compresses by 32% to 45% during Phase B cause building (avg duration 4.2 to 4.5 hours); ATR expands by 1.8x to 2.4x upon Phase D/E Mark-Up or Mark-Down ignition.
-        - Session Formation & Ignition Cadence: 69.0% of all trading ranges build overnight (Asia 37.2% + London 31.8%).
+    - Quantitative 1-Year 5-Minute Wyckoff Range Backtest Benchmarks (${WYCKOFF_CROSS_MARKET_BASELINE.totalRangesAnalyzed.toLocaleString()} Ranges Evaluated Across All 5 Desk Markets). These figures are generated from the backtest data file; quote them exactly and never extrapolate beyond them:
+      * Global Cross-Market Empirical Baseline: ${formatWyckoffBaselineForPrompt()}
+      * Use of the baseline: most accumulations resolved without a lower-low sweep, so never require a lower-low sweep before acting on a confirmed higher-low structure. A dip below support is a Spring ONLY after a confirmed reclaim (rule above), regardless of these rates.
       * Active Instrument Empirical Benchmark (${activeWyckoff.market} — ${activeWyckoff.contractLabel}):
         - Qualified 5m Ranges Evaluated: ${activeWyckoff.totalRanges.toLocaleString()} (${activeWyckoff.accumulationCount} Acc vs. ${activeWyckoff.distributionCount} Dist)
-        - Spring Sweep Rate: ${activeWyckoff.springRatePct}% | LPS Higher-Low Holding Rate: ${activeWyckoff.lpsRatePct}%
-        - UTAD Sweep Rate: ${activeWyckoff.utadRatePct}% | LPSY Lower-High Rollover Rate: ${activeWyckoff.lpsyRatePct}%
-        - Sweep Volume Multiplier: ${activeWyckoff.sweepVolumeMultiplier}x 20-bar avg volume | Sweep Depth: ${activeWyckoff.avgSweepDepthAtr} ATR
-        - CVD Absorption Divergence Accuracy: ${activeWyckoff.cvdAbsorptionDivergencePct}%
-        - Overnight Range Formation: ${activeWyckoff.overnightFormationPct}% of ranges form in Asia/London (Avg Cause: ${activeWyckoff.avgRangeDurationHours}h)
-        - Peak Breakout Ignition Hours (ET): ${activeWyckoff.topIgnitionHoursEt.join(', ')}
-        - Asset Character Profile: ${activeWyckoff.characterProfile}
+        - Spring (lower-low sweep) rate: ${activeWyckoff.springRatePct}% | LPS (no lower-low sweep) rate: ${activeWyckoff.lpsRatePct}%
+        - UTAD (higher-high sweep) rate: ${activeWyckoff.utadRatePct}% | LPSY (no higher-high sweep) rate: ${activeWyckoff.lpsyRatePct}%
+        - Average sweep-bar volume vs range average: ${activeWyckoff.sweepVolumeMultiplier}x
+        - Overnight range formation: ${activeWyckoff.overnightFormationPct}% (Asia ${activeWyckoff.asiaFormationPct}% + London ${activeWyckoff.londonFormationPct}%); average range duration ${activeWyckoff.avgRangeDurationHours}h
+        - Top breakout hours (ET, with range counts): ${activeWyckoff.topIgnitionHoursEt.join(', ')}
+        - Read: ${activeWyckoff.characterProfile}
+      * Method limits (state these if the trader leans on the stats): CVD/delta in the backtest is an OHLCV proxy, not tick order flow; ATR at breakout averaged ${WYCKOFF_CROSS_MARKET_BASELINE.avgBreakoutAtrExpansion}x (no proven ATR spike); small-sample markets (GOLD, NIKKEI) are less reliable. These are descriptive history, not a trade trigger.
       * Cross-Market Comparative Dataset:
 ${crossMarketMatrix}
 
@@ -1571,11 +1567,11 @@ STRATEGY & FEATURE INQUIRIES RESPONSE PROTOCOL:
      - Diagnose the current Wyckoff Phase (Phase A stopping, Phase B cause building, Phase C test, Phase D markup/markdown within range, Phase E trend).
      - Audit Volume Effort vs. Result and Globex CVD (distinguish supply/demand absorption from initiative exhaustion).
      - Enforce zero-error Wyckoffian logic: Springs require confirmed Reclaims; Upthrusts require confirmed Return Belows; Phase B is balance/chop (NO TRADE).
-     - Cite verified 1-year 5-minute backtest benchmarks for the active instrument: Spring rate (${activeWyckoff.springRatePct}%) vs LPS rate (${activeWyckoff.lpsRatePct}%), UTAD rate (${activeWyckoff.utadRatePct}%) vs LPSY rate (${activeWyckoff.lpsyRatePct}%), ${activeWyckoff.sweepVolumeMultiplier}x sweep volume expansion, ${activeWyckoff.avgSweepDepthAtr} ATR sweep depth, ${activeWyckoff.avgRangeDurationHours}-hour Phase B average duration, and overnight formation (${activeWyckoff.overnightFormationPct}%) vs peak cash open breakout ignition.
+     - Cite verified 1-year 5-minute backtest benchmarks for the active instrument exactly as listed above: Spring rate (${activeWyckoff.springRatePct}%) vs LPS rate (${activeWyckoff.lpsRatePct}%), UTAD rate (${activeWyckoff.utadRatePct}%) vs LPSY rate (${activeWyckoff.lpsyRatePct}%), ${activeWyckoff.sweepVolumeMultiplier}x average sweep volume, ${activeWyckoff.avgRangeDurationHours}-hour average range duration, and overnight formation (${activeWyckoff.overnightFormationPct}%). Mention the method limits and sample size when relevant.
      - Map the market to one of the 4 valid execution setups (Spring Reclaim, Upthrust Return, Breakout Retest / LPS, Breakdown Retest / LPSY) with structural stop and minimum 2.0R clearance.
   4. If asked to compare markets, compare accumulation/distribution, or compare backtest benchmarks across markets:
      - Output the Cross-Market 1-Year Wyckoff Backtest Comparative Matrix with the 6,104 range dataset.
-     - Detail the specific differences in Spring rates (DOW 19.5% vs GOLD 15.6%), Sweep volume spikes (DOW 2.11x vs NQ 1.67%), and session breakout hours (Equities 08:00–10:00 ET, Nikkei 19:00 ET, Crude 20:00 / 01:00 / 09:00 ET, Gold 02:00 / 08:30 / 10:00 ET).
+     - Quote the differences between markets only from the matrix above (spring rates, average sweep volume, top ignition hours, overnight formation, sample sizes). Do not add figures that are not in the matrix.
      - Provide strategic deductions with 0% hallucinations.
   5. Maintain strict zero-hallucination: Quote only verified features, hotkeys, and parameters. Never invent indicators, automated order placement, or rules not in this prompt.
   6. Always remind the trader of our strict Read-Only architecture and minimum 2R reward clearance.

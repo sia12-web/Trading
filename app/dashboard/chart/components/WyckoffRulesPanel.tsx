@@ -1,7 +1,11 @@
 'use client'
 
 import React from 'react'
-import { getWyckoffBenchmark } from '@/lib/trading/wyckoffMarketBenchmarks'
+import {
+  getWyckoffBenchmark,
+  WYCKOFF_CROSS_MARKET_BASELINE,
+  formatIgnitionHour,
+} from '@/lib/trading/wyckoffMarketBenchmarks'
 
 interface WyckoffRulesPanelProps {
   instrument: string
@@ -276,7 +280,7 @@ export function WyckoffRulesPanel({ instrument, onAskLeo }: WyckoffRulesPanelPro
             <span>🔬</span> 1-Year 5-Minute Wyckoff Backtest Benchmarks ({benchmark.market} — {benchmark.contractLabel})
           </span>
           <span className="text-[9.5px] font-mono text-cyan-400 bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-700/60">
-            6,104 Ranges Verified
+            {benchmark.totalRanges.toLocaleString()} / {WYCKOFF_CROSS_MARKET_BASELINE.totalRangesAnalyzed.toLocaleString()} Ranges
           </span>
         </div>
 
@@ -294,22 +298,22 @@ export function WyckoffRulesPanel({ instrument, onAskLeo }: WyckoffRulesPanelPro
           <div className="p-1.5 rounded bg-surface-950/70 border border-surface-800 flex flex-col">
             <span className="text-gray-400 text-[8.5px]">SWEEP VOL MULT</span>
             <span className="font-bold text-amber-300 text-xs">{benchmark.sweepVolumeMultiplier}x</span>
-            <span className="text-gray-500 text-[8px]">Depth: {benchmark.avgSweepDepthAtr} ATR</span>
+            <span className="text-gray-500 text-[8px]">Depth: {WYCKOFF_CROSS_MARKET_BASELINE.sweepDepthAvgAtr} ATR</span>
           </div>
           <div className="p-1.5 rounded bg-surface-950/70 border border-surface-800 flex flex-col">
-            <span className="text-gray-400 text-[8.5px]">CVD ABSORPTION</span>
-            <span className="font-bold text-cyan-300 text-xs">{benchmark.cvdAbsorptionDivergencePct}%</span>
-            <span className="text-gray-500 text-[8px]">Divergence Accuracy</span>
+            <span className="text-gray-400 text-[8.5px]">CAUSE DURATION</span>
+            <span className="font-bold text-cyan-300 text-xs">{benchmark.avgRangeDurationHours}h</span>
+            <span className="text-gray-500 text-[8px]">Breakout ATR: {benchmark.atrExpansionRatio}x</span>
           </div>
           <div className="p-1.5 rounded bg-surface-950/70 border border-surface-800 flex flex-col">
             <span className="text-gray-400 text-[8.5px]">OVERNIGHT CAUSE</span>
             <span className="font-bold text-purple-300 text-xs">{benchmark.overnightFormationPct}%</span>
-            <span className="text-gray-500 text-[8px]">Asia + London</span>
+            <span className="text-gray-500 text-[8px]">Asia {benchmark.asiaFormationPct}% · Ldn {benchmark.londonFormationPct}%</span>
           </div>
           <div className="p-1.5 rounded bg-surface-950/70 border border-surface-800 flex flex-col">
             <span className="text-gray-400 text-[8.5px]">PEAK IGNITION</span>
-            <span className="font-bold text-white text-[10px] truncate">{benchmark.topIgnitionHoursEt[0] ?? '09:00 ET'}</span>
-            <span className="text-gray-500 text-[8px] truncate">{benchmark.topIgnitionHoursEt[1] ?? '08:00 ET'}</span>
+            <span className="font-bold text-white text-[10px] truncate">{formatIgnitionHour(benchmark.topIgnitionHoursEt[0] ?? '09:00 ET')}</span>
+            <span className="text-gray-500 text-[8px] truncate">{formatIgnitionHour(benchmark.topIgnitionHoursEt[1] ?? '08:00 ET')}</span>
           </div>
         </div>
 

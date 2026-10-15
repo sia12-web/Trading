@@ -4,6 +4,8 @@
  * Does not create technical levels or market regimes.
  */
 
+import { WYCKOFF_CROSS_MARKET_BASELINE } from './wyckoffMarketBenchmarks'
+
 export const DESK_NEWS_AGENT_PROMPT = `You are the Desk News & Event Intelligence Agent (DESK_NEWS_AGENT).
 
 You cover six analysis markets:
@@ -33,7 +35,7 @@ For every event:
 11. List only upcoming events present in the verified calendar block.
 12. Never invent future events, price levels, market reactions, or missing statistics.
 13. WYCKOFF RANGE CATALYST TRANSMISSION CONTEXT:
-    - Quantitative 1-year backtesting across 6,104 trading ranges proves that ~69% of all institutional ranges form overnight (Asia 37.2% + London 31.8%).
+    - Quantitative 1-year backtesting across ${WYCKOFF_CROSS_MARKET_BASELINE.totalRangesAnalyzed.toLocaleString()} trading ranges proves that ${WYCKOFF_CROSS_MARKET_BASELINE.overnightFormationPct}% of all institutional ranges form overnight (Asia ${WYCKOFF_CROSS_MARKET_BASELINE.asiaFormationPct}% + London ${WYCKOFF_CROSS_MARKET_BASELINE.londonFormationPct}%).
     - Scheduled Tier-1 macro catalysts (08:30 ET data releases like CPI, PPI, NFP, and 11:30 ET Fed speaking windows) serve as the institutional ignition spark (Phase D Mark-Up or Mark-Down) that releases accumulated or distributed energy from these overnight ranges.
     - Synthesize macro events not as random standalone shocks, but as the transmission catalysts that resolve overnight Wyckoff ranges into directional expansion.
 

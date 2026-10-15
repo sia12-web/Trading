@@ -21,6 +21,8 @@ import { buildMarketReactionReport } from '@/lib/trading/marketReactionEngine'
 import {
   getWyckoffBenchmark,
   generateWyckoffMarketComparisonMatrix,
+  WYCKOFF_CROSS_MARKET_BASELINE,
+  formatIgnitionHour,
 } from '@/lib/trading/wyckoffMarketBenchmarks'
 
 export const runtime = 'nodejs'
@@ -494,15 +496,14 @@ ${marketsList}
 ---
 
 ### 6. **Quantitative 1-Year 5-Minute Wyckoff Range Benchmarks (${b.market} — ${b.contractLabel}):**
-- **Verified Sample:** Evaluated across **${b.totalRanges.toLocaleString()}** qualified 5-minute trading ranges (${b.accumulationCount} Acc vs. ${b.distributionCount} Dist) from 6,104 qualified 5-minute trading ranges evaluated across all desk markets (Last 365 Days).
-- **The Spring Sweep Rate:** Only **${b.springRatePct}%** (Cross-Market Baseline: **17.7%**) of institutional accumulations feature a Lower Low sweep (Spring / Schematic 1). The overwhelming majority (**${b.lpsRatePct}%**, Cross-Market: **82.3%**) build a Higher Low (Last Point of Support / LPS / Schematic 2). *Never mandate a lower low to enter; doing so misses >80% of institutional markups.*
-- **The UTAD Sweep Rate:** Only **${b.utadRatePct}%** (Cross-Market Baseline: **19.1%**) of institutional distributions feature a Higher High sweep (UTAD / Schematic 1). **${b.lpsyRatePct}%** (Cross-Market: **80.9%**) roll over from a lower high (LPSY / Schematic 2).
-- **Sweep Volume Multiplier:** Genuine sweeps expand volume to **${b.sweepVolumeMultiplier}x** the 20-bar range average (cross-market average: 1.85x, DOW: 2.11x, CL: 1.92x, NKD: 1.82x, NQ: 1.67x). Low-volume dips below support are markdown continuation, NOT springs.
-- **Sweep Depth:** Averages **${b.avgSweepDepthAtr} ATR** (${ctx.instrument === 'NASDAQ' ? '15–35 pts on NQ' : ctx.instrument === 'DOW' ? '40–80 pts on YM' : ctx.instrument === 'CRUDE' ? '30–50c on CL' : ctx.instrument === 'GOLD' ? '$4–$8 on GC' : '150–250 pts on NKD'}), precision-engineered to clip resting stops.
-- **CVD Absorption Divergence:** Verified in **${b.cvdAbsorptionDivergencePct}%** (Cross-Market: **98.2%**) of confirmed Springs and UTADs.
+- **Verified Sample:** Evaluated across **${b.totalRanges.toLocaleString()}** qualified 5-minute trading ranges (${b.accumulationCount} Acc vs. ${b.distributionCount} Dist) from ${WYCKOFF_CROSS_MARKET_BASELINE.totalRangesAnalyzed.toLocaleString()} qualified 5-minute trading ranges evaluated across all desk markets (${WYCKOFF_CROSS_MARKET_BASELINE.samplePeriod}).
+- **The Spring Sweep Rate:** Only **${b.springRatePct}%** (Cross-Market Baseline: **${WYCKOFF_CROSS_MARKET_BASELINE.springRatePct}%**) of institutional accumulations feature a Lower Low sweep (Spring / Schematic 1). The overwhelming majority (**${b.lpsRatePct}%**, Cross-Market: **${WYCKOFF_CROSS_MARKET_BASELINE.lpsRatePct}%**) build a Higher Low (Last Point of Support / LPS / Schematic 2). *Never mandate a lower low to enter; doing so misses >80% of institutional markups.*
+- **The UTAD Sweep Rate:** Only **${b.utadRatePct}%** (Cross-Market Baseline: **${WYCKOFF_CROSS_MARKET_BASELINE.utadRatePct}%**) of institutional distributions feature a Higher High sweep (UTAD / Schematic 1). **${b.lpsyRatePct}%** (Cross-Market: **${WYCKOFF_CROSS_MARKET_BASELINE.lpsyRatePct}%**) roll over from a lower high (LPSY / Schematic 2).
+- **Sweep Volume Multiplier:** Genuine sweeps on ${b.market} average **${b.sweepVolumeMultiplier}x** the 20-bar range volume (DOW: 2.11x, CL: 1.92x, NKD: 1.82x, NQ: 1.67x, GC: 0.68x).
+- **Sweep Depth & Breakout ATR:** Average sweep depth across the dataset is **${WYCKOFF_CROSS_MARKET_BASELINE.sweepDepthAvgAtr} ATR** beyond the range boundary; average breakout ATR expansion on ${b.market} is **${b.atrExpansionRatio}x** (cross-market: **${WYCKOFF_CROSS_MARKET_BASELINE.avgBreakoutAtrExpansion}x**).
 - **Timing & Session Cadence:**
-  * **Where Ranges Form:** **${b.overnightFormationPct}%** of ${b.market} trading ranges build overnight (Cross-Market Baseline: **69.0%** across Asia 37.2% + London 31.8%). Average Phase B cause duration is **${b.avgRangeDurationHours} hours**.
-  * **Breakout Ignition:** Equities peak at **08:00 – 10:00 ET** (08:30 data releases and 09:30 cash open); Nikkei peaks at **19:00 – 20:00 ET** (08:00 – 09:00 JST Tokyo Open); Crude peaks at **20:00 ET**, **01:00–03:00 ET**, and **09:00 ET**; Gold peaks at **10:00 ET**, **08:30 ET**, and **02:00 ET**.
+  * **Where Ranges Form:** **${b.overnightFormationPct}%** of ${b.market} trading ranges build overnight (Asia ${b.asiaFormationPct}% + London ${b.londonFormationPct}%; Cross-Market Baseline: **${WYCKOFF_CROSS_MARKET_BASELINE.overnightFormationPct}%**). Average Phase B cause duration is **${b.avgRangeDurationHours} hours**.
+  * **Top Ignition Hours (${b.market}):** **${b.topIgnitionHoursEt.slice(0, 3).map(formatIgnitionHour).join(', ')}** (raw counts: ${b.topIgnitionHoursEt.slice(0, 3).join(', ')}).
 - **Asset Character Profile:** ${b.characterProfile}
 
 ---

@@ -14,6 +14,8 @@
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "db:migrate": "node scripts/run-migrations.mjs",
+    "db:persist-wyckoff": "node scripts/persist-wyckoff-benchmarks.mjs",
+    "backtest:wyckoff": "npx tsx scripts/backtest-wyckoff-range-mechanics.ts",
     "nikkei:ny-range": "npx tsx scripts/nikkei-last-ny-session-range.ts",
     "scanner": "npx tsx --env-file=.env.local scripts/live-confluence-scanner.ts",
     "backtest": "npx tsx --env-file=.env.local scripts/backtest-confluence-divergence.ts",

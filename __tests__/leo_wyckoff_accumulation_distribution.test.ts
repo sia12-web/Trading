@@ -211,23 +211,23 @@ describe('Leo Wyckoff Accumulation & Distribution Professional Audit Tests', () 
       [{ role: 'user', content: 'Leo, what are the empirical Wyckoff range backtest benchmarks?' }],
       baseContext
     )
-    // Verify system prompt contains the empirical backtest benchmarks
+    // Verify system prompt contains the empirical backtest benchmarks derived from wyckoffBenchmarks.data.json
     assert.ok(prompt.includes('Quantitative 1-Year 5-Minute Wyckoff Range Backtest Benchmarks'))
-    assert.ok(prompt.includes('ONLY 17.7% of institutional accumulations make a Lower Low sweep'))
-    assert.ok(prompt.includes('The overwhelming majority (82.3%) build a Higher Low'))
-    assert.ok(prompt.includes('ONLY 19.1% of institutional distributions make a Higher High sweep'))
-    assert.ok(prompt.includes('69.0% of all trading ranges build overnight'))
-    assert.ok(prompt.includes('CVD Absorption Divergence: Verified in 98.2%'))
+    assert.ok(prompt.includes('Evaluated 6,104 ranges (3,232 accumulation / 2,872 distribution)'))
+    assert.ok(prompt.includes('Accumulation ranges that swept below range low (Spring / Schematic 1): 17.7%'))
+    assert.ok(prompt.includes('Held a higher low without a lower-low sweep (LPS / Schematic 2): 82.3%'))
+    assert.ok(prompt.includes('Distribution ranges that swept above range high (UTAD): 19.1%'))
+    assert.ok(prompt.includes('Formation session: 63% overnight (Asia 33.5% + London 29.4%)'))
 
-    // Verify fallback response includes backtest benchmarks for the active instrument
+    // Verify fallback response includes backtest benchmarks for the active instrument (NASDAQ)
     assert.ok(resp.includes('Quantitative 1-Year 5-Minute Wyckoff Range Benchmarks (NASDAQ'))
     assert.ok(resp.includes('6,104 qualified 5-minute trading ranges'))
     assert.ok(resp.includes('The Spring Sweep Rate'))
-    assert.ok(resp.includes('17.7%') || resp.includes('17.3%'))
+    assert.ok(resp.includes('17.3%'))
     assert.ok(resp.includes('The UTAD Sweep Rate'))
-    assert.ok(resp.includes('19.1%') || resp.includes('20.1%'))
-    assert.ok(resp.includes('69.0%'))
-    assert.ok(resp.includes('Equities peak at'))
+    assert.ok(resp.includes('20.1%'))
+    assert.ok(resp.includes('64%'))
+    assert.ok(resp.includes('09:00 ET, 08:00 ET, 04:00 ET'))
   })
 
   it('provides active market-specific benchmarks for Gold and Crude with zero hallucinations', () => {
@@ -242,14 +242,15 @@ describe('Leo Wyckoff Accumulation & Distribution Professional Audit Tests', () 
       goldContext
     )
 
-    // Verify Gold-specific benchmarks in prompt and response
+    // Verify Gold-specific benchmarks in prompt and response (exact figures from wyckoffBenchmarks.data.json)
     assert.ok(goldPrompt.includes('Active Instrument Empirical Benchmark (GOLD — GC / MGC)'))
-    assert.ok(goldPrompt.includes('Spring Sweep Rate: 15.6% | LPS Higher-Low Holding Rate: 84.4%'))
+    assert.ok(goldPrompt.includes('Spring (lower-low sweep) rate: 5.7% | LPS (no lower-low sweep) rate: 94.3%'))
     assert.ok(goldResp.includes('Quantitative 1-Year 5-Minute Wyckoff Range Benchmarks (GOLD — GC / MGC)'))
-    assert.ok(goldResp.includes('Only **15.6%**'))
-    assert.ok(goldResp.includes('84.4%'))
-    assert.ok(goldResp.includes('1.74x'))
-    assert.ok(goldResp.includes('70.9%'))
+    assert.ok(goldResp.includes('Only **5.7%**'))
+    assert.ok(goldResp.includes('94.3%'))
+    assert.ok(goldResp.includes('0.68x'))
+    assert.ok(goldResp.includes('54.4%'))
+    assert.ok(goldResp.includes('25.1 hours'))
   })
 
   it('handles cross-market Wyckoff comparison requests with complete comparative matrix', () => {
@@ -281,13 +282,13 @@ describe('Leo Wyckoff Accumulation & Distribution Professional Audit Tests', () 
 
     // Exact prompts emitted by WyckoffRulesPanel quick-ask buttons
     const benchBtn = buildDeskFallbackResponse(
-      [{ role: 'user', content: 'Leo, what are the empirical 1-year 5-minute Wyckoff range backtest benchmarks for NASDAQ? Show me the Spring rate, LPS rate, sweep volume expansion, and peak ignition hours.' }],
+      [{ role: 'user', content: 'Leo, audit 1-year 5-minute Wyckoff range backtest benchmarks on NASDAQ.' }],
       baseContext
     )
     assert.ok(benchBtn.includes('Quantitative 1-Year 5-Minute Wyckoff Range Benchmarks (NASDAQ'))
 
     const compareBtn = buildDeskFallbackResponse(
-      [{ role: 'user', content: 'Leo, compare markets for accumulation and distribution backtests. Show me the cross-market comparative matrix across all 5 desk markets.' }],
+      [{ role: 'user', content: 'Leo, compare markets for accumulation and distribution backtests. Show me the cross-market comparative matrix.' }],
       baseContext
     )
     assert.ok(compareBtn.includes('Cross-Market 1-Year Wyckoff Backtest Comparative Matrix'))
