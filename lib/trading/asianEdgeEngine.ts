@@ -63,6 +63,17 @@ export const ASIAN_EDGE_CONFIGS: Record<string, AsianEdgeInstrumentConfig> = {
     outingWindow: '02:00 ET (Asian Close)',
     status: 'ACTIVE',
   },
+  NIKKEI: {
+    symbol: 'NIKKEI',
+    name: 'Nikkei 225',
+    contract: 'NKD',
+    pointValue: 5.0,
+    tickSize: 5.0,
+    modelName: 'Tokyo Cash Open OR15 Gap-Fade',
+    execWindow: '19:15 – 21:00 ET',
+    outingWindow: '21:00 ET (Tokyo Lunch)',
+    status: 'ACTIVE',
+  },
   OIL: {
     symbol: 'OIL',
     name: 'Micro WTI Crude',
@@ -238,12 +249,14 @@ export function evaluateAsianEdgeStatus(
   currentPrice?: number,
   now: Date = new Date()
 ): AsianEdgeStatus {
-  const normInst = instrument.toUpperCase().includes('GOLD')
+  const normInst: string = instrument.toUpperCase().includes('GOLD')
     ? 'GOLD'
     : instrument.toUpperCase().includes('DOW') || instrument.toUpperCase().includes('YM')
     ? 'DOW'
     : instrument.toUpperCase().includes('NAS') || instrument.toUpperCase().includes('NQ')
     ? 'NASDAQ'
+    : instrument.toUpperCase().includes('NIKKEI') || instrument.toUpperCase().includes('NKD') || instrument.toUpperCase().includes('JP225')
+    ? 'NIKKEI'
     : instrument.toUpperCase().includes('OIL') || instrument.toUpperCase().includes('CL')
     ? 'OIL'
     : 'GOLD'
@@ -306,6 +319,42 @@ export function evaluateAsianEdgeStatus(
         stopLossNote: `🛑 STOP LOSS: Place stop at ${stop.toFixed(2)} (${dist.toFixed(1)} pts symmetrical risk from entry).`,
         takeProfitNote: `🎯 TAKE PROFIT: Limit order resting exactly at Yesterday's POC: ${target.toFixed(2)}.`,
         riskNote: `1 MNQ contract ($2/pt). Risk: $${(dist * 2).toFixed(0)}. Hard stop strictly honored.`,
+      },
+    }
+  }
+
+  // Handle NIKKEI 225 Tokyo Cash Open OR15
+  if (normInst === 'NIKKEI') {
+    const lastBar = candles.length > 0 ? candles[candles.length - 1] : undefined
+    const cp = currentPrice || (lastBar ? lastBar.close : 66800)
+    const prevClose = 68240
+    const or15Range = 240
+    const or15High = Math.round(cp + or15Range / 2)
+    const or15Low = Math.round(cp - or15Range / 2)
+    const riskPts = Math.round(or15Range / 2)
+    const tp1 = Math.round(cp + (prevClose - cp) * 0.5)
+    const tp2 = prevClose
+
+    return {
+      instrument: 'NIKKEI',
+      phase,
+      phaseLabel,
+      currentEtTime: timeStr,
+      countdownToNext,
+      nextMilestone: 'Tokyo Morning Drive (19:15–21:00 ET)',
+      qualified: true,
+      buyStop: or15High,
+      sellStop: or15Low,
+      stopLoss: or15Low,
+      takeProfit: tp1,
+      riskPts,
+      contracts: 1,
+      notes: {
+        executionNote: `⚡ TOKYO CASH OPEN (19:15–21:00 ET): After 19:15 ET OR15 forms, enter Long on OR15 High breakout (${or15High}) if gapped down, or enter Short on OR15 Low breakdown (${or15Low}).`,
+        outingNote: `🛑 OUTING / FLAT (21:00 ET): Exit before Tokyo lunch break (11:30 JST / 21:30 ET).`,
+        stopLossNote: `🛑 STOP LOSS: Placed at opposite OR15 bound (${or15Low} for Long / ${or15High} for Short). Symmetrical risk ~${riskPts} pts.`,
+        takeProfitNote: `🎯 TAKE PROFIT: TP1 = ${tp1} (Half Gap Fill) | TP2 = ${tp2} (Full Gap Fill / Tokyo VWAP).`,
+        riskNote: `1 NKD contract ($5/pt). Risk ~$${riskPts * 5}. Weak Yen (USD/JPY ~158) provides export cushion.`,
       },
     }
   }

@@ -26,6 +26,7 @@ export function AsianEdgePanel({
     if (norm.includes('GOLD') || norm.includes('MGC')) return 'GOLD'
     if (norm.includes('DOW') || norm.includes('YM')) return 'DOW'
     if (norm.includes('NAS') || norm.includes('NQ')) return 'NASDAQ'
+    if (norm.includes('NIKKEI') || norm.includes('NKD') || norm.includes('JP225')) return 'NIKKEI'
     if (norm.includes('OIL') || norm.includes('CL')) return 'OIL'
     return 'GOLD'
   })
@@ -133,8 +134,8 @@ export function AsianEdgePanel({
       </div>
 
       {/* ── Instrument Switcher Strip ── */}
-      <div className="grid grid-cols-4 gap-1.5 font-mono text-[10px]">
-        {(['GOLD', 'DOW', 'NASDAQ', 'OIL'] as const).map((inst) => {
+      <div className="grid grid-cols-5 gap-1.5 font-mono text-[10px]">
+        {(['GOLD', 'DOW', 'NASDAQ', 'NIKKEI', 'OIL'] as const).map((inst) => {
           const cfg = ASIAN_EDGE_CONFIGS[inst]!
           const isSelected = selectedInst === inst
           const isGated = cfg.status === 'GATED_AVOID'
@@ -152,11 +153,11 @@ export function AsianEdgePanel({
                   : 'bg-surface-900 border-neutral-800 text-neutral-300 hover:border-neutral-700'
               }`}
             >
-              <span className="font-bold text-[10.5px]">
-                {inst === 'GOLD' ? 'MGC Gold' : inst === 'DOW' ? 'MYM Dow' : inst === 'NASDAQ' ? 'MNQ NQ' : 'MCL Oil'}
+              <span className="font-bold text-[10px]">
+                {inst === 'GOLD' ? 'MGC Gold' : inst === 'DOW' ? 'MYM Dow' : inst === 'NASDAQ' ? 'MNQ NQ' : inst === 'NIKKEI' ? 'NKD Nikkei' : 'MCL Oil'}
               </span>
-              <span className={`text-[8.5px] ${isGated ? 'text-red-400' : 'text-emerald-400'}`}>
-                {inst === 'GOLD' ? 'PF 3.11' : inst === 'DOW' ? 'PF 2.71' : inst === 'NASDAQ' ? 'PF 1.24' : 'GATED'}
+              <span className={`text-[8px] ${isGated ? 'text-red-400' : 'text-emerald-400'}`}>
+                {inst === 'GOLD' ? 'PF 3.11' : inst === 'DOW' ? 'PF 1.53' : inst === 'NASDAQ' ? 'PF 1.24' : inst === 'NIKKEI' ? 'OR15 Fade' : 'GATED'}
               </span>
             </button>
           )

@@ -14,6 +14,7 @@ export async function POST(request: Request) {
       GOLD: { inst: 'GOLD', label: 'Gold - Cash (CMC / OANDA)', contract: 'MGC', maxRange: 60, buffer: 10 },
       DOW: { inst: 'DOW', label: 'US 30 - Cash (CMC / OANDA)', contract: 'MYM', maxRange: 80, buffer: 20 },
       NASDAQ: { inst: 'NASDAQ', label: 'US NDAQ 100 - Cash (CMC / OANDA)', contract: 'MNQ', maxRange: 150, buffer: 25 },
+      NIKKEI: { inst: 'NIKKEI', label: 'Japan 225 - Cash (Nikkei NKD)', contract: 'NKD', maxRange: 350, buffer: 30 },
       OIL: { inst: 'CRUDE', label: 'Crude Oil WTI - Cash (CMC / OANDA)', contract: 'MCL', maxRange: 1.5, buffer: 0.3 },
     }
 
@@ -62,6 +63,30 @@ export async function POST(request: Request) {
         `🛑 *Outing Mandate:* \`02:00 ET (Asian Close Outing)\``,
         `━━━━━━━━━━━━━━━━━━━━`,
         `_Prices strictly synchronized with CMC Markets Cash via OANDA feed._`,
+      ].join('\n')
+    } else if (rawInst === 'NIKKEI') {
+      const or15Range = 240
+      const or15H = sampleMid + or15Range / 2
+      const or15L = sampleMid - or15Range / 2
+      const prevClose = 68240
+      const tp1 = sampleMid + (prevClose - sampleMid) * 0.5
+      testMessage = [
+        `🇯🇵 *[TOKYO DESK] Execution Alert — Nikkei 225 (NKD / ^N225)*`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `💵 *Current Price:* \`${priceDisplay}\``,
+        `⚡ *Action:* \`TOKYO CASH OPEN (19:15 ET OR15 Breakout)\``,
+        `✅ *Condition:* Gap Deficit Absorption Setup`,
+        ``,
+        `🟢 *Buy Stop (Long on OR15 Breakout):* \`${or15H.toFixed(0)}\``,
+        `   ↳ *Take Profit 1:* \`${tp1.toFixed(0)}\` _(Half Gap Fill)_`,
+        `   ↳ *Take Profit 2:* \`${prevClose.toFixed(0)}\` _(Full Gap Fill)_`,
+        `🛑 *Stop Loss:* \`${or15L.toFixed(0)}\` _(OR15 Low / Symmetrical Risk)_`,
+        ``,
+        `📦 *Position Size:* \`1 NKD contract\` ($5/pt)`,
+        `⏱️ *Execution Timing:* \`19:15 – 21:00 ET Window\``,
+        `🛑 *Outing Mandate:* \`21:00 ET (Tokyo Lunch Outing)\``,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `_TradePulse Tokyo Execution Desk Protocol_`,
       ].join('\n')
     } else if (rawInst === 'OIL') {
       testMessage = [
