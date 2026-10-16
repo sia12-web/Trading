@@ -1101,6 +1101,26 @@ export function evaluateWyckoffMultiTimeframe(
     ? `1D ${daily.detectedRange.classification} (${daily.detectedRange.provisionalPhase}) [${daily.detectedRange.rangeLow.toFixed(2)} – ${daily.detectedRange.rangeHigh.toFixed(2)}], trend ${daily.swingStructure.structuralTrend}.`
     : `1D structure: ${daily.swingStructure.structuralTrend}.`
 
+  // 1b. Analyze 4-Hour (4H - Session Scale: Asia / London / New York)
+  const h4Candles = resampleWyckoffCandles(
+    m30Candles.length >= 8 ? m30Candles : m5Candles,
+    '4H'
+  )
+  const h4 = analyzeWyckoffSingleTimeframe({
+    candles: h4Candles,
+    instrumentRaw: spec.instrument,
+    timeframe: '4H',
+    dataSource: input.dataSource,
+    nowUnixSec: input.nowUnixSec,
+    htfSummary: dailySummary,
+    htfAligned: true,
+    externalObstacles: input.externalObstacles,
+  })
+
+  const h4Summary = h4.detectedRange
+    ? `4H ${h4.detectedRange.classification} (${h4.detectedRange.provisionalPhase}) [${h4.detectedRange.rangeLow.toFixed(2)} – ${h4.detectedRange.rangeHigh.toFixed(2)}], event ${h4.eventState.candidateEvent} (${h4.eventState.lifecycleStage}).`
+    : `4H structure: ${h4.swingStructure.structuralTrend}.`
+
   // 2. Analyze 30-Minute (30m)
   const m30 = analyzeWyckoffSingleTimeframe({
     candles: m30Candles,
@@ -1254,10 +1274,12 @@ export function evaluateWyckoffMultiTimeframe(
     ).toISOString(),
     currentPrice,
     daily,
+    h4,
     m30,
     m5,
     hierarchySynthesis: {
       dailyLandscape: dailySummary,
+      intermediate4hAuction: h4Summary,
       intermediate30mAuction: m30Summary,
       tactical5mConfirmation: `${m5.eventState.eventSummary} (Status: ${m5.monitoringStatus})`,
       alignmentStatus,

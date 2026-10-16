@@ -48,6 +48,7 @@ const RES_MAP: Record<string, string> = {
   '30m': '30',
   '1H': '60',
   '4H': '240',
+  '4h': '240',
   '1D': 'D',
   'D': 'D',
 }

@@ -26,7 +26,7 @@ import type {
 export interface PersistedWyckoffMarketState {
   instrument: WyckoffInstrument
   updatedAt: string
-  rangesByTimeframe: Partial<Record<'1D' | '30m' | '5m', WyckoffDetectedRange>>
+  rangesByTimeframe: Partial<Record<'1D' | '4H' | '30m' | '5m', WyckoffDetectedRange>>
   lifecycleHistory: WyckoffLifecycleTransition[]
   emittedAlertFingerprints: string[]
   recentAlerts: WyckoffAuctionAlert[]
@@ -382,6 +382,9 @@ export function generateAndPersistWyckoffReport(
   if (baseReport.daily.detectedRange) {
     existingState.rangesByTimeframe['1D'] = baseReport.daily.detectedRange
   }
+  if (baseReport.h4?.detectedRange) {
+    existingState.rangesByTimeframe['4H'] = baseReport.h4.detectedRange
+  }
   if (baseReport.m30.detectedRange) {
     existingState.rangesByTimeframe['30m'] = baseReport.m30.detectedRange
   }
@@ -391,6 +394,7 @@ export function generateAndPersistWyckoffReport(
 
   const newTransitions = [
     ...baseReport.daily.eventState.transitions,
+    ...(baseReport.h4 ? baseReport.h4.eventState.transitions : []),
     ...baseReport.m30.eventState.transitions,
     ...baseReport.m5.eventState.transitions,
   ]
@@ -454,8 +458,9 @@ export function formatWyckoffMultiTimeframeBriefForLeo(
     ...(report.hierarchySynthesis.explicitConflicts.length > 0
       ? [`HTF Conflict Warnings: ${report.hierarchySynthesis.explicitConflicts.join(' | ')}`]
       : []),
-    `Multi-Timeframe Breakdown (1D -> 30m -> 5m):`,
+    `Multi-Timeframe Breakdown (1D -> 4H -> 30m -> 5m):`,
     formatTfLine(report.daily),
+    ...(report.h4 ? [formatTfLine(report.h4)] : []),
     formatTfLine(report.m30),
     formatTfLine(report.m5),
     `5m Wyckoffian Mindset Audit (Effort vs Result):`,

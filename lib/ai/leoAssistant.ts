@@ -28,6 +28,7 @@ import {
 } from '../trading/wyckoff'
 import {
   analyzeAndBacktestBox,
+  formatBoxAnalysisForLeo,
   type BoxMarket,
 } from '../trading/boxRangeBacktester'
 
@@ -310,9 +311,13 @@ export interface LeoChatContext {
    */
   macroCatalystReaction?: string | null
   /**
-   * Optional pre-computed Wyckoff Multi-Timeframe Auction Intelligence report (1D, 30m, 5m).
+   * Optional pre-computed Wyckoff Multi-Timeframe Auction Intelligence report (1D, 4H, 30m, 5m).
    */
   wyckoffMultiTimeframeReport?: WyckoffMultiTimeframeReport | null
+  /**
+   * Optional pre-computed deterministic Box Regime & Multi-Timeframe Telemetry Analysis (1D, 4H, 15m, 5m, 1m).
+   */
+  boxAnalysis?: any
 }
 
 export interface LeoMessage {
@@ -969,6 +974,32 @@ export function buildLeoSystemPrompt(ctx: LeoChatContext): string {
     ? `\n${formatWyckoffMultiTimeframeBriefForLeo(resolvedWyckoffReport)}\n`
     : ''
 
+  let resolvedBoxAnalysis = ctx.boxAnalysis ?? null
+  if (!resolvedBoxAnalysis) {
+    try {
+      let bMarket: BoxMarket = 'GOLD'
+      const norm = (ctx.instrument || '').toUpperCase()
+      if (norm.includes('CL') || norm.includes('CRUDE') || norm.includes('OIL')) bMarket = 'CRUDE'
+      else if (norm.includes('YM') || norm.includes('DOW')) bMarket = 'DOW'
+      else if (norm.includes('NQ') || norm.includes('NAS')) bMarket = 'NASDAQ'
+      else if (norm.includes('NKD') || norm.includes('NIKKEI')) bMarket = 'NIKKEI'
+      else bMarket = 'GOLD'
+
+      resolvedBoxAnalysis = analyzeAndBacktestBox({
+        market: bMarket,
+        timeframe: '1D',
+        startTime: 1769385600,
+        endTime: Math.floor(Date.now() / 1000),
+      })
+    } catch {
+      // non-fatal
+    }
+  }
+
+  const boxAnalysisBlock = resolvedBoxAnalysis
+    ? `\n${formatBoxAnalysisForLeo(resolvedBoxAnalysis)}\n`
+    : ''
+
   return `You are Leo, a disciplined market-structure auditor for the ${ctx.instrument} desk.
 You are not a signal generator. You challenge every potential setup. You do not place orders.
 
@@ -985,7 +1016,8 @@ You must NEVER emit any order execution directive or propose placing broker trad
 Execution doctrine is the 22-rule block at the end of this prompt. Nothing in this prompt adds a fifth setup, a point score, a fixed-point target, or a story about who is in the market.
 
 ${deskBriefBlock}
-${wyckoffEngineBlock}${ctx.macroCatalystReaction ? `\n[VERIFIED MACRO CATALYST & DESK MARKET REACTION]\n${ctx.macroCatalystReaction}\n` : ''}
+${wyckoffEngineBlock}
+${boxAnalysisBlock}${ctx.macroCatalystReaction ? `\n[VERIFIED MACRO CATALYST & DESK MARKET REACTION]\n${ctx.macroCatalystReaction}\n` : ''}
 
 ZERO HALLUCINATION — PRIORITY 1:
 Every numerical price, level, POC, VWAP, volume, delta, and gauge you cite must come from verified telemetry in this prompt.

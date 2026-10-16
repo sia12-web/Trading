@@ -651,11 +651,11 @@ function makeDeskChartFormatters(_instrument: Instrument, timeframe: DeskTimefra
 
 type Instrument = 'DOW' | 'NASDAQ' | 'GOLD' | 'CRUDE' | 'SILVER' | 'NIKKEI'
 
-export type DeskTimeframe = '1m' | '5m' | '30m' | '1D'
-export const DESK_TIMEFRAMES: DeskTimeframe[] = ['1m', '5m', '30m', '1D']
+export type DeskTimeframe = '1m' | '5m' | '30m' | '4h' | '1D'
+export const DESK_TIMEFRAMES: DeskTimeframe[] = ['1m', '5m', '30m', '4h', '1D']
 
 export function barSecondsForTimeframe(tf: DeskTimeframe): number {
-  return tf === '1m' ? 60 : tf === '30m' ? 1800 : tf === '1D' ? 86400 : 300
+  return tf === '1m' ? 60 : tf === '5m' ? 300 : tf === '30m' ? 1800 : tf === '4h' ? 14400 : 86400
 }
 
 /** Desk charts default to 5m — 1m and 30m available on demand. */
@@ -10774,7 +10774,14 @@ export function TradingChart({
 
     const refreshCandles = async () => {
       try {
-        const days = timeframe === '1D' ? 730 : timeframe === '1m' ? 3 : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
+        const days =
+          timeframe === '1D'
+            ? 730
+            : timeframe === '4h'
+            ? 120
+            : timeframe === '1m'
+            ? 3
+            : AVWAP_CANDLE_FETCH_CALENDAR_DAYS
         const res = await fetch(
           `/api/trading/candles?instrument=${instrument}&timeframe=${timeframe}&days=${days}&quote=0&_=${Date.now()}`,
           { cache: 'no-store' }
@@ -13850,7 +13857,7 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
 
             {/* Timeframe selector */}
             <div className="flex items-center rounded-lg border border-surface-700 bg-surface-900/80 p-0.5">
-              {(['1m', '5m', '30m', '1D'] as const).map((tf) => (
+              {(['1m', '5m', '30m', '4h', '1D'] as const).map((tf) => (
                 <button
                   key={tf}
                   type="button"

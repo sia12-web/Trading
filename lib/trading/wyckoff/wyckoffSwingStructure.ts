@@ -221,7 +221,13 @@ export function resampleWyckoffCandles(
   if (candles.length === 0) return []
 
   const bucketSec =
-    targetTimeframe === '1D' ? 86400 : targetTimeframe === '30m' ? 1800 : 300
+    targetTimeframe === '1D'
+      ? 86400
+      : targetTimeframe === '4H'
+      ? 14400
+      : targetTimeframe === '30m'
+      ? 1800
+      : 300
 
   // Check if already at or above bucket spacing
   if (candles.length >= 2) {
@@ -296,12 +302,13 @@ export function computeWyckoffSwingStructure(
 ): WyckoffSwingStructure {
   const isSecondArgTf =
     instrumentOrTimeframe === '1D' ||
+    instrumentOrTimeframe === '4H' ||
     instrumentOrTimeframe === '30m' ||
     instrumentOrTimeframe === '5m'
   const timeframe: WyckoffTimeframe = isSecondArgTf
     ? (instrumentOrTimeframe as WyckoffTimeframe)
     : typeof timeframeOrOptions === 'string'
-      ? timeframeOrOptions
+      ? (timeframeOrOptions as WyckoffTimeframe)
       : '5m'
   const options = isSecondArgTf
     ? typeof timeframeOrOptions === 'object'
@@ -310,8 +317,8 @@ export function computeWyckoffSwingStructure(
     : maybeOptions
 
   const { candles, rolloverAdjusted } = adjustCandlesForContractRollover(rawCandles)
-  const leftBars = options?.leftBars ?? (timeframe === '1D' ? 2 : timeframe === '30m' ? 2 : 3)
-  const rightBars = options?.rightBars ?? (timeframe === '1D' ? 2 : timeframe === '30m' ? 2 : 2)
+  const leftBars = options?.leftBars ?? (timeframe === '1D' || timeframe === '4H' ? 2 : timeframe === '30m' ? 2 : 3)
+  const rightBars = options?.rightBars ?? (timeframe === '1D' || timeframe === '4H' ? 2 : timeframe === '30m' ? 2 : 2)
   const eqTolFrac = options?.equalToleranceAtrFrac ?? 0.15
 
   if (candles.length < leftBars + rightBars + 1) {

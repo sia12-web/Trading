@@ -236,6 +236,8 @@ export function LeoAssistantPanel({
   const [inputPrompt, setInputPrompt] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [attachedPoints, setAttachedPoints] = useState<LeoDataPoint[]>([])
+  const [syncedBoxAnalysis, setSyncedBoxAnalysis] = useState<any>(null)
+  const [syncedWyckoffReport, setSyncedWyckoffReport] = useState<any>(null)
   const [armedRules, setArmedRulesState] = useState<ArmedDeskRule[]>(() => {
     if (typeof window === 'undefined') return []
     try {
@@ -1720,7 +1722,11 @@ export function LeoAssistantPanel({
   }, [])
 
   // Send message to Leo via streaming API
-  const handleSendMessage = async (textToSend?: string, pointsToSend?: LeoDataPoint[]) => {
+  const handleSendMessage = async (
+    textToSend?: string,
+    pointsToSend?: LeoDataPoint[],
+    extra?: { boxAnalysis?: any; wyckoffReport?: any }
+  ) => {
     if (isSendingRef.current) return
     isSendingRef.current = true
 
@@ -1806,6 +1812,9 @@ export function LeoAssistantPanel({
           chartContext: {
             ...context,
             selectedDataPoints: points,
+            boxAnalysis: extra?.boxAnalysis ?? syncedBoxAnalysis ?? context.boxAnalysis,
+            wyckoffMultiTimeframeReport:
+              extra?.wyckoffReport ?? syncedWyckoffReport ?? context.wyckoffMultiTimeframeReport,
           },
         }),
       })
@@ -3061,9 +3070,15 @@ export function LeoAssistantPanel({
         <WyckoffRulesPanel
           instrument={context.instrument}
           initialSubTab={activeTab === 'WYCKOFF_ENGINE' ? 'MTF_ENGINE' : 'RULES_22'}
-          onAskLeo={(prompt: string) => {
+          onSyncData={(data) => {
+            if (data.boxAnalysis) setSyncedBoxAnalysis(data.boxAnalysis)
+            if (data.wyckoffReport) setSyncedWyckoffReport(data.wyckoffReport)
+          }}
+          onAskLeo={(prompt: string, extra?: { boxAnalysis?: any; wyckoffReport?: any }) => {
             setActiveTab('CHAT')
-            handleSendMessage(prompt)
+            if (extra?.boxAnalysis) setSyncedBoxAnalysis(extra.boxAnalysis)
+            if (extra?.wyckoffReport) setSyncedWyckoffReport(extra.wyckoffReport)
+            handleSendMessage(prompt, undefined, extra)
           }}
         />
       )}

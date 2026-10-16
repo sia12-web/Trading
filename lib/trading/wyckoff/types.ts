@@ -9,7 +9,7 @@
 
 import type { CanonicalMarketId } from '@/lib/ai/canonicalMarkets'
 
-export type WyckoffTimeframe = '1D' | '30m' | '5m'
+export type WyckoffTimeframe = '1D' | '4H' | '30m' | '5m'
 
 export type WyckoffInstrument = 'NASDAQ' | 'DOW' | 'GOLD' | 'CRUDE' | 'NIKKEI'
 
@@ -385,10 +385,12 @@ export interface WyckoffMultiTimeframeReport {
   evaluatedAt: string
   currentPrice: number | null
   daily: WyckoffTimeframeAnalysis
+  h4?: WyckoffTimeframeAnalysis
   m30: WyckoffTimeframeAnalysis
   m5: WyckoffTimeframeAnalysis
   hierarchySynthesis: {
     dailyLandscape: string
+    intermediate4hAuction?: string
     intermediate30mAuction: string
     tactical5mConfirmation: string
     alignmentStatus:

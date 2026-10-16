@@ -16,6 +16,10 @@ import type {
 } from '@/lib/trading/wyckoff'
 import { saveLongTermMemory } from '@/lib/trading/leoLongTermMemory'
 import { addRule } from '@/lib/trading/leoRules'
+import type {
+  BoxRegimeAnalysis,
+  BoxSubLeg,
+} from '@/lib/trading/boxRangeBacktester'
 
 export type WyckoffSubTab =
   | 'MTF_ENGINE'
@@ -29,7 +33,8 @@ export type WyckoffSubTab =
 export interface WyckoffRulesPanelProps {
   instrument: string
   initialSubTab?: WyckoffSubTab
-  onAskLeo: (prompt: string) => void
+  onAskLeo: (prompt: string, extra?: { boxAnalysis?: any; wyckoffReport?: any }) => void
+  onSyncData?: (data: { boxAnalysis?: any; wyckoffReport?: any }) => void
 }
 
 interface BusDeskEntry {
@@ -122,11 +127,34 @@ function classificationBadgeClass(classification: string | undefined): string {
   return 'bg-blue-500/20 text-blue-300 border-blue-500/50'
 }
 
-function conditionBadgeClass(cond: string | undefined): string {
-  if (!cond) return 'bg-surface-800 text-gray-300 border-surface-700'
-  if (cond.includes('BULLISH')) return 'bg-emerald-950/80 text-emerald-300 border-emerald-500/50'
-  if (cond.includes('BEARISH')) return 'bg-rose-950/80 text-rose-300 border-rose-500/50'
-  return 'bg-surface-900 text-gray-300 border-surface-800'
+function formatVolumeNum(v: number | undefined): string {
+  if (v == null || isNaN(v)) return '0'
+  const abs = Math.abs(v)
+  if (abs >= 1_000_000) return (v / 1_000_000).toFixed(1) + 'M'
+  if (abs >= 1_000) return (v / 1_000).toFixed(1) + 'k'
+  return Math.round(v).toLocaleString()
+}
+
+function cvdBiasBadgeClass(bias: string | undefined): string {
+  if (!bias) return 'bg-surface-800 text-gray-300 border-surface-700'
+  if (bias.includes('BULLISH')) return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+  if (bias.includes('BEARISH')) return 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+  return 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+}
+
+function subLegTypeBadgeClass(type: BoxSubLeg['type']): string {
+  switch (type) {
+    case 'ACCUMULATION':
+      return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
+    case 'MARKUP':
+      return 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
+    case 'DISTRIBUTION':
+      return 'bg-amber-500/20 text-amber-300 border-amber-500/50'
+    case 'MARKDOWN':
+      return 'bg-rose-500/20 text-rose-300 border-rose-500/50'
+    default:
+      return 'bg-surface-800 text-gray-300 border-surface-700'
+  }
 }
 
 const LIFECYCLE_STEPS = [
@@ -143,6 +171,7 @@ export function WyckoffRulesPanel({
   instrument,
   initialSubTab = 'MTF_ENGINE',
   onAskLeo,
+  onSyncData,
 }: WyckoffRulesPanelProps) {
   const activeBenchmark = getWyckoffBenchmark(instrument)
   const [activeSubTab, setActiveSubTab] = useState<WyckoffSubTab>(initialSubTab)
@@ -156,8 +185,20 @@ export function WyckoffRulesPanel({
   const [busData, setBusData] = useState<BusApiPayload | null>(null)
   const [wyckoffReport, setWyckoffReport] = useState<WyckoffMultiTimeframeReport | null>(null)
   const [loadingWyckoff, setLoadingWyckoff] = useState(false)
+  const [boxAnalysis, setBoxAnalysis] = useState<BoxRegimeAnalysis | null>(null)
+  const [loadingBoxAnalysis, setLoadingBoxAnalysis] = useState(false)
   const [syncingBus, setSyncingBus] = useState(false)
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null)
+
+  const askLeoWithContext = (prompt: string) => {
+    onAskLeo(prompt, { boxAnalysis, wyckoffReport })
+  }
+
+  useEffect(() => {
+    if (onSyncData && (boxAnalysis || wyckoffReport)) {
+      onSyncData({ boxAnalysis, wyckoffReport })
+    }
+  }, [boxAnalysis, wyckoffReport, onSyncData])
 
   useEffect(() => {
     if (initialSubTab) {
@@ -165,15 +206,9 @@ export function WyckoffRulesPanel({
     }
   }, [initialSubTab])
 
-  useEffect(() => {
-    const mapped = (getWyckoffBenchmark(instrument).market as WyckoffBenchmarkMarket) || 'NASDAQ'
-    setSelectedMarketTab(mapped)
-    setSelectedEngineMarket(instrument)
-  }, [instrument])
-
-  const fetchBusStatus = async () => {
+  const fetchBusStatus = async (inst = selectedEngineMarket) => {
     try {
-      const res = await fetch(`/api/trading/market-intelligence-bus?instrument=${encodeURIComponent(selectedEngineMarket)}`)
+      const res = await fetch(`/api/trading/market-intelligence-bus?instrument=${encodeURIComponent(inst)}`)
       if (!res.ok) return
       const json = (await res.json()) as BusApiPayload
       if (json?.success) setBusData(json)
@@ -198,17 +233,41 @@ export function WyckoffRulesPanel({
     }
   }
 
-  useEffect(() => {
-    fetchBusStatus()
-    fetchWyckoffEngine(selectedEngineMarket)
-  }, [selectedEngineMarket])
-
-  const handleSwitchMarket = (mktKey: string) => {
-    setSelectedEngineMarket(mktKey)
-    const benchmark = getWyckoffBenchmark(mktKey)
-    if (benchmark && benchmark.market) {
-      setSelectedMarketTab(benchmark.market as WyckoffBenchmarkMarket)
+  const fetchBoxAnalysis = async (marketToFetch = activeBenchmark.market) => {
+    setLoadingBoxAnalysis(true)
+    try {
+      const res = await fetch('/api/trading/edges/backtest-box', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ market: marketToFetch, timeframe: '1D' }),
+      })
+      if (!res.ok) return
+      const json = await res.json()
+      if (json?.success && json.analysis) {
+        setBoxAnalysis(json.analysis as BoxRegimeAnalysis)
+      }
+    } catch {
+      // soft-fail
+    } finally {
+      setLoadingBoxAnalysis(false)
     }
+  }
+
+  // Strict chart-market lock: when instrument changes, strictly lock and fetch everything
+  useEffect(() => {
+    const mapped = (getWyckoffBenchmark(instrument).market as WyckoffBenchmarkMarket) || 'NASDAQ'
+    setSelectedMarketTab(mapped)
+    setSelectedEngineMarket(instrument)
+    fetchBusStatus(instrument)
+    fetchWyckoffEngine(instrument)
+    fetchBoxAnalysis(mapped)
+  }, [instrument])
+
+  const handleRefreshAll = () => {
+    const mapped = (getWyckoffBenchmark(instrument).market as WyckoffBenchmarkMarket) || 'NASDAQ'
+    fetchWyckoffEngine(selectedEngineMarket)
+    fetchBoxAnalysis(mapped)
+    fetchBusStatus(selectedEngineMarket)
   }
 
   const handleSaveRangeToNotes = (tf: WyckoffTimeframeAnalysis) => {
@@ -299,7 +358,7 @@ export function WyckoffRulesPanel({
 
   return (
     <div className="flex-1 overflow-y-auto p-3 space-y-3 font-sans text-xs flex flex-col min-h-0 select-text">
-      {/* ── Top Header Banner with 5-Market Switcher ── */}
+      {/* ── Top Header Banner with Active Market Lock ── */}
       <div className="p-3 rounded-xl bg-gradient-to-r from-emerald-950/80 via-surface-900 to-cyan-950/80 border border-emerald-500/50 shadow-md space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -308,57 +367,48 @@ export function WyckoffRulesPanel({
               <h3 className="text-xs font-mono font-bold text-white tracking-wide flex items-center gap-2">
                 Wyckoff Multi-Timeframe Auction Intelligence Engine
                 <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 text-[9px] border border-emerald-500/40">
-                  1D → 30m → 5m
+                  1D → 4H → 15m → 5m → 1m
                 </span>
               </h3>
               <p className="text-[10px] text-emerald-300/80 font-mono">
-                Causal Range Discovery · Effort vs. Result · CVD Absorption · Event Lifecycles · Adversarial Auditing
+                Causal Range Discovery · CVD Absorption · Downtrend Invalidation · 4H Sub-Legs · Zero Hallucination
               </p>
             </div>
           </div>
           <div className="flex items-center gap-1.5">
             <button
               type="button"
-              onClick={() => fetchWyckoffEngine(selectedEngineMarket)}
-              disabled={loadingWyckoff}
+              onClick={handleRefreshAll}
+              disabled={loadingWyckoff || loadingBoxAnalysis}
               className="px-2.5 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/50 text-emerald-200 font-mono text-[9.5px] font-bold transition flex items-center gap-1 cursor-pointer"
             >
-              <span>{loadingWyckoff ? '⟳' : '🔄'}</span>
-              <span>{loadingWyckoff ? 'Scanning…' : 'Refresh'}</span>
+              <span>{loadingWyckoff || loadingBoxAnalysis ? '⟳' : '🔄'}</span>
+              <span>{loadingWyckoff || loadingBoxAnalysis ? 'Scanning…' : 'Refresh'}</span>
             </button>
           </div>
         </div>
 
-        {/* 5-Market Quick Switcher Pills */}
-        <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-surface-800/80 font-mono text-[10px]">
-          <span className="text-gray-400 font-semibold text-[9.5px]">Market:</span>
-          {MARKET_TABS.map((t) => {
-            const isSelected = selectedEngineMarket === t.key || (t.key === 'MATRIX' && selectedMarketTab === 'MATRIX')
-            return (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => {
-                  if (t.key === 'MATRIX') {
-                    setActiveSubTab('BACKTEST_MATRIX')
-                    setSelectedMarketTab('MATRIX')
-                  } else {
-                    handleSwitchMarket(t.key)
-                  }
-                }}
-                className={`px-2 py-0.8 rounded-md border font-bold transition flex items-center gap-1 cursor-pointer ${
-                  isSelected
-                    ? 'bg-emerald-500/30 border-emerald-400 text-white shadow-sm'
-                    : 'bg-surface-950/80 hover:bg-surface-800 border-surface-800 text-gray-400 hover:text-gray-200'
-                }`}
-              >
-                <span>{t.label}</span>
-                {t.key !== 'MATRIX' && wyckoffReport?.instrument === t.key && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                )}
-              </button>
-            )
-          })}
+        {/* Active Chart Market Lock Banner (No Foreign Market Tabs) */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-surface-800/80 font-mono text-[10px]">
+          <div className="flex items-center gap-2">
+            <span className="text-gray-400 font-semibold text-[9.5px]">Chart Instrument:</span>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-950/80 border border-emerald-500/50 text-white font-bold shadow-sm">
+              <span className="text-sm">
+                {activeBenchmark.market === 'GOLD' ? '🥇' : activeBenchmark.market === 'CRUDE' ? '🛢️' : activeBenchmark.market === 'DOW' ? '📈' : activeBenchmark.market === 'NIKKEI' ? '🗾' : '💻'}
+              </span>
+              <span className="text-emerald-300 font-mono text-xs">{activeBenchmark.market}</span>
+              <span className="text-gray-400 text-[10px]">({activeBenchmark.contractLabel})</span>
+              <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 text-[8.5px] border border-emerald-500/40">
+                🔒 Locked to Chart
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-[9px] text-gray-400">
+            <span className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-emerald-300 font-mono">1D · 4H · 15m · 5m · 1m Synchronized</span>
+            </span>
+          </div>
         </div>
       </div>
 
@@ -388,7 +438,7 @@ export function WyckoffRulesPanel({
           }`}
         >
           <span>🧭</span>
-          <span>1D · 30m · 5m Auction Engine</span>
+          <span>Wyckoff MTF Auction Engine (1D · 4H · 15m · 5m · 1m)</span>
         </button>
 
         <button
@@ -475,353 +525,588 @@ export function WyckoffRulesPanel({
           ────────────────────────────────────────────────────────────────────────── */}
       {activeSubTab === 'MTF_ENGINE' && (
         <div className="space-y-3 font-mono">
-          {wyckoffReport ? (
+          {loadingBoxAnalysis && !boxAnalysis ? (
+            <div className="p-8 rounded-xl bg-surface-950/80 border border-surface-800 text-center space-y-2">
+              <span className="text-2xl animate-spin inline-block">🧭</span>
+              <div className="text-emerald-300 font-bold text-xs">
+                Analyzing Multi-Timeframe Telemetry for {activeBenchmark.market} (1D · 4H · 15m · 5m · 1m)…
+              </div>
+              <p className="text-gray-500 text-[10px]">
+                Computing True ATR, CVD absorption, trend invalidation, and Wyckoff micro-ranges…
+              </p>
+            </div>
+          ) : boxAnalysis ? (
             <>
-              {/* Hierarchy Synthesis Header Card */}
-              <div className="p-3 rounded-xl bg-gradient-to-r from-surface-950 via-surface-900 to-surface-950 border border-emerald-500/40 shadow-sm space-y-2">
+              {/* 1. MACRO TREND DEFINITION & STRUCTURAL INVALIDATION (DAILY CHART) */}
+              <div className="p-3 rounded-xl bg-gradient-to-r from-surface-950 via-surface-900 to-surface-950 border border-emerald-500/40 shadow-sm space-y-2.5">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-surface-800 pb-2">
                   <div className="flex items-center gap-2">
                     <span className="text-base">🏛️</span>
                     <div>
-                      <span className="text-gray-400 text-[10px]">MTF Auction Alignment:</span>
-                      <div className="text-white text-xs font-bold flex items-center gap-1.5">
-                        <span
-                          className={
-                            wyckoffReport.hierarchySynthesis.isCountertrend5m
-                              ? 'text-amber-300'
-                              : 'text-emerald-300'
-                          }
-                        >
-                          {wyckoffReport.hierarchySynthesis.alignmentStatus}
+                      <span className="text-gray-400 text-[10px] block">Daily Macro Structural Regime:</span>
+                      <div className="text-white text-xs font-bold flex items-center gap-2">
+                        <span className="text-emerald-300">{boxAnalysis.label}</span>
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold border ${
+                          boxAnalysis.isTrendInvalidated
+                            ? 'bg-rose-950/90 text-rose-200 border-rose-500/60 animate-pulse'
+                            : 'bg-emerald-950/90 text-emerald-200 border-emerald-500/60'
+                        }`}>
+                          {boxAnalysis.isTrendInvalidated ? '🚨 TREND INVALIDATED → ACCUMULATION RANGE' : boxAnalysis.regime}
                         </span>
-                        {wyckoffReport.hierarchySynthesis.isCountertrend5m && (
-                          <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[8.5px]">
-                            ⚠️ 5m Counter-Trend
-                          </span>
-                        )}
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="px-2 py-1 rounded bg-emerald-950 border border-emerald-500/60 text-emerald-200 text-[10px] font-bold">
-                      Verdict: {wyckoffReport.hierarchySynthesis.combinedVerdict}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[9.5px]">
-                  <div className="p-1.5 rounded bg-surface-900/80 border border-surface-800">
-                    <span className="text-gray-400 text-[8.5px] block">1D CONTEXT:</span>
-                    <span className="text-cyan-300 font-semibold">{wyckoffReport.hierarchySynthesis.dailyLandscape}</span>
-                  </div>
-                  <div className="p-1.5 rounded bg-surface-900/80 border border-surface-800">
-                    <span className="text-gray-400 text-[8.5px] block">30M SETUP:</span>
-                    <span className="text-amber-300 font-semibold">{wyckoffReport.hierarchySynthesis.intermediate30mAuction}</span>
-                  </div>
-                  <div className="p-1.5 rounded bg-surface-900/80 border border-surface-800">
-                    <span className="text-gray-400 text-[8.5px] block">5M CONFIRMATION:</span>
-                    <span className="text-emerald-300 font-semibold">{wyckoffReport.hierarchySynthesis.tactical5mConfirmation}</span>
-                  </div>
-                </div>
-
-                <div className="text-gray-300 text-[10px] leading-relaxed pt-1">
-                  💡 <strong>Actionable Read:</strong> {wyckoffReport.hierarchySynthesis.actionableSummary}
-                </div>
-
-                {wyckoffReport.hierarchySynthesis.explicitConflicts.length > 0 && (
-                  <div className="p-2 rounded-lg bg-amber-950/60 border border-amber-500/50 text-amber-200 text-[9.5px]">
-                    <strong>⚠️ Structural Conflicts:</strong> {wyckoffReport.hierarchySynthesis.explicitConflicts.join(' · ')}
-                  </div>
-                )}
-              </div>
-
-              {/* Timeframe Card Selector Tabs */}
-              <div className="flex items-center justify-between border-b border-surface-800 pb-1 text-[9.5px]">
-                <div className="flex items-center gap-1">
-                  <span className="text-gray-400">View:</span>
-                  {(['ALL', '1D', '30m', '5m'] as const).map((mode) => (
+                  <div className="flex items-center gap-2">
                     <button
-                      key={mode}
                       type="button"
-                      onClick={() => setSelectedTimeframeCard(mode)}
-                      className={`px-2 py-0.5 rounded font-bold transition cursor-pointer ${
-                        selectedTimeframeCard === mode
-                          ? 'bg-emerald-500/30 border border-emerald-400 text-white'
-                          : 'bg-surface-900 border border-surface-800 text-gray-400 hover:text-gray-200'
-                      }`}
+                      onClick={() =>
+                        askLeoWithContext(
+                          `Leo, audit the macro trend invalidation on ${boxAnalysis.market}. Explain why the prior ${boxAnalysis.regime.toLowerCase()} failed, how the Higher-Low base held with CVD absorption, and the roadmap for Phase C/D markups.`
+                        )
+                      }
+                      className="px-2.5 py-1 rounded bg-purple-950 hover:bg-purple-900 border border-purple-500/50 text-purple-200 text-[9px] font-bold transition flex items-center gap-1 cursor-pointer"
                     >
-                      {mode === 'ALL' ? '3 Timeframes (Side-by-Side)' : `${mode} Only`}
+                      <span>💬</span>
+                      <span>Ask Leo: Invalidation Audit</span>
                     </button>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    onAskLeo(
-                      `Leo, perform a full Wyckoff auction audit across Daily, 30m, and 5m timeframes for ${wyckoffReport.instrument}. Highlight where price is conducting business, the effort vs result on CVD, confirmed events, and any structural conflict.`
-                    )
-                  }
-                  className="px-2 py-0.5 rounded bg-purple-950 hover:bg-purple-900 border border-purple-500/50 text-purple-200 text-[9px] font-bold transition flex items-center gap-1 cursor-pointer"
-                >
-                  <span>💬</span>
-                  <span>Ask Leo to Audit 1D/30m/5m</span>
-                </button>
-              </div>
-
-              {/* 3-Timeframe Responsive Grid */}
-              <div
-                className={`grid gap-2.5 ${
-                  selectedTimeframeCard === 'ALL'
-                    ? 'grid-cols-1 md:grid-cols-3'
-                    : 'grid-cols-1'
-                }`}
-              >
-                {[wyckoffReport.daily, wyckoffReport.m30, wyckoffReport.m5]
-                  .filter((tf) => selectedTimeframeCard === 'ALL' || selectedTimeframeCard === tf.timeframe)
-                  .map((tf) => {
-                    const range = tf.detectedRange
-                    const event = tf.eventState
-                    const currentStageIdx = LIFECYCLE_STEPS.indexOf(event.lifecycleStage)
-
-                    return (
-                      <div
-                        key={tf.timeframe}
-                        className="p-3 rounded-xl bg-surface-950/90 border border-surface-800 hover:border-emerald-500/40 transition space-y-2.5 flex flex-col justify-between shadow-md"
-                      >
-                        <div className="space-y-2">
-                          {/* Card Header */}
-                          <div className="flex items-center justify-between border-b border-surface-800 pb-1.5">
-                            <div className="flex items-center gap-1.5">
-                              <span className="px-1.5 py-0.5 rounded bg-surface-800 border border-surface-700 text-white font-bold text-xs">
-                                {tf.timeframe}
-                              </span>
-                              <span
-                                className={`px-1.5 py-0.5 rounded border text-[9px] font-bold ${classificationBadgeClass(
-                                  range?.classification
-                                )}`}
-                              >
-                                {range?.classification ?? tf.swingStructure.structuralTrend}
-                              </span>
-                            </div>
-                            <span className="px-1.5 py-0.5 rounded bg-surface-900 border border-surface-700 text-cyan-300 text-[8.5px] font-semibold">
-                              {tf.monitoringStatus}
-                            </span>
-                          </div>
-
-                          {/* Range Zone Visualizer */}
-                          {range ? (
-                            <div className="p-2 rounded-lg bg-surface-900/90 border border-surface-800 space-y-1.5 text-[9.5px]">
-                              <div className="flex items-center justify-between">
-                                <span className="text-gray-400">Boundary Range:</span>
-                                <span className="text-white font-bold">
-                                  <span className="text-emerald-300 font-mono">{range.rangeLow.toFixed(2)}</span>
-                                  {' — '}
-                                  <span className="text-rose-300 font-mono">{range.rangeHigh.toFixed(2)}</span>
-                                </span>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-1 text-[8.5px] text-gray-400">
-                                <div>
-                                  Mid: <strong className="text-gray-200">{range.rangeMidpoint.toFixed(2)}</strong>
-                                </div>
-                                <div>
-                                  POC: <strong className="text-cyan-300">{range.poc?.toFixed(2) ?? 'N/A'}</strong>
-                                </div>
-                                <div>
-                                  Width: <strong className="text-gray-200">{range.widthAtr?.toFixed(1) ?? 'N/A'} ATR</strong> ({range.widthPts.toFixed(1)} pts)
-                                </div>
-                                <div>
-                                  Phase: <strong className="text-amber-300">{range.provisionalPhase}</strong>
-                                </div>
-                              </div>
-
-                              <div className="text-[8.5px] text-gray-400 leading-tight">
-                                Overlap: {Math.round(range.overlapRatio * 100)}% · Duration: {range.durationBars} bars ({Math.round(range.durationMinutes / 60)}h)
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="p-2 rounded-lg bg-surface-900/60 border border-surface-800 text-[9px] text-gray-400">
-                              No bounded range confirmed. Structural trend: <strong>{tf.swingStructure.structuralTrend}</strong>.
-                            </div>
-                          )}
-
-                          {/* Event Lifecycle Stage Stepper */}
-                          <div className="p-2 rounded-lg bg-surface-900/80 border border-surface-800 space-y-1.5 text-[9px]">
-                            <div className="flex items-center justify-between">
-                              <span className="text-gray-400">Lifecycle State:</span>
-                              <span className="text-amber-300 font-bold">
-                                {event.candidateEvent} ({event.confirmationStatus})
-                              </span>
-                            </div>
-
-                            {/* Horizontal Stepper */}
-                            <div className="flex items-center gap-0.5 overflow-x-auto pb-0.5">
-                              {LIFECYCLE_STEPS.map((stage, idx) => {
-                                const isPassed = currentStageIdx >= idx
-                                const isCurrent = event.lifecycleStage === stage
-                                return (
-                                  <div
-                                    key={stage}
-                                    className={`px-1 py-0.5 rounded text-[7.5px] font-mono shrink-0 transition ${
-                                      isCurrent
-                                        ? 'bg-amber-500/30 text-amber-200 border border-amber-400 font-bold'
-                                        : isPassed
-                                        ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-800/60'
-                                        : 'bg-surface-950 text-gray-600 border border-surface-900'
-                                    }`}
-                                    title={`Stage: ${stage}`}
-                                  >
-                                    {stage.replace('_', ' ').slice(0, 7)}
-                                  </div>
-                                )
-                              })}
-                            </div>
-
-                            <div className="text-gray-300 text-[8.5px] leading-tight">
-                              {event.eventSummary}
-                            </div>
-                          </div>
-
-                          {/* Volume & CVD Effort vs. Result */}
-                          <div className="p-2 rounded-lg bg-surface-900/80 border border-surface-800 space-y-1 text-[9px]">
-                            <div className="flex items-center justify-between">
-                              <span className="text-gray-400">CVD & Volume:</span>
-                              <span
-                                className={`px-1.5 py-0.2 rounded border text-[8px] font-bold ${conditionBadgeClass(
-                                  tf.cvdVolume.condition
-                                )}`}
-                              >
-                                {tf.cvdVolume.condition.replace(/_/g, ' ')}
-                              </span>
-                            </div>
-
-                            <div className="text-gray-300 text-[8.5px]">
-                              {tf.cvdVolume.effortVsResultSummary}
-                            </div>
-
-                            {tf.cvdVolume.cvdDivergence !== 'NONE' && (
-                              <div className="text-cyan-300 text-[8.5px] font-bold">
-                                ⚡ Divergence: {tf.cvdVolume.cvdDivergence}
-                              </div>
-                            )}
-
-                            <div className="text-gray-400 text-[8px]">
-                              ATR: {tf.atrRegime.currentAtr?.toFixed(2) ?? 'N/A'} ({tf.atrRegime.atrTrend}) · Vol Ratio: {tf.cvdVolume.relativeVolume?.toFixed(2) ?? '1.0'}x
-                            </div>
-                          </div>
-
-                          {/* Invalidation & Tradeability Runway */}
-                          <div className="p-2 rounded-lg bg-surface-900/80 border border-surface-800 space-y-0.8 text-[8.5px]">
-                            <div className="flex items-center justify-between">
-                              <span className="text-rose-400 font-semibold">Invalidation:</span>
-                              <span className="text-white font-mono font-bold">
-                                {tf.structuralInvalidation.price?.toFixed(2) ?? 'N/A'}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span className="text-emerald-400 font-semibold">Next Obstacle:</span>
-                              <span className="text-white font-mono font-bold">
-                                {tf.nextImportantObstacle.price?.toFixed(2) ?? 'N/A'}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between pt-0.5 border-t border-surface-800">
-                              <span className="text-gray-400">Reward-to-Risk:</span>
-                              <span
-                                className={`font-bold px-1 rounded text-[8px] ${
-                                  tf.rewardToRiskRunway.isAtLeast2R
-                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                                }`}
-                              >
-                                {tf.rewardToRiskRunway.rrRatio != null
-                                  ? `${tf.rewardToRiskRunway.rrRatio.toFixed(1)}R ${
-                                      tf.rewardToRiskRunway.isAtLeast2R ? '(≥2R PASS)' : '(WAIT)'
-                                    }`
-                                  : 'Wait for Invalidation'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Interactive Action Buttons */}
-                        <div className="space-y-1 pt-1 border-t border-surface-800">
-                          <div className="grid grid-cols-2 gap-1 text-[8.5px]">
-                            <button
-                              type="button"
-                              onClick={() => handleSaveRangeToNotes(tf)}
-                              disabled={!range}
-                              className="py-1 px-1.5 rounded bg-surface-900 hover:bg-surface-800 border border-surface-700 text-gray-200 font-bold transition flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40"
-                              title="Save detected range to Leo Long-Term Memory Notes"
-                            >
-                              <span>📌</span>
-                              <span>Notes</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleArmSituationWatch(tf)}
-                              disabled={!range}
-                              className="py-1 px-1.5 rounded bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/50 text-emerald-200 font-bold transition flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40"
-                              title="Arm live Market Situation Rule for Chart Leo to monitor on chart"
-                            >
-                              <span>🎯</span>
-                              <span>Arm Watch</span>
-                            </button>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onAskLeo(
-                                `Leo, audit the ${tf.instrument} ${tf.timeframe} Wyckoff structure. Range: [${range?.rangeLow.toFixed(2) ?? 'N/A'} – ${range?.rangeHigh.toFixed(2) ?? 'N/A'}], Event: ${event.candidateEvent} (${event.lifecycleStage}). Invalidation: ${tf.structuralInvalidation.price?.toFixed(2) ?? 'N/A'}. Explain effort vs result and tradeability.`
-                              )
-                            }
-                            className="w-full py-1 rounded bg-purple-950/60 hover:bg-purple-900/80 border border-purple-500/40 text-purple-200 text-[8.5px] font-bold transition flex items-center justify-center gap-1 cursor-pointer"
-                          >
-                            <span>💬</span>
-                            <span>Audit {tf.timeframe} with Leo</span>
-                          </button>
-                        </div>
-                      </div>
-                    )
-                  })}
-              </div>
-
-              {/* Deduplicated Live Auction Alerts Feed */}
-              {wyckoffReport.alerts.length > 0 && (
-                <div className="p-3 rounded-xl bg-surface-950/90 border border-emerald-500/30 space-y-2">
-                  <div className="flex items-center justify-between border-b border-surface-800 pb-1">
-                    <span className="text-white font-bold text-xs flex items-center gap-1.5">
-                      <span>🔔</span> Deduplicated Live Auction Alerts ({wyckoffReport.alerts.length})
-                    </span>
-                    <span className="text-[8.5px] text-gray-500">Real-Time State Transitions</span>
                   </div>
-                  <div className="space-y-1">
-                    {wyckoffReport.alerts.map((a) => (
-                      <div
-                        key={a.id}
-                        className="px-2.5 py-1.5 rounded-lg bg-surface-900/90 border border-surface-800 text-gray-200 flex flex-wrap items-center justify-between gap-2 text-[9.5px]"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`w-2 h-2 rounded-full ${
-                              a.monitoringStatus === 'CONFIRMED'
-                                ? 'bg-emerald-400 animate-ping'
-                                : a.monitoringStatus === 'INVALIDATED'
-                                ? 'bg-rose-400'
-                                : 'bg-amber-400'
-                            }`}
-                          />
-                          <span className="font-bold text-white">[{a.timeframe}]</span>
-                          <span>{a.headline}</span>
+                </div>
+
+                {/* Macro Context Metrics Bar */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[9.5px]">
+                  <div className="p-2 rounded bg-surface-900/80 border border-surface-800">
+                    <span className="text-gray-400 text-[8.5px] block">PRICE SPAN (RANGE):</span>
+                    <span className="text-white font-bold font-mono">
+                      ${boxAnalysis.lowPrice.toFixed(2)} – ${boxAnalysis.highPrice.toFixed(2)}
+                    </span>
+                    <span className="text-gray-400 text-[8.5px] block">({boxAnalysis.priceSpanPts.toFixed(1)} pts / {boxAnalysis.trendSlopePct > 0 ? '+' : ''}{boxAnalysis.trendSlopePct}%)</span>
+                  </div>
+                  <div className="p-2 rounded bg-surface-900/80 border border-surface-800">
+                    <span className="text-gray-400 text-[8.5px] block">DAILY ATR (VOLATILITY):</span>
+                    <span className="text-cyan-300 font-bold font-mono">{boxAnalysis.avgAtr.toFixed(2)} pts</span>
+                    <span className="text-gray-500 text-[8.5px] block">True Daily 14-ATR</span>
+                  </div>
+                  <div className="p-2 rounded bg-surface-900/80 border border-surface-800">
+                    <span className="text-gray-400 text-[8.5px] block">DURATION / BARS:</span>
+                    <span className="text-amber-300 font-bold font-mono">{boxAnalysis.durationDays} Days</span>
+                    <span className="text-gray-500 text-[8.5px] block">{boxAnalysis.totalBars} Bars Analyzed</span>
+                  </div>
+                  <div className="p-2 rounded bg-surface-900/80 border border-surface-800">
+                    <span className="text-gray-400 text-[8.5px] block">INVALIDATION TYPE:</span>
+                    <span className="text-emerald-300 font-bold font-mono">{boxAnalysis.invalidationType}</span>
+                    <span className="text-gray-500 text-[8.5px] block">Level: ${boxAnalysis.invalidationPrice ?? boxAnalysis.lowPrice.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                {/* Invalidation Narrative Box */}
+                <div className="p-2.5 rounded-lg bg-emerald-950/30 border border-emerald-500/40 text-[10px] space-y-1">
+                  <div className="flex items-center gap-1.5 text-emerald-300 font-bold text-[9.5px]">
+                    <span>⚡</span>
+                    <span>Empirical Structural Invalidation Verdict:</span>
+                  </div>
+                  <p className="text-gray-200 leading-relaxed font-sans text-[10px]">
+                    {boxAnalysis.invalidationNotes}
+                  </p>
+                </div>
+              </div>
+
+              {/* 2. THE 5-TIMEFRAME TELEMETRY MATRIX (DAILY · 4H · 15M · 5M · 1M) */}
+              <div className="p-3 rounded-xl bg-surface-950/90 border border-surface-800 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-surface-800 pb-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-base">📊</span>
+                    <div>
+                      <h4 className="text-xs font-bold text-white flex items-center gap-2">
+                        Multi-Timeframe Telemetry Engine
+                        <span className="px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 text-[8.5px] border border-cyan-500/40">
+                          1D · 4H · 15M · 5M · 1M
+                        </span>
+                      </h4>
+                      <p className="text-[9.5px] text-gray-400">
+                        True ATR, Total Volume, Buy/Sell Split, Net CVD Delta, and Institutional Bias across all 5 tiers
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[9px] text-emerald-400 font-mono">
+                    Zero Hallucination · Exact Local Tick Aggregation
+                  </span>
+                </div>
+
+                {/* Telemetry Matrix Table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left font-mono text-[9.5px]">
+                    <thead>
+                      <tr className="border-b border-surface-800 text-gray-400 text-[8.5px]">
+                        <th className="py-1.5 px-2">TIMEFRAME & ROLE</th>
+                        <th className="py-1.5 px-2 text-cyan-300">TRUE ATR</th>
+                        <th className="py-1.5 px-2 text-gray-300">TOTAL VOL</th>
+                        <th className="py-1.5 px-2 text-amber-300 min-w-[120px]">BUY / SELL SPLIT</th>
+                        <th className="py-1.5 px-2 text-emerald-300">NET CVD DELTA</th>
+                        <th className="py-1.5 px-2 text-purple-300">INSTITUTIONAL BIAS</th>
+                        <th className="py-1.5 px-2 text-gray-400">BARS</th>
+                        <th className="py-1.5 px-2 text-right">ACTION</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-surface-800/60 text-gray-200">
+                      {(
+                        [
+                          { key: 'daily', label: '1D (Daily)', desc: 'Macro Regime & Invalidation', data: boxAnalysis.timeframes.daily },
+                          { key: 'h4', label: '4H (4-Hour)', desc: 'Intermediate Sub-Leg Decomposition', data: boxAnalysis.timeframes.h4 },
+                          { key: 'm15', label: '15M (15-Min)', desc: 'Tactical Execution Boundaries', data: boxAnalysis.timeframes.m15 },
+                          { key: 'm5', label: '5M (5-Min)', desc: 'Micro Absorption & Spring/UTAD Reclaim', data: boxAnalysis.timeframes.m5 },
+                          { key: 'm1', label: '1M (1-Min)', desc: 'Precision Tape Delta & Scalp Confirmation', data: boxAnalysis.timeframes.m1 },
+                        ] as const
+                      ).map((row) => {
+                        const total = row.data.totalVolume || 1
+                        const buyPct = Math.round((row.data.buyVolume / total) * 100)
+                        const sellPct = 100 - buyPct
+                        const isPositiveDelta = row.data.netCvd >= 0
+
+                        return (
+                          <tr key={row.key} className="hover:bg-surface-900/60 transition">
+                            <td className="py-2 px-2">
+                              <span className="font-bold text-white block">{row.label}</span>
+                              <span className="text-[8px] text-gray-400 block">{row.desc}</span>
+                            </td>
+                            <td className="py-2 px-2 font-bold text-cyan-300">
+                              {row.data.atr.toFixed(2)} pts
+                            </td>
+                            <td className="py-2 px-2 font-mono text-gray-300">
+                              {formatVolumeNum(row.data.totalVolume)}
+                            </td>
+                            <td className="py-2 px-2">
+                              <div className="space-y-0.5">
+                                <div className="flex items-center justify-between text-[8px] font-mono">
+                                  <span className="text-emerald-400">{buyPct}% B</span>
+                                  <span className="text-rose-400">{sellPct}% S</span>
+                                </div>
+                                <div className="h-1.5 w-full bg-surface-800 rounded-full overflow-hidden flex">
+                                  <div style={{ width: `${buyPct}%` }} className="bg-emerald-500 h-full" />
+                                  <div style={{ width: `${sellPct}%` }} className="bg-rose-500 h-full" />
+                                </div>
+                              </div>
+                            </td>
+                            <td className="py-2 px-2 font-bold font-mono">
+                              <span className={isPositiveDelta ? 'text-emerald-400' : 'text-rose-400'}>
+                                {isPositiveDelta ? '+' : ''}{formatVolumeNum(row.data.netCvd)}
+                              </span>
+                            </td>
+                            <td className="py-2 px-2">
+                              <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-bold border ${cvdBiasBadgeClass(row.data.cvdBias)}`}>
+                                {row.data.cvdBias.replace(/_/g, ' ')}
+                              </span>
+                            </td>
+                            <td className="py-2 px-2 text-gray-400 text-[8.5px]">
+                              {row.data.barsCount}
+                            </td>
+                            <td className="py-2 px-2 text-right">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  askLeoWithContext(
+                                    `Leo, audit the ${row.label} timeframe for ${boxAnalysis.market}. ATR is ${row.data.atr.toFixed(2)} pts, Net CVD is ${row.data.netCvd > 0 ? '+' : ''}${row.data.netCvd}, volume is ${row.data.totalVolume}. What is the institutional order flow read?`
+                                  )
+                                }
+                                className="px-2 py-0.5 rounded bg-surface-900 hover:bg-surface-800 border border-surface-700 hover:border-purple-500/50 text-purple-200 text-[8.5px] font-semibold transition cursor-pointer"
+                              >
+                                💬 Ask Leo
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* 3. FIXED RANGE VOLUME PROFILE (FRVP) & FAIR VALUE */}
+              <div className="p-3 rounded-xl bg-surface-950/90 border border-surface-800 space-y-2">
+                <div className="flex items-center justify-between border-b border-surface-800 pb-1.5">
+                  <span className="font-bold text-xs text-white flex items-center gap-1.5">
+                    <span>🎯</span> Fixed Range Volume Profile & Fair Value Distribution
+                  </span>
+                  <span className={`px-2 py-0.5 rounded text-[9px] font-bold border ${
+                    boxAnalysis.volumeProfile.deltaBias.includes('BULLISH')
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
+                      : 'bg-rose-500/20 text-rose-300 border-rose-500/50'
+                  }`}>
+                    {boxAnalysis.volumeProfile.deltaBias.replace(/_/g, ' ')}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[9.5px]">
+                  <div className="p-2 rounded bg-surface-900/80 border border-cyan-500/30">
+                    <span className="text-gray-400 text-[8.5px] block">POC (POINT OF CONTROL):</span>
+                    <span className="text-cyan-300 font-bold text-xs font-mono">
+                      ${boxAnalysis.volumeProfile.poc.toFixed(2)}
+                    </span>
+                    <span className="text-gray-500 text-[8px] block">Peak volume node of entire range</span>
+                  </div>
+                  <div className="p-2 rounded bg-surface-900/80 border border-rose-500/30">
+                    <span className="text-gray-400 text-[8.5px] block">VAH (VALUE AREA HIGH 70%):</span>
+                    <span className="text-rose-300 font-bold text-xs font-mono">
+                      ${boxAnalysis.volumeProfile.vah.toFixed(2)}
+                    </span>
+                    <span className="text-gray-500 text-[8px] block">Upper boundary of 70% distribution</span>
+                  </div>
+                  <div className="p-2 rounded bg-surface-900/80 border border-emerald-500/30">
+                    <span className="text-gray-400 text-[8.5px] block">VAL (VALUE AREA LOW 70%):</span>
+                    <span className="text-emerald-300 font-bold text-xs font-mono">
+                      ${boxAnalysis.volumeProfile.val.toFixed(2)}
+                    </span>
+                    <span className="text-gray-500 text-[8px] block">Lower boundary of 70% distribution</span>
+                  </div>
+                  <div className="p-2 rounded bg-surface-900/80 border border-surface-800">
+                    <span className="text-gray-400 text-[8.5px] block">NET CVD DELTA:</span>
+                    <span className={`font-bold text-xs font-mono ${boxAnalysis.volumeProfile.netDelta >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {boxAnalysis.volumeProfile.netDelta >= 0 ? '+' : ''}{boxAnalysis.volumeProfile.netDelta.toLocaleString()}
+                    </span>
+                    <span className="text-gray-500 text-[8px] block">
+                      Total: {formatVolumeNum(boxAnalysis.volumeProfile.totalVolume)} contracts
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. 4-HOUR SUB-LEG DECOMPOSITION (THE SUB-BOXES INSIDE THE RANGE) */}
+              <div className="p-3 rounded-xl bg-surface-950/90 border border-surface-800 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-surface-800 pb-1.5">
+                  <div>
+                    <h4 className="text-xs font-bold text-white flex items-center gap-2">
+                      <span>📦</span> 4-Hour Sub-Leg Decomposition ({boxAnalysis.subLegs.length} Boxes)
+                    </h4>
+                    <p className="text-[9.5px] text-gray-400">
+                      As requested: Breaking down the macro range into 4-hour markdown, markup, and accumulation sub-boxes
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      askLeoWithContext(
+                        `Leo, analyze the 6 4-hour sub-boxes for ${boxAnalysis.market}. How did institutional operators transition from the initial markdown to Creek accumulation, SOS markup, and re-accumulation?`
+                      )
+                    }
+                    className="px-2 py-0.5 rounded bg-purple-950 hover:bg-purple-900 border border-purple-500/50 text-purple-200 text-[9px] font-bold transition flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>💬</span>
+                    <span>Audit All 4H Boxes</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {boxAnalysis.subLegs.map((sub, idx) => (
+                    <div
+                      key={sub.id}
+                      className="p-2.5 rounded-lg bg-surface-900/90 border border-surface-800 hover:border-emerald-500/50 transition space-y-1.5 text-[9.5px]"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-white text-[10px] truncate">
+                          {sub.label}
+                        </span>
+                        <span className={`px-1.5 py-0.2 rounded text-[8.5px] font-bold border shrink-0 ${subLegTypeBadgeClass(sub.type)}`}>
+                          {sub.type}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-1 text-[8.5px] text-gray-400 border-t border-b border-surface-800/80 py-1 font-mono">
+                        <div>
+                          Range: <span className="text-white">${sub.lowPrice.toFixed(1)} – ${sub.highPrice.toFixed(1)}</span>
                         </div>
-                        <div className="flex items-center gap-2 text-[8.5px] text-gray-400">
-                          <span className="text-amber-300 font-semibold">{a.candidateEvent}</span>
-                          <span className="px-1.5 py-0.2 rounded bg-surface-800 border border-surface-700">
-                            {a.monitoringStatus}
+                        <div>
+                          Span: <span className="text-cyan-300">{sub.spanPts.toFixed(1)} pts</span>
+                        </div>
+                        <div>
+                          POC: <span className="text-amber-300">${sub.poc.toFixed(1)}</span>
+                        </div>
+                        <div>
+                          Delta: <span className={sub.netDelta >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                            {sub.netDelta >= 0 ? '+' : ''}{sub.netDelta.toLocaleString()}
                           </span>
                         </div>
                       </div>
-                    ))}
+
+                      <p className="text-gray-300 text-[8.5px] leading-tight font-sans">
+                        {sub.behaviorNote}
+                      </p>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          askLeoWithContext(
+                            `Leo, backtest and audit sub-box ${idx + 1} (${sub.label}) on ${boxAnalysis.market}. Price span: $${sub.lowPrice} – $${sub.highPrice}, POC: $${sub.poc}, Net Delta: ${sub.netDelta}. Detail institutional behavior.`
+                          )
+                        }
+                        className="w-full py-0.8 rounded bg-surface-950 hover:bg-surface-800 border border-surface-800 hover:border-purple-500/50 text-purple-300 text-[8px] font-semibold transition cursor-pointer"
+                      >
+                        💬 Audit Box {idx + 1} with Leo
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 5. EMPIRICAL WYCKOFF INSTITUTIONAL ACCUMULATION/DISTRIBUTION EDGE */}
+              <div className="p-3 rounded-xl bg-gradient-to-r from-emerald-950/40 via-surface-900 to-cyan-950/40 border border-emerald-500/50 space-y-2 text-[9.5px]">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-surface-800 pb-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <span>🔬</span>
+                    <span className="font-bold text-xs text-white">
+                      Empirical Wyckoff Institutional Edge ({boxAnalysis.market})
+                    </span>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      askLeoWithContext(
+                        `Leo, what is our empirical statistical edge for ${boxAnalysis.market}? Compare the 78.6% Higher-Low base rate vs the 17.3% Spring sweep rate and tell me how to structure execution.`
+                      )
+                    }
+                    className="px-2 py-0.5 rounded bg-emerald-950 hover:bg-emerald-900 border border-emerald-500/60 text-emerald-200 text-[9px] font-bold transition cursor-pointer"
+                  >
+                    <span>💬</span>
+                    <span>Audit Edge with Leo</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5 text-[9px]">
+                  <div className="p-1.5 rounded bg-surface-950/80 border border-emerald-500/30">
+                    <span className="text-gray-400 text-[8px] block">HIGHER-LOW BASE (EDGE)</span>
+                    <span className="text-emerald-300 font-bold text-xs font-mono">{boxAnalysis.wyckoffBacktest.higherLowBaseRatePct}%</span>
+                    <span className="text-gray-500 text-[7.5px] block">Dominant Accumulation</span>
+                  </div>
+                  <div className="p-1.5 rounded bg-surface-950/80 border border-cyan-500/30">
+                    <span className="text-gray-400 text-[8px] block">SPRING SWEEP RATE</span>
+                    <span className="text-cyan-300 font-bold text-xs font-mono">{boxAnalysis.wyckoffBacktest.springRatePct}%</span>
+                    <span className="text-gray-500 text-[7.5px] block">Lows Swept Below Creek</span>
+                  </div>
+                  <div className="p-1.5 rounded bg-surface-950/80 border border-emerald-500/30">
+                    <span className="text-gray-400 text-[8px] block">SPRING CVD ABSORPTION</span>
+                    <span className="text-emerald-300 font-bold text-xs font-mono">{boxAnalysis.wyckoffBacktest.springCvdAbsorptionPct}%</span>
+                    <span className="text-gray-500 text-[7.5px] block">Positive Absorption</span>
+                  </div>
+                  <div className="p-1.5 rounded bg-surface-950/80 border border-rose-500/30">
+                    <span className="text-gray-400 text-[8px] block">UTAD SWEEP RATE</span>
+                    <span className="text-rose-300 font-bold text-xs font-mono">{boxAnalysis.wyckoffBacktest.utadRatePct}%</span>
+                    <span className="text-gray-500 text-[7.5px] block">Highs Swept Above Ice</span>
+                  </div>
+                  <div className="p-1.5 rounded bg-surface-950/80 border border-amber-500/30">
+                    <span className="text-gray-400 text-[8px] block">WIN RATE (1R TARGET)</span>
+                    <span className="text-amber-300 font-bold text-xs font-mono">{boxAnalysis.wyckoffBacktest.winRate1RPct}%</span>
+                    <span className="text-gray-500 text-[7.5px] block">MFE: +{boxAnalysis.wyckoffBacktest.avgMarkupMfePts} pts</span>
+                  </div>
+                  <div className="p-1.5 rounded bg-surface-950/80 border border-purple-500/30">
+                    <span className="text-gray-400 text-[8px] block">WIN RATE (2R TARGET)</span>
+                    <span className="text-purple-300 font-bold text-xs font-mono">{boxAnalysis.wyckoffBacktest.winRate2RPct}%</span>
+                    <span className="text-gray-500 text-[7.5px] block">Full Target Runway</span>
+                  </div>
+                </div>
+
+                <div className="p-2 rounded bg-surface-950/60 border border-surface-800 text-[9.5px] text-gray-300 italic">
+                  💡 <strong>Institutional Edge Read:</strong> {boxAnalysis.wyckoffBacktest.institutionalRead}
+                </div>
+              </div>
+
+              {/* 6. COLLAPSIBLE REAL-TIME EVENT LIFECYCLE STEPPERS & LIVE ALERTS */}
+              {wyckoffReport && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between border-b border-surface-800 pb-1 text-[9.5px]">
+                    <span className="text-white font-bold flex items-center gap-1.5">
+                      <span>⚡</span> Real-Time Event Lifecycle Steppers & Scans ({wyckoffReport.instrument})
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-gray-400">View:</span>
+                      {(['ALL', '1D', '4H', '30m', '5m'] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setSelectedTimeframeCard(mode)}
+                          className={`px-2 py-0.5 rounded font-bold transition cursor-pointer ${
+                            selectedTimeframeCard === mode
+                              ? 'bg-emerald-500/30 border border-emerald-400 text-white'
+                              : 'bg-surface-900 border border-surface-800 text-gray-400 hover:text-gray-200'
+                          }`}
+                        >
+                          {mode === 'ALL' ? 'Side-by-Side' : `${mode} Only`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 4-Timeframe Responsive Grid */}
+                  <div
+                    className={`grid gap-2.5 ${
+                      selectedTimeframeCard === 'ALL'
+                        ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-4'
+                        : 'grid-cols-1'
+                    }`}
+                  >
+                    {[wyckoffReport.daily, wyckoffReport.h4, wyckoffReport.m30, wyckoffReport.m5]
+                      .filter((tf): tf is WyckoffTimeframeAnalysis => tf != null && (selectedTimeframeCard === 'ALL' || selectedTimeframeCard === tf.timeframe))
+                      .map((tf) => {
+                        const range = tf.detectedRange
+                        const event = tf.eventState
+                        const currentStageIdx = LIFECYCLE_STEPS.indexOf(event.lifecycleStage)
+
+                        return (
+                          <div
+                            key={tf.timeframe}
+                            className="p-3 rounded-xl bg-surface-950/90 border border-surface-800 hover:border-emerald-500/40 transition space-y-2 flex flex-col justify-between shadow-md"
+                          >
+                            <div className="space-y-2">
+                              {/* Card Header */}
+                              <div className="flex items-center justify-between border-b border-surface-800 pb-1.5">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="px-1.5 py-0.5 rounded bg-surface-800 border border-surface-700 text-white font-bold text-xs">
+                                    {tf.timeframe}
+                                  </span>
+                                  <span
+                                    className={`px-1.5 py-0.5 rounded border text-[9px] font-bold ${classificationBadgeClass(
+                                      range?.classification
+                                    )}`}
+                                  >
+                                    {range?.classification ?? tf.swingStructure.structuralTrend}
+                                  </span>
+                                </div>
+                                <span className="px-1.5 py-0.5 rounded bg-surface-900 border border-surface-700 text-cyan-300 text-[8.5px] font-semibold">
+                                  {tf.monitoringStatus}
+                                </span>
+                              </div>
+
+                              {/* Range Zone Visualizer */}
+                              {range ? (
+                                <div className="p-2 rounded-lg bg-surface-900/90 border border-surface-800 space-y-1 text-[9.5px]">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-gray-400">Boundary Range:</span>
+                                    <span className="text-white font-bold">
+                                      <span className="text-emerald-300 font-mono">{range.rangeLow.toFixed(2)}</span>
+                                      {' — '}
+                                      <span className="text-rose-300 font-mono">{range.rangeHigh.toFixed(2)}</span>
+                                    </span>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-1 text-[8.5px] text-gray-400">
+                                    <div>Mid: <strong className="text-gray-200">{range.rangeMidpoint.toFixed(2)}</strong></div>
+                                    <div>POC: <strong className="text-cyan-300">{range.poc?.toFixed(2) ?? 'N/A'}</strong></div>
+                                    <div>Width: <strong className="text-gray-200">{range.widthAtr?.toFixed(1) ?? 'N/A'} ATR</strong></div>
+                                    <div>Phase: <strong className="text-amber-300">{range.provisionalPhase}</strong></div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="p-2 rounded-lg bg-surface-900/60 border border-surface-800 text-[9px] text-gray-400">
+                                  Structural trend: <strong>{tf.swingStructure.structuralTrend}</strong>
+                                </div>
+                              )}
+
+                              {/* Event Lifecycle Stage Stepper */}
+                              <div className="p-2 rounded-lg bg-surface-900/80 border border-surface-800 space-y-1 text-[9px]">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-gray-400">Lifecycle State:</span>
+                                  <span className="text-amber-300 font-bold">
+                                    {event.candidateEvent} ({event.confirmationStatus})
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-0.5 overflow-x-auto pb-0.5">
+                                  {LIFECYCLE_STEPS.map((stage, idx) => {
+                                    const isPassed = currentStageIdx >= idx
+                                    const isCurrent = event.lifecycleStage === stage
+                                    return (
+                                      <div
+                                        key={stage}
+                                        className={`px-1 py-0.5 rounded text-[7.5px] font-mono shrink-0 transition ${
+                                          isCurrent
+                                            ? 'bg-amber-500/30 text-amber-200 border border-amber-400 font-bold'
+                                            : isPassed
+                                            ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-800/60'
+                                            : 'bg-surface-950 text-gray-600 border border-surface-900'
+                                        }`}
+                                      >
+                                        {stage.replace('_', ' ').slice(0, 7)}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="space-y-1 pt-1 border-t border-surface-800">
+                              <div className="grid grid-cols-2 gap-1 text-[8.5px]">
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveRangeToNotes(tf)}
+                                  disabled={!range}
+                                  className="py-1 px-1.5 rounded bg-surface-900 hover:bg-surface-800 border border-surface-700 text-gray-200 font-bold transition flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40"
+                                >
+                                  <span>📌</span>
+                                  <span>Notes</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleArmSituationWatch(tf)}
+                                  disabled={!range}
+                                  className="py-1 px-1.5 rounded bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/50 text-emerald-200 font-bold transition flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40"
+                                >
+                                  <span>🎯</span>
+                                  <span>Arm Watch</span>
+                                </button>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  askLeoWithContext(
+                                    `Leo, audit the ${tf.instrument} ${tf.timeframe} Wyckoff structure. Range: [${range?.rangeLow.toFixed(2) ?? 'N/A'} – ${range?.rangeHigh.toFixed(2) ?? 'N/A'}], Event: ${event.candidateEvent} (${event.lifecycleStage}). Invalidation: ${tf.structuralInvalidation.price?.toFixed(2) ?? 'N/A'}. Explain effort vs result and tradeability.`
+                                  )
+                                }
+                                className="w-full py-1 rounded bg-purple-950/60 hover:bg-purple-900/80 border border-purple-500/40 text-purple-200 text-[8.5px] font-bold transition flex items-center justify-center gap-1 cursor-pointer"
+                              >
+                                <span>💬</span>
+                                <span>Audit {tf.timeframe} with Leo</span>
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                  </div>
+
+                  {/* Deduplicated Live Auction Alerts Feed */}
+                  {wyckoffReport.alerts.length > 0 && (
+                    <div className="p-3 rounded-xl bg-surface-950/90 border border-emerald-500/30 space-y-2">
+                      <div className="flex items-center justify-between border-b border-surface-800 pb-1">
+                        <span className="text-white font-bold text-xs flex items-center gap-1.5">
+                          <span>🔔</span> Deduplicated Live Auction Alerts ({wyckoffReport.alerts.length})
+                        </span>
+                        <span className="text-[8.5px] text-gray-500">Real-Time State Transitions</span>
+                      </div>
+                      <div className="space-y-1">
+                        {wyckoffReport.alerts.map((a) => (
+                          <div
+                            key={a.id}
+                            className="px-2.5 py-1.5 rounded-lg bg-surface-900/90 border border-surface-800 text-gray-200 flex flex-wrap items-center justify-between gap-2 text-[9.5px]"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`w-2 h-2 rounded-full ${
+                                  a.monitoringStatus === 'CONFIRMED'
+                                    ? 'bg-emerald-400 animate-ping'
+                                    : a.monitoringStatus === 'INVALIDATED'
+                                    ? 'bg-rose-400'
+                                    : 'bg-amber-400'
+                                }`}
+                              />
+                              <span className="font-bold text-white">[{a.timeframe}]</span>
+                              <span>{a.headline}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-[8.5px] text-gray-400">
+                              <span className="text-amber-300 font-semibold">{a.candidateEvent}</span>
+                              <span className="px-1.5 py-0.2 rounded bg-surface-800 border border-surface-700">
+                                {a.monitoringStatus}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </>
@@ -829,19 +1114,17 @@ export function WyckoffRulesPanel({
             <div className="p-8 rounded-xl bg-surface-950/80 border border-surface-800 text-center space-y-3">
               <span className="text-3xl block">🧭</span>
               <div className="text-gray-300 font-bold text-sm">
-                {loadingWyckoff
-                  ? 'Evaluating Causal 1D / 30m / 5m Wyckoff Auction Engine…'
-                  : 'Wyckoff Auction Intelligence Engine Ready'}
+                Wyckoff Multi-Timeframe Auction Intelligence Engine Ready
               </div>
               <p className="text-gray-400 text-xs max-w-md mx-auto">
-                Deterministic range discovery, ATR regimes, CVD effort vs result, event lifecycle transitions, and adversarial questioning.
+                Deterministic range discovery, ATR regimes, CVD effort vs result, event lifecycle transitions, and 1D/4H/15m/5m/1m box backtesting.
               </p>
               <button
                 type="button"
-                onClick={() => fetchWyckoffEngine(selectedEngineMarket)}
+                onClick={handleRefreshAll}
                 className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition shadow-lg cursor-pointer"
               >
-                Run Live 1D/30m/5m Discovery on {selectedEngineMarket}
+                Run Live 1D/4H/15m/5m/1m Discovery on {selectedEngineMarket}
               </button>
             </div>
           )}
@@ -983,7 +1266,7 @@ export function WyckoffRulesPanel({
             <button
               type="button"
               onClick={() =>
-                onAskLeo(
+                askLeoWithContext(
                   `Leo, run the inventory-seeking participant thought experiment for ${selectedEngineMarket}. Where would aggressive sellers or buyers originate right now, and what price action would confirm true absorption vs initiative?`
                 )
               }
@@ -1058,7 +1341,7 @@ export function WyckoffRulesPanel({
               <button
                 type="button"
                 onClick={() =>
-                  onAskLeo(
+                  askLeoWithContext(
                     `Leo, challenge my bias on ${selectedEngineMarket} aggressively. Run through the 8 adversarial questions, tell me every reason why this trade hypothesis might fail, and identify where weak hands could be trapped.`
                   )
                 }
@@ -1140,7 +1423,7 @@ export function WyckoffRulesPanel({
             <button
               type="button"
               onClick={() =>
-                onAskLeo(
+                askLeoWithContext(
                   `Leo, which weak-hand participant behaviors are consistent with the current tape on ${selectedEngineMarket}? Distinguish between breakout sellers, late buyers, and forced liquidations.`
                 )
               }
@@ -1279,7 +1562,7 @@ export function WyckoffRulesPanel({
                     <button
                       type="button"
                       onClick={() =>
-                        onAskLeo(`Leo, audit 1-year 5-minute Wyckoff range backtest benchmarks on ${inspectedBenchmark.market}.`)
+                        askLeoWithContext(`Leo, audit 1-year 5-minute Wyckoff range backtest benchmarks on ${inspectedBenchmark.market}.`)
                       }
                       className="px-2 py-1 rounded bg-blue-900/60 hover:bg-blue-800/70 border border-blue-500/40 text-blue-200 text-[9.5px] font-semibold transition cursor-pointer"
                     >
@@ -1288,7 +1571,7 @@ export function WyckoffRulesPanel({
                     <button
                       type="button"
                       onClick={() =>
-                        onAskLeo(
+                        askLeoWithContext(
                           `Leo, compare markets for accumulation and distribution backtests. Show me the cross-market comparative matrix.`
                         )
                       }
@@ -1332,7 +1615,7 @@ export function WyckoffRulesPanel({
             <button
               type="button"
               onClick={() =>
-                onAskLeo(
+                askLeoWithContext(
                   `Leo, audit the 4 Wyckoff execution setups for ${selectedEngineMarket} (Spring, Upthrust, Breakout Retest, Breakdown Retest). Tell me if price is interacting with our frozen pre-market Tier 1 zones.`
                 )
               }
@@ -1344,7 +1627,7 @@ export function WyckoffRulesPanel({
             <button
               type="button"
               onClick={() =>
-                onAskLeo(
+                askLeoWithContext(
                   `Leo, check our pre-market Tier 1 zones on ${selectedEngineMarket} (5D Volume Profile, Yesterday's Profile, Overnight). Which pre-marked zone is price approaching right now?`
                 )
               }
@@ -1356,7 +1639,7 @@ export function WyckoffRulesPanel({
             <button
               type="button"
               onClick={() =>
-                onAskLeo(
+                askLeoWithContext(
                   `Leo, analyze the current trading range on ${selectedEngineMarket} for Wyckoff Accumulation vs Distribution. Identify the phase (A, B, C, D, E), audit effort vs result, and tell me if a tradeable Phase C test or Phase D retest is formed.`
                 )
               }
@@ -1554,7 +1837,7 @@ export function WyckoffRulesPanel({
                 <button
                   type="button"
                   onClick={() =>
-                    onAskLeo(
+                    askLeoWithContext(
                       `Leo, how do the fundamental agent and headline agent cooperate on ${selectedEngineMarket} right now? Connect the dots with our Wyckoff structure.`
                     )
                   }
@@ -1614,7 +1897,7 @@ export function WyckoffRulesPanel({
                       key={mktKey}
                       type="button"
                       onClick={() =>
-                        onAskLeo(
+                        askLeoWithContext(
                           `Leo, how do the fundamental agent and headline agent cooperate on ${entry.uiInstrument} right now?`
                         )
                       }

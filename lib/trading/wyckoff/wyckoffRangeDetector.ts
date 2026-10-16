@@ -154,7 +154,7 @@ export function detectWyckoffTradingRange(
 ): RangeDetectionOutput {
   const spec = resolveWyckoffMarketSpec(instrumentRaw)
   const { candles } = adjustCandlesForContractRollover(rawCandles)
-  const minBars = timeframe === '1D' ? 6 : timeframe === '30m' ? 8 : 8
+  const minBars = timeframe === '1D' || timeframe === '4H' ? 6 : 8
 
   if (candles.length < minBars) {
     return {
@@ -167,7 +167,7 @@ export function detectWyckoffTradingRange(
 
   const { bars } = enrichCandlesWithCvd(candles)
   const lookbackCount = Math.min(
-    timeframe === '1D' ? 30 : timeframe === '30m' ? 40 : 48,
+    timeframe === '1D' ? 30 : timeframe === '4H' ? 32 : timeframe === '30m' ? 40 : 48,
     bars.length
   )
   const windowStartIdx = bars.length - lookbackCount
