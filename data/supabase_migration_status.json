@@ -1,8 +1,8 @@
 {
   "projectRef": "zslrcnqyxoftwhxzfjrk",
-  "updatedAt": "2026-10-16T20:17:52.071Z",
+  "updatedAt": "2026-10-16T20:43:04.034Z",
   "remoteStatus": "validated_staged_for_unpause",
-  "remoteNote": "(ENOTFOUND) tenant/user postgres.zslrcnqyxoftwhxzfjrk not found",
+  "remoteNote": "password authentication failed for user \"postgres\"",
   "totalMigrations": 41,
   "migrations": [
     {

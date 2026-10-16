@@ -116,7 +116,7 @@ interface LeoAssistantPanelProps {
   context: LeoChatContext
   candles?: any[]
   isOpen?: boolean
-  initialTab?: 'CHAT' | 'STRATEGY_RULES'
+  initialTab?: 'CHAT' | 'WYCKOFF_ENGINE' | 'STRATEGY_RULES'
   onToggleOpen?: () => void
   onClose?: () => void
   onSelectDataPoint?: (point: LeoDataPoint) => void
@@ -280,10 +280,11 @@ export function LeoAssistantPanel({
     }
   }, [inputPrompt])
 
-  // Active Panel Tab: Chat vs Wyckoff Strategy Rules
-  const [activeTab, setActiveTab] = useState<'CHAT' | 'STRATEGY_RULES'>(
+  // Active Panel Tab: Chat vs Wyckoff MTF Engine vs Strategy Rules
+  const [activeTab, setActiveTab] = useState<'CHAT' | 'WYCKOFF_ENGINE' | 'STRATEGY_RULES'>(
     initialTab || 'CHAT'
   )
+  const [isExpanded, setIsExpanded] = useState(false)
 
   useEffect(() => {
     if (initialTab) {
@@ -1956,7 +1957,11 @@ export function LeoAssistantPanel({
 
       {/* ─── Expanded Glassmorphism Assistant Panel ───────────────────────── */}
       {isPanelOpen && (
-        <div className="absolute top-2 bottom-2 right-2 z-[60] w-full max-w-[395px] flex flex-col rounded-2xl backdrop-blur-xl bg-neutral-950/90 border border-purple-500/35 shadow-2xl overflow-hidden transition-all duration-300">
+        <div
+          className={`absolute top-2 bottom-2 right-2 z-[60] w-full ${
+            isExpanded ? 'max-w-[860px]' : 'max-w-[400px]'
+          } flex flex-col rounded-2xl backdrop-blur-xl bg-neutral-950/95 border border-purple-500/35 shadow-2xl overflow-hidden transition-all duration-300`}
+        >
           {/* Header Bar */}
           <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-neutral-800/80 bg-neutral-900/95 shrink-0 sticky top-0 z-30">
             <div className="flex items-center gap-2">
@@ -1978,6 +1983,20 @@ export function LeoAssistantPanel({
             </div>
 
             <div className="flex items-center gap-1">
+              {/* Expand / Minimize Width Toggle for Wyckoff MTF analysis */}
+              <button
+                type="button"
+                onClick={() => setIsExpanded((prev) => !prev)}
+                className={`p-1.5 rounded-lg border text-xs transition-colors cursor-pointer ${
+                  isExpanded
+                    ? 'border-emerald-500 bg-emerald-950/70 text-emerald-300'
+                    : 'border-neutral-800 bg-neutral-900/50 text-neutral-400 hover:text-neutral-200'
+                }`}
+                title={isExpanded ? 'Collapse to compact dock (400px)' : 'Expand to wide dashboard (860px)'}
+              >
+                {isExpanded ? '⤢ Compact' : '⛶ Wide'}
+              </button>
+
               {/* TTS Voice Toggle */}
               <button
                 type="button"
@@ -2027,12 +2046,12 @@ export function LeoAssistantPanel({
             )}
           </div>
 
-          {/* ── Mode Switcher Tabs (Leo Chat vs Wyckoff Rules & Multi-Agent Bus) ── */}
+          {/* ── Mode Switcher Tabs (Leo Chat vs Wyckoff MTF Engine vs 22 Rules & Desks) ── */}
           <div className="flex items-center border-b border-neutral-800/80 bg-neutral-950/90 px-2 py-1.5 gap-1 shrink-0">
             <button
               type="button"
               onClick={() => setActiveTab('CHAT')}
-              className={`flex-1 py-1.5 px-1.5 rounded-lg text-[10px] font-mono font-bold transition-all flex items-center justify-center gap-1 ${
+              className={`flex-1 py-1.5 px-1.5 rounded-lg text-[10px] font-mono font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
                 activeTab === 'CHAT'
                   ? 'bg-purple-950/80 text-purple-200 border border-purple-500/60 shadow-sm'
                   : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900/60 border border-transparent'
@@ -2043,15 +2062,30 @@ export function LeoAssistantPanel({
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('STRATEGY_RULES')}
-              className={`flex-1 py-1.5 px-1.5 rounded-lg text-[10px] font-mono font-bold transition-all flex items-center justify-center gap-1 ${
-                activeTab === 'STRATEGY_RULES'
+              onClick={() => {
+                setActiveTab('WYCKOFF_ENGINE')
+                if (!isExpanded) setIsExpanded(true)
+              }}
+              className={`flex-1 py-1.5 px-1.5 rounded-lg text-[10px] font-mono font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                activeTab === 'WYCKOFF_ENGINE'
                   ? 'bg-emerald-950/80 text-emerald-200 border border-emerald-500/60 shadow-sm'
                   : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900/60 border border-transparent'
               }`}
             >
+              <span>🧭</span>
+              <span>Wyckoff MTF</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('STRATEGY_RULES')}
+              className={`flex-1 py-1.5 px-1.5 rounded-lg text-[10px] font-mono font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                activeTab === 'STRATEGY_RULES'
+                  ? 'bg-cyan-950/80 text-cyan-200 border border-cyan-500/60 shadow-sm'
+                  : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900/60 border border-transparent'
+              }`}
+            >
               <span>🏛️</span>
-              <span>22 Rules · Multi-Agent · Backtests</span>
+              <span>22 Rules & Desks</span>
             </button>
           </div>
 
@@ -3013,6 +3047,7 @@ export function LeoAssistantPanel({
       ) : (
         <WyckoffRulesPanel
           instrument={context.instrument}
+          initialSubTab={activeTab === 'WYCKOFF_ENGINE' ? 'MTF_ENGINE' : 'RULES_22'}
           onAskLeo={(prompt: string) => {
             setActiveTab('CHAT')
             handleSendMessage(prompt)

@@ -59,7 +59,7 @@ function buildBusResponse(activeInstrument: string) {
       uiInstrument: meta.uiInstrument,
       snapshot: readMarketSnapshot(id),
       historyCount: readMarketSnapshotHistory(id).length,
-      deskBrief: formatDeskBriefForInstrument(meta.uiInstrument, now),
+      deskBrief: formatDeskBriefForInstrument(meta.uiInstrument),
     }
   }
 
@@ -94,7 +94,7 @@ function buildBusResponse(activeInstrument: string) {
     activeInstrument,
     canonicalActiveMarket: canonicalActive,
     activeSnapshot: snapshotsByMarket[canonicalActive],
-    allMarketsSummaryText: formatAllMarketsDeskBriefSummary(now),
+    allMarketsSummaryText: formatAllMarketsDeskBriefSummary(now.getTime()),
     desks: snapshotsByMarket,
     wyckoff: {
       baseline: WYCKOFF_CROSS_MARKET_BASELINE,

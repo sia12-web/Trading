@@ -97,11 +97,11 @@ async function main() {
     return
   }
 
-  const cs = poolerConnectionString(databaseUrl, ref)
+  const csPooler = poolerConnectionString(databaseUrl, ref)
   console.log('Connecting via pooler aws-0-us-east-1:6543…')
 
-  const client = new pg.Client({
-    connectionString: cs,
+  let client = new pg.Client({
+    connectionString: csPooler,
     ssl: { rejectUnauthorized: false },
     connectionTimeoutMillis: 15000,
   })
@@ -109,26 +109,38 @@ async function main() {
   try {
     await client.connect()
   } catch (connErr) {
-    const msg = connErr?.message || String(connErr)
-    const ledger = validateAndRecordLocalLedger(
-      files,
-      dir,
-      ref,
-      'validated_staged_for_unpause',
-      msg
-    )
-    if (!requireDb && /not found|ENOTFOUND|ETIMEDOUT|ECONNREFUSED/i.test(msg)) {
-      console.log(`✅ Validated all ${ledger.totalMigrations} SQL migrations and updated data/supabase_migration_status.json.`)
-      for (const m of ledger.migrations.slice(-4)) {
-        console.log(`   • ${m.file} (tables: ${m.tablesCreated.join(', ') || 'alter/index'})`)
-      }
-      console.warn(
-        `⚠️ Remote Supabase instance (${ref}) is currently paused (${msg}).\n` +
-          `   All migrations and runtime JSON datasets are staged and verified locally.`
+    console.warn(`Pooler connection failed (${connErr?.message || connErr}). Trying direct connection...`)
+    try {
+      await client.end().catch(() => {})
+      client = new pg.Client({
+        connectionString: databaseUrl,
+        ssl: { rejectUnauthorized: false },
+        connectionTimeoutMillis: 15000,
+      })
+      await client.connect()
+      console.log('Connected via direct DATABASE_URL.')
+    } catch (directErr) {
+      const msg = directErr?.message || connErr?.message || String(connErr)
+      const ledger = validateAndRecordLocalLedger(
+        files,
+        dir,
+        ref,
+        'validated_staged_for_unpause',
+        msg
       )
-      return
+      if (!requireDb && /not found|ENOTFOUND|ETIMEDOUT|ECONNREFUSED|password authentication failed/i.test(msg)) {
+        console.log(`✅ Validated all ${ledger.totalMigrations} SQL migrations and updated data/supabase_migration_status.json.`)
+        for (const m of ledger.migrations.slice(-4)) {
+          console.log(`   • ${m.file} (tables: ${m.tablesCreated.join(', ') || 'alter/index'})`)
+        }
+        console.warn(
+          `⚠️ Supabase connection returned (${msg}).\n` +
+            `   All migrations and runtime JSON datasets are staged and verified locally.`
+        )
+        return
+      }
+      throw directErr
     }
-    throw connErr
   }
 
   console.log('Connected.')

@@ -5372,6 +5372,7 @@ export function TradingChart({
   const [leoPanelOpen, setLeoPanelOpen] = useState(false)
   const [leoExternalPoints, setLeoExternalPoints] = useState<LeoDataPoint[]>([])
   const [leoAutoPrompt, setLeoAutoPrompt] = useState<string | null>(null)
+  const [leoInitialTab, setLeoInitialTab] = useState<'CHAT' | 'WYCKOFF_ENGINE' | 'STRATEGY_RULES'>('CHAT')
   const [showQuestioningModal, setShowQuestioningModal] = useState(false)
 
   // ── Auction Price Critique & "Questioning" Engine Evaluation ───────────────
@@ -13873,7 +13874,19 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
               ))}
             </div>
 
-
+            {/* Wyckoff MTF Auction Engine Quick Pill */}
+            <button
+              type="button"
+              onClick={() => {
+                setLeoInitialTab('WYCKOFF_ENGINE')
+                setLeoPanelOpen(true)
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition shadow-sm active:scale-95 cursor-pointer bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/60 text-emerald-300"
+              title="Open Wyckoff Multi-Timeframe Auction Intelligence Engine (1D → 30m → 5m)"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span>🧭 Wyckoff MTF</span>
+            </button>
 
             <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-surface-900/90 border border-neutral-700/60 shadow-sm text-xs font-mono">
               <button
@@ -17126,6 +17139,7 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
           context={leoContext}
           candles={candlesRef.current.length > 0 ? candlesRef.current : candles}
           isOpen={leoPanelOpen}
+          initialTab={leoInitialTab}
           onToggleOpen={() => setLeoPanelOpen((prev) => !prev)}
           onClose={() => setLeoPanelOpen(false)}
           externalAttachedPoints={leoExternalPoints}
