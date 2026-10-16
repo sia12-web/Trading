@@ -142,19 +142,6 @@ export function SessionBanner({
   const [newsUnavailable, setNewsUnavailable] = useState(false)
   const [riskProfile, setRiskProfile] = useState<DeskRiskProfile>('personal_futures')
   const internetLatency = useInternetLatency()
-  const [htfStatus, setHtfStatus] = useState<string | null>(null)
-  const [htfSummary, setHtfSummary] = useState<string | null>(null)
-  const [htfPerf, setHtfPerf] = useState<{
-    grade: string
-    targetMultiplier: number
-    expectedRR: string
-    holdingDirective: string
-  } | null>(null)
-  const [htfBracket, setHtfBracket] = useState<{
-    bracketMode: string
-    tradeLocationGrade: string
-    directiveSummary: string
-  } | null>(null)
   const [htfCorr, setHtfCorr] = useState<{
     type: string
     isDisguised: boolean
@@ -361,23 +348,6 @@ export function SessionBanner({
         .then((r) => r.json())
         .then((data) => {
           if (data.ok && data.state) {
-            setHtfStatus(data.state.status)
-            setHtfSummary(data.state.summaryText)
-            if (data.state.directionalPerformance) {
-              setHtfPerf({
-                grade: data.state.directionalPerformance.grade,
-                targetMultiplier: data.state.directionalPerformance.dynamicRR?.targetMultiplier ?? 1.0,
-                expectedRR: data.state.directionalPerformance.dynamicRR?.expectedRR ?? '1:2.0',
-                holdingDirective: data.state.directionalPerformance.dynamicRR?.holdingDirective ?? '',
-              })
-            }
-            if (data.state.bracket) {
-              setHtfBracket({
-                bracketMode: data.state.bracket.bracketMode,
-                tradeLocationGrade: data.state.bracket.tradeLocationGrade,
-                directiveSummary: data.state.bracket.directiveSummary,
-              })
-            }
             if (data.state.correctiveAction) {
               setHtfCorr({
                 type: data.state.correctiveAction.type,
@@ -616,61 +586,7 @@ export function SessionBanner({
             ASIA DESK · BOTH STOPS
           </span>
         )}
-        {!SYSTEMATIC_LIVE_DESK && htfStatus && (
-          <span
-            className={`rounded px-2 py-0.5 font-semibold text-[10px] uppercase tracking-wide border ${htfStatus === 'BUYING_EXCESS'
-              ? 'bg-emerald-500/25 text-emerald-200 border-emerald-500/40'
-              : htfStatus === 'SELLING_EXCESS'
-                ? 'bg-rose-500/25 text-rose-200 border-rose-500/40'
-                : htfStatus === 'P_PROFILE_SHORT_COVER'
-                  ? 'bg-cyan-500/25 text-cyan-200 border-cyan-500/40'
-                  : htfStatus === 'B_PROFILE_LONG_LIQ'
-                    ? 'bg-orange-500/25 text-orange-200 border-orange-500/40'
-                    : htfStatus === 'LEDGE_STALL'
-                      ? 'bg-purple-500/25 text-purple-200 border-purple-500/40'
-                      : htfStatus === 'DAY_MIRAGE'
-                        ? 'bg-fuchsia-500/25 text-fuchsia-200 border-fuchsia-500/40 animate-pulse'
-                        : htfStatus === 'UNFINISHED_AUCTION'
-                          ? 'bg-amber-500/25 text-amber-200 border-amber-500/40'
-                          : 'bg-zinc-500/20 text-zinc-300 border-zinc-500/30'
-              }`}
-            title={htfSummary || 'Day Timeframe Specialist — Market Profile Context & Structure'}
-          >
-            Day TF: {String(htfStatus).replace(/_/g, ' ')}
-          </span>
-        )}
-        {!SYSTEMATIC_LIVE_DESK && htfPerf && (
-          <span
-            className={`rounded px-2 py-0.5 font-semibold text-[10px] uppercase tracking-wide border ${htfPerf.grade === 'VERY_STRONG'
-              ? 'bg-emerald-500/30 text-emerald-200 border-emerald-400/50'
-              : htfPerf.grade === 'STRONG'
-                ? 'bg-sky-500/25 text-sky-200 border-sky-500/40'
-                : htfPerf.grade === 'SLOWING'
-                  ? 'bg-amber-500/25 text-amber-200 border-amber-500/40'
-                  : htfPerf.grade === 'FAILING_DIVERGENCE' || htfPerf.grade === 'WEAK'
-                    ? 'bg-rose-500/25 text-rose-200 border-rose-500/40 animate-pulse'
-                    : 'bg-zinc-500/20 text-zinc-300 border-zinc-500/30'
-              }`}
-            title={`Directional Performance: ${htfPerf.grade} | Target ${htfPerf.targetMultiplier}x (${htfPerf.expectedRR}) | ${htfPerf.holdingDirective}`}
-          >
-            Perf: {String(htfPerf.grade || '').replace(/_/g, ' ')} ({htfPerf.targetMultiplier}x Target)
-          </span>
-        )}
-        {!SYSTEMATIC_LIVE_DESK && htfBracket && (
-          <span
-            className={`rounded px-2 py-0.5 font-semibold text-[10px] uppercase tracking-wide border ${htfBracket.tradeLocationGrade === 'RESPONSIVE_LONG'
-              ? 'bg-emerald-500/30 text-emerald-200 border-emerald-400/50'
-              : htfBracket.tradeLocationGrade === 'RESPONSIVE_SHORT'
-                ? 'bg-rose-500/30 text-rose-200 border-rose-400/50'
-                : htfBracket.tradeLocationGrade === 'MID_BRACKET_CHOP'
-                  ? 'bg-amber-500/30 text-amber-200 border-amber-400/50 animate-pulse'
-                  : 'bg-indigo-500/25 text-indigo-200 border-indigo-500/40'
-              }`}
-            title={`Long-Term Bracket: ${htfBracket.bracketMode} | ${htfBracket.directiveSummary}`}
-          >
-            Bracket: {String(htfBracket.tradeLocationGrade || '').replace(/_/g, ' ')}
-          </span>
-        )}
+
         {!SYSTEMATIC_LIVE_DESK && htfCorr && htfCorr.type !== 'NONE' && (
           <span
             className={`rounded px-2 py-0.5 font-semibold text-[10px] uppercase tracking-wide border ${htfCorr.type === 'DISGUISED_BULLISH_CORRECTION'
