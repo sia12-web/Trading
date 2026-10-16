@@ -14,7 +14,11 @@ import {
 } from '@/lib/trading/rangeVolumeComparison'
 import { getCrossMarketVolatility } from '@/lib/trading/crossMarketVolatility'
 import { getLiveCrossMarketRadarReport } from '@/lib/trading/crossMarketRadar'
-import { syncFundamentalBusFromStores } from '@/lib/ai/fundamentalBusSync'
+import {
+  syncFundamentalBusFromStores,
+  formatAllMarketsDeskBriefSummary,
+} from '@/lib/ai/fundamentalBusSync'
+import { formatDeskBriefForInstrument } from '@/lib/ai/marketIntelligenceBus'
 import { getFinnhubClient } from '@/lib/services/finnhubClient'
 import { getYahooQuote } from '@/lib/yahoo/quote'
 import { buildMarketReactionReport } from '@/lib/trading/marketReactionEngine'
@@ -1358,6 +1362,98 @@ ${f.priceRelation === 'AT_POC'
       ? `Price is rejected below Value Area Low (**${f.val.toLocaleString()}**). Initiative sellers are probing lower prices looking for responsive buyers.`
       : `Price is trading inside the 70% Value Area (${f.val.toLocaleString()} – ${f.vah.toLocaleString()}). Expect rotational pull back toward POC **${f.poc.toLocaleString()}**.`}`
     }
+  }
+
+  // 6b. User Drawings: Manual Anchored VWAP (AVWAP) analysis
+  if (/\b(avwap|anchored\s+vwap|vwap\s+bands?|standard\s+deviation\s+bands?)\b/i.test(lower)) {
+    const a = ctx.userDrawings?.avwaps?.[0]
+    if (a) {
+      const label = a.label || (a as { anchorLabel?: string }).anchorLabel || 'Anchored VWAP'
+      const anchorTime = a.anchorTimeEt || String((a as { anchorTime?: unknown }).anchorTime ?? 'Anchor')
+      const anchorPx = a.anchorPrice != null ? ` @ **${a.anchorPrice.toFixed(2)}**` : ''
+      const deltaPts =
+        a.deltaPts ??
+        (a as { distanceFromCurrentPrice?: number }).distanceFromCurrentPrice ??
+        (ctx.currentPrice != null ? +(ctx.currentPrice - a.currentVwap).toFixed(2) : 0)
+      const relation =
+        a.priceRelation ||
+        (deltaPts > 0 ? 'ABOVE' : deltaPts < 0 ? 'BELOW' : 'AT_MEAN')
+      const b1Low = a.band1Lower != null ? a.band1Lower.toFixed(2) : '—'
+      const b1High = a.band1Upper != null ? a.band1Upper.toFixed(2) : '—'
+      const b2Low = a.band2Lower != null ? a.band2Lower.toFixed(2) : '—'
+      const b2High = a.band2Upper != null ? a.band2Upper.toFixed(2) : '—'
+      const zStr = a.zScore != null ? `${a.zScore >= 0 ? '+' : ''}${a.zScore.toFixed(2)}σ` : '0.00σ'
+      const slopeStr = (a as { slope?: string }).slope ? ` | Slope: **${(a as { slope?: string }).slope}**` : ''
+
+      return `### ⚓ **Institutional Anchored VWAP (AVWAP) Audit (${ctx.instrument} @ ${curPrice})**
+
+Analyzing your manual **${label}** (Anchored at **${anchorTime}**${anchorPx}):
+- **Current AVWAP Centerline:** **${a.currentVwap.toFixed(2)}** (${deltaPts >= 0 ? '+' : ''}${deltaPts.toFixed(2)} pts · Price is **${relation.replace(/_/g, ' ')} AVWAP**${slopeStr})
+- **±1.0σ Value Area (~68% Volume):** **${b1Low} – ${b1High}**
+- **±2.0σ Exhaustion Extremes (~95% Volume):** **${b2Low} – ${b2High}**
+- **Statistical Stretch:** **${zStr}**${a.sigma != null ? ` (1σ = ${a.sigma.toFixed(2)} pts)` : ''}
+
+**Institutional Execution Read:**
+- Your manual AVWAP acts as dynamic institutional fair-value confluence alongside our frozen Tier 1 map.
+- Do not trade a touch of the AVWAP in isolation; require one of the **4 Wyckoff execution structures** (Spring Reclaim or Breakout Retest at AVWAP/+1σ support; Upthrust Return or Breakdown Retest at AVWAP/-1σ resistance) with **≥ 2.0R** clearance.`
+    }
+  }
+
+  // 6c. Multi-Agent Cooperation: Fundamental Specialist + Desk News / Headline Agent + Chart Leo Synthesis
+  if (
+    /\b(fundamental\w*|headline\w*|desk\s+news|news\s+agent|macro\s+driver\w*|macro\s+catalyst\w*|specialist\s+agent\w*|agent\w*\s+cooperat\w*|connect\s+the\s+dots|what\s+changed|market\s+intelligence\s+bus)\b/i.test(
+      lower
+    )
+  ) {
+    try {
+      syncFundamentalBusFromStores()
+    } catch {
+      // soft-fail
+    }
+    const activeDeskBrief = formatDeskBriefForInstrument(ctx.instrument)
+    const allMarketsBus = formatAllMarketsDeskBriefSummary()
+    const b = getWyckoffBenchmark(ctx.instrument)
+    const yval = ctx.shortTermMoney?.yval != null ? ctx.shortTermMoney.yval.toFixed(2) : 'UNAVAILABLE'
+    const yvah = ctx.shortTermMoney?.yvah != null ? ctx.shortTermMoney.yvah.toFixed(2) : 'UNAVAILABLE'
+    const poc5d = ctx.intermediateMoney?.poc5d != null ? ctx.intermediateMoney.poc5d.toFixed(2) : 'UNAVAILABLE'
+
+    const macroReactionText =
+      typeof ctx.macroCatalystReaction === 'string'
+        ? ctx.macroCatalystReaction
+        : ctx.macroCatalystReaction && typeof ctx.macroCatalystReaction === 'object'
+          ? JSON.stringify(ctx.macroCatalystReaction, null, 2)
+          : null
+
+    return `### 🤝 **Multi-Agent Desk Synthesis: Chart Leo × Fundamental Specialist × Desk News Agent (${ctx.instrument} @ ${curPrice})**
+
+> **Zero-Hallucination Multi-Agent Architecture:**
+> 1. **Desk News Agent (\`DESK_NEWS_AGENT\`):** Identifies, deduplicates, and verifies scheduled macro releases and breaking wires, routing each event to its market specialist.
+> 2. **5 Fundamental Specialist Agents (\`NASDAQ_AGENT\`, \`DOW_AGENT\`, \`GOLD_AGENT\`, \`OIL_AGENT\`, \`NIKKEI_AGENT\`):** Evaluate transmission channels and publish structured snapshots onto the **Market Intelligence Bus**.
+> 3. **Chart Leo (Execution Auditor):** Consumes the Market Intelligence Bus brief + Wyckoff 1-year empirical benchmarks + live Tier 1 chart structure + Globex CVD to audit the **4 valid execution setups**.
+
+---
+
+### 1. **Active Market Intelligence Bus Brief (${ctx.instrument}):**
+\`\`\`text
+${activeDeskBrief}
+\`\`\`
+
+---
+
+### 2. **Cross-Market Fundamental Specialist Bus Status (All 5 Desks):**
+${allMarketsBus}
+
+${
+  macroReactionText
+    ? `---\n\n### 3. **Verified Macro Catalyst & Market Reaction Engine:**\n${macroReactionText}\n`
+    : ''
+}---
+
+### 4. **Connecting the Dots — Catalyst Transmission × Wyckoff Structure (${b.market}):**
+- **Overnight Cause Building:** Empirical 1-year 5m backtesting across **${b.totalRanges.toLocaleString()} ${b.market} ranges** (from **${WYCKOFF_CROSS_MARKET_BASELINE.totalRangesAnalyzed.toLocaleString()}** total desk ranges) proves that **${b.overnightFormationPct}%** of ranges form overnight (Asia ${b.asiaFormationPct}% + London ${b.londonFormationPct}%), lasting an average of **${b.avgRangeDurationHours} hours**.
+- **Catalyst Ignition Window:** Scheduled Tier-1 macro catalysts and cash opens (**${b.topIgnitionHoursEt.slice(0, 3).map(formatIgnitionHour).join(', ')}**) act as the Phase D ignition spark that resolves accumulated or distributed overnight energy.
+- **Tier 1 Structural Anchors (${ctx.instrument}):** 5D POC **${poc5d}** | Y-VAL **${yval}** | Y-VAH **${yvah}**.
+- **Execution Gate (Hierarchy Step 10):** Fundamentals and headlines explain *why* participation is expanding, but **never** trigger a trade on their own. Wait for one of the **4 Wyckoff structures** (Spring Reclaim, Upthrust Return, Breakout Retest / LPS, Breakdown Retest / LPSY) with structural invalidation and **≥ 2.0R** room.`
   }
 
   // 7. General auction assessment

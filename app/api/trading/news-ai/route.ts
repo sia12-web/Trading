@@ -13,6 +13,10 @@ import {
 } from '@/lib/trading/deskNews'
 import { parseCalendarEventMs } from '@/lib/trading/deskNewsHazard'
 import { buildMarketReactionReport } from '@/lib/trading/marketReactionEngine'
+import {
+  syncFundamentalBusFromStores,
+  formatAllMarketsDeskBriefSummary,
+} from '@/lib/ai/fundamentalBusSync'
 import { logger } from '@/lib/utils/logger'
 
 export const dynamic = 'force-dynamic'
@@ -233,6 +237,13 @@ ${upcomingLines || 'NO VERIFIED TIER-1 EVENT IN CURRENT UPCOMING WINDOW.'}
       logger.warn('[News AI] Failed to assemble news context', err)
     }
 
+    try {
+      syncFundamentalBusFromStores(now)
+    } catch {
+      // soft-fail bus sync
+    }
+    const specialistBusSummary = formatAllMarketsDeskBriefSummary()
+
     const newsContextStr = `
 CURRENT DATE & SERVER TIME: ${now.toUTCString()}
 CURRENT DESK TAB SELECTION: ${tab}
@@ -241,6 +252,9 @@ JPY_INTERVENTION_RISK: UNKNOWN (not supplied)
 options_implied_event_move: NOT SUPPLIED
 
 ${reactionBlock}
+
+SPECIALIST FUNDAMENTAL BUS STATUS (READ-ONLY CONTEXT FROM THE 5 SPECIALIST AGENTS):
+${specialistBusSummary}
 
 LATEST AVAILABLE QUOTES (Yahoo; not labeled real-time):
 ${quotesStr}

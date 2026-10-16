@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { evaluateNikkeiEvent } from '@/lib/fundamentals/nikkeiAnalystEngine'
 import { getNikkeiFundamentalState } from '@/lib/fundamentals/nikkeiStateStore'
+import { syncFundamentalBusFromStores } from '@/lib/ai/fundamentalBusSync'
 import { logger } from '@/lib/utils/logger'
 
 export const dynamic = 'force-dynamic'
@@ -31,6 +32,11 @@ export async function POST(request: Request) {
     })
 
     const updatedState = await getNikkeiFundamentalState()
+    try {
+      syncFundamentalBusFromStores()
+    } catch {
+      // soft-fail bus sync
+    }
     const out = evaluation.structuredOutput
 
     return NextResponse.json({

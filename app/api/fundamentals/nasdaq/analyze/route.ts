@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { evaluateNasdaqEvent } from '@/lib/fundamentals/nasdaqAnalystEngine'
 import { getNasdaqFundamentalState } from '@/lib/fundamentals/nasdaqStateStore'
+import { syncFundamentalBusFromStores } from '@/lib/ai/fundamentalBusSync'
 import { logger } from '@/lib/utils/logger'
 
 export const dynamic = 'force-dynamic'
@@ -32,6 +33,11 @@ export async function POST(request: Request) {
     })
 
     const updatedState = await getNasdaqFundamentalState()
+    try {
+      syncFundamentalBusFromStores()
+    } catch {
+      // soft-fail bus sync
+    }
     const out = evaluation.structuredOutput
 
     // Return exact machine-readable JSON conforming to Item 34, 35, & 39

@@ -293,4 +293,59 @@ describe('Leo Wyckoff Accumulation & Distribution Professional Audit Tests', () 
     )
     assert.ok(compareBtn.includes('Cross-Market 1-Year Wyckoff Backtest Comparative Matrix'))
   })
+
+  it('handles manual Anchored VWAP (AVWAP) drawing audits with institutional fair-value slope diagnosis', () => {
+    const avwapContext: LeoChatContext = {
+      ...baseContext,
+      instrument: 'GOLD',
+      currentPrice: 4208.5,
+      userDrawings: {
+        avwaps: [
+          {
+            id: 'avwap-oct11',
+            anchorLabel: 'Oct 11 Low',
+            anchorTime: 1728604800,
+            currentVwap: 4192.0,
+            distanceFromCurrentPrice: 16.5,
+            slope: 'RISING',
+          },
+        ],
+      },
+    }
+
+    const resp = buildDeskFallbackResponse(
+      [{ role: 'user', content: 'Leo, audit my anchored VWAP on Gold.' }],
+      avwapContext
+    )
+
+    assert.ok(resp.includes('Institutional Anchored VWAP (AVWAP) Audit'))
+    assert.ok(resp.includes('Oct 11 Low'))
+    assert.ok(resp.includes('4192.00'))
+    assert.ok(resp.includes('RISING'))
+    assert.ok(resp.includes('ABOVE AVWAP'))
+  })
+
+  it('synthesizes Multi-Agent Cooperation across Fundamental Specialist, Desk News / Headline Agent, and Chart Leo', () => {
+    const multiAgentContext: LeoChatContext = {
+      ...baseContext,
+      instrument: 'GOLD',
+      currentPrice: 4196.8,
+      macroCatalystReaction:
+        'US CPI YoY 2.8% vs 2.5% Expected — Sovereign Central Bank Bid Holds $4,190 | Reaction: BULLISH_ABSORPTION (+8.8 pts across 9 bars)',
+    }
+
+    const resp = buildDeskFallbackResponse(
+      [{ role: 'user', content: 'Leo, how do the fundamental agent and headline agent cooperate on Gold right now?' }],
+      multiAgentContext
+    )
+
+    assert.ok(resp.includes('Multi-Agent Desk Synthesis: Chart Leo × Fundamental Specialist × Desk News Agent'))
+    assert.ok(resp.includes('Active Market Intelligence Bus Brief (GOLD)'))
+    assert.ok(resp.includes('Cross-Market Fundamental Specialist Bus Status (All 5 Desks)'))
+    assert.ok(resp.includes('Verified Macro Catalyst & Market Reaction Engine'))
+    assert.ok(resp.includes('US CPI YoY 2.8% vs 2.5% Expected'))
+    assert.ok(resp.includes('BULLISH_ABSORPTION'))
+    assert.ok(resp.includes('Connecting the Dots — Catalyst Transmission × Wyckoff Structure (GOLD)'))
+  })
 })
+

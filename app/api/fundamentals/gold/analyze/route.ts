@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { evaluateGoldEvent } from '@/lib/fundamentals/goldAnalystEngine'
 import { getGoldFundamentalState } from '@/lib/fundamentals/goldStateStore'
+import { syncFundamentalBusFromStores } from '@/lib/ai/fundamentalBusSync'
 import { logger } from '@/lib/utils/logger'
 
 export const dynamic = 'force-dynamic'
@@ -32,6 +33,11 @@ export async function POST(request: Request) {
     })
 
     const updatedState = await getGoldFundamentalState()
+    try {
+      syncFundamentalBusFromStores()
+    } catch {
+      // soft-fail bus sync
+    }
     const out = evaluation.structuredOutput
 
     // Return exact machine-readable JSON conforming to Item 36 & Item 39

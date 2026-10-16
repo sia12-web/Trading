@@ -41,7 +41,12 @@ export async function GET(request: Request) {
     const windowHours = ([2, 12, 24].includes(windowRaw) ? windowRaw : 12) as DeskNewsWindowHours
     const deskParam = (searchParams.get('desk') || 'ALL').toUpperCase()
     const desk = (
-      deskParam === 'DOW' || deskParam === 'NASDAQ' || deskParam === 'NIKKEI'
+      deskParam === 'DOW' ||
+      deskParam === 'NASDAQ' ||
+      deskParam === 'NIKKEI' ||
+      deskParam === 'GOLD' ||
+      deskParam === 'CRUDE' ||
+      deskParam === 'SILVER'
         ? deskParam
         : 'ALL'
     ) as DeskNewsInstrument | 'ALL'
@@ -243,7 +248,7 @@ export async function GET(request: Request) {
         ok: false,
         updatedAt: new Date().toISOString(),
         items: [],
-        byDesk: { DOW: [], NASDAQ: [], NIKKEI: [], GOLD: [], CRUDE: [], ALL: [] },
+        byDesk: { DOW: [], NASDAQ: [], NIKKEI: [], GOLD: [], CRUDE: [], SILVER: [], ALL: [] },
         calendar: [],
         error: 'News unavailable',
         disclaimer: 'Context only — not a trade signal.',

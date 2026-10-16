@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getOrCreateUser } from '@/lib/utils/devAuth'
 import { evaluateOilEvent } from '@/lib/fundamentals/oilAnalystEngine'
 import { getOilFundamentalState } from '@/lib/fundamentals/oilStateStore'
+import { syncFundamentalBusFromStores } from '@/lib/ai/fundamentalBusSync'
 import { logger } from '@/lib/utils/logger'
 
 export const dynamic = 'force-dynamic'
@@ -32,6 +33,11 @@ export async function POST(request: Request) {
     })
 
     const updatedState = await getOilFundamentalState()
+    try {
+      syncFundamentalBusFromStores()
+    } catch {
+      // soft-fail bus sync
+    }
 
     // Expose the machine-readable structured JSON directly at top level for other trading agents
     return NextResponse.json({
