@@ -2542,30 +2542,43 @@ export function LeoAssistantPanel({
                       : ''
 
                   return (
-                    <button
-                      key={r.id}
-                      type="button"
-                      onClick={() => {
-                        if (attachedPoints.some((p) => p.id === `user-range-${r.id}`)) return
-                        setAttachedPoints((prev) => [
-                          ...prev,
-                          {
-                            id: `user-range-${r.id}`,
-                            label: r.label || 'Range Box',
-                            value: `${r.priceLow.toLocaleString()} – ${r.priceHigh.toLocaleString()}`,
-                            tier: 'DRAWING',
-                            category: 'RANGE',
-                            volume: r.totalVolume,
-                            description: `${r.heightPts} pts span (${r.durationMin}m). Price is ${r.priceRelation} range.${volDesc}`,
-                            instrument: (r as any).instrument || context.instrument,
-                          },
-                        ])
-                      }}
-                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-950/60 hover:bg-purple-900/80 border border-purple-600/50 text-[9.5px] font-mono text-purple-200 transition shadow-sm"
-                      title={`Click to attach ${r.label || 'Range Box'}${r.totalVolume != null ? ` (${r.totalVolume.toLocaleString()} vol)` : ''} to Leo`}
-                    >
-                      <span>⬛</span> {r.label || 'Range'} ({r.heightPts}p{volStr})
-                    </button>
+                    <div key={r.id} className="inline-flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (attachedPoints.some((p) => p.id === `user-range-${r.id}`)) return
+                          setAttachedPoints((prev) => [
+                            ...prev,
+                            {
+                              id: `user-range-${r.id}`,
+                              label: r.label || 'Range Box',
+                              value: `${r.priceLow.toLocaleString()} – ${r.priceHigh.toLocaleString()}`,
+                              tier: 'DRAWING',
+                              category: 'RANGE',
+                              volume: r.totalVolume,
+                              description: `${r.heightPts} pts span (${r.durationMin}m). Price is ${r.priceRelation} range.${volDesc}`,
+                              instrument: (r as any).instrument || context.instrument,
+                            },
+                          ])
+                        }}
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-950/60 hover:bg-purple-900/80 border border-purple-600/50 text-[9.5px] font-mono text-purple-200 transition shadow-sm"
+                        title={`Click to attach ${r.label || 'Range Box'}${r.totalVolume != null ? ` (${r.totalVolume.toLocaleString()} vol)` : ''} to Leo`}
+                      >
+                        <span>⬛</span> {r.label || 'Range'} ({r.heightPts}p{volStr})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleSendMessage(
+                            `Leo, backtest this box on ${context.instrument}: Range ${r.priceLow} to ${r.priceHigh} (${r.startTimeEt} to ${r.endTimeEt}). Tell me the trend, if it is invalidated, multi-timeframe CVD/ATR/volume across 1D, 4H, 15m, 5m, 1m, and how institutions accumulated or distributed inside it.`
+                          )
+                        }}
+                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/60 text-[9px] font-mono font-bold text-emerald-300 transition shadow-sm"
+                        title="Ask Leo to instantly backtest this box with multi-timeframe CVD, ATR & Wyckoff analysis"
+                      >
+                        <span>⚡</span> Backtest
+                      </button>
+                    </div>
                   )
                 })}
                 {context.userDrawings.frvps.map((f) => (
