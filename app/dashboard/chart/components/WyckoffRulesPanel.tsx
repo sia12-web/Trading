@@ -8,6 +8,8 @@ import {
   formatIgnitionHour,
   type WyckoffBenchmarkMarket,
 } from '@/lib/trading/wyckoffMarketBenchmarks'
+import type { WyckoffMultiTimeframeReport, WyckoffTimeframeAnalysis } from '@/lib/trading/wyckoff'
+import { saveLongTermMemory } from '@/lib/trading/leoLongTermMemory'
 
 interface WyckoffRulesPanelProps {
   instrument: string
@@ -101,6 +103,9 @@ export function WyckoffRulesPanel({ instrument, onAskLeo }: WyckoffRulesPanelPro
     activeBenchmark.market
   )
   const [busData, setBusData] = useState<BusApiPayload | null>(null)
+  const [wyckoffReport, setWyckoffReport] = useState<WyckoffMultiTimeframeReport | null>(null)
+  const [loadingWyckoff, setLoadingWyckoff] = useState(false)
+  const [showAdversarial, setShowAdversarial] = useState(false)
   const [syncingBus, setSyncingBus] = useState(false)
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null)
 
@@ -120,23 +125,63 @@ export function WyckoffRulesPanel({ instrument, onAskLeo }: WyckoffRulesPanelPro
     }
   }
 
+  const fetchWyckoffEngine = async () => {
+    setLoadingWyckoff(true)
+    try {
+      const res = await fetch(`/api/trading/wyckoff-engine?instrument=${encodeURIComponent(instrument)}`)
+      if (!res.ok) return
+      const json = await res.json()
+      if (json?.ok && json.report) {
+        setWyckoffReport(json.report as WyckoffMultiTimeframeReport)
+      }
+    } catch {
+      // soft-fail
+    } finally {
+      setLoadingWyckoff(false)
+    }
+  }
+
   useEffect(() => {
     fetchBusStatus()
+    fetchWyckoffEngine()
   }, [instrument])
+
+  const handleSaveRangeToNotes = (tf: WyckoffTimeframeAnalysis) => {
+    if (!tf.detectedRange) return
+    saveLongTermMemory({
+      id: tf.detectedRange.rangeId,
+      instrument: tf.instrument,
+      timeframe: tf.timeframe,
+      priceLow: tf.detectedRange.rangeLow,
+      priceHigh: tf.detectedRange.rangeHigh,
+      purpose: `${tf.timeframe} Wyckoff ${tf.detectedRange.classification} (${tf.detectedRange.provisionalPhase}) · Event: ${tf.eventState.candidateEvent} (${tf.eventState.lifecycleStage})`,
+      notes: tf.eventState.eventSummary,
+      status: 'ACTIVE',
+      createdAt: new Date().toISOString(),
+      triggerCount: 0,
+      alarmSoundEnabled: true,
+      isLongTerm: tf.timeframe === '1D' || tf.timeframe === '30m',
+    })
+    setSyncFeedback(`Saved ${tf.instrument} ${tf.timeframe} Wyckoff Range [${tf.detectedRange.rangeLow.toFixed(2)} – ${tf.detectedRange.rangeHigh.toFixed(2)}] to Notes`)
+    setTimeout(() => setSyncFeedback(null), 4000)
+  }
 
   const handleSyncMonthlyAndBus = async () => {
     setSyncingBus(true)
     setSyncFeedback(null)
     try {
-      const res = await fetch('/api/trading/market-intelligence-bus', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ instrument }),
-      })
+      const [res] = await Promise.all([
+        fetch('/api/trading/market-intelligence-bus', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ instrument }),
+        }),
+        fetchWyckoffEngine(),
+      ])
       const json = await res.json()
       if (json?.success) {
         setBusData(json)
-        setSyncFeedback(`Synced Bus + Monthly Snapshot (${json.syncedMonth || '2026-10'})`)
+        setSyncFeedback(`Synced Bus + MTF Wyckoff Engine + Monthly Snapshot (${json.syncedMonth || '2026-10'})`)
       }
     } catch {
       setSyncFeedback('Local Bus & Monthly Archive verified')
@@ -249,6 +294,183 @@ export function WyckoffRulesPanel({ instrument, onAskLeo }: WyckoffRulesPanelPro
           <span>🌐</span>
           <span>Compare 5 Markets (Wyckoff Matrix)</span>
         </button>
+      </div>
+
+      {/* NEW: Wyckoff Multi-Timeframe Auction Intelligence Engine (1D -> 30m -> 5m) */}
+      <div className="p-3 rounded-xl bg-gradient-to-r from-emerald-950/40 via-surface-900 to-cyan-950/40 border border-emerald-500/40 space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-surface-800 pb-1.5">
+          <div className="flex items-center gap-1.5">
+            <span>🧭</span>
+            <span className="font-mono font-bold text-xs text-white">
+              Wyckoff Multi-Timeframe Auction Intelligence Engine (1D → 30m → 5m)
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={fetchWyckoffEngine}
+              disabled={loadingWyckoff}
+              className="px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/50 text-emerald-200 font-mono text-[9.5px] font-bold transition"
+            >
+              {loadingWyckoff ? '⟳ Scanning…' : '🔄 Refresh 1D/30m/5m'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowAdversarial((v) => !v)}
+              className="px-2 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/50 text-cyan-200 font-mono text-[9.5px] font-bold transition"
+            >
+              {showAdversarial ? 'Hide 8-Question Audit' : '🛡️ 8 Adversarial Questions'}
+            </button>
+          </div>
+        </div>
+
+        {wyckoffReport ? (
+          <>
+            <div className="p-2 rounded-lg bg-surface-950/80 border border-surface-800 flex flex-wrap items-center justify-between gap-2 font-mono text-[9.5px]">
+              <div className="space-y-0.5">
+                <div className="text-white font-bold">
+                  Alignment:{' '}
+                  <span
+                    className={
+                      wyckoffReport.hierarchySynthesis.isCountertrend5m
+                        ? 'text-amber-300'
+                        : 'text-emerald-300'
+                    }
+                  >
+                    {wyckoffReport.hierarchySynthesis.alignmentStatus}
+                  </span>
+                </div>
+                <div className="text-gray-300 text-[9px]">
+                  {wyckoffReport.hierarchySynthesis.actionableSummary}
+                </div>
+              </div>
+              <span className="px-2 py-0.5 rounded bg-emerald-950 border border-emerald-500/50 text-emerald-300 font-bold text-[9.5px]">
+                Verdict: {wyckoffReport.hierarchySynthesis.combinedVerdict}
+              </span>
+            </div>
+
+            {wyckoffReport.hierarchySynthesis.explicitConflicts.length > 0 && (
+              <div className="p-2 rounded-lg bg-amber-950/60 border border-amber-500/50 text-amber-200 font-mono text-[9.5px]">
+                ⚠️ {wyckoffReport.hierarchySynthesis.explicitConflicts.join(' · ')}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 font-mono text-[9.5px]">
+              {[wyckoffReport.daily, wyckoffReport.m30, wyckoffReport.m5].map((tf) => (
+                <div
+                  key={tf.timeframe}
+                  className="p-2 rounded-lg bg-surface-950/80 border border-surface-800 space-y-1 flex flex-col justify-between"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between border-b border-surface-800 pb-1">
+                      <span className="font-bold text-white text-[10px]">
+                        [{tf.timeframe}] {tf.detectedRange?.classification ?? tf.swingStructure.structuralTrend}
+                      </span>
+                      <span className="px-1.5 py-0.2 rounded bg-surface-800 border border-surface-700 text-cyan-300 text-[8.5px] font-bold">
+                        {tf.monitoringStatus}
+                      </span>
+                    </div>
+                    {tf.detectedRange ? (
+                      <>
+                        <div className="text-gray-300">
+                          Range:{' '}
+                          <strong className="text-emerald-300">
+                            {tf.detectedRange.rangeLow.toFixed(2)}
+                          </strong>{' '}
+                          –{' '}
+                          <strong className="text-rose-300">
+                            {tf.detectedRange.rangeHigh.toFixed(2)}
+                          </strong>{' '}
+                          ({tf.detectedRange.provisionalPhase})
+                        </div>
+                        <div className="text-gray-400 text-[8.5px]">
+                          Mid: {tf.detectedRange.rangeMidpoint.toFixed(2)} · POC:{' '}
+                          {tf.detectedRange.poc?.toFixed(2) ?? 'N/A'} · Width:{' '}
+                          {tf.detectedRange.widthAtr?.toFixed(1) ?? 'N/A'} ATR
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-gray-400 text-[8.5px]">
+                        Swing Trend: {tf.swingStructure.structuralTrend}
+                      </div>
+                    )}
+                    <div className="text-amber-300 text-[8.5px]">
+                      Event: <strong>{tf.eventState.candidateEvent}</strong> (
+                      {tf.eventState.lifecycleStage} · {tf.eventState.confirmationStatus})
+                    </div>
+                    <div className="text-gray-400 text-[8.5px]">
+                      ATR: {tf.atrRegime.currentAtr?.toFixed(2) ?? 'N/A'} ({tf.atrRegime.atrTrend}) · CVD:{' '}
+                      {tf.cvdVolume.condition}
+                    </div>
+                    <div className="text-gray-400 text-[8.5px]">
+                      Invalidation: {tf.structuralInvalidation.price?.toFixed(2) ?? 'N/A'} · Next:{' '}
+                      {tf.nextImportantObstacle.price?.toFixed(2) ?? 'N/A'} (
+                      {tf.rewardToRiskRunway.rrRatio != null
+                        ? `${tf.rewardToRiskRunway.rrRatio}R`
+                        : 'Wait'}
+                      )
+                    </div>
+                  </div>
+                  {tf.detectedRange && (
+                    <button
+                      type="button"
+                      onClick={() => handleSaveRangeToNotes(tf)}
+                      className="mt-1.5 w-full py-1 rounded bg-emerald-950/60 hover:bg-emerald-900/70 border border-emerald-500/40 text-emerald-200 text-[8.5px] font-bold transition"
+                    >
+                      📌 Save {tf.timeframe} Range to Notes
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {showAdversarial && (
+              <div className="p-2.5 rounded-lg bg-surface-950/90 border border-cyan-500/40 space-y-1.5 font-mono text-[9px]">
+                <div className="font-bold text-cyan-300">
+                  8 Adversarial Questions ({wyckoffReport.m5.adversarialCheck.direction}) & Self-Challenge:
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+                  {wyckoffReport.m5.adversarialCheck.questions.map((q) => (
+                    <div
+                      key={q.questionNumber}
+                      className="p-1.5 rounded bg-surface-900/90 border border-surface-800"
+                    >
+                      <div className="font-semibold text-white">
+                        {q.questionNumber}. [{q.passed ? '✅ PASS' : '⚠️ WARN'}] {q.question}
+                      </div>
+                      <div className="text-gray-400 text-[8.5px] mt-0.5">{q.answer}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="p-1.5 rounded bg-rose-950/40 border border-rose-500/40 text-rose-200 text-[8.5px]">
+                  <strong>Self-Challenge:</strong>{' '}
+                  {wyckoffReport.m5.adversarialCheck.selfChallengeCritique}
+                </div>
+              </div>
+            )}
+
+            {wyckoffReport.alerts.length > 0 && (
+              <div className="space-y-1 font-mono text-[9px]">
+                <div className="text-gray-400 font-bold">Active Wyckoff Auction Alerts:</div>
+                {wyckoffReport.alerts.map((a) => (
+                  <div
+                    key={a.id}
+                    className="px-2 py-1 rounded bg-surface-950 border border-emerald-500/40 text-emerald-200 flex items-center justify-between gap-2"
+                  >
+                    <span>🔔 {a.headline}</span>
+                    <span className="text-[8px] text-gray-400">{a.timeframe}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="text-gray-400 font-mono text-[9.5px]">
+            {loadingWyckoff
+              ? 'Evaluating causal 1D / 30m / 5m Wyckoff ranges, ATR regime, and CVD effort vs result…'
+              : 'Click Refresh 1D/30m/5m to run live multi-timeframe Wyckoff auction discovery.'}
+          </div>
+        )}
       </div>
 
       {/* NEW: Multi-Agent Market Intelligence Bus Live Cooperation Card */}

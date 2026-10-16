@@ -280,7 +280,10 @@ function buildSnapshot(args: {
 }
 
 /** Copy current specialist memory onto the bus. Safe to call on every Leo turn or specialist evaluation. */
-export function syncFundamentalBusFromStores(now = new Date()): void {
+export function syncFundamentalBusFromStores(
+  now: Date = new Date(),
+  _options?: { force?: boolean }
+): void {
   const oil = peekOilFundamentalState()
   const gold = peekGoldFundamentalState()
   const nasdaq = peekNasdaqFundamentalState()
@@ -348,7 +351,7 @@ export function syncFundamentalBusFromStores(now = new Date()): void {
  * Formats a concise cross-market summary of all 5 Fundamental Specialist stances on the bus.
  * Used by Desk News Agent and Chart Leo to maintain full multi-agent situational awareness.
  */
-export function formatAllMarketsDeskBriefSummary(): string {
+export function formatAllMarketsDeskBriefSummary(_nowMs?: number): string {
   const rows: string[] = []
   for (const id of CANONICAL_MARKET_IDS) {
     const meta = canonicalMarketMeta(id)

@@ -1,9 +1,9 @@
 {
   "projectRef": "zslrcnqyxoftwhxzfjrk",
-  "updatedAt": "2026-10-16T00:32:45.050Z",
+  "updatedAt": "2026-10-16T20:17:52.071Z",
   "remoteStatus": "validated_staged_for_unpause",
   "remoteNote": "(ENOTFOUND) tenant/user postgres.zslrcnqyxoftwhxzfjrk not found",
-  "totalMigrations": 40,
+  "totalMigrations": 41,
   "migrations": [
     {
       "name": "20260517_create_identified_levels",
@@ -334,6 +334,17 @@
         "wyckoff_monthly_ingestion_log",
         "wyckoff_market_benchmarks",
         "wyckoff_range_events"
+      ],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20261016_wyckoff_auction_engine",
+      "file": "20261016_wyckoff_auction_engine.sql",
+      "bytes": 2747,
+      "tablesCreated": [
+        "wyckoff_detected_ranges",
+        "wyckoff_lifecycle_transitions",
+        "wyckoff_auction_alerts"
       ],
       "status": "validated_staged_for_unpause"
     }

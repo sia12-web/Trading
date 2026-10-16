@@ -21,6 +21,11 @@ import {
   formatWyckoffBaselineForPrompt,
   WYCKOFF_CROSS_MARKET_BASELINE,
 } from '../trading/wyckoffMarketBenchmarks'
+import {
+  generateAndPersistWyckoffReport,
+  formatWyckoffMultiTimeframeBriefForLeo,
+  type WyckoffMultiTimeframeReport,
+} from '../trading/wyckoff'
 
 export interface LeoDataPoint {
   id: string
@@ -296,6 +301,10 @@ export interface LeoChatContext {
    * Verified macroeconomic catalyst release details (CPI, NFP, FOMC) and market reaction telemetry.
    */
   macroCatalystReaction?: string | null
+  /**
+   * Optional pre-computed Wyckoff Multi-Timeframe Auction Intelligence report (1D, 30m, 5m).
+   */
+  wyckoffMultiTimeframeReport?: WyckoffMultiTimeframeReport | null
 }
 
 export interface LeoMessage {
@@ -926,6 +935,32 @@ export function buildLeoSystemPrompt(ctx: LeoChatContext): string {
       ? ctx.deskBriefText.trim()
       : formatDeskBriefForInstrument(ctx.instrument)
 
+  const resolvedWyckoffReport =
+    ctx.wyckoffMultiTimeframeReport ??
+    (ctx.recentCandles && ctx.recentCandles.length >= 6
+      ? generateAndPersistWyckoffReport(
+          {
+            instrumentRaw: ctx.instrument,
+            intradayCandles: ctx.recentCandles,
+            externalObstacles: {
+              yesterdayHigh: ctx.shortTermMoney?.yhigh,
+              yesterdayLow: ctx.shortTermMoney?.ylow,
+              overnightHigh: ctx.shortTermMoney?.onhigh,
+              overnightLow: ctx.shortTermMoney?.onlow,
+              fiveDayResistanceLow: ctx.intermediateMoney?.vah5d,
+              fiveDayResistanceHigh: ctx.intermediateMoney?.high5d,
+              fiveDaySupportLow: ctx.intermediateMoney?.low5d,
+              fiveDaySupportHigh: ctx.intermediateMoney?.val5d,
+            },
+          },
+          { persistToDisk: false }
+        )
+      : null)
+
+  const wyckoffEngineBlock = resolvedWyckoffReport
+    ? `\n${formatWyckoffMultiTimeframeBriefForLeo(resolvedWyckoffReport)}\n`
+    : ''
+
   return `You are Leo, a disciplined market-structure auditor for the ${ctx.instrument} desk.
 You are not a signal generator. You challenge every potential setup. You do not place orders.
 
@@ -942,7 +977,7 @@ You must NEVER emit any order execution directive or propose placing broker trad
 Execution doctrine is the 22-rule block at the end of this prompt. Nothing in this prompt adds a fifth setup, a point score, a fixed-point target, or a story about who is in the market.
 
 ${deskBriefBlock}
-${ctx.macroCatalystReaction ? `\n[VERIFIED MACRO CATALYST & DESK MARKET REACTION]\n${ctx.macroCatalystReaction}\n` : ''}
+${wyckoffEngineBlock}${ctx.macroCatalystReaction ? `\n[VERIFIED MACRO CATALYST & DESK MARKET REACTION]\n${ctx.macroCatalystReaction}\n` : ''}
 
 ZERO HALLUCINATION — PRIORITY 1:
 Every numerical price, level, POC, VWAP, volume, delta, and gauge you cite must come from verified telemetry in this prompt.

@@ -28,6 +28,10 @@ import {
   WYCKOFF_CROSS_MARKET_BASELINE,
   formatIgnitionHour,
 } from '@/lib/trading/wyckoffMarketBenchmarks'
+import {
+  generateAndPersistWyckoffReport,
+  formatWyckoffMultiTimeframeBriefForLeo,
+} from '@/lib/trading/wyckoff'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -157,6 +161,32 @@ export async function POST(req: NextRequest) {
           }
         } catch {
           // Soft-fail: never block Leo
+        }
+      }
+
+      // 6. Wyckoff Multi-Timeframe Auction Intelligence Engine (1D -> 30m -> 5m)
+      if (
+        !chartContext.wyckoffMultiTimeframeReport &&
+        chartContext.recentCandles &&
+        chartContext.recentCandles.length >= 6
+      ) {
+        try {
+          chartContext.wyckoffMultiTimeframeReport = generateAndPersistWyckoffReport({
+            instrumentRaw: chartContext.instrument,
+            intradayCandles: chartContext.recentCandles,
+            externalObstacles: {
+              yesterdayHigh: chartContext.shortTermMoney?.yhigh,
+              yesterdayLow: chartContext.shortTermMoney?.ylow,
+              overnightHigh: chartContext.shortTermMoney?.onhigh,
+              overnightLow: chartContext.shortTermMoney?.onlow,
+              fiveDayResistanceLow: chartContext.intermediateMoney?.vah5d,
+              fiveDayResistanceHigh: chartContext.intermediateMoney?.high5d,
+              fiveDaySupportLow: chartContext.intermediateMoney?.low5d,
+              fiveDaySupportHigh: chartContext.intermediateMoney?.val5d,
+            },
+          })
+        } catch {
+          // Non-fatal
         }
       }
     }
@@ -516,7 +546,20 @@ ${marketsList}
 - **Active Setup:** **${primarySetup}**
 - **Execution Read:** ${executionRead}
 - **Required Clearance:** Minimum **2.0R** reward clearance to opposite boundary required before entering.
-- **VERDICT:** **${tradeVerdict}** *(Advisory tradeable hypothesis only; read-only platform never executes orders).*`
+- **VERDICT:** **${tradeVerdict}** *(Advisory tradeable hypothesis only; read-only platform never executes orders).*${
+      ctx.wyckoffMultiTimeframeReport || (ctx.recentCandles && ctx.recentCandles.length >= 6)
+        ? `\n\n---\n\n### 8. **Live Multi-Timeframe Wyckoff Auction Intelligence Engine (1D → 30m → 5m):**\n\`\`\`text\n${formatWyckoffMultiTimeframeBriefForLeo(
+            ctx.wyckoffMultiTimeframeReport ??
+              generateAndPersistWyckoffReport(
+                {
+                  instrumentRaw: ctx.instrument,
+                  intradayCandles: ctx.recentCandles,
+                },
+                { persistToDisk: false }
+              )
+          )}\n\`\`\``
+        : ''
+    }`
   }
 
   // 1c. Quick-Ask 1: Audit 4 Wyckoff Execution Setups (Spring, Upthrust, Breakout Retest, Breakdown Retest)

@@ -176,6 +176,15 @@ export function getWyckoffBenchmark(instrument: string): WyckoffMarketBenchmark 
   return pick('NASDAQ')
 }
 
+export type WyckoffBenchmarkMarket = 'NASDAQ' | 'DOW' | 'CRUDE' | 'GOLD' | 'NIKKEI'
+
+export function getAllWyckoffBenchmarks(): WyckoffMarketBenchmark[] {
+  const order: WyckoffBenchmarkMarket[] = ['NASDAQ', 'DOW', 'CRUDE', 'GOLD', 'NIKKEI']
+  return order
+    .map((k) => WYCKOFF_BENCHMARKS_BY_MARKET[k])
+    .filter((m): m is WyckoffMarketBenchmark => Boolean(m))
+}
+
 /** Strips the "(N ranges)" suffix and zero-pads: "9:00 ET (129 ranges)" -> "09:00 ET". */
 export function formatIgnitionHour(raw: string): string {
   const m = raw.match(/^(\d{1,2}):(\d{2}) ET/)
