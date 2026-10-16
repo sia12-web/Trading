@@ -2027,7 +2027,7 @@ export function LeoAssistantPanel({
             )}
           </div>
 
-          {/* ── Mode Switcher Tabs (Leo Chat vs Wyckoff Rules) ── */}
+          {/* ── Mode Switcher Tabs (Leo Chat vs Wyckoff Rules & Multi-Agent Bus) ── */}
           <div className="flex items-center border-b border-neutral-800/80 bg-neutral-950/90 px-2 py-1.5 gap-1 shrink-0">
             <button
               type="button"
@@ -2050,8 +2050,8 @@ export function LeoAssistantPanel({
                   : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900/60 border border-transparent'
               }`}
             >
-              <span>📜</span>
-              <span>22 Rules</span>
+              <span>🏛️</span>
+              <span>22 Rules · Multi-Agent · Backtests</span>
             </button>
           </div>
 
@@ -2420,7 +2420,8 @@ export function LeoAssistantPanel({
           {context.userDrawings &&
             (context.userDrawings.trendlines.length > 0 ||
               context.userDrawings.ranges.length > 0 ||
-              context.userDrawings.frvps.length > 0) && (
+              context.userDrawings.frvps.length > 0 ||
+              (context.userDrawings.avwaps && context.userDrawings.avwaps.length > 0)) && (
               <div className="px-3 py-1.5 border-b border-neutral-800/60 bg-neutral-950/60 flex flex-wrap items-center gap-1.5">
                 <span className="text-[9px] text-cyan-400 font-mono font-semibold flex items-center gap-1">
                   <span>🎨</span> Drawn:
@@ -2559,6 +2560,31 @@ export function LeoAssistantPanel({
                     <span>📊</span> FRVP (POC {f.poc.toLocaleString()})
                   </button>
                 ))}
+                {context.userDrawings.avwaps?.map((av) => (
+                  <button
+                    key={av.id}
+                    type="button"
+                    onClick={() => {
+                      if (attachedPoints.some((p) => p.id === `user-avwap-${av.id}`)) return
+                      setAttachedPoints((prev) => [
+                        ...prev,
+                        {
+                          id: `user-avwap-${av.id}`,
+                          label: av.label || `AVWAP (${av.anchorTimeEt})`,
+                          value: `VWAP ${av.currentVwap.toLocaleString()} (${av.zScore}σ)`,
+                          tier: 'DRAWING',
+                          category: 'VWAP',
+                          description: `Manual AVWAP anchored at ${av.anchorTimeEt}: VWAP ${av.currentVwap.toFixed(2)} | Price is ${av.priceRelation} (${av.deltaPts >= 0 ? '+' : ''}${av.deltaPts} pts, ${av.zScore}σ).`,
+                          instrument: (av as any).instrument || context.instrument,
+                        },
+                      ])
+                    }}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-950/60 hover:bg-emerald-900/80 border border-emerald-600/50 text-[9.5px] font-mono text-emerald-200 transition shadow-sm"
+                    title="Click to attach this manual Anchored VWAP to your message"
+                  >
+                    <span>⚓</span> {av.label || 'AVWAP'} ({av.currentVwap.toFixed(1)})
+                  </button>
+                ))}
               </div>
             )}
 
@@ -2578,7 +2604,9 @@ export function LeoAssistantPanel({
                         ? '⬛'
                         : pt.category === 'FRVP'
                           ? '📊'
-                          : '📍'}{' '}
+                          : pt.category === 'VWAP'
+                            ? '⚓'
+                            : '📍'}{' '}
                     {pt.label}:
                   </span>
                   <span className="text-amber-300 font-semibold">{pt.value}</span>
@@ -2608,6 +2636,42 @@ export function LeoAssistantPanel({
 
           {/* Quick Prompt Strip */}
               <div className="px-3 py-1.5 border-b border-neutral-800/60 bg-neutral-950/40 flex items-center gap-1.5 overflow-x-auto shrink-0">
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleSendMessage(
+                      `Leo, how do the fundamental agent and headline agent cooperate on ${context.instrument} right now? Connect the dots with our Wyckoff structure.`
+                    )
+                  }
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-950/70 hover:bg-amber-900/90 border border-amber-500/60 text-[9.5px] font-mono text-amber-200 shrink-0 transition shadow-sm font-semibold"
+                  title="Synthesize Chart Leo x Fundamental Specialist x Desk News Agent"
+                >
+                  <span>🤝</span> Multi-Agent Synthesis
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleSendMessage(
+                      `Leo, audit 1-year 5-minute Wyckoff range backtest benchmarks on ${context.instrument}.`
+                    )
+                  }
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-950/70 hover:bg-blue-900/90 border border-blue-500/60 text-[9.5px] font-mono text-blue-200 shrink-0 transition shadow-sm font-semibold"
+                  title="Audit 1-Year 5-Minute Wyckoff Backtest Benchmarks"
+                >
+                  <span>🔬</span> 1-Yr Wyckoff Benchmarks
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleSendMessage(
+                      'Leo, compare markets for accumulation and distribution backtests. Show me the cross-market comparative matrix.'
+                    )
+                  }
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-950/70 hover:bg-indigo-900/90 border border-indigo-500/60 text-[9.5px] font-mono text-indigo-200 shrink-0 transition shadow-sm font-semibold"
+                  title="Compare all 5 markets across 6,104 Wyckoff ranges"
+                >
+                  <span>🌐</span> Compare 5 Markets (Wyckoff)
+                </button>
                 <button
                   type="button"
                   onClick={() =>

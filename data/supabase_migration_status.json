@@ -1,0 +1,341 @@
+{
+  "projectRef": "zslrcnqyxoftwhxzfjrk",
+  "updatedAt": "2026-10-16T00:32:45.050Z",
+  "remoteStatus": "validated_staged_for_unpause",
+  "remoteNote": "(ENOTFOUND) tenant/user postgres.zslrcnqyxoftwhxzfjrk not found",
+  "totalMigrations": 40,
+  "migrations": [
+    {
+      "name": "20260517_create_identified_levels",
+      "file": "20260517_create_identified_levels.sql",
+      "bytes": 1379,
+      "tablesCreated": [
+        "identified_levels"
+      ],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260518_add_paper_trading",
+      "file": "20260518_add_paper_trading.sql",
+      "bytes": 775,
+      "tablesCreated": [],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260713_add_reasoning_timeframe_to_identified_levels",
+      "file": "20260713_add_reasoning_timeframe_to_identified_levels.sql",
+      "bytes": 984,
+      "tablesCreated": [],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260713_create_level_breaks",
+      "file": "20260713_create_level_breaks.sql",
+      "bytes": 2194,
+      "tablesCreated": [
+        "level_breaks"
+      ],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260713_create_level_history",
+      "file": "20260713_create_level_history.sql",
+      "bytes": 2462,
+      "tablesCreated": [
+        "level_history"
+      ],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260713_create_level_monitoring",
+      "file": "20260713_create_level_monitoring.sql",
+      "bytes": 3440,
+      "tablesCreated": [
+        "trading_levels",
+        "level_monitor_status"
+      ],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260713_create_management_decisions",
+      "file": "20260713_create_management_decisions.sql",
+      "bytes": 2021,
+      "tablesCreated": [
+        "management_decisions"
+      ],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260713_create_replay_availability_cache",
+      "file": "20260713_create_replay_availability_cache.sql",
+      "bytes": 1110,
+      "tablesCreated": [
+        "replay_availability_cache"
+      ],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260713_create_simulation_replays",
+      "file": "20260713_create_simulation_replays.sql",
+      "bytes": 2537,
+      "tablesCreated": [
+        "simulation_replays"
+      ],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260713_create_trades_journal",
+      "file": "20260713_create_trades_journal.sql",
+      "bytes": 3484,
+      "tablesCreated": [
+        "trades_journal",
+        "entry_windows"
+      ],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260713_regime_cache",
+      "file": "20260713_regime_cache.sql",
+      "bytes": 3940,
+      "tablesCreated": [
+        "regime_cache",
+        "market_recommendations"
+      ],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260714_create_entry_discipline",
+      "file": "20260714_create_entry_discipline.sql",
+      "bytes": 4315,
+      "tablesCreated": [
+        "trades_journal",
+        "entry_discipline_cache"
+      ],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260717_create_llm_usage",
+      "file": "20260717_create_llm_usage.sql",
+      "bytes": 1361,
+      "tablesCreated": [
+        "llm_usage"
+      ],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260717_rls_personal_desk_caches",
+      "file": "20260717_rls_personal_desk_caches.sql",
+      "bytes": 1061,
+      "tablesCreated": [],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260717_trades_journal_enrichment",
+      "file": "20260717_trades_journal_enrichment.sql",
+      "bytes": 807,
+      "tablesCreated": [],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260717_trades_journal_oanda_ids",
+      "file": "20260717_trades_journal_oanda_ids.sql",
+      "bytes": 362,
+      "tablesCreated": [],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260717_trades_journal_working_limits",
+      "file": "20260717_trades_journal_working_limits.sql",
+      "bytes": 1098,
+      "tablesCreated": [],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260718_create_simulation_trades",
+      "file": "20260718_create_simulation_trades.sql",
+      "bytes": 2057,
+      "tablesCreated": [
+        "simulation_trades"
+      ],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260718_desk_attendance",
+      "file": "20260718_desk_attendance.sql",
+      "bytes": 1708,
+      "tablesCreated": [
+        "desk_attendance"
+      ],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260718_level_history_last_verdict",
+      "file": "20260718_level_history_last_verdict.sql",
+      "bytes": 691,
+      "tablesCreated": [],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260718_simulation_replays_playback_speed_025",
+      "file": "20260718_simulation_replays_playback_speed_025.sql",
+      "bytes": 437,
+      "tablesCreated": [],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260718_simulation_replays_status_half_speed",
+      "file": "20260718_simulation_replays_status_half_speed.sql",
+      "bytes": 838,
+      "tablesCreated": [],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260718_simulation_trades_desk_rls",
+      "file": "20260718_simulation_trades_desk_rls.sql",
+      "bytes": 339,
+      "tablesCreated": [],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260719_entry_source",
+      "file": "20260719_entry_source.sql",
+      "bytes": 838,
+      "tablesCreated": [],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260719_live_voice_sessions",
+      "file": "20260719_live_voice_sessions.sql",
+      "bytes": 2761,
+      "tablesCreated": [
+        "live_voice_sessions",
+        "live_voice_turns",
+        "live_voice_pins"
+      ],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260727_trades_journal_cash_close_exit_reason",
+      "file": "20260727_trades_journal_cash_close_exit_reason.sql",
+      "bytes": 589,
+      "tablesCreated": [],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260729_trades_journal_range_bucket",
+      "file": "20260729_trades_journal_range_bucket.sql",
+      "bytes": 948,
+      "tablesCreated": [],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260803_desk_attendance_late_join",
+      "file": "20260803_desk_attendance_late_join.sql",
+      "bytes": 325,
+      "tablesCreated": [],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260815_desk_settings",
+      "file": "20260815_desk_settings.sql",
+      "bytes": 558,
+      "tablesCreated": [
+        "desk_settings"
+      ],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260816_questrade_equity_points",
+      "file": "20260816_questrade_equity_points.sql",
+      "bytes": 750,
+      "tablesCreated": [
+        "questrade_equity_points"
+      ],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260816_questrade_session",
+      "file": "20260816_questrade_session.sql",
+      "bytes": 623,
+      "tablesCreated": [
+        "questrade_session"
+      ],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260816_team_signals",
+      "file": "20260816_team_signals.sql",
+      "bytes": 1034,
+      "tablesCreated": [
+        "team_signals"
+      ],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260818_trades_journal_gold_crude",
+      "file": "20260818_trades_journal_gold_crude.sql",
+      "bytes": 344,
+      "tablesCreated": [],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260819_trades_journal_russell",
+      "file": "20260819_trades_journal_russell.sql",
+      "bytes": 362,
+      "tablesCreated": [],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260820_desk_gold_crude",
+      "file": "20260820_desk_gold_crude.sql",
+      "bytes": 986,
+      "tablesCreated": [],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260827_desk_settings_asia_signals",
+      "file": "20260827_desk_settings_asia_signals.sql",
+      "bytes": 184,
+      "tablesCreated": [],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20260828_relax_instrument_constraints",
+      "file": "20260828_relax_instrument_constraints.sql",
+      "bytes": 3000,
+      "tablesCreated": [],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20261004_market_intelligence_bus",
+      "file": "20261004_market_intelligence_bus.sql",
+      "bytes": 2791,
+      "tablesCreated": [
+        "market_events",
+        "market_interpretations",
+        "market_state_history"
+      ],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20261015_market_intelligence_bus",
+      "file": "20261015_market_intelligence_bus.sql",
+      "bytes": 1639,
+      "tablesCreated": [
+        "market_intelligence_bus_snapshots"
+      ],
+      "status": "validated_staged_for_unpause"
+    },
+    {
+      "name": "20261015_wyckoff_benchmarks_and_monthly_history",
+      "file": "20261015_wyckoff_benchmarks_and_monthly_history.sql",
+      "bytes": 5148,
+      "tablesCreated": [
+        "wyckoff_monthly_ingestion_log",
+        "wyckoff_market_benchmarks",
+        "wyckoff_range_events"
+      ],
+      "status": "validated_staged_for_unpause"
+    }
+  ]
+}
