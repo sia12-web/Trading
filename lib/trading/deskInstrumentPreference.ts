@@ -118,6 +118,7 @@ export function deskVisibleBarCount(
   timeframe?: string
 ): number {
   const isDaily = timeframe === '1D'
+  const is4H = timeframe === '4h' || timeframe === '4H'
   const is30m = timeframe === '30m'
   const spacing = deskBarSpacing(containerWidth, barCount, timeframe)
   const byWidth = Math.floor(Math.max(containerWidth - 80, 240) / spacing)
@@ -126,6 +127,10 @@ export function deskVisibleBarCount(
     ? compact
       ? 50
       : 80
+    : is4H
+      ? compact
+        ? 40
+        : 60
     : is30m
       ? compact
         ? 18
@@ -157,6 +162,9 @@ export function deskBarSpacing(
   const compact = containerWidth < 700
   if (timeframe === '1D') {
     return compact ? 7 : DESK_DAILY_BAR_SPACING
+  }
+  if (timeframe === '4h' || timeframe === '4H') {
+    return compact ? 8 : 10
   }
   if (timeframe === '30m') {
     return compact ? 16 : DESK_30M_BAR_SPACING

@@ -237,6 +237,9 @@ export function dropImplausibleDeskBars<T extends FormingBar>(
   timeframe?: string | null
 ): T[] {
   if (bars.length === 0) return bars
+  if (timeframe === '1D' || timeframe === 'D' || timeframe === '4h' || timeframe === '4H' || timeframe === '240') {
+    return bars.filter((b) => b.close > 0 && b.open > 0)
+  }
   const baseRange = instrument ? DESK_MAX_5M_RANGE[instrument] : undefined
   const mult = timeframe === '30m' ? 3 : timeframe === '15m' ? 1.8 : 1
   const maxRange = baseRange != null ? baseRange * mult : undefined

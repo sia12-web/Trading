@@ -206,7 +206,7 @@ export function resolveYahooSymbol(
 ): string | null {
   if (
     (instrument === 'GOLD' || instrument === 'SILVER' || instrument === 'NIKKEI') &&
-    (resolution === 'D' || resolution === '1D' || resolution === '1d')
+    (resolution === 'D' || resolution === '1D' || resolution === '1d' || resolution === '240')
   ) {
     return instrument === 'GOLD' ? 'GC=F' : instrument === 'SILVER' ? 'SI=F' : 'NKD=F'
   }
@@ -227,38 +227,45 @@ export async function getYahooCandles(
   const is4H = resolution === '240'
   const fetchDays = is1m
     ? Math.min(days, 8)
-    : is4H || is30m
-      ? Math.max(days, 10)
-      : days
+    : is4H
+      ? Math.min(Math.max(days, 365), 720)
+      : is30m
+        ? Math.max(days, 10)
+        : days
   const range =
     is1m
       ? fetchDays <= 5
         ? '5d'
         : '7d'
-      : fetchDays <= 1
-        ? '1d'
-        : fetchDays <= 5
-          ? '5d'
-          : fetchDays <= 30
-            ? '1mo'
-            : fetchDays <= 100
-              ? '3mo'
-              : fetchDays <= 200
-                ? '6mo'
-                : fetchDays <= 400
-                  ? '1y'
-                  : fetchDays <= 800
-                    ? '2y'
-                    : '5y'
+      : is4H
+        ? fetchDays <= 400
+          ? '1y'
+          : '2y'
+        : fetchDays <= 1
+          ? '1d'
+          : fetchDays <= 5
+            ? '5d'
+            : fetchDays <= 30
+              ? '1mo'
+              : fetchDays <= 100
+                ? '3mo'
+                : fetchDays <= 200
+                  ? '6mo'
+                  : fetchDays <= 400
+                    ? '1y'
+                    : fetchDays <= 800
+                      ? '2y'
+                      : '5y'
 
   // Intraday CME futures: explicit period1/period2 returns denser 5m history than
   // coarse range=1mo (Yahoo often truncates *=F intraday under range=).
+  // For daily and 4H (which aggregates 60m), range=1y/2y returns complete, continuous multi-month history.
   const nowSec = Math.floor(Date.now() / 1000)
   const period1 = is1m
     ? nowSec - fetchDays * 24 * 3600
     : nowSec - Math.max(fetchDays, 5) * 24 * 3600
   const first =
-    interval === '1d'
+    interval === '1d' || is4H
       ? await fetchYahooChart(symbol, interval, `range=${range}`)
       : await fetchYahooChart(
           symbol,

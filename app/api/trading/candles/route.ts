@@ -103,9 +103,10 @@ export async function GET(request: Request) {
     const instrument = (searchParams.get('instrument') || 'DOW') as Instrument
     const timeframe = searchParams.get('timeframe') || '5m'
     const isDaily = timeframe === '1D' || timeframe === 'D'
-    const defaultDays = isDaily ? 730 : 5
-    const maxDays = isDaily ? 1825 : 14
-    // Cap lookback — AVWAP needs ~5 sessions (or 730 days for 1D); hard max 14 calendar days (1825 for 1D)
+    const is4H = timeframe === '4h' || timeframe === '4H' || timeframe === '240'
+    const defaultDays = (isDaily || is4H) ? 730 : 5
+    const maxDays = (isDaily || is4H) ? 1825 : 14
+    // Cap lookback — AVWAP needs ~5 sessions (or 730 days for 1D and 4H); hard max 14 calendar days (1825 for 1D/4H)
     const days = Math.min(Math.max(parseInt(searchParams.get('days') || String(defaultDays), 10), 1), maxDays)
     const endDate = searchParams.get('date') || searchParams.get('end_date')
     const asOfParam = searchParams.get('as_of')
@@ -206,6 +207,8 @@ export async function GET(request: Request) {
         const fetchDays =
           timeframe === '1m'
             ? Math.max(days, 3)
+            : is4H
+            ? Math.max(days, 365)
             : Math.max(days, AVWAP_CANDLE_FETCH_CALENDAR_DAYS)
 
         // 1. Direct CME Globex futures candles (MYM=F, MNQ=F, NKD=F, MGC=F, CL=F) matching CME & TradingView
@@ -249,12 +252,12 @@ export async function GET(request: Request) {
           }
         }
 
-        if (candles?.length) {
+        if (candles?.length && !is4H) {
           candles = clipAfternoonBars(candles, instrument)
         }
 
         // Fill intraday dropouts during active CME market hours to guarantee unbroken continuum
-        if (candles?.length && !isDaily) {
+        if (candles?.length && !isDaily && !is4H) {
           candles = fillCandleGaps(candles, timeframe, instrument)
         }
 
@@ -263,7 +266,7 @@ export async function GET(request: Request) {
         //    splice Databento Historical 1m into that window and let live win on
         //    overlap. Skipping overlay because live *now* differs from delayed
         //    Yahoo is what painted holes and late bars.
-        if (candles?.length && !isDaily && isDatabentoConfigured()) {
+        if (candles?.length && !isDaily && !is4H && isDatabentoConfigured()) {
           try {
             const stepSec = resolutionSeconds(resolution, timeframe)
             const vendorLast = candles[candles.length - 1]!.time
@@ -294,7 +297,7 @@ export async function GET(request: Request) {
     if (candles && asOf != null && Number.isFinite(asOf)) {
       candles = candles.filter((c) => c.time <= asOf)
     }
-    if (candles?.length && !isDaily) {
+    if (candles?.length && !isDaily && !is4H) {
       candles = dropImplausibleDeskBars(candles, instrument, timeframe)
     }
 
@@ -422,9 +425,9 @@ export async function GET(request: Request) {
       quote,
     }
 
-    // Cache TTL: 60s for daily, 600s for historical replay dates, 1s for a delayed
+    // Cache TTL: 60s for daily and 4H, 600s for historical replay dates, 1s for a delayed
     // vendor book that still needs a Databento overlay, 2s once the tape is spliced.
-    const ttlMs = isDaily ? 60_000 : endDate ? 600_000 : source === 'databento' ? 2_000 : 1_000
+    const ttlMs = (isDaily || is4H) ? 60_000 : endDate ? 600_000 : source === 'databento' ? 2_000 : 1_000
     candleMemoryCache.set(cacheKey, {
       data: payload,
       expiresAt: now + ttlMs,

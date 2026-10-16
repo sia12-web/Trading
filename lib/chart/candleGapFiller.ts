@@ -28,6 +28,7 @@ const TIMEFRAME_SECONDS: Record<string, number> = {
   '1H': 3600,
   '60': 3600,
   '4H': 14400,
+  '4h': 14400,
   '240': 14400,
 }
 
