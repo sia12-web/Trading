@@ -19,10 +19,17 @@ const nextConfig = {
   // Next.js already exposes NEXT_PUBLIC_* from the environment.
 
   // Explicit alias so production (Railway/Linux) resolves @/ the same as local.
-  webpack: (config) => {
+  webpack: (config, { isServer }) => {
     config.resolve.alias = {
       ...(config.resolve.alias || {}),
       '@': path.resolve(__dirname),
+    }
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...(config.resolve.fallback || {}),
+        fs: false,
+        path: false,
+      }
     }
     return config
   },

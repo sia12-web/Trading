@@ -105,6 +105,10 @@ export interface LeoUserDrawingsContext {
     heightPts: number
     startTimeEt: string
     endTimeEt: string
+    timeStart?: number
+    timeEnd?: number
+    p1?: { time: number; price: number }
+    p2?: { time: number; price: number }
     durationMin: number
     positionPct: number
     priceRelation: 'INSIDE' | 'ABOVE' | 'BELOW'
@@ -1604,6 +1608,11 @@ STRATEGY & FEATURE INQUIRIES RESPONSE PROTOCOL:
      - Enforce zero-error Wyckoffian logic: Springs require confirmed Reclaims; Upthrusts require confirmed Return Belows; Phase B is balance/chop (NO TRADE).
      - Cite verified 1-year 5-minute backtest benchmarks for the active instrument exactly as listed above: Spring rate (${activeWyckoff.springRatePct}%) vs LPS rate (${activeWyckoff.lpsRatePct}%), UTAD rate (${activeWyckoff.utadRatePct}%) vs LPSY rate (${activeWyckoff.lpsyRatePct}%), ${activeWyckoff.sweepVolumeMultiplier}x average sweep volume, ${activeWyckoff.avgRangeDurationHours}-hour average range duration, and overnight formation (${activeWyckoff.overnightFormationPct}%). Mention the method limits and sample size when relevant.
      - Map the market to one of the 4 valid execution setups (Spring Reclaim, Upthrust Return, Breakout Retest / LPS, Breakdown Retest / LPSY) with structural stop and minimum 2.0R clearance.
+  3b. If asked about a Box, Range Box, or user-drawn Box on chart (e.g. "analyze this box", "backtest this box", "downtrend or uptrend", "trend invalidation"):
+     - Determine macro trend direction (Downtrend vs. Uptrend vs. Trading Range).
+     - Audit Trend Invalidation: Did the trend fail? (e.g. In a downtrend, failure to print lower lows + printing a confirmed Higher Low base = Downtrend Invalidation & Phase A/B Accumulation transition).
+     - Multi-Timeframe Decomposition: Deconstruct the Daily box into 4-Hour sub-legs (Markdown legs, Markup legs, Relief bases, Compression ranges) and 15m/5m micro-structures.
+     - Conduct on-demand quantitative backtest of institutional accumulation/distribution inside that box (Spring rates, CVD absorption rates, Higher-Low base edge, UTAD rates, MFE expansion).
   4. If asked to compare markets, compare accumulation/distribution, or compare backtest benchmarks across markets:
      - Output the Cross-Market 1-Year Wyckoff Backtest Comparative Matrix with the 6,104 range dataset.
      - Quote the differences between markets only from the matrix above (spring rates, average sweep volume, top ignition hours, overnight formation, sample sizes). Do not add figures that are not in the matrix.

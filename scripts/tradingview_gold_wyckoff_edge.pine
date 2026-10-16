@@ -1,0 +1,235 @@
+//@version=6
+indicator("Gold Wyckoff Micro-Range Edge [Antigravity Desk]", shorttitle="GOLD EDGE", overlay=true, max_boxes_count=100, max_lines_count=100, max_labels_count=100)
+
+// =============================================================================
+// INPUTS & CONFIGURATION
+// =============================================================================
+group_time    = "Time Window Gating"
+startTime     = input.time(timestamp("26 Jan 2026 00:00 +0000"), "Start Window (No Prior Data)", group=group_time, tooltip="Only bars from January 26, 2026 forward are analyzed. Prior history is completely hidden.")
+enableEndTime = input.bool(false, "Enable End Date (Leave unchecked for live/future)", group=group_time)
+endTime       = input.time(timestamp("01 Jan 2030 00:00 +0000"), "End Date", group=group_time)
+
+group_filter  = "Noise & Invalidation Filters (De-Clutter)"
+deleteInvalid = input.bool(true, "Auto-Delete Invalidated Signals", group=group_filter, tooltip="If price breaks below a Spring's low or above a UTAD's high, immediately delete the signal from the chart so only valid, working setups remain.")
+minSweepAtr   = input.float(0.35, "Minimum Sweep Depth (x ATR)", minval=0.1, step=0.05, group=group_filter, tooltip="Eliminates 0-point micro touches. A sweep must penetrate liquidity by at least this depth.")
+cooldownBars  = input.int(16, "Signal Cooldown (Bars)", minval=5, maxval=60, group=group_filter, tooltip="Minimum bars required between signals to prevent clustering inside the same consolidation.")
+requireVol    = input.bool(true, "Require Volume / Absorption Confirmation", group=group_filter, tooltip="Only fires if volume is expanding or bar shows clear absorption tail.")
+
+group_range   = "Wyckoff Range Settings"
+rangeLength   = input.int(24, "Range Lookback (Bars)", minval=10, maxval=100, group=group_range)
+atrLength     = input.int(14, "ATR Length", minval=1, group=group_range)
+reclaimBars   = input.int(3, "Max Bars to Reclaim Range", minval=1, maxval=6, group=group_range)
+
+group_style   = "Visual Display"
+showRangeLines= input.bool(true, "Show Creek (Support) & Ice (Resistance) Lines", group=group_style)
+showFill      = input.bool(false, "Show Range Background Fill (Uncheck for Clean Chart)", group=group_style)
+showDashboard = input.bool(true, "Show Real-Time Edge HUD Table", group=group_style)
+
+// Colors
+c_creek     = color.new(#10b981, 20) // Soft Emerald
+c_ice       = color.new(#ef4444, 20) // Soft Rose
+c_box_bg    = color.new(#3b82f6, 96) // Ultra-faint slate
+c_spring    = #06b6d4                // Cyan
+c_utad      = #f59e0b                // Amber
+c_sos       = #10b981                // Emerald
+
+// =============================================================================
+// TIME GATING & CORE METRICS
+// =============================================================================
+inTimeWindow = (time >= startTime) and (not enableEndTime or time <= endTime)
+atrVal = ta.atr(atrLength)
+
+// Close Location Value (CLV) [-1.0 to +1.0]
+rangeSpan = high - low
+clv = rangeSpan > 0 ? ((close - low) - (high - close)) / rangeSpan : 0.0
+barDelta = volume * clv
+
+// Session CVD
+var float sessionCvd = 0.0
+if ta.change(time("1D")) != 0
+    sessionCvd := barDelta
+else
+    sessionCvd += barDelta
+
+// Volume Absorption
+volMa = ta.sma(volume, 20)
+hasVolAbsorptionBuy  = (not requireVol) or (volume > volMa * 0.9 and clv >= 0.15) or (close > open and barDelta < 0)
+hasVolAbsorptionSell = (not requireVol) or (volume > volMa * 0.9 and clv <= -0.15) or (close < open and barDelta > 0)
+
+// =============================================================================
+// RANGE DETECTION: CREEK & ICE
+// =============================================================================
+creekSupport  = ta.lowest(low[1], rangeLength)
+iceResistance = ta.highest(high[1], rangeLength)
+boxSpan       = iceResistance - creekSupport
+boxMid        = creekSupport + (boxSpan / 2.0)
+
+// Check Low Progression: Ascending Higher Lows (78.6% Gold Edge)
+halfLen = int(rangeLength / 2)
+firstHalfLow  = ta.lowest(low[1 + halfLen], halfLen)
+secondHalfLow = ta.lowest(low[1], halfLen)
+isHigherLowBase = secondHalfLow > (firstHalfLow + 0.25 * atrVal)
+
+// Global series crossovers (unconditional for history stability)
+crossOverCreek = ta.crossover(close, creekSupport)
+crossUnderIce  = ta.crossunder(close, iceResistance)
+crossOverSos   = ta.crossover(close, iceResistance + 0.25 * atrVal)
+
+// =============================================================================
+// SPRING DETECTION WITH STRICT DEPTH, COOLDOWN & AUTO-PURGING INVALIDATION
+// =============================================================================
+var int lastSpringTriggerBar = -100
+var int springArmedBar = 0
+var float springLowPrice = 0.0
+var bool springArmed = false
+
+// Active Spring tracking for auto-delete on invalidation
+var label activeSpringLabel = na
+var float activeSpringStop = na
+var float activeSpringTarget = na
+
+// 1. Arm Spring only if depth is real (>= minSweepAtr)
+if inTimeWindow and (low < creekSupport) and not springArmed and (bar_index - lastSpringTriggerBar > cooldownBars)
+    springArmed := true
+    springArmedBar := bar_index
+    springLowPrice := low
+else if springArmed
+    if low < springLowPrice
+        springLowPrice := low
+    if (bar_index - springArmedBar) > reclaimBars or not inTimeWindow
+        springArmed := false
+
+// 2. Trigger Spring: Must have penetrated at least minSweepAtr, reclaimed Creek, and confirmed absorption
+sweepDepthBuy = creekSupport - springLowPrice
+isQualifiedSpringSweep = sweepDepthBuy >= (minSweepAtr * atrVal)
+
+springTrigger = inTimeWindow and springArmed and crossOverCreek and isQualifiedSpringSweep and hasVolAbsorptionBuy
+if springTrigger
+    springArmed := false
+    lastSpringTriggerBar := bar_index
+
+    // Create Spring Signal Label
+    activeSpringLabel := label.new(bar_index, low - 0.4 * atrVal, text="SPRING BUY\n(-" + str.tostring(sweepDepthBuy, "#.#") + " pt sweep)", color=color.new(c_spring, 10), textcolor=color.white, style=label.style_label_up, size=size.small)
+    activeSpringStop   := springLowPrice
+    activeSpringTarget := iceResistance
+
+// 3. AUTO-PURGE INVALIDATED SPRINGS:
+// If price breaks below the Spring's low before reaching target, DELETE IT!
+if deleteInvalid and not na(activeSpringLabel)
+    if close < activeSpringStop
+        label.delete(activeSpringLabel)
+        activeSpringLabel := na
+        activeSpringStop := na
+    else if high >= activeSpringTarget or (bar_index - lastSpringTriggerBar > 40)
+        // Completed setup or aged out successfully - preserve label
+        activeSpringLabel := na
+        activeSpringStop := na
+
+// =============================================================================
+// UTAD DETECTION WITH STRICT DEPTH, COOLDOWN & AUTO-PURGING INVALIDATION
+// =============================================================================
+var int lastUtadTriggerBar = -100
+var int utadArmedBar = 0
+var float utadHighPrice = 0.0
+var bool utadArmed = false
+
+var label activeUtadLabel = na
+var float activeUtadStop = na
+var float activeUtadTarget = na
+
+// 1. Arm UTAD only if depth is real
+if inTimeWindow and (high > iceResistance) and not utadArmed and (bar_index - lastUtadTriggerBar > cooldownBars)
+    utadArmed := true
+    utadArmedBar := bar_index
+    utadHighPrice := high
+else if utadArmed
+    if high > utadHighPrice
+        utadHighPrice := high
+    if (bar_index - utadArmedBar) > reclaimBars or not inTimeWindow
+        utadArmed := false
+
+// 2. Trigger UTAD: Must have penetrated >= minSweepAtr and fallen back below Ice
+sweepDepthSell = utadHighPrice - iceResistance
+isQualifiedUtadSweep = sweepDepthSell >= (minSweepAtr * atrVal)
+
+utadTrigger = inTimeWindow and utadArmed and crossUnderIce and isQualifiedUtadSweep and hasVolAbsorptionSell
+if utadTrigger
+    utadArmed := false
+    lastUtadTriggerBar := bar_index
+
+    // Create UTAD Signal Label
+    activeUtadLabel := label.new(bar_index, high + 0.4 * atrVal, text="UTAD SHORT\n(+" + str.tostring(sweepDepthSell, "#.#") + " pt sweep)", color=color.new(c_utad, 10), textcolor=color.black, style=label.style_label_down, size=size.small)
+    activeUtadStop   := utadHighPrice
+    activeUtadTarget := creekSupport
+
+// 3. AUTO-PURGE INVALIDATED UTADS:
+// If price closes above the UTAD's high before reaching target, DELETE IT!
+if deleteInvalid and not na(activeUtadLabel)
+    if close > activeUtadStop
+        label.delete(activeUtadLabel)
+        activeUtadLabel := na
+        activeUtadStop := na
+    else if low <= activeUtadTarget or (bar_index - lastUtadTriggerBar > 40)
+        // Completed setup - preserve label
+        activeUtadLabel := na
+        activeUtadStop := na
+
+// =============================================================================
+// ASCENDING SOS BREAKOUT (78.6% Gold Edge Base)
+// =============================================================================
+var int lastSosBar = -100
+sosTrigger = inTimeWindow and isHigherLowBase and crossOverSos and (bar_index - lastSosBar > cooldownBars)
+if sosTrigger
+    lastSosBar := bar_index
+    label.new(bar_index, low - 0.4 * atrVal, text="SOS MARKUP\n(Higher-Lows Base)", color=color.new(c_sos, 15), textcolor=color.black, style=label.style_label_up, size=size.small)
+
+// =============================================================================
+// CLEAN VISUAL RENDERING (NO SPAM)
+// =============================================================================
+plotIce   = (inTimeWindow and showRangeLines) ? iceResistance : na
+plotCreek = (inTimeWindow and showRangeLines) ? creekSupport  : na
+plotMid   = (inTimeWindow and showRangeLines) ? boxMid        : na
+
+p_ice   = plot(plotIce,   "Ice (Resistance)", color=c_ice,   linewidth=1, style=plot.style_line)
+p_creek = plot(plotCreek, "Creek (Support)",   color=c_creek, linewidth=1, style=plot.style_line)
+p_mid   = plot(plotMid,   "Equilibrium (POC)", color=color.new(color.gray, 70), linewidth=1, style=plot.style_circles)
+fill(p_ice, p_creek, color=inTimeWindow and showFill ? c_box_bg : na, title="Trading Range Fill")
+
+// =============================================================================
+// REAL-TIME EDGE HUD DASHBOARD
+// =============================================================================
+if showDashboard and barstate.islast
+    var table hud = table.new(position=position.top_right, columns=2, rows=8, bgcolor=color.new(#09090b, 10), border_color=color.new(#27272a, 40), border_width=1)
+    
+    table.cell(hud, 0, 0, "GOLD WYCKOFF EDGE", bgcolor=color.new(#f59e0b, 20), text_color=color.new(#fef08a, 0), text_size=size.small, text_halign=text.align_left)
+    table.cell(hud, 1, 0, "JAN 26 '26 -> FUTURE", bgcolor=color.new(#f59e0b, 20), text_color=color.white, text_size=size.small, text_halign=text.align_right)
+    
+    table.cell(hud, 0, 1, "Active State", text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+    string activeState = springArmed ? "SPRING FLUSH ACTIVE" : utadArmed ? "UTAD SWEEP ACTIVE" : isHigherLowBase ? "ASCENDING BASE (78.6%)" : "RANGE CONSOLIDATION"
+    color stateColor   = springArmed ? color.teal : utadArmed ? color.orange : isHigherLowBase ? color.green : color.gray
+    table.cell(hud, 1, 1, activeState, text_color=stateColor, text_size=size.tiny, text_halign=text.align_right)
+
+    table.cell(hud, 0, 2, "Creek (Support)", text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(hud, 1, 2, "$" + str.tostring(creekSupport, "#.##"), text_color=color.green, text_size=size.tiny, text_halign=text.align_right)
+
+    table.cell(hud, 0, 3, "Ice (Resistance)", text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(hud, 1, 3, "$" + str.tostring(iceResistance, "#.##"), text_color=color.red, text_size=size.tiny, text_halign=text.align_right)
+
+    table.cell(hud, 0, 4, "Range Span", text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(hud, 1, 4, "$" + str.tostring(boxSpan, "#.#") + " (" + str.tostring(boxSpan / atrVal, "#.#") + " ATR)", text_color=color.white, text_size=size.tiny, text_halign=text.align_right)
+
+    table.cell(hud, 0, 5, "Session CVD Delta", text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(hud, 1, 5, (sessionCvd >= 0 ? "+" : "") + str.tostring(sessionCvd, "#"), text_color=sessionCvd >= 0 ? color.teal : color.red, text_size=size.tiny, text_halign=text.align_right)
+
+    table.cell(hud, 0, 6, "Accum: HL vs Spring", text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(hud, 1, 6, "78.6% HL / 17.3% Spring", text_color=color.new(#fef08a, 0), text_size=size.tiny, text_halign=text.align_right)
+
+    table.cell(hud, 0, 7, "Auto-Purge Invalid", text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(hud, 1, 7, deleteInvalid ? "ACTIVE (CLEAN)" : "OFF", text_color=color.teal, text_size=size.tiny, text_halign=text.align_right)
+
+// =============================================================================
+// ALERTS (ONLY TRIGGER ON CONFIRMED VALID SWEEPS)
+// =============================================================================
+alertcondition(springTrigger, "Gold Spring Reclaim Buy", "Gold Spring: Price swept liquidity below Creek with CVD absorption and reclaimed range! Enter Long.")
+alertcondition(utadTrigger,   "Gold UTAD Return Short",  "Gold UTAD: Price swept liquidity above Ice with CVD absorption and fell back below! Enter Short.")
+alertcondition(sosTrigger,    "Gold Ascending SOS Buy",  "Gold SOS: Higher-Lows ascending base broke through Ice with volume! Enter Breakout.")

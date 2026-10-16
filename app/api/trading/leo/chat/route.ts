@@ -32,6 +32,11 @@ import {
   generateAndPersistWyckoffReport,
   formatWyckoffMultiTimeframeBriefForLeo,
 } from '@/lib/trading/wyckoff'
+import {
+  analyzeAndBacktestBox,
+  formatBoxAnalysisForLeo,
+  type BoxMarket,
+} from '@/lib/trading/boxRangeBacktester'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -341,6 +346,39 @@ export function buildDeskFallbackResponse(
   // 1. Immediate close situation notification (system never places broker orders)
   if (/close\s+(the\s+)?position|flatten|exit\s+now|close\s+now/i.test(lower)) {
     return `### 👁️ **[READ-ONLY NOTIFICATION]**\n\nPosition exit situation noted for **${ctx.instrument}** at **${curPrice}**.\n\n*(The system and AI Leo are strictly in Read-Only Market Monitoring Mode and never place or close broker orders. Please manage your broker bracket directly).*`
+  }
+
+  // 1a-0. Multi-Timeframe Box Range Backtest & Invalidation Analysis
+  if (
+    /\b(box\s+(analysis|backtest|regime)|backtest\s+(this\s+)?box|analyze\s+(this\s+)?box|downtrend\s+or\s+uptrend|trend\s+invalidation|put\s+this\s+box|draw\s+this\s+box|sub[\s-]leg|how\s+(people|they|institutions)\s+(in\s+gold\s+)?accumulate|how\s+(people|they|institutions)\s+distribute|invalidation\s+of\s+the\s+downtrend|downtrend\s+and\s+uptrend)\b/i.test(
+      lower
+    )
+  ) {
+    let market: BoxMarket = 'GOLD'
+    const inst = (ctx.instrument || '').toUpperCase()
+    if (inst.includes('CL') || inst.includes('CRUDE') || inst.includes('OIL')) market = 'CRUDE'
+    else if (inst.includes('NQ') || inst.includes('MNQ') || inst.includes('NAS')) market = 'NASDAQ'
+    else if (inst.includes('YM') || inst.includes('MYM') || inst.includes('DOW')) market = 'DOW'
+    else if (inst.includes('NKD') || inst.includes('NIKKEI')) market = 'NIKKEI'
+    else market = 'GOLD'
+
+    // Check if user drew a manual range box on the chart
+    const drawnRange = ctx.userDrawings?.ranges && ctx.userDrawings.ranges.length > 0 ? ctx.userDrawings.ranges[0] : null
+
+    try {
+      const analysis = analyzeAndBacktestBox({
+        market,
+        timeframe: '1D',
+        startTime: 1769385600, // Jan 26, 2026 00:00:00 UTC
+        endTime: Math.floor(Date.now() / 1000),
+        lowPrice: drawnRange ? drawnRange.priceLow : undefined,
+        highPrice: drawnRange ? drawnRange.priceHigh : undefined,
+        label: drawnRange?.label || `${market} Daily Macro Corridor (Jan 26 – Present)`,
+      })
+      return formatBoxAnalysisForLeo(analysis)
+    } catch (err: any) {
+      console.error('Failed to run box analysis for Leo:', err)
+    }
   }
 
   // 1a-2. Cross-Market Wyckoff Backtest Comparative Matrix. Must run BEFORE the generic radar matcher below,

@@ -9,8 +9,6 @@
  * - Concise, deterministic multi-timeframe brief formatting for Chart Leo, Notes, and Situations.
  */
 
-import fs from 'node:fs'
-import path from 'node:path'
 import { resolveWyckoffMarketSpec } from './wyckoffSwingStructure'
 import {
   evaluateWyckoffMultiTimeframe,
@@ -39,11 +37,25 @@ interface WyckoffPersistenceStore {
   markets: Partial<Record<WyckoffInstrument, PersistedWyckoffMarketState>>
 }
 
-const STATE_FILE_PATH = path.join(
-  process.cwd(),
-  'data',
-  'wyckoff_auction_state.json'
-)
+function getFs(): any {
+  if (typeof window !== 'undefined') return null
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return eval('require')('fs')
+  } catch {
+    return null
+  }
+}
+
+function getPath(): any {
+  if (typeof window !== 'undefined') return null
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return eval('require')('path')
+  } catch {
+    return null
+  }
+}
 
 const memoryStore: WyckoffPersistenceStore = {
   version: 1,
@@ -55,33 +67,45 @@ let diskLoaded = false
 function loadStoreFromDisk(): WyckoffPersistenceStore {
   if (diskLoaded) return memoryStore
   diskLoaded = true
+  if (typeof window !== 'undefined') return memoryStore
+  const fs = getFs()
+  const path = getPath()
+  if (!fs || !path) return memoryStore
+
   try {
-    if (fs.existsSync(STATE_FILE_PATH)) {
-      const raw = fs.readFileSync(STATE_FILE_PATH, 'utf-8')
+    const statePath = path.join(process.cwd(), 'data', 'wyckoff_auction_state.json')
+    if (fs.existsSync(statePath)) {
+      const raw = fs.readFileSync(statePath, 'utf-8')
       const parsed = JSON.parse(raw) as WyckoffPersistenceStore
       if (parsed && typeof parsed === 'object' && parsed.markets) {
         memoryStore.markets = { ...parsed.markets, ...memoryStore.markets }
       }
     }
   } catch {
-    // Non-fatal in read-only or test environments
+    // Non-fatal in read-only or browser environments
   }
   return memoryStore
 }
 
 function saveStoreToDisk(): void {
+  if (typeof window !== 'undefined') return
+  const fs = getFs()
+  const path = getPath()
+  if (!fs || !path) return
+
   try {
-    const dir = path.dirname(STATE_FILE_PATH)
+    const statePath = path.join(process.cwd(), 'data', 'wyckoff_auction_state.json')
+    const dir = path.dirname(statePath)
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true })
     }
     fs.writeFileSync(
-      STATE_FILE_PATH,
+      statePath,
       JSON.stringify(memoryStore, null, 2),
       'utf-8'
     )
   } catch {
-    // Non-fatal in serverless/read-only environments
+    // Non-fatal in serverless/read-only/browser environments
   }
 }
 
