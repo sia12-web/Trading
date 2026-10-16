@@ -26,6 +26,10 @@ import {
   formatWyckoffMultiTimeframeBriefForLeo,
   type WyckoffMultiTimeframeReport,
 } from '../trading/wyckoff'
+import {
+  analyzeAndBacktestBox,
+  type BoxMarket,
+} from '../trading/boxRangeBacktester'
 
 export interface LeoDataPoint {
   id: string
@@ -1280,11 +1284,43 @@ ${
           : []),
         ...(ctx.userDrawings.ranges.length > 0
           ? [
-              'MANUAL RECTANGLE / BALANCE RANGES:',
-              ...ctx.userDrawings.ranges.map(
-                (r) =>
-                  `- ${r.label || 'Range Box'}: High ${r.priceHigh} | Low ${r.priceLow} | Mid ${r.midPrice} (Height: ${r.heightPts} pts, Duration: ${r.durationMin}m, ${r.startTimeEt} to ${r.endTimeEt}). Current price is ${r.priceRelation} range (${r.positionPct}% position).${r.totalVolume != null ? ` [Traded Volume: ${r.totalVolume.toLocaleString()} contracts | Rate: ${r.volumeRatePerMin ?? 0} vol/min | ${r.buyRatioPct ?? 50}% Buy | Delta: ${r.delta != null && r.delta >= 0 ? '+' : ''}${r.delta?.toLocaleString() ?? 0} | POC: ${r.poc ?? r.midPrice}]` : ''}`
-              ),
+              'MANUAL RECTANGLE / BALANCE RANGES & VERIFIED ON-DEMAND BACKTESTS:',
+              ...ctx.userDrawings.ranges.map((r) => {
+                let backtestSummary = ''
+                try {
+                  let market: BoxMarket = 'GOLD'
+                  const inst = (ctx.instrument || '').toUpperCase()
+                  if (inst.includes('CL') || inst.includes('CRUDE') || inst.includes('OIL')) market = 'CRUDE'
+                  else if (inst.includes('NQ') || inst.includes('MNQ') || inst.includes('NAS')) market = 'NASDAQ'
+                  else if (inst.includes('YM') || inst.includes('MYM') || inst.includes('DOW')) market = 'DOW'
+                  else if (inst.includes('NKD') || inst.includes('NIKKEI')) market = 'NIKKEI'
+
+                  const analysis = analyzeAndBacktestBox({
+                    market,
+                    timeframe: '1D',
+                    startTime: r.timeStart && r.timeStart > 1000000 ? r.timeStart : 1769385600,
+                    endTime: r.timeEnd && r.timeEnd > 1000000 ? r.timeEnd : Math.floor(Date.now() / 1000),
+                    lowPrice: r.priceLow,
+                    highPrice: r.priceHigh,
+                    label: r.label || `${market} Drawn Box`,
+                  })
+
+                  backtestSummary = `
+  * REGIME & INVALIDATION: ${analysis.regime} (${analysis.trendDirection}, slope ${analysis.trendSlopePct}%). Invalidation: ${analysis.isTrendInvalidated ? `YES (${analysis.invalidationType} - ${analysis.invalidationNotes})` : 'NO'}
+  * MULTI-TIMEFRAME TELEMETRY (CVD, ATR, VOLUMES):
+    - Daily (1D): ATR $${analysis.timeframes.daily.atr} | Vol: ${analysis.timeframes.daily.totalVolume.toLocaleString()} | CVD: ${analysis.timeframes.daily.netCvd >= 0 ? '+' : ''}${analysis.timeframes.daily.netCvd.toLocaleString()} [${analysis.timeframes.daily.cvdBias}]
+    - 4-Hour (4H): ATR $${analysis.timeframes.h4.atr} | Vol: ${analysis.timeframes.h4.totalVolume.toLocaleString()} | CVD: ${analysis.timeframes.h4.netCvd >= 0 ? '+' : ''}${analysis.timeframes.h4.netCvd.toLocaleString()} [${analysis.timeframes.h4.cvdBias}]
+    - 15-Min (15M): ATR $${analysis.timeframes.m15.atr} | Vol: ${analysis.timeframes.m15.totalVolume.toLocaleString()} | CVD: ${analysis.timeframes.m15.netCvd >= 0 ? '+' : ''}${analysis.timeframes.m15.netCvd.toLocaleString()} [${analysis.timeframes.m15.cvdBias}]
+    - 5-Min (5M): ATR $${analysis.timeframes.m5.atr} | Vol: ${analysis.timeframes.m5.totalVolume.toLocaleString()} | CVD: ${analysis.timeframes.m5.netCvd >= 0 ? '+' : ''}${analysis.timeframes.m5.netCvd.toLocaleString()} [${analysis.timeframes.m5.cvdBias}]
+    - 1-Min (1M): ATR $${analysis.timeframes.m1.atr} | Vol: ${analysis.timeframes.m1.totalVolume.toLocaleString()} | CVD: ${analysis.timeframes.m1.netCvd >= 0 ? '+' : ''}${analysis.timeframes.m1.netCvd.toLocaleString()} [${analysis.timeframes.m1.cvdBias}]
+  * FIXED RANGE VOLUME PROFILE: POC $${analysis.volumeProfile.poc} | VAH $${analysis.volumeProfile.vah} | VAL $${analysis.volumeProfile.val} | Delta: ${analysis.volumeProfile.netDelta >= 0 ? '+' : ''}${analysis.volumeProfile.netDelta.toLocaleString()} [${analysis.volumeProfile.deltaBias}]
+  * INSTITUTIONAL WYCKOFF READ: Springs: ${analysis.wyckoffBacktest.springCount} (${analysis.wyckoffBacktest.springRatePct}% rate, ${analysis.wyckoffBacktest.springCvdAbsorptionPct}% CVD absorption) | Higher Low Bases: ${analysis.wyckoffBacktest.higherLowBaseRatePct}% | UTADs: ${analysis.wyckoffBacktest.utadCount} (${analysis.wyckoffBacktest.utadRatePct}% rate) | Avg Markup MFE: +${analysis.wyckoffBacktest.avgMarkupMfePts} pts | 1R Win: ${analysis.wyckoffBacktest.winRate1RPct}%`
+                } catch {
+                  // Fallback
+                }
+
+                return `- ${r.label || 'Range Box'}: High ${r.priceHigh} | Low ${r.priceLow} | Mid ${r.midPrice} (Height: ${r.heightPts} pts, Duration: ${r.durationMin}m, ${r.startTimeEt} to ${r.endTimeEt}). Current price is ${r.priceRelation} range (${r.positionPct}% position).${r.totalVolume != null ? ` [Traded Volume: ${r.totalVolume.toLocaleString()} contracts | Rate: ${r.volumeRatePerMin ?? 0} vol/min | ${r.buyRatioPct ?? 50}% Buy | Delta: ${r.delta != null && r.delta >= 0 ? '+' : ''}${r.delta?.toLocaleString() ?? 0} | POC: ${r.poc ?? r.midPrice}]` : ''}${backtestSummary}`
+              }),
             ]
           : []),
         ...(ctx.userDrawings.frvps.length > 0

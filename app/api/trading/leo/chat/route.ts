@@ -364,13 +364,15 @@ export function buildDeskFallbackResponse(
 
     // Check if user drew a manual range box on the chart
     const drawnRange = ctx.userDrawings?.ranges && ctx.userDrawings.ranges.length > 0 ? ctx.userDrawings.ranges[0] : null
+    const startTime = (drawnRange?.timeStart && drawnRange.timeStart > 1000000) ? drawnRange.timeStart : 1769385600
+    const endTime = (drawnRange?.timeEnd && drawnRange.timeEnd > 1000000) ? drawnRange.timeEnd : Math.floor(Date.now() / 1000)
 
     try {
       const analysis = analyzeAndBacktestBox({
         market,
         timeframe: '1D',
-        startTime: 1769385600, // Jan 26, 2026 00:00:00 UTC
-        endTime: Math.floor(Date.now() / 1000),
+        startTime,
+        endTime,
         lowPrice: drawnRange ? drawnRange.priceLow : undefined,
         highPrice: drawnRange ? drawnRange.priceHigh : undefined,
         label: drawnRange?.label || `${market} Daily Macro Corridor (Jan 26 – Present)`,

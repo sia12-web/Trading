@@ -409,6 +409,79 @@ export function BoxRangeBacktesterView() {
             </div>
           </div>
 
+          {/* ── Multi-Timeframe Telemetry Matrix (1D · 4H · 15M · 5M · 1M) ── */}
+          {analysis.timeframes && (
+            <div className="p-4 rounded-2xl bg-surface-900/80 border border-neutral-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono font-bold text-amber-300 uppercase flex items-center gap-1.5">
+                  <span>⚡</span> Multi-Timeframe Telemetry Matrix (Daily · 4H · 15M · 5M · 1M)
+                </span>
+                <span className="text-[10px] font-mono text-neutral-400">
+                  Order Flow CVD, ATR & Volume Profiling
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left font-mono text-xs">
+                  <thead>
+                    <tr className="border-b border-neutral-800 text-neutral-500 text-[10px]">
+                      <th className="py-2 px-3">Timeframe</th>
+                      <th className="py-2 px-3">True ATR</th>
+                      <th className="py-2 px-3">Total Volume</th>
+                      <th className="py-2 px-3">Buy / Sell Volume</th>
+                      <th className="py-2 px-3">Net CVD Delta</th>
+                      <th className="py-2 px-3">Institutional Bias</th>
+                      <th className="py-2 px-3 text-right">Bars</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-900 text-neutral-300 text-[11px]">
+                    {[
+                      analysis.timeframes.daily,
+                      analysis.timeframes.h4,
+                      analysis.timeframes.m15,
+                      analysis.timeframes.m5,
+                      analysis.timeframes.m1,
+                    ].map((tf) => (
+                      <tr key={tf.timeframe} className="hover:bg-neutral-800/40 transition">
+                        <td className="py-2 px-3 font-bold text-white flex items-center gap-1.5">
+                          <span className="text-amber-400">●</span> {tf.timeframe}
+                        </td>
+                        <td className="py-2 px-3 text-cyan-300 font-semibold">${tf.atr}</td>
+                        <td className="py-2 px-3 text-neutral-300">{tf.totalVolume.toLocaleString()}</td>
+                        <td className="py-2 px-3 text-neutral-400">
+                          <span className="text-emerald-400">{tf.buyVolume.toLocaleString()}</span> /{' '}
+                          <span className="text-rose-400">{tf.sellVolume.toLocaleString()}</span>
+                        </td>
+                        <td
+                          className={`py-2 px-3 font-bold ${
+                            tf.netCvd >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                          }`}
+                        >
+                          {tf.netCvd >= 0 ? `+${tf.netCvd.toLocaleString()}` : tf.netCvd.toLocaleString()}
+                        </td>
+                        <td className="py-2 px-3">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                              tf.cvdBias === 'BULLISH_ACCUMULATION'
+                                ? 'bg-emerald-950 text-emerald-300 border-emerald-700/60'
+                                : tf.cvdBias === 'BEARISH_DISTRIBUTION'
+                                ? 'bg-rose-950 text-rose-300 border-rose-700/60'
+                                : 'bg-neutral-900 text-neutral-400 border-neutral-700'
+                            }`}
+                          >
+                            {tf.cvdBias}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 text-right text-neutral-500">
+                          {tf.barsCount.toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* ── Box Empirical Wyckoff Backtest Results ── */}
           <div className="p-4 rounded-2xl bg-surface-900/80 border border-amber-500/30 space-y-3">
             <div className="flex items-center justify-between">
