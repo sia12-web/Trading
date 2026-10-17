@@ -193,13 +193,11 @@ import {
 import { detectCandlestickPatterns, type Candle } from '@/lib/trading/candlestickPatterns'
 import { isUsMarketHoliday } from '@/lib/chart/sessionVwap'
 import {
-  loadRulesForMarket,
-  saveRulesForMarket,
-  listenToRuleUpdates,
-  isEntrySituationRule,
-  type ArmedRule,
-  type MarketInstrument,
-} from '@/lib/trading/leoRules'
+  loadWyckoffEdges,
+  saveWyckoffEdge,
+  subscribeToWyckoffEdges,
+  type SavedWyckoffEdge,
+} from '@/lib/trading/wyckoffEdgesStore'
 import {
   computeOrderFlowCvd,
   computeCvdCandleBars,
@@ -1902,30 +1900,14 @@ export function TradingChart({
   const [verticalZoomDisplay, setVerticalZoomDisplay] = useState<number>(1)
   const instrumentRef = useRef<Instrument>(instrument)
   instrumentRef.current = instrument
-  const [armedSituations, setArmedSituations] = useState<ArmedRule[]>([])
+  const [savedWyckoffEdges, setSavedWyckoffEdges] = useState<SavedWyckoffEdge[]>([])
 
   useEffect(() => {
-    const reload = () => {
-      try {
-        const inst = instrument as MarketInstrument
-        if (['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'SILVER', 'NIKKEI'].includes(inst)) {
-          const rules = loadRulesForMarket(inst)
-          setArmedSituations(rules.filter((r) => isEntrySituationRule(r.type) && r.status === 'ARMED'))
-        } else {
-          setArmedSituations([])
-        }
-      } catch {
-        setArmedSituations([])
-      }
-    }
-    reload()
-    const unsub = listenToRuleUpdates((market) => {
-      if (!market || market === instrument) {
-        reload()
-      }
+    setSavedWyckoffEdges(loadWyckoffEdges())
+    return subscribeToWyckoffEdges(() => {
+      setSavedWyckoffEdges(loadWyckoffEdges())
     })
-    return unsub
-  }, [instrument])
+  }, [])
   const sessionOrderFlow = useMemo<OrderFlowSummary | null>(() => {
     if (!candles || candles.length === 0) return null
     const now = new Date()
@@ -5968,6 +5950,7 @@ export function TradingChart({
         status: m.status,
         lastTriggeredAt: m.lastTriggeredAt,
       })),
+      savedWyckoffEdges,
       recentCandles: (candles || []).slice(-100).map((c) => ({
         time: typeof c.time === 'number' ? c.time : Math.floor(new Date(c.time).getTime() / 1000),
         open: c.open,
@@ -5997,6 +5980,7 @@ export function TradingChart({
     activeManualFrvps,
     showCandlestickPatterns,
     memories,
+    savedWyckoffEdges,
     timeframe,
   ])
 
@@ -6187,6 +6171,29 @@ export function TradingChart({
           m.totalVolume != null
             ? ` | Vol: ${m.totalVolume.toLocaleString()} (${m.volumeRatePerMin ?? 0} vol/min, ${m.buyRatioPct ?? 50}% buy, delta ${m.delta != null && m.delta >= 0 ? '+' : ''}${m.delta?.toLocaleString() ?? 0}, POC: ${m.poc ?? m.midPrice})`
             : ''
+        if (timeframe === '4h') {
+          void fetch('/api/trading/edges/backtest-box', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: rb.id,
+              market: instrument,
+              timeframe: '4H',
+              startTime: Math.min(rb.p1.time, rb.p2.time),
+              endTime: Math.max(rb.p1.time, rb.p2.time),
+              lowPrice: Math.min(rb.p1.price, rb.p2.price),
+              highPrice: Math.max(rb.p1.price, rb.p2.price),
+              label: rb.label || `${instrument} 4H Range Backtest`,
+            }),
+          })
+            .then((r) => r.json())
+            .then((json) => {
+              if (json?.savedEdge) {
+                saveWyckoffEdge(json.savedEdge)
+              }
+            })
+            .catch(() => {})
+        }
         setLeoExternalPoints([
           {
             id: rb.id,
@@ -6217,7 +6224,7 @@ export function TradingChart({
         setLeoPanelOpen(true)
       }
     },
-    [trendlines, rangeBoxes, manualFrvps, livePrice, instrument, avwap5mBenchmark]
+    [trendlines, rangeBoxes, manualFrvps, livePrice, instrument, avwap5mBenchmark, timeframe, candles]
   )
 
   const handleAskLeoAboutMemory = useCallback(
@@ -13435,49 +13442,7 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
       ])
       return
     }
-
-    // ── Armed Situations Overlay Lines (Target Level, Planned SL & TP) ──
-    if (armedSituations.length > 0 && !positionOverlay && !editableOverlay && !pendingLimit) {
-      const allSitEntries: Array<{ price: number; color: string; label: string; style: LineStyle; width: 1 | 2 | 3 | 4 }> = []
-      for (const sit of armedSituations) {
-        const targetPx = sit.targetPrice ?? sit.conditions?.targetPrice
-        if (!targetPx || targetPx <= 0) continue
-        const dir = (sit.direction || 'LONG').toUpperCase()
-        const pat = sit.pattern || sit.conditions?.pattern || sit.targetReference || 'Level Touch'
-        allSitEntries.push({
-          price: targetPx,
-          color: dir === 'LONG' ? '#06b6d4' : '#f59e0b',
-          label: `🎯 SITUATION ${dir} @ ${fmt(targetPx)} (${pat})`,
-          style: LineStyle.Dashed,
-          width: 2,
-        })
-        const sl = sit.stopLoss ?? sit.conditions?.stopLoss
-        if (sl && sl > 0) {
-          allSitEntries.push({
-            price: sl,
-            color: '#ef4444',
-            label: `▁ SIT SL ${fmt(sl)}`,
-            style: LineStyle.Dotted,
-            width: 2,
-          })
-        }
-        const tp = sit.takeProfit ?? sit.conditions?.takeProfit
-        if (tp && tp > 0) {
-          allSitEntries.push({
-            price: tp,
-            color: '#10b981',
-            label: `▔ SIT TP ${fmt(tp)}`,
-            style: LineStyle.Dotted,
-            width: 2,
-          })
-        }
-      }
-      if (allSitEntries.length > 0) {
-        paint(allSitEntries)
-        return
-      }
-    }
-  }, [positionOverlay, editableOverlay, pendingLimit, editablePending, filledBook, workingBook, aiVerdict, chartReady, clearHoverPreview, onAdjustBrackets, onAdjustWorkingBrackets, asiaOco, armedSituations])
+  }, [positionOverlay, editableOverlay, pendingLimit, editablePending, filledBook, workingBook, aiVerdict, chartReady, clearHoverPreview, onAdjustBrackets, onAdjustWorkingBrackets, asiaOco])
 
   /** Levels / playbook — strategy-aware titles (morning → IB → lunch break → lunch-range) */
   void focusTick
@@ -14895,31 +14860,11 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
                           <div className="flex items-center gap-1 shrink-0">
                             <button
                               type="button"
-                              onClick={() => {
-                                setTargetMemoryRange({
-                                  id: rb.id,
-                                  priceLow: lo,
-                                  priceHigh: hi,
-                                  purpose: rb.memoryPurpose || 'Keep eyes on this level when price visits to see if support or resistance',
-                                })
-                                setMemoryModalOpen(true)
-                              }}
-                              className={`px-2 py-0.5 rounded font-medium text-[11px] border transition ${
-                                rb.isMemory
-                                  ? 'bg-amber-500/30 text-amber-200 border-amber-500/50'
-                                  : 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border-purple-500/30'
-                              }`}
-                              title={rb.isMemory ? 'Edit Leo Long-Term Memory' : 'Activate Leo Long-Term Memory'}
-                            >
-                              {rb.isMemory ? '🧠 Memory Active' : '🧠 Memory'}
-                            </button>
-                            <button
-                              type="button"
                               onClick={() => handleAskLeoAboutDrawing('RANGE', rb.id)}
                               className="px-2 py-0.5 rounded bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-medium text-[11px] border border-purple-500/30 transition"
-                              title="Send to Leo AI"
+                              title={timeframe === '4h' ? 'Backtest 4H Range & Save Edge to Leo Memory' : 'Send to Leo AI'}
                             >
-                              Ask Leo
+                              {timeframe === '4h' ? '🔬 Backtest 4H & Save Edge' : 'Ask Leo'}
                             </button>
                             <button
                               type="button"
@@ -15259,30 +15204,6 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
                 {drawingToast.summary}
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                {drawingToast.type === 'RANGE' && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const r = rangeBoxes.find((b) => b.id === drawingToast.id)
-                      if (r) {
-                        const highP = Math.max(r.p1.price, r.p2.price)
-                        const lowP = Math.min(r.p1.price, r.p2.price)
-                        setTargetMemoryRange({
-                          id: r.id,
-                          priceLow: lowP,
-                          priceHigh: highP,
-                          purpose: r.memoryPurpose || 'Keep eyes on this level when price visits to see if support or resistance',
-                        })
-                        setMemoryModalOpen(true)
-                      }
-                      setDrawingToast(null)
-                    }}
-                    className="px-2.5 py-1 rounded bg-purple-600/40 hover:bg-purple-600/60 text-purple-200 font-bold text-xs border border-purple-500/50 transition flex items-center gap-1.5 shadow-sm"
-                  >
-                    <span>🧠</span>
-                    <span>Activate Long-Term Memory</span>
-                  </button>
-                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -15291,8 +15212,12 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
                   }}
                   className="px-2.5 py-1 rounded bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-200 font-semibold text-xs border border-cyan-500/40 transition flex items-center gap-1.5 shadow-sm"
                 >
-                  <span>🤖</span>
-                  <span>Ask Leo</span>
+                  <span>{drawingToast.type === 'RANGE' && timeframe === '4h' ? '🔬' : '🤖'}</span>
+                  <span>
+                    {drawingToast.type === 'RANGE' && timeframe === '4h'
+                      ? 'Backtest 4H & Save Edge'
+                      : 'Ask Leo'}
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -16677,110 +16602,6 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
                         {bracketAdjustError || 'Could not update brackets'}
                       </span>
                     )}
-                </div>
-              )}
-            </div>
-          )
-        })()}
-
-        {/* ── Armed Situations On-Chart Badges (Waiting for Level Touch / Conditions) ── */}
-        {!positionOverlay && !editableOverlay && !pendingLimit && armedSituations.length > 0 && (() => {
-          const sit = armedSituations[0]!
-          const sitTarget = sit.targetPrice ?? sit.conditions?.targetPrice
-          if (!sitTarget || sitTarget <= 0) return null
-          const sitSl = sit.stopLoss ?? sit.conditions?.stopLoss
-          const sitTp = sit.takeProfit ?? sit.conditions?.takeProfit
-          const isLong = (sit.direction || 'LONG').toUpperCase() === 'LONG'
-          const curPx = livePrice ?? sitTarget
-          const distToTarget = Math.abs(curPx - sitTarget)
-          const distTpPts = sitTp ? Math.abs(sitTp - sitTarget) : 0
-          const distSlPts = sitSl ? Math.abs(sitTarget - sitSl) : 0
-
-          return (
-            <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden">
-              {/* Planned Take Profit Line Pill */}
-              {sitTp && sitTp > 0 && (
-                <div
-                  data-ov-price={sitTp}
-                  data-ov-dy={-14}
-                  className="absolute flex items-center pointer-events-auto select-none z-30 group cursor-default"
-                  style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
-                  title={`Planned Take Profit @ ${sitTp != null ? sitTp.toLocaleString() : '—'}`}
-                >
-                  <div className="flex items-center rounded-md border border-[#363a45] bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm">
-                    <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
-                      <span className="font-semibold text-neutral-400">Planned TP:</span>
-                      <span className="font-semibold text-neutral-300">
-                        {isLong ? 'Limit Sell' : 'Limit Buy'}
-                      </span>
-                      <span className="text-emerald-400 font-bold">+{distTpPts.toFixed(1)} pts</span>
-                    </div>
-                    <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#f23645]' : 'bg-[#089981]'}`}>
-                      {isLong ? '-1' : '+1'}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Situation Entry Trigger Level (Target Price) */}
-              <div
-                data-ov-price={sitTarget}
-                data-ov-dy={-14}
-                className="absolute flex items-center pointer-events-auto select-none z-30 group cursor-default"
-                style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
-                title={`Armed Situation Trigger Level @ ${sitTarget != null ? sitTarget.toLocaleString() : '—'}`}
-              >
-                <div className="flex items-center rounded-md border border-cyan-500/60 bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm">
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
-                    <span className="font-semibold text-cyan-300">
-                      {isLong ? 'Market Buy (Touch)' : 'Market Sell (Touch)'}
-                    </span>
-                    <span className="text-amber-300 font-bold">
-                      {distToTarget.toFixed(1)} pts away
-                    </span>
-                  </div>
-                  <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#089981]' : 'bg-[#f23645]'}`}>
-                    {isLong ? '+1' : '-1'}
-                  </div>
-
-                  {/* Disarm / Cancel button */}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      const updated = armedSituations.filter((r) => r.id !== sit.id)
-                      setArmedSituations(updated)
-                      saveRulesForMarket(instrument as MarketInstrument, updated as any)
-                    }}
-                    className="px-2 py-1 text-neutral-400 hover:text-white hover:bg-[#2a2e39] transition border-l border-[#363a45] cursor-pointer"
-                    title="Disarm situation"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
-
-              {/* Planned Stop Loss Line Pill */}
-              {sitSl && sitSl > 0 && (
-                <div
-                  data-ov-price={sitSl}
-                  data-ov-dy={-14}
-                  className="absolute flex items-center pointer-events-auto select-none z-30 group cursor-default"
-                  style={{ left: '38%', top: 0, transform: OVERLAY_HIDDEN_TRANSFORM }}
-                  title={`Planned Stop Loss @ ${sitSl != null ? sitSl.toLocaleString() : '—'}`}
-                >
-                  <div className="flex items-center rounded-md border border-[#363a45] bg-[#1e222d]/95 shadow-xl text-[11px] font-mono overflow-hidden backdrop-blur-sm">
-                    <div className="flex items-center gap-1.5 px-2.5 py-1 text-neutral-200">
-                      <span className="font-semibold text-neutral-400">Planned SL:</span>
-                      <span className="font-semibold text-neutral-300">
-                        {isLong ? 'Stop Market Sell' : 'Stop Market Buy'}
-                      </span>
-                      <span className="text-rose-400 font-bold">-{distSlPts.toFixed(1)} pts</span>
-                    </div>
-                    <div className={`px-2 py-1 font-bold text-xs text-white ${isLong ? 'bg-[#f23645]' : 'bg-[#089981]'}`}>
-                      {isLong ? '-1' : '+1'}
-                    </div>
-                  </div>
                 </div>
               )}
             </div>

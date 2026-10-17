@@ -15,7 +15,6 @@ import {
   deskLocalHmsAsTraderDisplay,
 } from '@/lib/chart/traderDisplayTz'
 import { TeamTapeCard } from './components/TeamTapeCard'
-import { DashboardNotifications } from './components/DashboardNotifications'
 
 /** Focus unlock = cash open − 30m, shown in Montreal. Live desk is NY only. */
 function focusUnlockMontreal(now: Date): string {
@@ -55,6 +54,12 @@ export default function DashboardHomePage() {
           Open Chart →
         </Link>
         <Link
+          href="/dashboard/edges"
+          className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-2.5 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/20"
+        >
+          4H Edges & Leo Memory →
+        </Link>
+        <Link
           href="/dashboard/journal"
           className="rounded-lg border border-surface-600 px-4 py-2.5 text-sm font-semibold text-gray-300 hover:border-surface-500 hover:text-white"
         >
@@ -75,7 +80,6 @@ export default function DashboardHomePage() {
       </div>
 
       <div className="mt-10 space-y-6">
-        <DashboardNotifications />
         <TeamTapeCard compact />
       </div>
 

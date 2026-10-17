@@ -31,6 +31,10 @@ import {
   formatBoxAnalysisForLeo,
   type BoxMarket,
 } from '../trading/boxRangeBacktester'
+import {
+  formatSavedEdgesForLeoPrompt,
+  type SavedWyckoffEdge,
+} from '../trading/wyckoffEdgesStore'
 
 export interface LeoDataPoint {
   id: string
@@ -319,6 +323,10 @@ export interface LeoChatContext {
    * Optional pre-computed deterministic Box Regime & Multi-Timeframe Telemetry Analysis (1D, 4H, 15m, 5m, 1m).
    */
   boxAnalysis?: any
+  /**
+   * Saved 4H Wyckoff Accumulation & Distribution Edges stored in Leo Memory for 5m Phase D & Phase E.
+   */
+  savedWyckoffEdges?: SavedWyckoffEdge[]
 }
 
 export interface LeoMessage {
@@ -895,13 +903,6 @@ function jnivTelemetry(vol: CrossMarketVolatilityState): string {
  * Static text is rules. Live numbers come only from ctx telemetry.
  */
 export function buildLeoSystemPrompt(ctx: LeoChatContext): string {
-  const verifiedExamplePrice =
-    ctx.shortTermMoney?.yval != null && Number.isFinite(ctx.shortTermMoney.yval)
-      ? ctx.shortTermMoney.yval.toFixed(2)
-      : ctx.currentPrice != null && Number.isFinite(ctx.currentPrice)
-        ? ctx.currentPrice.toFixed(2)
-        : null
-  const exampleTargetJson = verifiedExamplePrice != null ? verifiedExamplePrice : '"UNAVAILABLE"'
   const currentPriceStr = ctx.currentPrice != null ? ctx.currentPrice.toFixed(2) : 'Awaiting quote'
   const sessionPolicy = sessionPolicyForInstrument(ctx.instrument)
   const auctionLocationBlock = renderAuctionLocationBlock(ctx.priceQuestioning)
@@ -1141,89 +1142,16 @@ RISK
 VERDICT: VALID LONG HYPOTHESIS, or VALID SHORT HYPOTHESIS, or WAIT, or NO TRADE.
 The last word is a tradeable hypothesis. It is not an order. You do not say ENTER.
 
-DIRECTIVES — NOTES VERSUS SITUATIONS:
-Notes (ARM_DESK_ALERT, SAVE_LONG_TERM_MEMORY): price alarms and long-term memory zones. They do not place orders.
-Situations (ARM_CONDITIONAL_ENTRY, ARM_TRENDLINE_STRATEGY, ARM_STAGNATION_RULE): hypothesis watches. Frame them as hypotheses about how price reacts. Do not say "I am going long" or "placing an order".
+4H WYCKOFF EDGES & LEO MEMORY FOR 5M PHASE D & PHASE E:
+When the trader backtests a 4H range, the discovered Accumulation & Distribution behaviors are dated, written, and saved into Dashboard → Edges and Leo Memory.
+When analyzing the 5-minute (5m) timeframe (Last 5 Days of bars), ALWAYS apply the saved 4H Accumulation & Distribution Edge in Leo Memory along with Time as a Regulator (Asia & London build the Cause → NYC delivers the Effect), 5D POC, Overnight Inventory, and Yesterday NYC to evaluate Phase D (stepping-stone re-accumulations/re-distributions → big-volume breakout) and Phase E (Last Point of Support / Supply revisit of the upper or lower range).
 If the trader asks to place, buy, or sell: say this platform cannot place orders. Give the structural read. Do not emit an order tag.
-Resolve every price in an execute block from verified telemetry. If the price is not in telemetry, do not invent one. Use UNAVAILABLE and do not emit the block.
-Sample target below is copied from telemetry when a verified price exists. If it says UNAVAILABLE, that sample is not a price.
-
-Conditional hypothesis watch:
-<execute>
-{
-  "action": "ARM_CONDITIONAL_ENTRY",
-  "userPrompt": "The exact user command",
-  "instrument": "${ctx.instrument}",
-  "direction": "LONG",
-  "targetReference": "Name of the verified level",
-  "targetPrice": ${exampleTargetJson},
-  "pattern": "BULLISH_ENGULFING",
-  "stopLossMode": "STRUCTURAL_INVALIDATION",
-  "takeProfitMode": "NEXT_ZONE_MIN_2R",
-  "size": 1,
-  "description": "Hypothesis: track reaction at the named level. Pattern is evidence only. Trigger must be one of the four structures."
-}
-</execute>
-
-Trendline watch (not a fifth system; break alone is not a hypothesis to act on):
-<execute>
-{
-  "action": "ARM_TRENDLINE_STRATEGY",
-  "instrument": "${ctx.instrument}",
-  "direction": "LONG",
-  "trendlineId": "active-tl",
-  "description": "Watch the manual trendline. A break is confirmation only if it is one of the four structures. No fixed point target.",
-  "userPrompt": "The user command"
-}
-</execute>
 
 Manual flatten reminder. This does not close the position:
 <execute>
 {
   "action": "CLOSE_POSITION",
   "reason": "Trader asked to flatten. Advisory only. Trader must close at the broker."
-}
-</execute>
-
-Stagnation reminder. This does not close the position:
-<execute>
-{
-  "action": "ARM_STAGNATION_RULE",
-  "maxMinutes": 5,
-  "requireProfitPoints": 1,
-  "description": "Manual flatten reminder if not in profit after 5 minutes"
-}
-</execute>
-
-Desk alert:
-<execute>
-{
-  "action": "ARM_DESK_ALERT",
-  "instrument": "${ctx.instrument}",
-  "targetReference": "Target Reference Name",
-  "targetPrice": ${exampleTargetJson},
-  "requireHighVolume": true,
-  "requireConfidence": true,
-  "session": "${ctx.instrument === 'NIKKEI' ? 'ASIA' : 'NYC'}",
-  "isLongTerm": false
-}
-</execute>
-
-Long-term memory. Prices must be the trader's verified drawing, not a guessed example:
-<execute>
-{
-  "action": "SAVE_LONG_TERM_MEMORY",
-  "instrument": "${ctx.instrument}",
-  "priceLow": ${exampleTargetJson},
-  "priceHigh": ${exampleTargetJson},
-  "purpose": "HTF observation zone stated by the trader"
-}
-</execute>
-
-Cancel watches:
-<execute>
-{
-  "action": "CANCEL_RULES"
 }
 </execute>
 
@@ -1245,8 +1173,6 @@ Session realized P/L: UNAVAILABLE
 Current exposure: see [CURRENT DESK POSITION]
 Max risk: UNAVAILABLE
 Account numbers are never hardcoded. Do not invent a balance.
-
-Long-term memories in telemetry are higher-timeframe observation zones. Respect the stated purpose. They are not an intraday trigger.
 
 CURRENT LIVE CHART TELEMETRY (${ctx.instrument}):
 - Live Price: ${currentPriceStr}
@@ -1430,20 +1356,10 @@ ${
     : 'No candlestick patterns currently enabled/detected on visible bars.'
 }
 
-[LEO'S HIGHER-TIMEFRAME LONG-TERM MEMORIES & OBSERVATION ZONES]:
-${
-  ctx.longTermMemories && ctx.longTermMemories.length > 0
-    ? ctx.longTermMemories
-        .map(
-          (m) =>
-            `- [${m.timeframe}] ${m.instrument} Range: ${m.priceLow.toFixed(2)} – ${m.priceHigh.toFixed(2)} | Purpose: "${m.purpose}" | Status: ${m.status}${m.lastTriggeredAt ? ` (Triggered at ${m.lastTriggeredAt})` : ''}`
-        )
-        .join('\n')
-    : 'No active Higher Timeframe Long-Term Memories currently set.'
-}
+${formatSavedEdgesForLeoPrompt(ctx.instrument, ctx.savedWyckoffEdges)}
 
 [COMPLETE PLATFORM FEATURES & CAPABILITIES DIRECTORY]:
-The desk is strictly read-only market structure analysis, quantitative drawing analytics, and situation alert monitoring. Below is the complete, authoritative catalog of all platform features:
+The desk is strictly read-only market structure analysis, quantitative drawing analytics, and 4H Wyckoff Edge memory. Below is the complete, authoritative catalog of all platform features:
 
 1. MULTI-HORIZON MONEY TIERS & PROFILE LEVELS:
    - Tier 1 (Mandatory Pre-Market Structure): Rolling 5-Day Volume Profile (5D POC, HVN, LVN, VAH, VAL, High, Low); Yesterday NYC Profile 09:30–16:00 ET (Y-VAH, Y-POC, Y-VAL, Y-High, Y-Low); Overnight Session 18:00–09:29 ET (ON-High, ON-Low, ON-POC, inventory displacement proxy). Pre-market map is frozen at session open.
@@ -1452,7 +1368,7 @@ The desk is strictly read-only market structure analysis, quantitative drawing a
 
 2. INTERACTIVE USER DRAWING TOOLS & HOTKEYS:
    - Action & Reaction Trendlines (Hotkey: W or X): Tracks slope (pts/min and pts/5m), Spring origin (support sweep) vs Upthrust origin (resistance sweep), Horizontal S/R Runway Assessment (runway pts, R:R ratio, nearest target, Clear ≥2.5:1 vs Tight <1.5:1 trap warning), and Empirical Velocity Corridor (1.0x Equilibrium ray, 1.5x Climax parabolic ray, 0.5x Retest Floor ray).
-   - Manual Range Boxes (Hotkey: D): Measures traded volume, volume rate per minute, buy ratio %, delta, and POC inside the box.
+   - Manual Range Boxes (Hotkey: D): On 4H, backtests Accumulation & Distribution behaviors and saves dated Edges to Dashboard -> Edges & Leo Memory. On 5m, monitors Phase D & Phase E opportunities.
    - Multi-Range Volume Comparison Matrix: Automatically compares volume traded across 2+ drawn ranges or FRVPs, measures percentage increase/decrease, and classifies Support Readiness (Good vs Bad Support) & Resistance Readiness (Good vs Bad Resistance).
    - Manual Fixed Range Volume Profile / FRVP (Hotkey: V): Computes high-resolution POC, VAH, VAL, high/low, total contracts, and buy delta.
    - Manual Anchored VWAP / AVWAP (Hotkey: U): User-anchored VWAP from any candle using Typical Price (H+L+C)/3, featuring ±1.0σ Value Area bands (~68% volume), ±2.0σ Exhaustion bands (~95% volume), and z-score stretch (σ).
@@ -1482,22 +1398,18 @@ The desk is strictly read-only market structure analysis, quantitative drawing a
 
 6. CROSS-ASSET VOLATILITY & 5-MARKET SELECTION RADAR:
    - Cboe implied volatility gauges: VIX1D (1-Day SPX), 30D VIX (Equities), OVX (Crude), GVZ (Gold), JNIV (Nikkei).
-   - 5-Market Selection Matrix across NQ, ES, YM, Gold, Silver, Oil (Participation × Location × Structure) ranking contracts into Grade A (Focus Trade), Grade B (Armed), Grade C (Chop/Ignore).
+   - 5-Market Selection Matrix across NQ, ES, YM, Gold, Silver, Oil (Participation × Location × Structure) ranking contracts into Grade A (Focus Trade), Grade B (Watch), Grade C (Chop/Ignore).
    - The Anti-Chase Imperative: A big move in the middle of nowhere is a Grade C trap; focus only on Grade A at predetermined levels.
 
 7. MACRO CATALYST TELEMETRY & SPECIALIST DESK BRIEFS:
    - Finnhub verified economic calendar events (CPI, NFP, FOMC) with live post-release market reaction telemetry.
    - Specialist Analyst desk briefs for Nasdaq, Dow, Gold, Oil, and Nikkei published to the market intelligence bus.
 
-8. ARMED DESK RULES & HYPOTHESIS WATCHERS (<execute> DIRECTIVES):
-   - ARM_CONDITIONAL_ENTRY: Watches live ticks/candles for structural triggers and candle patterns at key levels with dynamic stop loss (below candle low) and take profit R:R.
-   - ARM_TRENDLINE_STRATEGY: Systematic trendline breakout & retest hypothesis watcher with Chop Shield and Borning Zone scoring.
-   - ARM_DESK_ALERT: Price touch audio chime alarms (TradingView sound).
-   - SAVE_LONG_TERM_MEMORY: Higher-timeframe observation zones.
-   - ARM_STAGNATION_RULE: Advisory manual flatten reminder if a trade fails to move into profit within X minutes.
+8. 4H WYCKOFF EDGES & LEO MEMORY FOR 5M PHASE D & PHASE E (/dashboard/edges):
+   - When Leo backtests a 4H range, the discovered Accumulation & Distribution behaviors are dated, written, and saved into Dashboard -> Edges and Leo Memory.
+   - On the 5m timeframe (Last 5 Days of bars), Leo recalls the saved 4H Edge and evaluates Phase D (stepping-stone re-accumulations/re-distributions -> big-volume breakout) and Phase E (Last Point of Support / Supply revisit of the upper or lower range) using Time as a Regulator (Asia & London build the Cause -> NYC delivers the Effect), 5D POC, Overnight Inventory, and Yesterday NYC.
    - CLOSE_POSITION: Advisory manual flatten reminder (Read-only; never sends broker orders).
    - SET_DAY_TYPE: Overrides or sets Dalton day type.
-   - CANCEL_RULES: Clears active watches.
 
 9. HARD ZERO-HALLUCINATION PLATFORM BOUNDARIES (WHAT THE PLATFORM DOES NOT HAVE):
    - NO broker order execution: The platform NEVER places, copies, modifies, or cancels broker orders.

@@ -38,6 +38,11 @@ import {
   format5mPhaseDEAnalysisForLeo,
   type BoxMarket,
 } from '@/lib/trading/boxRangeBacktester'
+import {
+  getActiveLeoMemoryEdgeForMarket,
+  normalizeMarketName,
+  saveWyckoffEdgeFromBoxAnalysis,
+} from '@/lib/trading/wyckoffEdgesStore'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -631,20 +636,25 @@ ${box.subLegs
 - **Phase E (Markup Expansion):** Sustained multi-day trending move towards prior macro distribution highs ($2,788+).`
   }
 
-  // 1a-0e. 5-Minute (5m) Phase D & Phase E Execution Engine (with 4H Edge, Last 5 Days POC, Overnight Inventory, Yesterday NYC & Time as Regulator)
+  // 1a-0e. 5-Minute (5m) Phase D & Phase E Execution Engine (with Saved 4H Edge Memory, Last 5 Days POC, Overnight Inventory, Yesterday NYC & Time as Regulator)
   if (
     /\b(monitor\s+this\s+5m\s+range|phase\s+d\s*(\/|and)\s*(phase\s+)?e|phase\s+d.*phase\s+e|time\s+as\s+a\s+regulator|re-?accumulations?\s+and\s+re-?distributions?|revisit\s+of\s+the\s+upper\s+or\s+lower\s+range|last\s+point\s+of\s+support.*weakness|find\s+phase\s+d)\b/i.test(
       lower
     )
   ) {
-    const low5m = parsedLow ?? matchedRange?.priceLow ?? box?.lowPrice ?? 2680
-    const high5m = parsedHigh ?? matchedRange?.priceHigh ?? box?.highPrice ?? 2720
-    const span5m = Math.max(0.01, high5m - low5m)
+    const activeSavedEdge =
+      ctx.savedWyckoffEdges?.find(
+        (e) => normalizeMarketName(e.market) === bMarket && e.isActiveInLeoMemory !== false
+      ) ?? getActiveLeoMemoryEdgeForMarket(bMarket)
+
+    const low5m = parsedLow ?? matchedRange?.priceLow ?? activeSavedEdge?.lowPrice ?? box?.lowPrice ?? 2680
+    const high5m = parsedHigh ?? matchedRange?.priceHigh ?? activeSavedEdge?.highPrice ?? box?.highPrice ?? 2720
+    const span5m = Math.max(0.01, Math.abs(high5m - low5m))
     const mid5m = Number(((low5m + high5m) / 2).toFixed(2))
     const curPx = ctx.currentPrice
-    const posPct = curPx != null ? Math.round(((curPx - low5m) / span5m) * 100) : 50
+    const posPct = curPx != null ? Math.round(((curPx - Math.min(low5m, high5m)) / span5m) * 100) : 50
     const relation: 'ABOVE' | 'BELOW' | 'INSIDE' =
-      curPx == null ? 'INSIDE' : curPx > high5m ? 'ABOVE' : curPx < low5m ? 'BELOW' : 'INSIDE'
+      curPx == null ? 'INSIDE' : curPx > Math.max(low5m, high5m) ? 'ABOVE' : curPx < Math.min(low5m, high5m) ? 'BELOW' : 'INSIDE'
 
     return format5mPhaseDEAnalysisForLeo({
       market: bMarket,
@@ -654,8 +664,8 @@ ${box.subLegs
       range: matchedRange
         ? {
             label: matchedRange.label,
-            priceLow: low5m,
-            priceHigh: high5m,
+            priceLow: Math.min(low5m, high5m),
+            priceHigh: Math.max(low5m, high5m),
             midPrice: matchedRange.midPrice ?? mid5m,
             heightPts: matchedRange.heightPts ?? Number(span5m.toFixed(2)),
             durationMin: matchedRange.durationMin ?? 60,
@@ -670,8 +680,8 @@ ${box.subLegs
           }
         : {
             label: '5M Range',
-            priceLow: low5m,
-            priceHigh: high5m,
+            priceLow: Math.min(low5m, high5m),
+            priceHigh: Math.max(low5m, high5m),
             midPrice: mid5m,
             heightPts: Number(span5m.toFixed(2)),
             durationMin: 60,
@@ -697,16 +707,18 @@ ${box.subLegs
       orderFlowTrend: ctx.orderFlow?.trend,
       orderFlowDivergence: ctx.orderFlow?.divergence,
       boxAnalysis: box ?? null,
+      savedEdge: activeSavedEdge,
     })
   }
 
-  // 1a-0. 4-Hour (4H) Range Backtest: Accumulation & Distribution Characteristics
+  // 1a-0. 4-Hour (4H) Range Backtest: Accumulation & Distribution Characteristics (Auto-saves to Edges & Leo Memory)
   if (
     /\b(box\s+(analysis|backtest|regime)|backtest\s+(this\s+)?(4h\s+)?(box|range)|analyze\s+(this\s+)?(4h\s+)?(box|range)|characteristics\s+of\s+accumulation\s+and\s+distribution|downtrend\s+or\s+uptrend|trend\s+invalidation|put\s+this\s+box|draw\s+this\s+box|sub[\s-]leg|how\s+(people|they|institutions)\s+(in\s+gold\s+)?accumulate|how\s+(people|they|institutions)\s+distribute|invalidation\s+of\s+the\s+downtrend|downtrend\s+and\s+uptrend)\b/i.test(
       lower
     )
   ) {
     if (box) {
+      saveWyckoffEdgeFromBoxAnalysis(box)
       return formatBoxAnalysisForLeo(box)
     }
   }
@@ -1255,15 +1267,9 @@ The platform is strictly a **deterministic institutional market structure, quant
 
 ---
 
-### 8. **Armed Situation Monitoring (<execute> Directives):**
-- \`ARM_CONDITIONAL_ENTRY\`: Monitors live candles for 4 structures & candle patterns at key levels with dynamic stop loss (below candle low) and take profit R:R.
-- \`ARM_TRENDLINE_STRATEGY\`: Systematic trendline breakout & retest hypothesis watcher with Chop Shield.
-- \`ARM_DESK_ALERT\`: Price touch chime audio alarms.
-- \`SAVE_LONG_TERM_MEMORY\`: Persists higher-timeframe observation zones.
-- \`ARM_STAGNATION_RULE\`: Advisory reminder if a position does not move into profit within X minutes.
-- \`CLOSE_POSITION\`: Advisory manual flatten reminder (does not execute broker orders).
-- \`SET_DAY_TYPE\`: Dalton day type override.
-- \`CANCEL_RULES\`: Clears active armed watches.
+### 8. **4H Wyckoff Edges & Leo Memory (\`/dashboard/edges\`):**
+- **4H Range Backtest & Edge Storage:** When Leo backtests a 4H range, the discovered Accumulation & Distribution behaviors are dated, written, and saved into **Dashboard → Edges** and **Leo Memory**.
+- **5m Phase D & Phase E Execution:** On the 5-minute (\`5m\`) timeframe (Last 5 Days of bars), Leo recalls the saved 4H Edge and uses **Time as a Regulator** (Asia & London build the Cause → NYC delivers the Effect), **5D POC**, **Overnight Inventory**, and **Yesterday NYC** to identify **Phase D** and **Phase E** opportunities.
 
 ---
 
@@ -1273,152 +1279,7 @@ The platform is strictly a **deterministic institutional market structure, quant
 - **No 5th Setup:** Only the 4 Wyckoff structures are valid triggers.`
   }
 
-  // 2. Conditional Entry Strategy & Drawing Monitor (e.g. "monitor price for yesterday FRVP low volume node; if we see a bullish engulfing enter long...", "in low volume of yesterday fix range volume profile if we see a bullish engulfing enter")
-  if (
-    /\b(monitor|if\s+we\s+see|if\s+you\s+see|when\s+price|in\s+low\s+volume|low\s+volume\s+node|bullish\s+engulfing|bearish\s+engulfing|hammer|rejection\s+tail)\b/i.test(lower) &&
-    /\b(enter|buy|long|sell|short)\b/i.test(lower)
-  ) {
-    const isShort = /\b(sell|short)\b/i.test(lower)
-    const direction: 'LONG' | 'SHORT' = isShort ? 'SHORT' : 'LONG'
-    
-    let inst = ctx.instrument || 'NASDAQ'
-    if (/\bdow\b|ym/i.test(lower)) inst = 'DOW'
-    else if (/\bnasdaq\b|nq/i.test(lower)) inst = 'NASDAQ'
-    else if (/\bgold\b|gc/i.test(lower)) inst = 'GOLD'
-    else if (/\bcrude\b|oil|cl/i.test(lower)) inst = 'CRUDE'
-    else if (/\bsilver\b|si\b|sil\b/i.test(lower)) inst = 'SILVER'
-
-    // Only assign a candlestick pattern if the user actually mentioned one.
-    // If they just said "buy above this level" with no pattern language → LEVEL_TOUCH.
-    const userMentionedPattern =
-      /bullish\s+engulfing|bearish\s+engulfing|hammer|shooting\s*star|rejection\s*(tail|wick)|level\s+touch|absorption|sweep/i.test(lower)
-
-    let pattern: 'BULLISH_ENGULFING' | 'BEARISH_ENGULFING' | 'HAMMER' | 'INVERTED_HAMMER' | 'SHOOTING_STAR' | 'REJECTION_TAIL' | 'LEVEL_TOUCH' =
-      'LEVEL_TOUCH' // default: enter when price touches the level — no candle pattern required
-    if (userMentionedPattern) {
-      if (/hammer/i.test(lower)) pattern = 'HAMMER'
-      else if (/shooting\s*star/i.test(lower)) pattern = 'SHOOTING_STAR'
-      else if (/rejection/i.test(lower)) pattern = 'REJECTION_TAIL'
-      else if (/bullish\s+engulfing/i.test(lower)) pattern = 'BULLISH_ENGULFING'
-      else if (/bearish\s+engulfing/i.test(lower)) pattern = 'BEARISH_ENGULFING'
-      else pattern = direction === 'LONG' ? 'BULLISH_ENGULFING' : 'BEARISH_ENGULFING'
-    }
-
-    // Detect entry timeframe — null means "any timeframe, Leo monitors all"
-    let entryTimeframe: string | null = null
-    const tfMatch = lower.match(/\b(1|2|3|4|5|6|8|10|12|15|20|25|30|45|60|90|120|240|480|D|W)\s*(?:min(?:ute)?s?|m\b|h(?:our)?s?|hr?s?|d(?:ay)?s?|w(?:eek)?s?)/i)
-    if (tfMatch) {
-      const raw = tfMatch[1]!.toUpperCase()
-      // Normalize to minutes for standard values
-      if (/^d$/i.test(raw)) entryTimeframe = '1440'
-      else if (/^w$/i.test(raw)) entryTimeframe = '10080'
-      else entryTimeframe = raw
-    }
-
-    // Detect CVD divergence requirement
-    const cvdDivergence = /\bcvd\b|\bcumulative\s+volume\s+delta|\bdivergence\b/i.test(lower)
-
-    let stopLossMode: 'BELOW_CANDLE_LOW' | 'ABOVE_CANDLE_HIGH' | 'FIXED_POINTS' | 'DOLLARS_50' =
-      direction === 'LONG' ? 'BELOW_CANDLE_LOW' : 'ABOVE_CANDLE_HIGH'
-    if (/below\s+(the\s+)?(candle|bar|engulfing)\s*low/i.test(lower)) stopLossMode = 'BELOW_CANDLE_LOW'
-    else if (/above\s+(the\s+)?(candle|bar|engulfing)\s*high/i.test(lower)) stopLossMode = 'ABOVE_CANDLE_HIGH'
-    else if (/50|fifty/i.test(lower)) stopLossMode = 'DOLLARS_50'
-
-    let takeProfitMode: '1:1' | '1:2' | '1:3' | '1:5' | 'FIXED_POINTS' = '1:2'
-    if (/1\s*:\s*1|1\s+to\s+1/i.test(lower)) takeProfitMode = '1:1'
-    else if (/1\s*:\s*3|1\s+to\s+3/i.test(lower)) takeProfitMode = '1:3'
-    else if (/1\s*:\s*5|1\s+to\s+5/i.test(lower)) takeProfitMode = '1:5'
-
-    const defaultPrice =
-      inst === 'DOW' ? 52500 : inst === 'GOLD' ? 4350 : inst === 'CRUDE' ? 104 : 29500
-
-    let targetRef = 'Key Reference Level'
-    let targetPx = ctx.currentPrice ?? defaultPrice
-
-    if (/frvp|volume\s*profile|low\s*volume|lvn/i.test(lower)) {
-      const frvp = ctx.userDrawings?.frvps?.[0]
-      targetRef = frvp ? `Manual FRVP (${frvp.startTimeEt}) LVN` : 'Yesterday FRVP Low Volume Node'
-      targetPx = frvp ? frvp.val : (ctx.shortTermMoney?.yval ?? (ctx.currentPrice ?? defaultPrice))
-    } else if (/trendline/i.test(lower)) {
-      const tl = ctx.userDrawings?.trendlines?.[0]
-      const tlLabel = tl?.isReactionTrendline
-        ? 'Reaction Trendline'
-        : tl?.isActionTrendline
-        ? 'Action Trendline'
-        : (tl?.label || 'Trendline')
-      const nearestTarget = tl?.horizontalRunway?.nearestTargetLabel
-        ? `${tlLabel} Breakout → ${tl.horizontalRunway.nearestTargetLabel}`
-        : `${tlLabel} Support`
-      targetRef = tl ? nearestTarget : 'Trendline Breakout Support'
-      targetPx = tl ? (tl.horizontalRunway?.nearestTargetPrice ?? tl.projectedPrice) : (ctx.currentPrice ?? defaultPrice)
-    } else if (/range|box/i.test(lower)) {
-      const r = ctx.userDrawings?.ranges?.[0]
-      targetRef = r ? `${r.label || 'Range'} ${direction === 'LONG' ? 'Low' : 'High'}` : 'Range Boundary'
-      targetPx = r ? (direction === 'LONG' ? r.priceLow : r.priceHigh) : (ctx.currentPrice ?? defaultPrice)
-    }
-
-    const matchPrice = lower.match(/(?:at|@|price|around)\s*([\d,]+(?:\.\d+)?)/i)
-    if (matchPrice) {
-      const p = parseFloat(matchPrice[1]!.replace(/,/g, ''))
-      if (Number.isFinite(p) && p > 0) targetPx = p
-    }
-
-    const patternLabel =
-      pattern === 'LEVEL_TOUCH' ? 'Price Touch at Level' : pattern.replace(/_/g, ' ')
-    const slLabel =
-      stopLossMode === 'BELOW_CANDLE_LOW'
-        ? 'Below Entry Bar Low (-2 pts cushion)'
-        : stopLossMode === 'ABOVE_CANDLE_HIGH'
-        ? 'Above Entry Bar High (+2 pts cushion)'
-        : 'Fixed Risk Bracket'
-
-    const triggerLine =
-      pattern === 'LEVEL_TOUCH'
-        ? `- **Trigger:** **Price reaches level** (no candle pattern required)`
-        : `- **Trigger Pattern:** **${patternLabel}**`
-
-    const tfLine = entryTimeframe
-      ? `- **Timeframe:** **${entryTimeframe}m chart** (Leo watches this TF)`
-      : `- **Timeframe:** **Any** — Leo monitors all timeframes for the level`
-    const cvdLine = cvdDivergence
-      ? `- **CVD Condition:** ✅ CVD divergence required at the level`
-      : ''
-
-    return `### 🎯 Strategy Saved & Conditional Entry Armed
-
-**Trader Instruction (Saved):**
-> "${lastMsg.trim()}"
-
-**Saved Entry Conditions:**
-- **Target Reference:** **${targetRef}**
-- **Target Level:** **${targetPx.toLocaleString()}**
-${triggerLine}
-${tfLine}${cvdLine ? '\n' + cvdLine : ''}
-- **Direction:** **${direction}**
-- **Dynamic Stop Loss:** ${slLabel}
-- **Profit Target:** **${takeProfitMode} Risk:Reward**
-- **Execution Desk:** Armed & actively monitoring live ticks. Leo will alert you as soon as the market situation confirms. *(The system is always in Read-Only Market Monitoring Mode and never places orders).*
-
-<execute>
-{
-  "action": "ARM_CONDITIONAL_ENTRY",
-  "userPrompt": "${lastMsg.replace(/["\\]/g, '')}",
-  "instrument": "${inst}",
-  "direction": "${direction}",
-  "targetReference": "${targetRef}",
-  "targetPrice": ${targetPx},
-  "pattern": "${pattern}",
-  "entryTimeframe": ${entryTimeframe ? `"${entryTimeframe}"` : 'null'},
-  "cvdDivergence": ${cvdDivergence},
-  "stopLossMode": "${stopLossMode}",
-  "takeProfitMode": "${takeProfitMode}",
-  "size": 1,
-  "description": "${direction} 1 ${inst} — ${pattern === 'LEVEL_TOUCH' ? 'enter at level' : patternLabel}${entryTimeframe ? ` on ${entryTimeframe}m` : ''}${cvdDivergence ? ' + CVD div' : ''} at ${targetRef} (${targetPx.toLocaleString()})"
-}
-</execute>`
-  }
-
-  // 3. Direct order command — system is strictly for monitoring markets, situations & notes
+  // 3. Direct order command — system is strictly for monitoring markets & 4H Wyckoff Edges
   if (/\b(buy|long|sell|short|enter|place\s+order|open\s+position|take\s+(a\s+)?trade)\b/i.test(lower)) {
     let inst = ctx.instrument || 'NASDAQ'
     if (/\bdow\b|ym/i.test(lower)) inst = 'DOW'
@@ -1431,8 +1292,7 @@ ${tfLine}${cvdLine ? '\n' + cvdLine : ''}
 
 The desk is always in **Read-Only Market Monitoring Mode** and never places orders:
 - 📊 **Market Monitoring:** Live tick tracking, VWAP, CVD order flow & price levels for **${inst}**.
-- 🎯 **Situation Alerts:** Detecting, tracking, and notifying you the moment market setups and structural events happen.
-- 📝 **Journal Notes:** Recording market observations, volume behavior, and situational notes.
+- 💎 **4H Wyckoff Edges & Leo Memory (\`/dashboard/edges\`):** Backtesting 4H ranges to record dated Accumulation & Distribution behaviors and applying them on the 5m timeframe for Phase D & Phase E.
 
 *AI Leo is purely for telling you what is going on in the market; it never places any orders.*`
   }
@@ -1443,7 +1303,7 @@ The desk is always in **Read-Only Market Monitoring Mode** and never places orde
     if (!pos) {
       return `### Desk Status: FLAT (${ctx.instrument} @ ${curPrice})
 
-There is currently **no open position** on the desk. All brackets are clear. Standing by for your next level, chart reference, or voice entry instruction.`
+There is currently **no open position** on the desk. All brackets are clear. Standing by for your next level, chart reference, or 4H/5m Wyckoff inquiry.`
     }
     const sign = pos.unrealizedPnlPoints >= 0 ? '+' : ''
     return `### 📊 Live Trade Status (${pos.instrument} · ${pos.direction})
@@ -1456,15 +1316,6 @@ There is currently **no open position** on the desk. All brackets are clear. Sta
 - **Duration in Trade:** ${pos.durationMinutes.toFixed(1)} minutes
 - **Chart Sync:** Displayed live on the chart canvas.
 - **Management Rule:** Only you can exit this trade. AI never auto-exits.`
-  }
-
-  // 4. Stagnation rule command: "if we are in a position and we have not moved to profit after X minutes close"
-  if (/not\s+moved\s+to\s+(the\s+)?profit|stagnat|close\s+.*after\s+\d+\s*min/i.test(lower)) {
-    const matchMin = lower.match(/(\d+)\s*(?:minutes?|mins?|m\b)/)
-    const minutes = matchMin ? parseInt(matchMin[1]!, 10) : 5
-    const pos = ctx.activePosition
-
-    return `Understood. Stagnation rule armed: If our ${pos ? `${pos.direction} position on ${pos.instrument} (entry: ${pos.entryPrice.toFixed(2)})` : `${ctx.instrument} position`} does not move into positive profit within ${minutes} minutes, I will alert you to manually flatten at your broker to protect capital from dead auction chop. *(The platform is strictly read-only and never places or flattens broker orders).* \n\n<execute>\n{\n  "action": "ARM_STAGNATION_RULE",\n  "maxMinutes": ${minutes},\n  "requireProfitPoints": 1,\n  "description": "Manual flatten reminder if not in profit after ${minutes} minutes"\n}\n</execute>`
   }
 
   // 5. Telegram alert command: "send me a telegram message" or "telegram"

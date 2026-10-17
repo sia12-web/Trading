@@ -14,8 +14,7 @@ import type {
   WeakHandBehaviorAssessment,
   WyckoffTimeframe,
 } from '@/lib/trading/wyckoff'
-import { saveLongTermMemory } from '@/lib/trading/leoLongTermMemory'
-import { addRule } from '@/lib/trading/leoRules'
+import { saveWyckoffEdge, saveWyckoffEdgeFromBoxAnalysis } from '@/lib/trading/wyckoffEdgesStore'
 import type {
   BoxRegimeAnalysis,
   BoxSubLeg,
@@ -221,12 +220,17 @@ export function WyckoffRulesPanel({
       const res = await fetch('/api/trading/edges/backtest-box', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ market: marketToFetch, timeframe: '1D' }),
+        body: JSON.stringify({ market: marketToFetch, timeframe: '4H' }),
       })
       if (!res.ok) return
       const json = await res.json()
       if (json?.success && json.analysis) {
         setBoxAnalysis(json.analysis as BoxRegimeAnalysis)
+        if (json.savedEdge) {
+          saveWyckoffEdge(json.savedEdge)
+        } else {
+          saveWyckoffEdgeFromBoxAnalysis(json.analysis as BoxRegimeAnalysis)
+        }
       }
     } catch {
       // soft-fail
@@ -252,54 +256,41 @@ export function WyckoffRulesPanel({
       fetchBoxAnalysis(mapped),
       fetchBusStatus(instrument),
     ])
-    setSyncFeedback(`Live 1D/4H/15m/5m/1m Wyckoff Discovery & Box Backtest refreshed for ${mapped} (${activeBenchmark.contractLabel})`)
+    setSyncFeedback(`Live 1D/4H/15m/5m/1m Wyckoff Discovery & 4H Edge Backtest refreshed for ${mapped} (${activeBenchmark.contractLabel})`)
     setTimeout(() => setSyncFeedback(null), 4000)
   }
 
-  const handleSaveRangeToNotes = (tf: WyckoffTimeframeAnalysis) => {
+  const handleSave4hEdgeToLeoMemory = async (tf: WyckoffTimeframeAnalysis) => {
     if (!tf.detectedRange) return
-    saveLongTermMemory({
-      id: tf.detectedRange.rangeId,
-      instrument: tf.instrument,
-      timeframe: tf.timeframe,
-      priceLow: tf.detectedRange.rangeLow,
-      priceHigh: tf.detectedRange.rangeHigh,
-      purpose: `${tf.timeframe} Wyckoff ${tf.detectedRange.classification} (${tf.detectedRange.provisionalPhase}) · Event: ${tf.eventState.candidateEvent} (${tf.eventState.lifecycleStage})`,
-      notes: `${tf.eventState.eventSummary} | Invalidation: ${tf.structuralInvalidation.price?.toFixed(2) ?? 'N/A'} | Next Target: ${tf.nextImportantObstacle.price?.toFixed(2) ?? 'N/A'}`,
-      status: 'ACTIVE',
-      createdAt: new Date().toISOString(),
-      triggerCount: 0,
-      alarmSoundEnabled: true,
-      isLongTerm: tf.timeframe === '1D' || tf.timeframe === '30m',
-    })
-    setSyncFeedback(`Saved ${tf.instrument} ${tf.timeframe} Range [${tf.detectedRange.rangeLow.toFixed(2)} – ${tf.detectedRange.rangeHigh.toFixed(2)}] to Notes`)
-    setTimeout(() => setSyncFeedback(null), 4000)
-  }
-
-  const handleArmSituationWatch = (tf: WyckoffTimeframeAnalysis) => {
-    if (!tf.detectedRange) return
-    const isSpring =
-      tf.eventState.candidateEvent.includes('SPRING') ||
-      tf.detectedRange.classification.includes('ACCUMULATION') ||
-      tf.eventState.directionBias === 'BULLISH'
-    const direction = isSpring ? 'LONG' : 'SHORT'
-    const targetPrice = isSpring ? tf.detectedRange.rangeLow : tf.detectedRange.rangeHigh
-
-    const newRule = addRule({
-      type: 'MARKET_SITUATION',
-      description: `${tf.instrument} ${tf.timeframe} Wyckoff ${tf.detectedRange.classification}: Watch ${tf.eventState.candidateEvent || 'Boundary Test'} at [${tf.detectedRange.rangeLow.toFixed(2)} – ${tf.detectedRange.rangeHigh.toFixed(2)}]`,
-      instrument: tf.instrument as any,
-      direction,
-      targetPrice,
-      pattern: tf.eventState.candidateEvent || 'SWEEP_REVERSAL',
-      stopLoss: tf.structuralInvalidation.price ?? undefined,
-      takeProfit: tf.nextImportantObstacle.price ?? undefined,
-      isLongTerm: tf.timeframe === '1D' || tf.timeframe === '30m',
-      status: 'ARMED',
-    })
-
-    setSyncFeedback(`🎯 Armed Situation Watch: ${newRule.description}`)
-    setTimeout(() => setSyncFeedback(null), 5000)
+    try {
+      const nowSec = Math.floor(Date.now() / 1000)
+      const startSec = nowSec - 45 * 86400
+      const res = await fetch('/api/trading/edges/backtest-box', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: tf.detectedRange.rangeId || `edge-4h-${tf.instrument}-${nowSec}`,
+          market: tf.instrument,
+          timeframe: '4H',
+          startTime: startSec,
+          endTime: nowSec,
+          lowPrice: tf.detectedRange.rangeLow,
+          highPrice: tf.detectedRange.rangeHigh,
+          label: `${tf.instrument} 4H ${tf.detectedRange.classification} (${tf.detectedRange.provisionalPhase})`,
+        }),
+      })
+      const json = await res.json()
+      if (json?.savedEdge) {
+        saveWyckoffEdge(json.savedEdge)
+      }
+      setSyncFeedback(
+        `💎 Saved ${tf.instrument} 4H Edge [${tf.detectedRange.rangeLow.toFixed(2)} – ${tf.detectedRange.rangeHigh.toFixed(2)}] to Dashboard → Edges & Leo Memory`
+      )
+      setTimeout(() => setSyncFeedback(null), 4500)
+    } catch {
+      setSyncFeedback('Failed to save 4H Edge to Leo Memory')
+      setTimeout(() => setSyncFeedback(null), 4000)
+    }
   }
 
   const inspectedBenchmark =
@@ -1048,26 +1039,15 @@ export function WyckoffRulesPanel({
 
                             {/* Action Buttons */}
                             <div className="space-y-1 pt-1 border-t border-surface-800">
-                              <div className="grid grid-cols-2 gap-1 text-[8.5px]">
-                                <button
-                                  type="button"
-                                  onClick={() => handleSaveRangeToNotes(tf)}
-                                  disabled={!range}
-                                  className="py-1 px-1.5 rounded bg-surface-900 hover:bg-surface-800 border border-surface-700 text-gray-200 font-bold transition flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40"
-                                >
-                                  <span>📌</span>
-                                  <span>Notes</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleArmSituationWatch(tf)}
-                                  disabled={!range}
-                                  className="py-1 px-1.5 rounded bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/50 text-emerald-200 font-bold transition flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40"
-                                >
-                                  <span>🎯</span>
-                                  <span>Arm Watch</span>
-                                </button>
-                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleSave4hEdgeToLeoMemory(tf)}
+                                disabled={!range}
+                                className="w-full py-1 px-1.5 rounded bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/50 text-emerald-200 text-[8.5px] font-bold transition flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40"
+                              >
+                                <span>💎</span>
+                                <span>Save 4H Edge to Leo Memory</span>
+                              </button>
                               <button
                                 type="button"
                                 onClick={() =>

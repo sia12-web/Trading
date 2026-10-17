@@ -148,7 +148,7 @@ export function SessionBanner({
     underlyingStrength: string
     directiveSummary: string
   } | null>(null)
-  const [htfSituation, setHtfSituation] = useState<{
+  const [_htfSituation, setHtfSituation] = useState<{
     activeSituation: string
     continuationProbabilityPct: number
     primaryTargetPrice: number | null
@@ -586,19 +586,6 @@ export function SessionBanner({
             title={`Corrective Action: ${htfCorr.type} | ${htfCorr.directiveSummary}`}
           >
             Corr: {String(htfCorr.type || '').replace(/_/g, ' ')}
-          </span>
-        )}
-        {!SYSTEMATIC_LIVE_DESK && htfSituation && htfSituation.activeSituation !== 'NONE' && (
-          <span
-            className={`rounded px-2 py-0.5 font-semibold text-[10px] uppercase tracking-wide border ${String(htfSituation.activeSituation || '').includes('BULL') || String(htfSituation.activeSituation || '').includes('BUYING')
-              ? 'bg-emerald-500/35 text-emerald-100 border-emerald-400/60 font-bold'
-              : String(htfSituation.activeSituation || '').includes('BEAR') || String(htfSituation.activeSituation || '').includes('SELLING')
-                ? 'bg-rose-500/35 text-rose-100 border-rose-400/60 font-bold'
-                : 'bg-purple-500/25 text-purple-200 border-purple-500/40'
-              }`}
-            title={`Special Situation: ${htfSituation.activeSituation} (${htfSituation.continuationProbabilityPct}% Odds) | ${htfSituation.directiveSummary}`}
-          >
-            Situation: {String(htfSituation.activeSituation || '').replace(/_/g, ' ')} ({htfSituation.continuationProbabilityPct}%)
           </span>
         )}
         {!SYSTEMATIC_LIVE_DESK && htfStandAside && htfStandAside.isStandAside && (

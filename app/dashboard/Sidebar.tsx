@@ -89,22 +89,12 @@ const LIVE_ITEMS: NavItem[] = [
     ),
   },
   {
-    href: '/dashboard/notes',
-    label: 'Notes',
-    hint: 'Alarms & level alerts',
+    href: '/dashboard/edges',
+    label: 'Edges',
+    hint: '4H Acc/Dist & Leo memory',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-4 h-4">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
-      </svg>
-    ),
-  },
-  {
-    href: '/dashboard/situations',
-    label: 'Situations',
-    hint: 'Per-market Leo rules',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="w-4 h-4">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5.032 14.47M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591l3.958 3.966M14.25 3.104c.251.023.501.05.75.082M19.5 14.47l-3.958-3.966a2.25 2.25 0 00-.659-1.591V3.184" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
       </svg>
     ),
   },

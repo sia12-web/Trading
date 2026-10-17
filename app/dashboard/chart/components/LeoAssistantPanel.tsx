@@ -38,6 +38,7 @@ import {
   resampleCandlesTo5M,
 } from '@/lib/trading/trendlineStrategy'
 import type { UserTrendline } from '@/lib/trading/userDrawings'
+import { saveWyckoffEdge } from '@/lib/trading/wyckoffEdgesStore'
 import { WyckoffRulesPanel } from './WyckoffRulesPanel'
 
 export interface ArmedDeskRule {
@@ -238,7 +239,7 @@ export function LeoAssistantPanel({
   const [attachedPoints, setAttachedPoints] = useState<LeoDataPoint[]>([])
   const [syncedBoxAnalysis, setSyncedBoxAnalysis] = useState<any>(null)
   const [syncedWyckoffReport, setSyncedWyckoffReport] = useState<any>(null)
-  const [armedRules, setArmedRulesState] = useState<ArmedDeskRule[]>(() => {
+  const [_armedRules, setArmedRulesState] = useState<ArmedDeskRule[]>(() => {
     if (typeof window === 'undefined') return []
     try {
       return loadRulesForMarket(context.instrument as MarketInstrument) as any
@@ -1009,8 +1010,9 @@ export function LeoAssistantPanel({
     }
   }
 
-  // ─── Real-time 1-Second Desk Rule Evaluation Loop ────────────────────────
+  // ─── Armed Desk Rules Disabled (Replaced by 4H Wyckoff Edges & Leo Memory) ───
   useEffect(() => {
+    return
     const timer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return
 
@@ -2151,18 +2153,6 @@ export function LeoAssistantPanel({
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={() =>
-                      handleSendMessage(
-                        'Leo if we are in this position and we have not moved to profit after 5 minutes, close the position.'
-                      )
-                    }
-                    className="px-1.5 py-0.5 rounded bg-amber-950/70 border border-amber-700/60 text-amber-300 hover:bg-amber-900/90 text-[9px]"
-                    title="Arm 5-minute stagnation exit rule"
-                  >
-                    ⏳ Arm 5m Timeout
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => executeClosePosition('Trader button click: Close position')}
                     className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-[9px] shadow"
                   >
@@ -2170,304 +2160,6 @@ export function LeoAssistantPanel({
                   </button>
                 </div>
               </div>
-            </div>
-          )}
-
-          {/* ── Armed Strategy Rules & Entry Monitor Review Tray ── */}
-          {armedRules.filter((r) => r.status === 'ARMED' || r.status === 'EXECUTED').length > 0 && (
-            <div className="border-b border-purple-900/60 bg-neutral-950/90 divide-y divide-purple-950/60 max-h-[220px] overflow-y-auto">
-              <div className="px-3 py-1 bg-purple-950/60 flex items-center justify-between text-[9px] font-mono text-purple-300">
-                <span className="font-bold flex items-center gap-1">
-                  <span>🎯</span>
-                  <span>
-                    ARMED STRATEGIES & ENTRY RULES (
-                    {armedRules.filter((r) => r.status === 'ARMED').length} active)
-                  </span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setArmedRules((prev) =>
-                      prev.map((r) => (r.status === 'ARMED' ? { ...r, status: 'CANCELLED' as const } : r))
-                    )
-                  }
-                  className="text-[8.5px] text-neutral-400 hover:text-rose-400 font-bold underline"
-                >
-                  Clear All
-                </button>
-              </div>
-
-              {armedRules
-                .filter((r) => r.status === 'ARMED' || r.status === 'EXECUTED')
-                .map((rule) => {
-                  const isConditional = rule.type === 'CONDITIONAL_ENTRY'
-                  const curPx = context.currentPrice ?? 0
-                  const targetPx = rule.targetPrice ?? 0
-                  const dist = Math.abs(curPx - targetPx)
-
-                  if (!isConditional) {
-                    return (
-                      <div
-                        key={rule.id}
-                        className="px-3 py-1.5 flex items-center justify-between text-[10px] font-mono text-purple-200 border-b border-purple-900/30"
-                      >
-                        <span className="flex items-center gap-1.5 truncate max-w-[280px]">
-                          <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse shrink-0" />
-                          <span className="truncate">{rule.description}</span>
-                          {rule.isLongTerm ? (
-                            <span className="px-1 py-0.5 rounded text-[8px] bg-purple-900/70 text-purple-300 border border-purple-700/60 font-bold shrink-0">
-                              🧠 Long-Term
-                            </span>
-                          ) : (
-                            <span className="px-1 py-0.5 rounded text-[8px] bg-amber-900/40 text-amber-300 border border-amber-700/50 font-bold shrink-0">
-                              ⏱️ NYC Only
-                            </span>
-                          )}
-                        </span>
-                        <div className="flex items-center gap-1 shrink-0">
-                          {!rule.isLongTerm && rule.status === 'ARMED' && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setArmedRules((prev) =>
-                                  prev.map((r) =>
-                                    r.id === rule.id
-                                      ? {
-                                          ...r,
-                                          isLongTerm: true,
-                                          description: r.description.replace(' [NYC Session]', ' [Long-Term Memory]'),
-                                        }
-                                      : r
-                                  )
-                                )
-                              }
-                              className="text-[8.5px] text-purple-400 hover:text-purple-300 font-bold underline mr-1"
-                              title="Make this alarm persist across sessions as Long-Term Memory"
-                            >
-                              Make Long-Term
-                            </button>
-                          )}
-                          {rule.status === 'ARMED' && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setArmedRules((prev) =>
-                                  prev.map((r) => (r.id === rule.id ? { ...r, status: 'CANCELLED' as const } : r))
-                                )
-                              }
-                              className="text-[9px] text-neutral-400 hover:text-rose-400 font-bold ml-1 underline"
-                            >
-                              Cancel
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  }
-
-                  // Rich Conditional Strategy Review Card
-                  return (
-                    <div
-                      key={rule.id}
-                      className={`p-2.5 space-y-1.5 text-xs font-sans transition-all ${
-                        rule.status === 'EXECUTED'
-                          ? 'bg-purple-950/30 border-l-2 border-purple-500'
-                          : 'bg-neutral-900/80 border-l-2 border-emerald-500'
-                      }`}
-                    >
-                      {/* Card Header */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {rule.status === 'ARMED' ? (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-950/90 border border-emerald-500/60 text-[9px] font-mono font-bold text-emerald-300">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                              SCANNING ({dist.toFixed(1)} pts away)
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-purple-950 border border-purple-500/70 text-[9px] font-mono font-bold text-purple-300">
-                              ⚡ EXECUTED @ {rule.executedPrice?.toFixed(2)}
-                            </span>
-                          )}
-                          <span
-                            className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${
-                              rule.direction === 'LONG'
-                                ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/60'
-                                : 'bg-rose-900/60 text-rose-300 border border-rose-700/60'
-                            }`}
-                          >
-                            {rule.direction} {rule.size || 1}x {rule.instrument}
-                          </span>
-                          {rule.isLongTerm ? (
-                            <span className="px-1.5 py-0.5 rounded text-[8.5px] font-mono font-bold bg-purple-900/60 text-purple-300 border border-purple-700/60">
-                              🧠 Long-Term
-                            </span>
-                          ) : (
-                            <span className="px-1.5 py-0.5 rounded text-[8.5px] font-mono font-bold bg-amber-900/40 text-amber-300 border border-amber-700/50">
-                              ⏱️ NYC Only
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-1">
-                          {!rule.isLongTerm && rule.status === 'ARMED' && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setArmedRules((prev) =>
-                                  prev.map((r) =>
-                                    r.id === rule.id
-                                      ? {
-                                          ...r,
-                                          isLongTerm: true,
-                                          description: r.description.replace(' [NYC Session]', ' [Long-Term Memory]'),
-                                        }
-                                      : r
-                                  )
-                                )
-                              }
-                              className="px-1.5 py-0.5 rounded bg-purple-950/80 hover:bg-purple-900 border border-purple-700/70 text-purple-300 text-[8.5px] font-mono font-bold transition"
-                              title="Promote to Long-Term Memory (persist across sessions)"
-                            >
-                              Make Long-Term
-                            </button>
-                          )}
-                          {rule.status === 'ARMED' && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setArmedRules((prev) =>
-                                  prev.map((r) => (r.id === rule.id ? { ...r, status: 'CANCELLED' as const } : r))
-                                )
-                              }
-                              className="px-1.5 py-0.5 rounded bg-rose-950/80 hover:bg-rose-900 border border-rose-700/70 text-rose-300 text-[9px] font-mono font-bold transition"
-                              title="Disarm this entry strategy"
-                            >
-                              Cancel Rule
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Saved User Prompt (What Was Said) */}
-                      {rule.userPrompt && (
-                        <div className="p-1.5 rounded bg-neutral-950/80 border border-neutral-800 text-[10px] text-purple-200 font-mono italic flex items-start gap-1">
-                          <span className="text-purple-400 not-italic shrink-0">💬</span>
-                          <span className="line-clamp-2">&quot;{rule.userPrompt}&quot;</span>
-                        </div>
-                      )}
-
-                      {/* Conditions Key-Value Grid with Live Ticking */}
-                      <div className="grid grid-cols-2 gap-1 text-[9.5px] font-mono pt-0.5">
-                        <div className="flex items-center justify-between text-neutral-300 pr-1">
-                          <span className="text-neutral-500 truncate">📍 Level:</span>
-                          <span className="flex items-center gap-1 shrink-0">
-                            <span className="text-amber-300 font-semibold" title={rule.targetReference}>
-                              {targetPx.toLocaleString()}
-                            </span>
-                            <span className={`text-[8.5px] px-1 py-0.2 rounded font-bold ${
-                              rule.conditionProgress?.levelReached || rule.status === 'EXECUTED'
-                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/60'
-                                : 'bg-neutral-800 text-neutral-400'
-                            }`}>
-                              {rule.conditionProgress?.levelReached || rule.status === 'EXECUTED' ? '✓' : '○'}
-                            </span>
-                          </span>
-                        </div>
-
-                        {rule.pattern && rule.pattern !== 'LEVEL_TOUCH' ? (
-                          <div className="flex items-center justify-between text-neutral-300 pr-1">
-                            <span className="text-neutral-500 truncate">⚡ Pattern:</span>
-                            <span className="flex items-center gap-1 shrink-0">
-                              <span className="text-sky-300 font-semibold truncate max-w-[80px]">
-                                {rule.pattern.replace(/_/g, ' ')}
-                              </span>
-                              <span className={`text-[8.5px] px-1 py-0.2 rounded font-bold ${
-                                rule.conditionProgress?.patternConfirmed || rule.status === 'EXECUTED'
-                                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/60'
-                                  : 'bg-neutral-800 text-neutral-400'
-                              }`}>
-                                {rule.conditionProgress?.patternConfirmed || rule.status === 'EXECUTED' ? '✓' : '○'}
-                              </span>
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-between text-neutral-300 pr-1">
-                            <span className="text-neutral-500 truncate">📍 Entry:</span>
-                            <span className="flex items-center gap-1 shrink-0">
-                              <span className="text-cyan-400 font-semibold">Price Touch</span>
-                              <span className={`text-[8.5px] px-1 py-0.2 rounded font-bold ${
-                                rule.conditionProgress?.levelReached || rule.status === 'EXECUTED'
-                                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/60'
-                                  : 'bg-neutral-800 text-neutral-400'
-                              }`}>
-                                {rule.conditionProgress?.levelReached || rule.status === 'EXECUTED' ? '✓' : '○'}
-                              </span>
-                            </span>
-                          </div>
-                        )}
-
-                        <div className="flex items-center justify-between text-neutral-300 pr-1">
-                          <span className="text-neutral-500 truncate">⏱️ TF:</span>
-                          <span className="flex items-center gap-1 shrink-0">
-                            <span className={`font-semibold ${rule.entryTimeframe ? 'text-amber-300' : 'text-neutral-400'}`}>
-                              {rule.entryTimeframe ? `${rule.entryTimeframe}m` : 'Multi-TF'}
-                            </span>
-                            <span className="text-[8.5px] px-1 py-0.2 rounded font-bold bg-emerald-950 text-emerald-300 border border-emerald-700/60">
-                              ✓
-                            </span>
-                          </span>
-                        </div>
-
-                        {rule.cvdDivergence ? (
-                          <div className="flex items-center justify-between text-neutral-300 pr-1">
-                            <span className="text-neutral-500 truncate">📊 CVD:</span>
-                            <span className="flex items-center gap-1 shrink-0">
-                              <span className="text-emerald-400 font-semibold">Divergence</span>
-                              <span className={`text-[8.5px] px-1 py-0.2 rounded font-bold ${
-                                rule.conditionProgress?.cvdConfirmed || rule.status === 'EXECUTED'
-                                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/60'
-                                  : 'bg-neutral-800 text-neutral-400'
-                              }`}>
-                                {rule.conditionProgress?.cvdConfirmed || rule.status === 'EXECUTED' ? '✓' : '○'}
-                              </span>
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-between text-neutral-300 pr-1">
-                            <span className="text-neutral-500 truncate">🛡️ SL:</span>
-                            <span className="text-neutral-300 truncate">
-                              {rule.stopLossMode === 'BELOW_CANDLE_LOW'
-                                ? 'Bar Low (-2p)'
-                                : rule.stopLossMode === 'ABOVE_CANDLE_HIGH'
-                                ? 'Bar High (+2p)'
-                                : 'Bracket'}
-                            </span>
-                          </div>
-                        )}
-
-                        {rule.cvdDivergence && (
-                          <div className="flex items-center justify-between text-neutral-300 pr-1">
-                            <span className="text-neutral-500 truncate">🛡️ SL:</span>
-                            <span className="text-neutral-300 truncate">
-                              {rule.stopLossMode === 'BELOW_CANDLE_LOW'
-                                ? 'Bar Low (-2p)'
-                                : rule.stopLossMode === 'ABOVE_CANDLE_HIGH'
-                                ? 'Bar High (+2p)'
-                                : 'Bracket'}
-                            </span>
-                          </div>
-                        )}
-
-                        <div className="flex items-center justify-between text-neutral-300 pr-1">
-                          <span className="text-neutral-500 truncate">🎯 Target:</span>
-                          <span className="text-emerald-300 font-semibold truncate">
-                            {rule.takeProfitMode || '1:2'} R:R
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
             </div>
           )}
 
@@ -2507,54 +2199,6 @@ export function LeoAssistantPanel({
                     >
                       <span>📐</span> {t.label || 'Trendline'}
                     </button>
-                    {t.slopeDirection === 'DESCENDING' && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const inst = ((t as any).instrument || context.instrument || 'GOLD') as MarketInstrument
-                          const newRule = addRule({
-                            instrument: inst,
-                            type: 'TRENDLINE_BREAKOUT_SYSTEMATIC',
-                            direction: 'LONG',
-                            description: `Hypothesis: Track bullish reaction on 5m Candle Close above ${t.label || 'Bearish Trendline'} (Trend-Borning Zone)`,
-                            userPrompt: `Monitor ${t.label || 'Bearish Trendline'}. Track hypothesis for bullish market reaction on ${inst} when 5m candle closes above trendline. SL below breakout candle low, TP +50 pts (or 1:2 R:R), exit on 5m candle close below dynamic responsive trendline.`,
-                            targetReference: t.label || 'Bearish Trendline',
-                            targetPrice: t.projectedPrice || t.endPrice,
-                            pattern: 'TRENDLINE_BREAKOUT_5M',
-                            stopLossMode: 'BELOW_CANDLE_LOW',
-                            takeProfitMode: 'FIXED_POINTS',
-                            takeProfit: 50,
-                            size: 1,
-                            isLongTerm: true,
-                            session: '24H',
-                            status: 'ARMED',
-                            trendlineId: t.id,
-                            conditions: {
-                              trendlineId: t.id,
-                              pattern: 'TRENDLINE_BREAKOUT_5M',
-                              stopLossMode: 'BELOW_CANDLE_LOW',
-                              takeProfitMode: 'FIXED_POINTS',
-                              takeProfit: 50,
-                              size: 1,
-                            },
-                          })
-                          setArmedRules((prev) => [newRule as any, ...prev.filter((r) => r.id !== newRule.id)])
-                          setMessages((prev) => [
-                            ...prev,
-                            {
-                              id: `leo-arm-${Date.now()}`,
-                              role: 'assistant',
-                              content: `🎯 **[TRENDLINE STRATEGY ARMED]**\nMonitoring **${t.label || 'Bearish Trendline'}** on **${inst}**.\n• **Entry Trigger**: Strict 5-minute candle close strictly above trendline.\n• **Trend-Borning Zone**: Lowest pivot low evaluated across 7 institutional factors (POCs, RVOL, Rejection Tails, 5M AVWAP, Round Handles, Liquidity, Time).\n• **Default Risk**: Stop Loss below breakout candle low · Take Profit: +50.0 pts.\n• **Dynamic Exit**: Trailing responsive trendline with time-decay acceleration on range chop.`,
-                              timestamp: Date.now(),
-                            },
-                          ])
-                        }}
-                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-950/80 hover:bg-amber-900 border border-amber-500/60 text-[9px] font-mono font-bold text-amber-300 transition shadow-sm"
-                        title="Arm Systematic Trendline Breakout & Trend-Borning Zone Strategy"
-                      >
-                        <span>⚡</span> Arm Borning Strategy
-                      </button>
-                    )}
                   </div>
                 ))}
                 {context.userDrawings.ranges.map((r) => {
@@ -2594,14 +2238,37 @@ export function LeoAssistantPanel({
                         <button
                           type="button"
                           onClick={() => {
+                            const nowSec = Math.floor(Date.now() / 1000)
+                            const durSec = Math.max(4 * 3600, (r.durationMin || 2880) * 60)
+                            void fetch('/api/trading/edges/backtest-box', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                id: r.id,
+                                market: context.instrument,
+                                timeframe: '4H',
+                                startTime: nowSec - durSec,
+                                endTime: nowSec,
+                                lowPrice: r.priceLow,
+                                highPrice: r.priceHigh,
+                                label: r.label || `${context.instrument} 4H Range Backtest`,
+                              }),
+                            })
+                              .then((res) => res.json())
+                              .then((json) => {
+                                if (json?.savedEdge) {
+                                  saveWyckoffEdge(json.savedEdge)
+                                }
+                              })
+                              .catch(() => {})
                             handleSendMessage(
-                              `Leo, backtest this 4H range on ${context.instrument}: Range ${r.priceLow} to ${r.priceHigh} (${r.startTimeEt} to ${r.endTimeEt}). Find all accumulations and distributions inside this 4H range and tell me the characteristics of accumulation and distribution in this market inside this range.`
+                              `Leo, backtest this 4H range on ${context.instrument}: Range ${r.priceLow} to ${r.priceHigh} (${r.startTimeEt} to ${r.endTimeEt}). Find all accumulations and distributions inside this 4H range, save and date the Edge in Dashboard → Edges and Leo Memory, and tell me the written characteristics of accumulation and distribution in this market inside this range.`
                             )
                           }}
                           className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/60 text-[9px] font-mono font-bold text-emerald-300 transition shadow-sm"
-                          title="4H Range Only: Backtest this 4H range to discover all internal accumulations & distributions and their exact characteristics in this market"
+                          title="4H Range Only: Backtest this 4H range, date & save Accumulation/Distribution behaviors to Dashboard → Edges & Leo Memory"
                         >
-                          <span>🔬</span> Backtest 4H Range
+                          <span>🔬</span> Backtest 4H & Save Edge
                         </button>
                       )}
                       {activeTf === '5m' && (

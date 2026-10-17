@@ -5,6 +5,7 @@ import {
   type BoxMarket,
   type BoxTimeframe,
 } from '@/lib/trading/boxRangeBacktester'
+import { saveWyckoffEdgeFromBoxAnalysis } from '@/lib/trading/wyckoffEdgesStore'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -14,7 +15,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
 
     const market: BoxMarket = (body.market?.toUpperCase() || 'GOLD') as BoxMarket
-    const timeframe: BoxTimeframe = (body.timeframe || '1D') as BoxTimeframe
+    const timeframe: BoxTimeframe = (body.timeframe || '4H') as BoxTimeframe
 
     // Parse dates or timestamps
     let startTime = body.startTime
@@ -45,10 +46,12 @@ export async function POST(req: NextRequest) {
     }
 
     const result = analyzeAndBacktestBox(request)
+    const savedEdge = saveWyckoffEdgeFromBoxAnalysis(result, body.traderNotes)
 
     return NextResponse.json({
       success: true,
       analysis: result,
+      savedEdge,
     })
   } catch (error: any) {
     console.error('Error running box backtest:', error)
