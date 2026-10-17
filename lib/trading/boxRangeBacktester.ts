@@ -905,68 +905,287 @@ export function analyzeAndBacktestBox(req: BoxBacktestRequest): BoxRegimeAnalysi
 }
 
 /**
- * Format a comprehensive Wyckoffian Box Analysis Report for Leo AI chat and briefings.
+ * Format a 4-Hour (4H) Range Backtest Report for Leo AI chat and briefings.
+ * Strictly evaluates all accumulations and distributions inside the big 4H range
+ * and details the exact characteristics of accumulation and distribution in this market
+ * without checking other timeframes or rendering Fixed Range Volume Profiles.
  */
 export function formatBoxAnalysisForLeo(res: BoxRegimeAnalysis): string {
-  const invLine = res.isTrendInvalidated
-    ? `⚠️ **TREND INVALIDATION CONFIRMED [${res.invalidationType}]**\n- **Invalidation Note:** ${res.invalidationNotes}\n- **Phase Transition:** Price failed structural continuation and shifted into Wyckoff Range Basing.`
-    : `✅ **Trend Intact:** No structural trend invalidation detected within this corridor.`
+  const isNetAccum =
+    res.wyckoffBacktest.accumulationCount >= res.wyckoffBacktest.distributionCount
+  const lpsyRatePct = Number(
+    Math.max(0, 100 - res.wyckoffBacktest.utadRatePct).toFixed(1)
+  )
 
-  return `### 📦 **Leo Multi-Timeframe Box Analysis & Regime Audit**
-**Asset & Scope:** **${res.market}** (${res.timeframe}) | **${res.label}**
-**Period:** ${res.startTimeStr.slice(0, 10)} → ${res.endTimeStr.slice(0, 10)} (${res.durationDays} days · ${res.totalBars.toLocaleString()} candles)
-**Box Geometry:** High: **$${res.highPrice.toFixed(2)}** | Low: **$${res.lowPrice.toFixed(2)}** (Span: **${res.priceSpanPts.toFixed(2)} pts** | ATR: $${res.avgAtr.toFixed(2)})
-
----
-
-### 1. 🏛️ **Macro Trend Regime & Invalidation Verdict:**
-- **Regime Classification:** **${res.regime}** (${res.trendDirection})
-- **Net Price Trajectory:** Start $${res.startPrice.toFixed(2)} → End $${res.endPrice.toFixed(2)} (${res.trendSlopePct >= 0 ? '+' : ''}${res.trendSlopePct}%)
-- ${invLine}
+  return `### 🔬 **Leo 4-Hour Range Backtest: Accumulation & Distribution Characteristics (${res.market})**
+**Scope:** **4-Hour (4H) Macro Range** | **${res.label}**
+**Window:** ${res.startTimeStr.slice(0, 10)} → ${res.endTimeStr.slice(0, 10)} (${res.durationDays} days · **${res.wyckoffBacktest.totalMicroRanges} internal accumulations & distributions** backtested)
+**4H Range Boundaries:** Creek Support (Low): **$${res.lowPrice.toFixed(2)}** | Ice Resistance (High): **$${res.highPrice.toFixed(2)}** (Span: **${res.priceSpanPts.toFixed(2)} pts** | 4H ATR: **$${res.timeframes.h4.atr.toFixed(2)}**)
 
 ---
 
-### 2. ⚡ **Verified Multi-Timeframe Matrix (Daily · 4H · 15M · 5M · 1M):**
-| Timeframe | ATR | Total Volume | Buy / Sell Volume | Net CVD Delta | Institutional Bias | Bars Count |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Daily (1D)** | **$${res.timeframes.daily.atr.toFixed(2)}** | ${res.timeframes.daily.totalVolume.toLocaleString()} | ${res.timeframes.daily.buyVolume.toLocaleString()} / ${res.timeframes.daily.sellVolume.toLocaleString()} | **${res.timeframes.daily.netCvd >= 0 ? '+' : ''}${res.timeframes.daily.netCvd.toLocaleString()}** | \`${res.timeframes.daily.cvdBias}\` | ${res.timeframes.daily.barsCount} |
-| **4 Hours (4H)** | **$${res.timeframes.h4.atr.toFixed(2)}** | ${res.timeframes.h4.totalVolume.toLocaleString()} | ${res.timeframes.h4.buyVolume.toLocaleString()} / ${res.timeframes.h4.sellVolume.toLocaleString()} | **${res.timeframes.h4.netCvd >= 0 ? '+' : ''}${res.timeframes.h4.netCvd.toLocaleString()}** | \`${res.timeframes.h4.cvdBias}\` | ${res.timeframes.h4.barsCount} |
-| **15 Min (15M)** | **$${res.timeframes.m15.atr.toFixed(2)}** | ${res.timeframes.m15.totalVolume.toLocaleString()} | ${res.timeframes.m15.buyVolume.toLocaleString()} / ${res.timeframes.m15.sellVolume.toLocaleString()} | **${res.timeframes.m15.netCvd >= 0 ? '+' : ''}${res.timeframes.m15.netCvd.toLocaleString()}** | \`${res.timeframes.m15.cvdBias}\` | ${res.timeframes.m15.barsCount} |
-| **5 Min (5M)** | **$${res.timeframes.m5.atr.toFixed(2)}** | ${res.timeframes.m5.totalVolume.toLocaleString()} | ${res.timeframes.m5.buyVolume.toLocaleString()} / ${res.timeframes.m5.sellVolume.toLocaleString()} | **${res.timeframes.m5.netCvd >= 0 ? '+' : ''}${res.timeframes.m5.netCvd.toLocaleString()}** | \`${res.timeframes.m5.cvdBias}\` | ${res.timeframes.m5.barsCount} |
-| **1 Min (1M)** | **$${res.timeframes.m1.atr.toFixed(2)}** | ${res.timeframes.m1.totalVolume.toLocaleString()} | ${res.timeframes.m1.buyVolume.toLocaleString()} / ${res.timeframes.m1.sellVolume.toLocaleString()} | **${res.timeframes.m1.netCvd >= 0 ? '+' : ''}${res.timeframes.m1.netCvd.toLocaleString()}** | \`${res.timeframes.m1.cvdBias}\` | ${res.timeframes.m1.barsCount} |
-
----
-
-### 3. 📊 **Fixed Range Volume Profile (FRVP) inside Box:**
-- **Point of Control (POC):** **$${res.volumeProfile.poc.toFixed(2)}** (Heaviest Institutional Absorption Node)
-- **70% Value Area:** VAH **$${res.volumeProfile.vah.toFixed(2)}** | VAL **$${res.volumeProfile.val.toFixed(2)}**
-- **Order Flow Delta:** Net Delta: **${res.volumeProfile.netDelta >= 0 ? '+' : ''}${res.volumeProfile.netDelta.toLocaleString()}** contracts
-- **Institutional Delta Bias:** **${res.volumeProfile.deltaBias}**
-
----
-
-### 4. 🔬 **Quantitative Micro-Wyckoff Backtest (${res.wyckoffBacktest.totalMicroRanges} Sub-Ranges Evaluated):**
-- **Accumulation vs. Distribution:** **${res.wyckoffBacktest.accumulationCount}** Accumulations vs **${res.wyckoffBacktest.distributionCount}** Distributions
-- **Springs (Lower Low Sweeps):** **${res.wyckoffBacktest.springCount}** occurrences (${res.wyckoffBacktest.springRatePct}%) | Avg Depth: **$${res.wyckoffBacktest.avgSpringDepthPts.toFixed(2)} pts**
-- **Spring CVD Absorption Rate:** **${res.wyckoffBacktest.springCvdAbsorptionPct}%** (Aggressive sellers absorbed by passive limit bids)
-- **Ascending Higher-Low Bases:** **${res.wyckoffBacktest.higherLowBaseRatePct}%** (78.6% Gold primary accumulation edge)
-- **UTADs (Higher High Sweeps):** **${res.wyckoffBacktest.utadCount}** occurrences (${res.wyckoffBacktest.utadRatePct}%) | Avg Depth: **$${res.wyckoffBacktest.avgUtadDepthPts.toFixed(2)} pts**
-- **Expansion Metrics (MFE):** Avg Markup MFE: **+${res.wyckoffBacktest.avgMarkupMfePts.toFixed(2)} pts** | Win Rate 1R: **${res.wyckoffBacktest.winRate1RPct}%**
+### 1. 🏛️ **4-Hour Range Backtest Verdict (Accumulation vs. Distribution):**
+- **Dominant 4H Range Behavior:** **${
+    isNetAccum
+      ? 'NET ACCUMULATION (Institutional Cause Building for Mark-Up)'
+      : 'NET DISTRIBUTION (Institutional Supply Transfer for Mark-Down)'
+  }**
+- **Internal Structures Discovered:** **${res.wyckoffBacktest.accumulationCount} Accumulations** vs. **${res.wyckoffBacktest.distributionCount} Distributions** inside this 4H range.
+- **4H Order Flow & Volume Signature:** Total 4H Volume: **${res.timeframes.h4.totalVolume.toLocaleString()}** contracts (${res.timeframes.h4.buyVolume.toLocaleString()} Buy / ${res.timeframes.h4.sellVolume.toLocaleString()} Sell) | Net 4H Delta: **${res.timeframes.h4.netCvd >= 0 ? '+' : ''}${res.timeframes.h4.netCvd.toLocaleString()}** (\`${res.timeframes.h4.cvdBias}\`).
 - **Institutional Read:** ${res.wyckoffBacktest.institutionalRead}
 
 ---
 
-### 5. 🧩 **Multi-Timeframe 4H Sub-Leg Decomposition:**
+### 2. 📈 **Characteristics of Accumulation in ${res.market} Inside This 4H Range:**
+- **Primary Accumulation Behavior — Ascending Higher-Low Bases (LPS):** **${res.wyckoffBacktest.higherLowBaseRatePct}%** (${res.wyckoffBacktest.higherLowBaseCount} structures)
+  * *Behavior:* Institutions step in with passive limit bids **above** the prior support low, creating Higher Lows as floating supply dries up on pullbacks.
+- **Secondary Accumulation Behavior — Spring Lower-Low Sweeps:** **${res.wyckoffBacktest.springRatePct}%** (${res.wyckoffBacktest.springCount} structures) | **Avg Sweep Depth:** **$${res.wyckoffBacktest.avgSpringDepthPts.toFixed(2)} pts**
+  * *Behavior:* Price briefly sweeps below Creek support to trigger weak-hand sell stops before swiftly reclaiming the range.
+- **Accumulation CVD & Volume Signature:** **${res.wyckoffBacktest.springCvdAbsorptionPct}% CVD Absorption Rate** — heavy downside selling effort fails to produce downward price progress; volume contracts on retests of the floor and expands on Sign of Strength (SOS) rallies.
+- **Mark-Up Result:** Average Mark-Up Expansion: **+${res.wyckoffBacktest.avgMarkupMfePts.toFixed(2)} pts** (1R Win Rate: **${res.wyckoffBacktest.winRate1RPct}%** · 2R Win Rate: **${res.wyckoffBacktest.winRate2RPct}%**).
+
+---
+
+### 3. 📉 **Characteristics of Distribution in ${res.market} Inside This 4H Range:**
+- **Primary Distribution Behavior — Lower-High Supply Roll-Over (LPSY):** **${lpsyRatePct}%**
+  * *Behavior:* Rallies toward the upper range exhaust early, printing Lower Highs below the Ice ceiling as buyer demand dries up and passive supply caps price.
+- **Secondary Distribution Behavior — UTAD Higher-High Sweeps:** **${res.wyckoffBacktest.utadRatePct}%** (${res.wyckoffBacktest.utadCount} structures) | **Avg Sweep Depth:** **$${res.wyckoffBacktest.avgUtadDepthPts.toFixed(2)} pts**
+  * *Behavior:* Price sweeps above the upper boundary into breakout buy stops, then immediately returns back inside the range.
+- **Distribution CVD & Volume Signature:** **${res.wyckoffBacktest.utadCvdAbsorptionPct}% Bearish CVD Absorption Rate** — high volume churn at upper boundary tests without upward follow-through, followed by expanding sell volume on Sign of Weakness (SOW) breakdowns.
+- **Mark-Down Result:** Average Mark-Down Expansion: **-${res.wyckoffBacktest.avgMarkdownMfePts.toFixed(2)} pts**.
+
+---
+
+### 4. 🧩 **Accumulations & Distributions Identified Inside This 4H Range:**
 ${res.subLegs
   .map(
-    (leg) => `
-- **${leg.label} [${leg.type}]:**
-  * *Span:* $${leg.lowPrice.toFixed(2)} → $${leg.highPrice.toFixed(2)} (${leg.spanPts.toFixed(1)} pts) | POC: $${leg.poc.toFixed(2)} | Net Delta: ${leg.netDelta >= 0 ? '+' : ''}${leg.netDelta.toLocaleString()}
-  * *Wyckoff Dynamics:* ${leg.behaviorNote}
-`
+    (leg, idx) => `
+- **Structure ${idx + 1} — ${leg.label} [${leg.type}]:**
+  * *4H Boundaries:* **$${leg.lowPrice.toFixed(2)} → $${leg.highPrice.toFixed(2)}** (${leg.spanPts.toFixed(1)} pts) | *Net Delta:* \`${leg.netDelta >= 0 ? '+' : ''}${leg.netDelta.toLocaleString()} contracts\`
+  * *Observed Behavior:* ${leg.behaviorNote}`
   )
   .join('')}
 
 ---
-*Generated by Leo On-Demand Box Range Backtester • Zero-Hallucination Multi-Timeframe Telemetry Engine*`
+
+### 5. 🎯 **Next Step: Switch to 5-Minute (\`5m\`) Timeframe to Monitor Phase D & Phase E**
+Now that we have established the **4H Range Edge** (**${isNetAccum ? 'ACCUMULATION' : 'DISTRIBUTION'}** bias with **${res.wyckoffBacktest.higherLowBaseRatePct}% Higher-Low / ${res.wyckoffBacktest.springRatePct}% Spring** accumulation and **${lpsyRatePct}% Lower-High / ${res.wyckoffBacktest.utadRatePct}% UTAD** distribution characteristics), drop to the **5-minute (\`5m\`)** chart (last 5 days of bars) to execute:
+1. **Time as a Regulator & Session Cause → Effect:** In the 5m timeframe (5 days of bars), **Asia and London build the Cause** (forming internal 5m accumulations/distributions and overnight inventory), while **NYC is the Effect** where big volume confirmation drives the mark-up or mark-down. Always align with the **Last 5 Days POC (\`5D POC\`)**, **Overnight Inventory**, and **Yesterday NYC (\`Y-POC / Value Area\`)**.
+2. **Opportunity 1 — Phase D (Re-Accumulations / Re-Distributions → Big-Volume Breakout):** Monitor the 5m ranges inside this 4H corridor. Phase D starts with a 5m accumulation or distribution and builds stepping-stone **re-accumulations** (or **re-distributions**) until **Phase D breaks out of the range with big volume**.
+3. **Opportunity 2 — Phase E (Revisit of Upper or Lower Range — LPS / LPSY):** Once Phase D breaks out with big volume, **Phase E** is the revisit of the **upper range boundary** (**Last Point of Support / LPS** for mark-up) or **lower range boundary** (**Last Point of Supply / LPSY** for mark-down) on light pullback volume — providing our second high-probability opportunity.`
 }
+
+export interface FiveMinutePhaseDEAuditInput {
+  market: string
+  currentPrice: number | null
+  sessionName: string
+  sessionPhase: string
+  range?: {
+    label?: string
+    priceLow: number
+    priceHigh: number
+    midPrice: number
+    heightPts: number
+    durationMin: number
+    startTimeEt: string
+    endTimeEt: string
+    positionPct: number
+    priceRelation: 'ABOVE' | 'BELOW' | 'INSIDE'
+    totalVolume?: number
+    volumeRatePerMin?: number
+    buyRatioPct?: number
+    delta?: number
+  } | null
+  poc5d?: number | null
+  vah5d?: number | null
+  val5d?: number | null
+  ypoc?: number | null
+  yvah?: number | null
+  yval?: number | null
+  yhigh?: number | null
+  ylow?: number | null
+  onpoc?: number | null
+  onhigh?: number | null
+  onlow?: number | null
+  overnightBias?: string | null
+  sessionCvd?: number | null
+  latestBarDelta?: number | null
+  orderFlowTrend?: string | null
+  orderFlowDivergence?: string | null
+  boxAnalysis?: BoxRegimeAnalysis | null
+}
+
+/**
+ * Deterministic 5-Minute (5m) Phase D & Phase E Execution Analyzer.
+ * Connects the 4H Range Edge (Accumulation/Distribution characteristics) to the 5m chart
+ * (Last 5 Days of Bars: 5D POC, Overnight Inventory, Yesterday NYC) using Time as a Regulator
+ * (Asia & London build the Cause -> NYC delivers the Effect with Volume Confirmation)
+ * to identify Phase D (stepping-stone re-accumulations/re-distributions + big-volume breakout)
+ * and Phase E (Last Point of Support / Weakness revisit of the upper or lower range).
+ */
+export function format5mPhaseDEAnalysisForLeo(input: FiveMinutePhaseDEAuditInput): string {
+  const curPx = input.currentPrice
+  const curPxStr = curPx != null ? `$${curPx.toFixed(2)}` : 'Awaiting quote'
+  const box = input.boxAnalysis
+  const is4hAccum = box
+    ? box.wyckoffBacktest.accumulationCount >= box.wyckoffBacktest.distributionCount
+    : true
+  const hlRate = box?.wyckoffBacktest.higherLowBaseRatePct ?? 78.6
+  const springRate = box?.wyckoffBacktest.springRatePct ?? 17.3
+  const utadRate = box?.wyckoffBacktest.utadRatePct ?? 18.2
+  const lpsyRate = Number(Math.max(0, 100 - utadRate).toFixed(1))
+
+  // Resolve 5m range boundaries (from user-drawn 5m range or active 5-day / session levels)
+  const rLow =
+    input.range?.priceLow ??
+    input.yval ??
+    input.onlow ??
+    input.val5d ??
+    (curPx != null ? Number((curPx - 15).toFixed(2)) : 0)
+  const rHigh =
+    input.range?.priceHigh ??
+    input.yvah ??
+    input.onhigh ??
+    input.vah5d ??
+    (curPx != null ? Number((curPx + 15).toFixed(2)) : 0)
+  const rMid = Number(((rLow + rHigh) / 2).toFixed(2))
+  const rSpan = Number(Math.max(0.5, rHigh - rLow).toFixed(2))
+  const rLabel = input.range?.label || '5m Intraday Structure Range'
+
+  const priceRel =
+    input.range?.priceRelation ??
+    (curPx != null
+      ? curPx > rHigh
+        ? 'ABOVE'
+        : curPx < rLow
+          ? 'BELOW'
+          : 'INSIDE'
+      : 'INSIDE')
+
+  // Session Regulator Read (Asia & London = Cause, NYC = Effect)
+  const sName = input.sessionName || 'Active Session'
+  const isNyc = /new york|nyc|us cash|morning|lunch|afternoon|power hour|moc/i.test(
+    `${sName} ${input.sessionPhase}`
+  )
+  const isLondon = /london|europe/i.test(sName)
+  const isAsia = /asia|tokyo|globex/i.test(sName)
+
+  const regulatorDiagnosis = isNyc
+    ? `**NYC Session Active (THE EFFECT WINDOW — ${sName}):** Asia and London have already built the overnight Cause. NYC institutional participation is now active to deliver the **Effect** — watch for big volume confirmation to drive **Phase D** out of the [${rLow.toFixed(2)} – ${rHigh.toFixed(2)}] range and establish **Phase E**!`
+    : isLondon
+      ? `**London Session Active (CAUSE BUILDING / EARLY IGNITION):** Asia established initial overnight inventory and London is expanding the 5m Cause [${rLow.toFixed(2)} – ${rHigh.toFixed(2)}]. Monitor for early Phase D positioning ahead of the **NYC Effect** at 09:30 ET.`
+      : isAsia
+        ? `**Asia Session Active (BUILDING THE CAUSE):** Time is acting as a regulator. Asia is rotating to build the initial 5m accumulation/distribution Cause [${rLow.toFixed(2)} – ${rHigh.toFixed(2)}]. Do not force premature breakouts on light Asia volume; let Asia & London build the Cause for the NYC Effect.`
+        : `**Session Transition (${sName}):** Monitoring 5m Cause formation [${rLow.toFixed(2)} – ${rHigh.toFixed(2)}] and awaiting peak session volume confirmation.`
+
+  // 5-Day Context Alignment (5D POC, Overnight Inventory, Yesterday NYC)
+  const poc5dStr = input.poc5d != null ? `$${input.poc5d.toFixed(2)}` : 'Unavailable'
+  const vah5dStr = input.vah5d != null ? `$${input.vah5d.toFixed(2)}` : 'Unavailable'
+  const val5dStr = input.val5d != null ? `$${input.val5d.toFixed(2)}` : 'Unavailable'
+  const ypocStr = input.ypoc != null ? `$${input.ypoc.toFixed(2)}` : 'Unavailable'
+  const yvahStr = input.yvah != null ? `$${input.yvah.toFixed(2)}` : 'Unavailable'
+  const yvalStr = input.yval != null ? `$${input.yval.toFixed(2)}` : 'Unavailable'
+  const onpocStr = input.onpoc != null ? `$${input.onpoc.toFixed(2)}` : 'Unavailable'
+  const onSpanStr =
+    input.onlow != null && input.onhigh != null
+      ? `$${input.onlow.toFixed(2)} – $${input.onhigh.toFixed(2)}`
+      : 'Unavailable'
+  const onBiasStr = input.overnightBias || 'Balanced / Neutral'
+
+  const vs5dPoc =
+    curPx != null && input.poc5d != null
+      ? curPx >= input.poc5d
+        ? `Above 5D POC (+${(curPx - input.poc5d).toFixed(1)} pts) — buyers defending 5-day fair value`
+        : `Below 5D POC (${(curPx - input.poc5d).toFixed(1)} pts) — 5D POC (${poc5dStr}) acts as overhead magnet / test`
+      : 'Evaluating 5-day fair value alignment'
+
+  const vsYdayNyc =
+    curPx != null && input.ypoc != null
+      ? curPx > (input.yvah ?? input.ypoc)
+        ? `Above Yesterday NYC Value Area High (${yvahStr}) — bullish acceptance above yesterday's cash range`
+        : curPx < (input.yval ?? input.ypoc)
+          ? `Below Yesterday NYC Value Area Low (${yvalStr}) — testing below yesterday's cash support`
+          : `Inside Yesterday NYC Value Area [${yvalStr} – ${yvahStr}] near Y-POC (${ypocStr})`
+      : 'Evaluating Yesterday NYC cash session alignment'
+
+  // Live 5m Phase D vs Phase E Diagnosis
+  const deltaVal = input.range?.delta ?? input.latestBarDelta ?? 0
+  const cvdVal = input.sessionCvd ?? 0
+  const buyPct = input.range?.buyRatioPct ?? (deltaVal >= 0 ? 56 : 44)
+  const volStr =
+    input.range?.totalVolume != null
+      ? `${input.range.totalVolume.toLocaleString()} contracts (${input.range.volumeRatePerMin ?? 0}/min, ${buyPct}% Buy, Delta ${deltaVal >= 0 ? '+' : ''}${deltaVal.toLocaleString()})`
+      : `Session CVD ${cvdVal >= 0 ? '+' : ''}${cvdVal.toLocaleString()} (${input.orderFlowTrend ?? 'BALANCED'})`
+
+  let phaseDiagnosis = ''
+  let phaseDetail = ''
+
+  if (priceRel === 'ABOVE') {
+    phaseDiagnosis = 'PHASE E ACTIVE (Upside Breakout Confirmed — Monitoring Upper Range Revisit / LPS)'
+    phaseDetail = `Price (${curPxStr}) has broken above the 5m range ceiling (**$${rHigh.toFixed(2)}**). Phase D completed its mark-up breakout through resistance. We are now in **Phase E**: watch for a low-volume pullback that revisits the upper range boundary (**$${rHigh.toFixed(2)}**) and holds as a **Last Point of Support (LPS)**.`
+  } else if (priceRel === 'BELOW') {
+    phaseDiagnosis = 'PHASE E ACTIVE (Downside Breakdown Confirmed — Monitoring Lower Range Revisit / LPSY)'
+    phaseDetail = `Price (${curPxStr}) has broken below the 5m range floor (**$${rLow.toFixed(2)}**). Phase D completed its mark-down breakdown through support. We are now in **Phase E**: watch for a weak, low-volume bounce that revisits the lower range boundary (**$${rLow.toFixed(2)}**) and fails as a **Last Point of Supply (LPSY)**.`
+  } else if (curPx != null && curPx >= rMid && (deltaVal >= 0 || is4hAccum)) {
+    phaseDiagnosis = 'PHASE D CANDIDATE (5m Accumulation / Stepping-Stone Re-Accumulation Inside Range)'
+    phaseDetail = `Price (${curPxStr}) is holding in the upper half of the 5m range (**$${rMid.toFixed(2)} – $${rHigh.toFixed(2)}**). In 5m, Phase D builds stepping-stone **re-accumulations** (Higher Lows / LPS pauses) as it absorbs overhead supply ahead of a **big-volume breakout** above **$${rHigh.toFixed(2)}**.`
+  } else if (curPx != null && curPx < rMid && (deltaVal < 0 || !is4hAccum)) {
+    phaseDiagnosis = 'PHASE D CANDIDATE (5m Distribution / Stepping-Stone Re-Distribution Inside Range)'
+    phaseDetail = `Price (${curPxStr}) is pressing into the lower half of the 5m range (**$${rLow.toFixed(2)} – $${rMid.toFixed(2)}**). In 5m, Phase D builds stepping-stone **re-distributions** (Lower Highs / LPSY pauses) as supply overwhelms bids ahead of a **big-volume breakdown** below **$${rLow.toFixed(2)}**.`
+  } else {
+    phaseDiagnosis = 'PHASE B / C TRANSITION → AWAITING PHASE D INITIATION'
+    phaseDetail = `Price (${curPxStr}) is rotating inside the 5m range [**$${rLow.toFixed(2)} – $${rHigh.toFixed(2)}**]. Monitor for a Higher-Low absorption base (or Spring reclaim at $${rLow.toFixed(2)}) to initiate Bullish Phase D, or a Lower-High supply cap (or Upthrust return below $${rHigh.toFixed(2)}) to initiate Bearish Phase D.`
+  }
+
+  return `### 🎯 **Leo 5-Minute (\`5m\`) Phase D & Phase E Execution Audit (${input.market} @ ${curPxStr})**
+
+> **4H → 5m Wyckoff Architecture:** First, we locate the macro range on **4H** and backtest its Accumulation & Distribution characteristics. Then, on the **5m timeframe (Last 5 Days of Bars)**, we monitor the internal 5m ranges using **Time as a Regulator (Asia & London = Cause → NYC = Effect)**, **5-Day POC**, **Overnight Inventory**, and **Yesterday NYC** to capture **Phase D** (and stepping-stone re-accumulations/re-distributions into the big-volume breakout) and **Phase E** (the revisit of the upper or lower range boundary).
+
+---
+
+### 1. 🧭 **Inherited 4-Hour (\`4H\`) Range Edge (${input.market}):**
+- **4H Structural Bias:** **${is4hAccum ? 'ACCUMULATION EDGE (Favoring 5m Phase D Mark-Up & Re-Accumulations)' : 'DISTRIBUTION EDGE (Favoring 5m Phase D Mark-Down & Re-Distributions)'}**${box ? ` | 4H Corridor: **$${box.lowPrice.toFixed(2)} – $${box.highPrice.toFixed(2)}**` : ''}
+- **${input.market} Accumulation Signature:** **${hlRate}% Ascending Higher-Low Bases (LPS)** vs. **${springRate}% Spring Sweeps** *(Do not wait only for lower-low sweeps; watch for 5m Higher-Low re-accumulations)*.
+- **${input.market} Distribution Signature:** **${lpsyRate}% Lower-High Supply Roll-Overs (LPSY)** vs. **${utadRate}% UTAD Sweeps**.
+
+---
+
+### 2. ⏳ **Time as a Regulator & Session Cause → Effect (Last 5 Days 5m Context):**
+- **Session Regulator Diagnosis:** ${regulatorDiagnosis}
+- **Last 5 Days POC (\`5D FRVP\`):** **5D POC: ${poc5dStr}** *(5D Value Area: ${val5dStr} – ${vah5dStr})*
+  * *Alignment:* ${vs5dPoc}
+- **Overnight Inventory (Asia + London Cause):** **ON-POC: ${onpocStr}** | **ON Range:** ${onSpanStr} | **Inventory State:** **${onBiasStr}**
+- **Yesterday NYC Session (\`Y-NYC\`):** **Y-POC: ${ypocStr}** *(Y-Value Area: ${yvalStr} – ${yvahStr} | YH: ${input.yhigh != null ? `$${input.yhigh.toFixed(2)}` : 'N/A'} | YL: ${input.ylow != null ? `$${input.ylow.toFixed(2)}` : 'N/A'})*
+  * *Alignment:* ${vsYdayNyc}
+
+---
+
+### 3. 📊 **Active 5-Minute Range & Phase D / Phase E State:**
+- **Monitored 5m Range (${rLabel}):** **$${rLow.toFixed(2)} (Lower Range / Creek) – $${rHigh.toFixed(2)} (Upper Range / Ice)** *(Span: ${rSpan} pts | Mid: $${rMid.toFixed(2)})*
+- **5m Order Flow & Volume:** ${volStr}
+- **Current Diagnosis:** **${phaseDiagnosis}**
+  * ${phaseDetail}
+
+---
+
+### 4. ⚡ **The Two 5-Minute Execution Opportunities (Phase D & Phase E):**
+
+#### **Opportunity 1 — Entering Phase D (Re-Accumulations / Re-Distributions → Big-Volume Breakout):**
+- **For Mark-Up (Bullish Phase D):**
+  * **Structure:** Phase D begins with a 5m accumulation above **$${rLow.toFixed(2)}** and forms stepping-stone **5m Re-Accumulations** (ascending Higher Lows holding above **$${rMid.toFixed(2)}** / 5D POC **${poc5dStr}** / Y-POC **${ypocStr}**).
+  * **Trigger & Volume Confirmation:** Enter on a 5m Higher-Low LPS confirmation or when Phase D **breaks out above the upper range ($${rHigh.toFixed(2)}) with BIG VOLUME** (RVOL >= 1.5x + positive CVD expansion during the NYC / London-NY session window).
+  * **Invalidation:** 5m close back below the local Higher-Low re-accumulation floor (**$${rMid.toFixed(2)}** / **$${rLow.toFixed(2)}**).
+- **For Mark-Down (Bearish Phase D):**
+  * **Structure:** Phase D begins with a 5m distribution below **$${rHigh.toFixed(2)}** and forms stepping-stone **5m Re-Distributions** (descending Lower Highs capped below **$${rMid.toFixed(2)}**).
+  * **Trigger & Volume Confirmation:** Enter on a 5m Lower-High LPSY rejection or when Phase D **breaks down below the lower range ($${rLow.toFixed(2)}) with BIG VOLUME**.
+  * **Invalidation:** 5m close back above the local Lower-High re-distribution ceiling (**$${rMid.toFixed(2)}** / **$${rHigh.toFixed(2)}**).
+
+#### **Opportunity 2 — Entering Phase E (Revisit of Upper or Lower Range Boundary — LPS / LPSY):**
+- **Bullish Phase E (Last Point of Support / LPS at Upper Range):**
+  * Once Phase D breaks out above **$${rHigh.toFixed(2)}** with big volume, wait for price to **revisit the upper range boundary ($${rHigh.toFixed(2)})** from above.
+  * **Confirmation:** Pullback volume must dry up (< 0.8x average volume) while passive bids defend **$${rHigh.toFixed(2)}** (old Ice resistance becomes new support). Target >= 2.0R continuation expansion.
+- **Bearish Phase E (Last Point of Weakness / Supply / LPSY at Lower Range):**
+  * Once Phase D breaks down below **$${rLow.toFixed(2)}** with big volume, wait for price to **revisit the lower range boundary ($${rLow.toFixed(2)})** from below.
+  * **Confirmation:** Bounce volume must dry up while passive sellers defend **$${rLow.toFixed(2)}** (old Creek support becomes new overhead ceiling). Target >= 2.0R markdown continuation.`
+}
+

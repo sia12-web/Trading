@@ -5627,6 +5627,7 @@ export function TradingChart({
       return {
         id: r.id,
         label: r.label,
+        timeframe: r.timeframe || timeframe,
         priceHigh: m.priceHigh,
         priceLow: m.priceLow,
         midPrice: m.midPrice,
@@ -5665,7 +5666,7 @@ export function TradingChart({
         sessionPhase,
         sessionElapsedMinutes,
         timeToNextCheckpoint: nextCheckpoint,
-        candleTimeframe: '5m',
+        candleTimeframe: timeframe,
         barCountdown: barCountdown || undefined,
         calendarDate: nyDateStr,
         isHoliday,
@@ -5992,6 +5993,7 @@ export function TradingChart({
     activeManualFrvps,
     showCandlestickPatterns,
     memories,
+    timeframe,
   ])
 
   // Direct chart canvas click handler for session extreme arrows and labels
@@ -11912,14 +11914,16 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
             summary: `${evaluation.summary} | Stop: ${evaluation.stopLoss.toFixed(1)} | Target: ${evaluation.targetZoneLabel} (${evaluation.targetPrice.toFixed(1)}, ${evaluation.rrRatio}R) · ${evaluation.is2RValid ? '✅ Valid >= 2R' : '⚠️ Filtered (< 2R)'}`,
           })
         } else if (activeDrawingTool === 'RANGE') {
+          const tfLabel = timeframe.toUpperCase()
           const newRange: UserRangeBox = {
             id: `range-${Date.now()}`,
             type: 'RANGE',
             p1: { time: p1.time, price: p1.price },
             p2: { time: p2.time, price: p2.price },
-            color: '#a855f7',
-            label: `Range ${activeRangeBoxes.length + 1}`,
+            color: timeframe === '4h' ? '#10b981' : '#a855f7',
+            label: `${tfLabel} Range ${activeRangeBoxes.length + 1}`,
             instrument,
+            timeframe,
           }
           setRangeBoxes((prev) => [...prev, newRange])
           const highP = Math.max(p1.price, p2.price)

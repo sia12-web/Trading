@@ -104,6 +104,7 @@ export interface LeoUserDrawingsContext {
   ranges: Array<{
     id: string
     label?: string
+    timeframe?: string
     priceHigh: number
     priceLow: number
     midPrice: number
@@ -989,7 +990,7 @@ export function buildLeoSystemPrompt(ctx: LeoChatContext): string {
 
       resolvedBoxAnalysis = analyzeAndBacktestBox({
         market: bMarket,
-        timeframe: '1D',
+        timeframe: '4H',
         startTime: 1769385600,
         endTime: Math.floor(Date.now() / 1000),
       })
@@ -1328,7 +1329,7 @@ ${
           : []),
         ...(ctx.userDrawings.ranges.length > 0
           ? [
-              'MANUAL RECTANGLE / BALANCE RANGES & VERIFIED ON-DEMAND BACKTESTS:',
+              'MANUAL RECTANGLE / BALANCE RANGES (4H BACKTEST CHARACTERISTICS & 5M PHASE D/E EXECUTION):',
               ...ctx.userDrawings.ranges.map((r) => {
                 let backtestSummary = ''
                 try {
@@ -1341,29 +1342,32 @@ ${
 
                   const analysis = analyzeAndBacktestBox({
                     market,
-                    timeframe: '1D',
+                    timeframe: '4H',
                     startTime: r.timeStart && r.timeStart > 1000000 ? r.timeStart : 1769385600,
                     endTime: r.timeEnd && r.timeEnd > 1000000 ? r.timeEnd : Math.floor(Date.now() / 1000),
                     lowPrice: r.priceLow,
                     highPrice: r.priceHigh,
-                    label: r.label || `${market} Drawn Box`,
+                    label: r.label || `${market} Drawn Range`,
                   })
 
+                  const accCount = analysis.subLegs.filter((l) => l.type === 'ACCUMULATION' || l.type === 'MARKUP').length
+                  const distCount = analysis.subLegs.filter((l) => l.type === 'DISTRIBUTION' || l.type === 'MARKDOWN').length
+
                   backtestSummary = `
-  * REGIME & INVALIDATION: ${analysis.regime} (${analysis.trendDirection}, slope ${analysis.trendSlopePct}%). Invalidation: ${analysis.isTrendInvalidated ? `YES (${analysis.invalidationType} - ${analysis.invalidationNotes})` : 'NO'}
-  * MULTI-TIMEFRAME TELEMETRY (CVD, ATR, VOLUMES):
-    - Daily (1D): ATR $${analysis.timeframes.daily.atr} | Vol: ${analysis.timeframes.daily.totalVolume.toLocaleString()} | CVD: ${analysis.timeframes.daily.netCvd >= 0 ? '+' : ''}${analysis.timeframes.daily.netCvd.toLocaleString()} [${analysis.timeframes.daily.cvdBias}]
-    - 4-Hour (4H): ATR $${analysis.timeframes.h4.atr} | Vol: ${analysis.timeframes.h4.totalVolume.toLocaleString()} | CVD: ${analysis.timeframes.h4.netCvd >= 0 ? '+' : ''}${analysis.timeframes.h4.netCvd.toLocaleString()} [${analysis.timeframes.h4.cvdBias}]
-    - 15-Min (15M): ATR $${analysis.timeframes.m15.atr} | Vol: ${analysis.timeframes.m15.totalVolume.toLocaleString()} | CVD: ${analysis.timeframes.m15.netCvd >= 0 ? '+' : ''}${analysis.timeframes.m15.netCvd.toLocaleString()} [${analysis.timeframes.m15.cvdBias}]
-    - 5-Min (5M): ATR $${analysis.timeframes.m5.atr} | Vol: ${analysis.timeframes.m5.totalVolume.toLocaleString()} | CVD: ${analysis.timeframes.m5.netCvd >= 0 ? '+' : ''}${analysis.timeframes.m5.netCvd.toLocaleString()} [${analysis.timeframes.m5.cvdBias}]
-    - 1-Min (1M): ATR $${analysis.timeframes.m1.atr} | Vol: ${analysis.timeframes.m1.totalVolume.toLocaleString()} | CVD: ${analysis.timeframes.m1.netCvd >= 0 ? '+' : ''}${analysis.timeframes.m1.netCvd.toLocaleString()} [${analysis.timeframes.m1.cvdBias}]
-  * FIXED RANGE VOLUME PROFILE: POC $${analysis.volumeProfile.poc} | VAH $${analysis.volumeProfile.vah} | VAL $${analysis.volumeProfile.val} | Delta: ${analysis.volumeProfile.netDelta >= 0 ? '+' : ''}${analysis.volumeProfile.netDelta.toLocaleString()} [${analysis.volumeProfile.deltaBias}]
-  * INSTITUTIONAL WYCKOFF READ: Springs: ${analysis.wyckoffBacktest.springCount} (${analysis.wyckoffBacktest.springRatePct}% rate, ${analysis.wyckoffBacktest.springCvdAbsorptionPct}% CVD absorption) | Higher Low Bases: ${analysis.wyckoffBacktest.higherLowBaseRatePct}% | UTADs: ${analysis.wyckoffBacktest.utadCount} (${analysis.wyckoffBacktest.utadRatePct}% rate) | Avg Markup MFE: +${analysis.wyckoffBacktest.avgMarkupMfePts} pts | 1R Win: ${analysis.wyckoffBacktest.winRate1RPct}%`
+  * 4H RANGE BACKTEST (ACCUMULATION VS. DISTRIBUTION CHARACTERISTICS IN ${market}):
+    - Internal Sub-Ranges Found: ${accCount} Accumulations / Markups vs. ${distCount} Distributions / Markdowns | 4H Net CVD: ${analysis.timeframes.h4.netCvd >= 0 ? '+' : ''}${analysis.timeframes.h4.netCvd.toLocaleString()} [${analysis.timeframes.h4.cvdBias}] | 4H ATR: $${analysis.timeframes.h4.atr}
+    - ACCUMULATION CHARACTERISTICS: ${analysis.wyckoffBacktest.higherLowBaseRatePct}% Higher-Low Base above Creek vs. ${analysis.wyckoffBacktest.springRatePct}% Lower-Low Spring Sweep (${analysis.wyckoffBacktest.springCvdAbsorptionPct}% CVD absorption on Springs) | Avg Markup Expansion: +${analysis.wyckoffBacktest.avgMarkupMfePts} pts | 1R Win: ${analysis.wyckoffBacktest.winRate1RPct}%
+    - DISTRIBUTION CHARACTERISTICS: ${(100 - analysis.wyckoffBacktest.utadRatePct).toFixed(1)}% Lower-High LPSY Supply Roll-Over below Ice vs. ${analysis.wyckoffBacktest.utadRatePct}% UTAD Upper Sweep | Avg Markdown Expansion: -${analysis.wyckoffBacktest.avgMarkdownMfePts} pts
+  * 5M PHASE D & PHASE E EXECUTION RULES (LAST 5 DAYS BARS · TIME AS A REGULATOR):
+    - In 5m, monitor internal accumulations/distributions using the 4H Edge, Last 5 Days POC (${ctx.intermediateMoney?.poc5d ?? 'N/A'}), Overnight Inventory (${ctx.shortTermMoney?.overnightBias ?? 'BALANCED'}), and Yesterday NYC POC (${ctx.shortTermMoney?.ypoc ?? 'N/A'}).
+    - Time as a Regulator: Asia & London build the Cause -> NYC delivers the Effect (Markup/Markdown with volume confirmation).
+    - Opportunity 1 (Phase D): 5m accumulation/distribution with stepping-stone re-accumulations/re-distributions until Phase D breaks out of the range with BIG VOLUME.
+    - Opportunity 2 (Phase E): Revisit of the upper range (Last Point of Support / LPS) or lower range (Last Point of Weakness / Supply / LPSY) after the big-volume breakout.`
                 } catch {
                   // Fallback
                 }
 
-                return `- ${r.label || 'Range Box'}: High ${r.priceHigh} | Low ${r.priceLow} | Mid ${r.midPrice} (Height: ${r.heightPts} pts, Duration: ${r.durationMin}m, ${r.startTimeEt} to ${r.endTimeEt}). Current price is ${r.priceRelation} range (${r.positionPct}% position).${r.totalVolume != null ? ` [Traded Volume: ${r.totalVolume.toLocaleString()} contracts | Rate: ${r.volumeRatePerMin ?? 0} vol/min | ${r.buyRatioPct ?? 50}% Buy | Delta: ${r.delta != null && r.delta >= 0 ? '+' : ''}${r.delta?.toLocaleString() ?? 0} | POC: ${r.poc ?? r.midPrice}]` : ''}${backtestSummary}`
+                return `- ${r.label || 'Range Box'} [${(r.timeframe || ctx.sessionDetails?.candleTimeframe || '5m').toUpperCase()}]: High ${r.priceHigh} | Low ${r.priceLow} | Mid ${r.midPrice} (Height: ${r.heightPts} pts, Duration: ${r.durationMin}m, ${r.startTimeEt} to ${r.endTimeEt}). Current price is ${r.priceRelation} range (${r.positionPct}% position).${r.totalVolume != null ? ` [Traded Volume: ${r.totalVolume.toLocaleString()} contracts | Rate: ${r.volumeRatePerMin ?? 0} vol/min | ${r.buyRatioPct ?? 50}% Buy | Delta: ${r.delta != null && r.delta >= 0 ? '+' : ''}${r.delta?.toLocaleString() ?? 0}]` : ''}${backtestSummary}`
               }),
             ]
           : []),

@@ -2563,6 +2563,7 @@ export function LeoAssistantPanel({
                     r.totalVolume != null
                       ? ` | Traded Vol: ${r.totalVolume.toLocaleString()} (${r.volumeRatePerMin ?? 0} vol/min, ${r.buyRatioPct ?? 50}% buy, delta ${r.delta != null && r.delta >= 0 ? '+' : ''}${r.delta?.toLocaleString() ?? 0}, POC: ${r.poc ?? r.midPrice})`
                       : ''
+                  const activeTf = (context.sessionDetails?.candleTimeframe || '5m').toLowerCase()
 
                   return (
                     <div key={r.id} className="inline-flex items-center gap-1">
@@ -2589,18 +2590,34 @@ export function LeoAssistantPanel({
                       >
                         <span>⬛</span> {r.label || 'Range'} ({r.heightPts}p{volStr})
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleSendMessage(
-                            `Leo, backtest this box on ${context.instrument}: Range ${r.priceLow} to ${r.priceHigh} (${r.startTimeEt} to ${r.endTimeEt}). Tell me the trend, if it is invalidated, multi-timeframe CVD/ATR/volume across 1D, 4H, 15m, 5m, 1m, and how institutions accumulated or distributed inside it.`
-                          )
-                        }}
-                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/60 text-[9px] font-mono font-bold text-emerald-300 transition shadow-sm"
-                        title="Ask Leo to instantly backtest this box with multi-timeframe CVD, ATR & Wyckoff analysis"
-                      >
-                        <span>⚡</span> Backtest
-                      </button>
+                      {activeTf === '4h' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleSendMessage(
+                              `Leo, backtest this 4H range on ${context.instrument}: Range ${r.priceLow} to ${r.priceHigh} (${r.startTimeEt} to ${r.endTimeEt}). Find all accumulations and distributions inside this 4H range and tell me the characteristics of accumulation and distribution in this market inside this range.`
+                            )
+                          }}
+                          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/60 text-[9px] font-mono font-bold text-emerald-300 transition shadow-sm"
+                          title="4H Range Only: Backtest this 4H range to discover all internal accumulations & distributions and their exact characteristics in this market"
+                        >
+                          <span>🔬</span> Backtest 4H Range
+                        </button>
+                      )}
+                      {activeTf === '5m' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleSendMessage(
+                              `Leo, monitor this 5m range on ${context.instrument}: Range ${r.priceLow} to ${r.priceHigh} (${r.startTimeEt} to ${r.endTimeEt}). Using our 4H range accumulation/distribution edge and the last 5 days of 5m bars (5D POC, Overnight Inventory, Yesterday NYC), evaluate Time as a Regulator (Asia & London building Cause vs NYC Effect) and volume confirmation to identify Phase D (accumulation/distribution or re-accumulation/re-distribution before big-volume breakout) and Phase E (Last Point of Support / Weakness revisit of the upper or lower range).`
+                            )
+                          }}
+                          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-500/60 text-[9px] font-mono font-bold text-cyan-300 transition shadow-sm"
+                          title="5m Range Execution: Monitor this 5m range using the 4H Edge, 5-Day POC, Overnight Inventory & Yesterday NYC (Asia/London Cause -> NYC Effect) to locate Phase D & Phase E opportunities"
+                        >
+                          <span>🎯</span> Phase D / E (5m)
+                        </button>
+                      )}
                     </div>
                   )
                 })}

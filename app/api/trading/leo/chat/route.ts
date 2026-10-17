@@ -35,6 +35,7 @@ import {
 import {
   analyzeAndBacktestBox,
   formatBoxAnalysisForLeo,
+  format5mPhaseDEAnalysisForLeo,
   type BoxMarket,
 } from '@/lib/trading/boxRangeBacktester'
 
@@ -350,30 +351,43 @@ export function buildDeskFallbackResponse(
     return `### 👁️ **[READ-ONLY NOTIFICATION]**\n\nPosition exit situation noted for **${ctx.instrument}** at **${curPrice}**.\n\n*(The system and AI Leo are strictly in Read-Only Market Monitoring Mode and never place or close broker orders. Please manage your broker bracket directly).*`
   }
 
-  // Resolve Box Analysis & Wyckoff MTF Report from context or deterministic engine
-  let box = ctx.boxAnalysis
-  if (!box) {
-    let bMarket: BoxMarket = 'GOLD'
-    const inst = (ctx.instrument || '').toUpperCase()
-    if (inst.includes('CL') || inst.includes('CRUDE') || inst.includes('OIL')) bMarket = 'CRUDE'
-    else if (inst.includes('NQ') || inst.includes('MNQ') || inst.includes('NAS')) bMarket = 'NASDAQ'
-    else if (inst.includes('YM') || inst.includes('MYM') || inst.includes('DOW')) bMarket = 'DOW'
-    else if (inst.includes('NKD') || inst.includes('NIKKEI')) bMarket = 'NIKKEI'
-    else bMarket = 'GOLD'
+  // Resolve 4H Box Analysis & Wyckoff Report from context or deterministic engine
+  let bMarket: BoxMarket = 'GOLD'
+  const inst = (ctx.instrument || '').toUpperCase()
+  if (inst.includes('CL') || inst.includes('CRUDE') || inst.includes('OIL')) bMarket = 'CRUDE'
+  else if (inst.includes('NQ') || inst.includes('MNQ') || inst.includes('NAS')) bMarket = 'NASDAQ'
+  else if (inst.includes('YM') || inst.includes('MYM') || inst.includes('DOW')) bMarket = 'DOW'
+  else if (inst.includes('NKD') || inst.includes('NIKKEI')) bMarket = 'NIKKEI'
+  else bMarket = 'GOLD'
 
-    const drawnRange = ctx.userDrawings?.ranges && ctx.userDrawings.ranges.length > 0 ? ctx.userDrawings.ranges[0] : null
-    const startTime = (drawnRange?.timeStart && drawnRange.timeStart > 1000000) ? drawnRange.timeStart : 1769385600
-    const endTime = (drawnRange?.timeEnd && drawnRange.timeEnd > 1000000) ? drawnRange.timeEnd : Math.floor(Date.now() / 1000)
+  const priceRangeMatch = lastMsg.match(/Range\s+([\d.,]+)\s+to\s+([\d.,]+)/i)
+  const parsedLow = priceRangeMatch?.[1] ? parseFloat(priceRangeMatch[1].replace(/,/g, '')) : null
+  const parsedHigh = priceRangeMatch?.[2] ? parseFloat(priceRangeMatch[2].replace(/,/g, '')) : null
+
+  const allRanges = ctx.userDrawings?.ranges || []
+  const matchedRange =
+    parsedLow != null && parsedHigh != null
+      ? allRanges.find(
+          (r) => Math.abs(r.priceLow - parsedLow) < 0.5 && Math.abs(r.priceHigh - parsedHigh) < 0.5
+        ) || allRanges[0] || null
+      : allRanges[0] || null
+
+  let box = ctx.boxAnalysis
+  if (!box || (parsedLow != null && parsedHigh != null)) {
+    const startTime =
+      matchedRange?.timeStart && matchedRange.timeStart > 1000000 ? matchedRange.timeStart : 1769385600
+    const endTime =
+      matchedRange?.timeEnd && matchedRange.timeEnd > 1000000 ? matchedRange.timeEnd : Math.floor(Date.now() / 1000)
 
     try {
       box = analyzeAndBacktestBox({
         market: bMarket,
-        timeframe: '1D',
+        timeframe: '4H',
         startTime,
         endTime,
-        lowPrice: drawnRange ? drawnRange.priceLow : undefined,
-        highPrice: drawnRange ? drawnRange.priceHigh : undefined,
-        label: drawnRange?.label || `${bMarket} Daily Macro Corridor (Jan 26 – Present)`,
+        lowPrice: parsedLow ?? (matchedRange ? matchedRange.priceLow : undefined),
+        highPrice: parsedHigh ?? (matchedRange ? matchedRange.priceHigh : undefined),
+        label: matchedRange?.label || `${bMarket} 4-Hour Range Backtest`,
       })
     } catch {
       // ignore
@@ -617,9 +631,78 @@ ${box.subLegs
 - **Phase E (Markup Expansion):** Sustained multi-day trending move towards prior macro distribution highs ($2,788+).`
   }
 
-  // 1a-0. Multi-Timeframe Box Range Backtest & Invalidation Analysis
+  // 1a-0e. 5-Minute (5m) Phase D & Phase E Execution Engine (with 4H Edge, Last 5 Days POC, Overnight Inventory, Yesterday NYC & Time as Regulator)
   if (
-    /\b(box\s+(analysis|backtest|regime)|backtest\s+(this\s+)?box|analyze\s+(this\s+)?box|downtrend\s+or\s+uptrend|trend\s+invalidation|put\s+this\s+box|draw\s+this\s+box|sub[\s-]leg|how\s+(people|they|institutions)\s+(in\s+gold\s+)?accumulate|how\s+(people|they|institutions)\s+distribute|invalidation\s+of\s+the\s+downtrend|downtrend\s+and\s+uptrend)\b/i.test(
+    /\b(monitor\s+this\s+5m\s+range|phase\s+d\s*(\/|and)\s*(phase\s+)?e|phase\s+d.*phase\s+e|time\s+as\s+a\s+regulator|re-?accumulations?\s+and\s+re-?distributions?|revisit\s+of\s+the\s+upper\s+or\s+lower\s+range|last\s+point\s+of\s+support.*weakness|find\s+phase\s+d)\b/i.test(
+      lower
+    )
+  ) {
+    const low5m = parsedLow ?? matchedRange?.priceLow ?? box?.lowPrice ?? 2680
+    const high5m = parsedHigh ?? matchedRange?.priceHigh ?? box?.highPrice ?? 2720
+    const span5m = Math.max(0.01, high5m - low5m)
+    const mid5m = Number(((low5m + high5m) / 2).toFixed(2))
+    const curPx = ctx.currentPrice
+    const posPct = curPx != null ? Math.round(((curPx - low5m) / span5m) * 100) : 50
+    const relation: 'ABOVE' | 'BELOW' | 'INSIDE' =
+      curPx == null ? 'INSIDE' : curPx > high5m ? 'ABOVE' : curPx < low5m ? 'BELOW' : 'INSIDE'
+
+    return format5mPhaseDEAnalysisForLeo({
+      market: bMarket,
+      currentPrice: ctx.currentPrice,
+      sessionName: ctx.sessionDetails?.sessionName ?? sessionName,
+      sessionPhase: ctx.sessionDetails?.sessionPhase ?? 'ACTIVE',
+      range: matchedRange
+        ? {
+            label: matchedRange.label,
+            priceLow: low5m,
+            priceHigh: high5m,
+            midPrice: matchedRange.midPrice ?? mid5m,
+            heightPts: matchedRange.heightPts ?? Number(span5m.toFixed(2)),
+            durationMin: matchedRange.durationMin ?? 60,
+            startTimeEt: matchedRange.startTimeEt,
+            endTimeEt: matchedRange.endTimeEt,
+            positionPct: matchedRange.positionPct ?? posPct,
+            priceRelation: matchedRange.priceRelation ?? relation,
+            totalVolume: matchedRange.totalVolume,
+            volumeRatePerMin: matchedRange.volumeRatePerMin,
+            buyRatioPct: matchedRange.buyRatioPct,
+            delta: matchedRange.delta,
+          }
+        : {
+            label: '5M Range',
+            priceLow: low5m,
+            priceHigh: high5m,
+            midPrice: mid5m,
+            heightPts: Number(span5m.toFixed(2)),
+            durationMin: 60,
+            startTimeEt: 'Active Session',
+            endTimeEt: ctx.currentTimeEt,
+            positionPct: posPct,
+            priceRelation: relation,
+          },
+      poc5d: ctx.intermediateMoney?.poc5d,
+      vah5d: ctx.intermediateMoney?.vah5d,
+      val5d: ctx.intermediateMoney?.val5d,
+      ypoc: ctx.shortTermMoney?.ypoc,
+      yvah: ctx.shortTermMoney?.yvah,
+      yval: ctx.shortTermMoney?.yval,
+      yhigh: ctx.shortTermMoney?.yhigh,
+      ylow: ctx.shortTermMoney?.ylow,
+      onpoc: ctx.shortTermMoney?.onpoc,
+      onhigh: ctx.shortTermMoney?.onhigh,
+      onlow: ctx.shortTermMoney?.onlow,
+      overnightBias: ctx.shortTermMoney?.overnightBias,
+      sessionCvd: ctx.orderFlow?.sessionCvd,
+      latestBarDelta: ctx.orderFlow?.latestBarDelta,
+      orderFlowTrend: ctx.orderFlow?.trend,
+      orderFlowDivergence: ctx.orderFlow?.divergence,
+      boxAnalysis: box ?? null,
+    })
+  }
+
+  // 1a-0. 4-Hour (4H) Range Backtest: Accumulation & Distribution Characteristics
+  if (
+    /\b(box\s+(analysis|backtest|regime)|backtest\s+(this\s+)?(4h\s+)?(box|range)|analyze\s+(this\s+)?(4h\s+)?(box|range)|characteristics\s+of\s+accumulation\s+and\s+distribution|downtrend\s+or\s+uptrend|trend\s+invalidation|put\s+this\s+box|draw\s+this\s+box|sub[\s-]leg|how\s+(people|they|institutions)\s+(in\s+gold\s+)?accumulate|how\s+(people|they|institutions)\s+distribute|invalidation\s+of\s+the\s+downtrend|downtrend\s+and\s+uptrend)\b/i.test(
       lower
     )
   ) {

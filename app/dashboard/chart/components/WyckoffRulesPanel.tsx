@@ -125,13 +125,6 @@ function formatVolumeNum(v: number | undefined): string {
   return Math.round(v).toLocaleString()
 }
 
-function cvdBiasBadgeClass(bias: string | undefined): string {
-  if (!bias) return 'bg-surface-800 text-gray-300 border-surface-700'
-  if (bias.includes('BULLISH')) return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-  if (bias.includes('BEARISH')) return 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-  return 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
-}
-
 function subLegTypeBadgeClass(type: BoxSubLeg['type']): string {
   switch (type) {
     case 'ACCUMULATION':
@@ -644,161 +637,152 @@ export function WyckoffRulesPanel({
                 </div>
               )}
 
-              {/* 2. THE 5-TIMEFRAME TELEMETRY MATRIX (DAILY · 4H · 15M · 5M · 1M) */}
-              <div className="p-3 rounded-xl bg-surface-950/90 border border-surface-800 space-y-2.5">
+              {/* 2. 4-HOUR (4H) RANGE BACKTEST: ACCUMULATION & DISTRIBUTION CHARACTERISTICS */}
+              <div className="p-3 rounded-xl bg-surface-950/90 border border-emerald-500/40 space-y-2.5">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-surface-800 pb-1.5">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-base">📊</span>
+                    <span className="text-base">🔬</span>
                     <div>
                       <h4 className="text-xs font-bold text-white flex items-center gap-2">
-                        Multi-Timeframe Telemetry Engine
-                        <span className="px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 text-[8.5px] border border-cyan-500/40">
-                          1D · 4H · 15M · 5M · 1M
+                        Step 1 · 4-Hour (4H) Range Backtest: Accumulation & Distribution Characteristics
+                        <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 text-[8.5px] border border-emerald-500/40">
+                          4H ONLY · NO OTHER TIMEFRAMES
                         </span>
                       </h4>
                       <p className="text-[9.5px] text-gray-400">
-                        True ATR, Total Volume, Buy/Sell Split, Net CVD Delta, and Institutional Bias across all 5 tiers
+                        Backtests all internal accumulations and distributions inside the 4H range to establish your market edge
                       </p>
                     </div>
                   </div>
-                  <span className="text-[9px] text-emerald-400 font-mono">
-                    Zero Hallucination · Exact Local Tick Aggregation
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      askLeoWithContext(
+                        `Leo, backtest this 4H range on ${boxAnalysis.market}: Range ${boxAnalysis.lowPrice} to ${boxAnalysis.highPrice}. Find all accumulations and distributions inside this 4H range and tell me the characteristics of accumulation and distribution in this market inside this range.`
+                      )
+                    }
+                    className="px-2.5 py-1 rounded bg-emerald-950 hover:bg-emerald-900 border border-emerald-500/60 text-emerald-200 text-[9px] font-bold transition flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>🔬</span>
+                    <span>Backtest 4H Range with Leo</span>
+                  </button>
                 </div>
 
-                {/* Telemetry Matrix Table */}
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left font-mono text-[9.5px]">
-                    <thead>
-                      <tr className="border-b border-surface-800 text-gray-400 text-[8.5px]">
-                        <th className="py-1.5 px-2">TIMEFRAME & ROLE</th>
-                        <th className="py-1.5 px-2 text-cyan-300">TRUE ATR</th>
-                        <th className="py-1.5 px-2 text-gray-300">TOTAL VOL</th>
-                        <th className="py-1.5 px-2 text-amber-300 min-w-[120px]">BUY / SELL SPLIT</th>
-                        <th className="py-1.5 px-2 text-emerald-300">NET CVD DELTA</th>
-                        <th className="py-1.5 px-2 text-purple-300">INSTITUTIONAL BIAS</th>
-                        <th className="py-1.5 px-2 text-gray-400">BARS</th>
-                        <th className="py-1.5 px-2 text-right">ACTION</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-surface-800/60 text-gray-200">
-                      {(
-                        [
-                          { key: 'daily', label: '1D (Daily)', desc: 'Macro Regime & Invalidation', data: boxAnalysis.timeframes.daily },
-                          { key: 'h4', label: '4H (4-Hour)', desc: 'Intermediate Sub-Leg Decomposition', data: boxAnalysis.timeframes.h4 },
-                          { key: 'm15', label: '15M (15-Min)', desc: 'Tactical Execution Boundaries', data: boxAnalysis.timeframes.m15 },
-                          { key: 'm5', label: '5M (5-Min)', desc: 'Micro Absorption & Spring/UTAD Reclaim', data: boxAnalysis.timeframes.m5 },
-                          { key: 'm1', label: '1M (1-Min)', desc: 'Precision Tape Delta & Scalp Confirmation', data: boxAnalysis.timeframes.m1 },
-                        ] as const
-                      ).map((row) => {
-                        const total = row.data.totalVolume || 1
-                        const buyPct = Math.round((row.data.buyVolume / total) * 100)
-                        const sellPct = 100 - buyPct
-                        const isPositiveDelta = row.data.netCvd >= 0
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 text-[9.5px]">
+                  <div className="p-2.5 rounded-lg bg-emerald-950/25 border border-emerald-500/30 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-emerald-300 font-bold text-[10px]">
+                        🟢 Accumulation Characteristics in {boxAnalysis.market} (4H)
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-200 text-[8.5px] font-bold border border-emerald-500/40">
+                        {boxAnalysis.wyckoffBacktest.higherLowBaseRatePct}% Higher-Low Base Edge
+                      </span>
+                    </div>
+                    <ul className="space-y-1 text-gray-300 font-sans text-[9.5px] list-disc list-inside">
+                      <li>
+                        <strong>Dominant Entry Structure:</strong>{' '}
+                        <span className="text-emerald-300 font-mono font-bold">{boxAnalysis.wyckoffBacktest.higherLowBaseRatePct}%</span> build an{' '}
+                        <strong>Ascending Higher-Low Base (LPS)</strong> above Creek support rather than sweeping the low.
+                      </li>
+                      <li>
+                        <strong>Spring Sweep Rate:</strong>{' '}
+                        <span className="text-cyan-300 font-mono font-bold">{boxAnalysis.wyckoffBacktest.springRatePct}%</span> sweep below the Creek, exhibiting a{' '}
+                        <span className="text-emerald-300 font-mono font-bold">{boxAnalysis.wyckoffBacktest.springCvdAbsorptionPct}%</span> positive CVD absorption rate.
+                      </li>
+                      <li>
+                        <strong>4H Order Flow & Markup MFE:</strong> 4H Net CVD{' '}
+                        <span className="font-mono text-emerald-300">
+                          {boxAnalysis.timeframes.h4.netCvd >= 0 ? '+' : ''}
+                          {formatVolumeNum(boxAnalysis.timeframes.h4.netCvd)}
+                        </span>{' '}
+                        · Avg Markup Expansion: <span className="font-mono text-emerald-300">+{boxAnalysis.wyckoffBacktest.avgMarkupMfePts} pts</span>.
+                      </li>
+                    </ul>
+                  </div>
 
-                        return (
-                          <tr key={row.key} className="hover:bg-surface-900/60 transition">
-                            <td className="py-2 px-2">
-                              <span className="font-bold text-white block">{row.label}</span>
-                              <span className="text-[8px] text-gray-400 block">{row.desc}</span>
-                            </td>
-                            <td className="py-2 px-2 font-bold text-cyan-300">
-                              {row.data.atr.toFixed(2)} pts
-                            </td>
-                            <td className="py-2 px-2 font-mono text-gray-300">
-                              {formatVolumeNum(row.data.totalVolume)}
-                            </td>
-                            <td className="py-2 px-2">
-                              <div className="space-y-0.5">
-                                <div className="flex items-center justify-between text-[8px] font-mono">
-                                  <span className="text-emerald-400">{buyPct}% B</span>
-                                  <span className="text-rose-400">{sellPct}% S</span>
-                                </div>
-                                <div className="h-1.5 w-full bg-surface-800 rounded-full overflow-hidden flex">
-                                  <div style={{ width: `${buyPct}%` }} className="bg-emerald-500 h-full" />
-                                  <div style={{ width: `${sellPct}%` }} className="bg-rose-500 h-full" />
-                                </div>
-                              </div>
-                            </td>
-                            <td className="py-2 px-2 font-bold font-mono">
-                              <span className={isPositiveDelta ? 'text-emerald-400' : 'text-rose-400'}>
-                                {isPositiveDelta ? '+' : ''}{formatVolumeNum(row.data.netCvd)}
-                              </span>
-                            </td>
-                            <td className="py-2 px-2">
-                              <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-bold border ${cvdBiasBadgeClass(row.data.cvdBias)}`}>
-                                {row.data.cvdBias.replace(/_/g, ' ')}
-                              </span>
-                            </td>
-                            <td className="py-2 px-2 text-gray-400 text-[8.5px]">
-                              {row.data.barsCount}
-                            </td>
-                            <td className="py-2 px-2 text-right">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  askLeoWithContext(
-                                    `Leo, audit the ${row.label} timeframe for ${boxAnalysis.market}. ATR is ${row.data.atr.toFixed(2)} pts, Net CVD is ${row.data.netCvd > 0 ? '+' : ''}${row.data.netCvd}, volume is ${row.data.totalVolume}. What is the institutional order flow read?`
-                                  )
-                                }
-                                className="px-2 py-0.5 rounded bg-surface-900 hover:bg-surface-800 border border-surface-700 hover:border-purple-500/50 text-purple-200 text-[8.5px] font-semibold transition cursor-pointer"
-                              >
-                                💬 Ask Leo
-                              </button>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
+                  <div className="p-2.5 rounded-lg bg-rose-950/25 border border-rose-500/30 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-rose-300 font-bold text-[10px]">
+                        🔴 Distribution Characteristics in {boxAnalysis.market} (4H)
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-200 text-[8.5px] font-bold border border-rose-500/40">
+                        {(100 - boxAnalysis.wyckoffBacktest.utadRatePct).toFixed(1)}% Lower-High LPSY Roll-Over
+                      </span>
+                    </div>
+                    <ul className="space-y-1 text-gray-300 font-sans text-[9.5px] list-disc list-inside">
+                      <li>
+                        <strong>Dominant Supply Structure:</strong>{' '}
+                        <span className="text-rose-300 font-mono font-bold">{(100 - boxAnalysis.wyckoffBacktest.utadRatePct).toFixed(1)}%</span> cap below Ice resistance via{' '}
+                        <strong>Descending Lower-High Supply (LPSY)</strong> without sweeping the range high.
+                      </li>
+                      <li>
+                        <strong>UTAD Upper Sweep Rate:</strong>{' '}
+                        <span className="text-amber-300 font-mono font-bold">{boxAnalysis.wyckoffBacktest.utadRatePct}%</span> print an Upthrust After Distribution (UTAD) sweep above Ice before failing back inside.
+                      </li>
+                      <li>
+                        <strong>4H ATR & Markdown MFE:</strong> 4H True ATR{' '}
+                        <span className="font-mono text-cyan-300">${boxAnalysis.timeframes.h4.atr.toFixed(2)} pts</span> · Avg Markdown Expansion:{' '}
+                        <span className="font-mono text-rose-300">-{boxAnalysis.wyckoffBacktest.avgMarkdownMfePts} pts</span>.
+                      </li>
+                    </ul>
+                  </div>
                 </div>
               </div>
 
-              {/* 3. FIXED RANGE VOLUME PROFILE (FRVP) & FAIR VALUE */}
-              <div className="p-3 rounded-xl bg-surface-950/90 border border-surface-800 space-y-2">
-                <div className="flex items-center justify-between border-b border-surface-800 pb-1.5">
-                  <span className="font-bold text-xs text-white flex items-center gap-1.5">
-                    <span>🎯</span> Fixed Range Volume Profile & Fair Value Distribution
-                  </span>
-                  <span className={`px-2 py-0.5 rounded text-[9px] font-bold border ${
-                    boxAnalysis.volumeProfile.deltaBias.includes('BULLISH')
-                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
-                      : 'bg-rose-500/20 text-rose-300 border-rose-500/50'
-                  }`}>
-                    {boxAnalysis.volumeProfile.deltaBias.replace(/_/g, ' ')}
-                  </span>
+              {/* 3. 5-MINUTE (5M) PHASE D & PHASE E EXECUTION ENGINE (5-DAY CONTEXT & TIME AS A REGULATOR) */}
+              <div className="p-3 rounded-xl bg-gradient-to-r from-cyan-950/40 via-surface-950 to-purple-950/40 border border-cyan-500/40 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-surface-800 pb-1.5">
+                  <div>
+                    <h4 className="text-xs font-bold text-white flex items-center gap-2">
+                      <span>🎯</span> Step 2 · 5-Minute (5m) Execution Engine: Phase D Breakout & Phase E Revisit
+                      <span className="px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 text-[8.5px] border border-cyan-500/40">
+                        LAST 5 DAYS BARS · TIME AS A REGULATOR
+                      </span>
+                    </h4>
+                    <p className="text-[9.5px] text-gray-400">
+                      Once 4H defines our Accumulation/Distribution edge, monitor 5m sub-ranges using 5-Day POC, Overnight Inventory & Yesterday NYC (Asia & London build Cause → NYC delivers Effect)
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      askLeoWithContext(
+                        `Leo, monitor this 5m range on ${boxAnalysis.market}: Range ${boxAnalysis.lowPrice} to ${boxAnalysis.highPrice}. Using our 4H range accumulation/distribution edge and the last 5 days of 5m bars (5D POC, Overnight Inventory, Yesterday NYC), evaluate Time as a Regulator (Asia & London building Cause vs NYC Effect) and volume confirmation to identify Phase D (accumulation/distribution or re-accumulation/re-distribution before big-volume breakout) and Phase E (Last Point of Support / Weakness revisit of the upper or lower range).`
+                      )
+                    }
+                    className="px-2.5 py-1 rounded bg-cyan-950 hover:bg-cyan-900 border border-cyan-500/60 text-cyan-200 text-[9px] font-bold transition flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>🎯</span>
+                    <span>Audit 5m Phase D & Phase E with Leo</span>
+                  </button>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[9.5px]">
-                  <div className="p-2 rounded bg-surface-900/80 border border-cyan-500/30">
-                    <span className="text-gray-400 text-[8.5px] block">POC (POINT OF CONTROL):</span>
-                    <span className="text-cyan-300 font-bold text-xs font-mono">
-                      ${boxAnalysis.volumeProfile.poc.toFixed(2)}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-[9.5px]">
+                  <div className="p-2.5 rounded-lg bg-surface-900/90 border border-amber-500/30 space-y-1">
+                    <span className="text-amber-300 font-bold text-[10px] block">
+                      ⏱️ Time as a Regulator & 5-Day Context
                     </span>
-                    <span className="text-gray-500 text-[8px] block">Peak volume node of entire range</span>
+                    <p className="text-gray-300 font-sans leading-relaxed text-[9px]">
+                      5m holds the <strong>Last 5 Days of bars</strong>. Anchor every 5m range to the <strong>5-Day POC</strong>, <strong>Overnight Inventory</strong>, and <strong>Yesterday NYC</strong>. <strong>Asia & London build the Cause</strong> (absorption & inventory positioning); <strong>NYC delivers the Effect</strong> (volume-confirmed markup or markdown).
+                    </p>
                   </div>
-                  <div className="p-2 rounded bg-surface-900/80 border border-rose-500/30">
-                    <span className="text-gray-400 text-[8.5px] block">VAH (VALUE AREA HIGH 70%):</span>
-                    <span className="text-rose-300 font-bold text-xs font-mono">
-                      ${boxAnalysis.volumeProfile.vah.toFixed(2)}
+
+                  <div className="p-2.5 rounded-lg bg-surface-900/90 border border-emerald-500/30 space-y-1">
+                    <span className="text-emerald-300 font-bold text-[10px] block">
+                      🚀 Opportunity 1: Phase D (Stepping-Stone & Big-Volume Breakout)
                     </span>
-                    <span className="text-gray-500 text-[8px] block">Upper boundary of 70% distribution</span>
+                    <p className="text-gray-300 font-sans leading-relaxed text-[9px]">
+                      Inside 5m, Phase D begins with an accumulation or distribution. Expect stepping-stone <strong>re-accumulations</strong> (higher lows) or <strong>re-distributions</strong> (lower highs) until Phase D <strong>breaks out of the range with BIG VOLUME</strong> (SOS / SOW).
+                    </p>
                   </div>
-                  <div className="p-2 rounded bg-surface-900/80 border border-emerald-500/30">
-                    <span className="text-gray-400 text-[8.5px] block">VAL (VALUE AREA LOW 70%):</span>
-                    <span className="text-emerald-300 font-bold text-xs font-mono">
-                      ${boxAnalysis.volumeProfile.val.toFixed(2)}
+
+                  <div className="p-2.5 rounded-lg bg-surface-900/90 border border-cyan-500/30 space-y-1">
+                    <span className="text-cyan-300 font-bold text-[10px] block">
+                      🔁 Opportunity 2: Phase E (Boundary Revisit LPS / LPSY)
                     </span>
-                    <span className="text-gray-500 text-[8px] block">Lower boundary of 70% distribution</span>
-                  </div>
-                  <div className="p-2 rounded bg-surface-900/80 border border-surface-800">
-                    <span className="text-gray-400 text-[8.5px] block">NET CVD DELTA:</span>
-                    <span className={`font-bold text-xs font-mono ${boxAnalysis.volumeProfile.netDelta >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {boxAnalysis.volumeProfile.netDelta >= 0 ? '+' : ''}{boxAnalysis.volumeProfile.netDelta.toLocaleString()}
-                    </span>
-                    <span className="text-gray-500 text-[8px] block">
-                      Total: {formatVolumeNum(boxAnalysis.volumeProfile.totalVolume)} contracts
-                    </span>
+                    <p className="text-gray-300 font-sans leading-relaxed text-[9px]">
+                      After Phase D breaks out of the range with big volume, <strong>Phase E</strong> is the structural revisit of the <strong>Upper Range Boundary (Last Point of Support / LPS)</strong> for Markup or <strong>Lower Range Boundary (Last Point of Weakness / LPSY)</strong> for Markdown.
+                    </p>
                   </div>
                 </div>
               </div>

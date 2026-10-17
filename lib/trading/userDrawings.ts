@@ -30,6 +30,7 @@ export interface UserRangeBox {
   color?: string
   label?: string
   instrument?: string
+  timeframe?: string
   isMemory?: boolean
   memoryPurpose?: string
   memoryNotes?: string
