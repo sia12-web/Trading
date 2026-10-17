@@ -4636,12 +4636,6 @@ export function TradingChart({
         ex.volume >= 1000
           ? `${(ex.volume / 1000).toFixed(1)}k`
           : String(Math.round(ex.volume))
-      const retestStr = ex.isRetested
-        ? ex.retestVolumeRatio
-          ? ` [Retest ${ex.retestVolumeRatio}x]`
-          : ' [Retest]'
-        : ''
-      const labelText = `(${volStr})${retestStr}`
 
       renderedSessionExtremesRef.current.push({
         extreme: ex,
@@ -4656,7 +4650,7 @@ export function TradingChart({
         retestVolumeRatio: ex.retestVolumeRatio,
         bounds: {
           minX: x - 15,
-          maxX: x + 115,
+          maxX: x + 15,
           minY: ex.type === 'HIGH' ? y - 18 : y - 4,
           maxY: ex.type === 'HIGH' ? y + 4 : y + 20,
         },
@@ -4679,7 +4673,7 @@ export function TradingChart({
         const shelfRight = Math.min(paneW, Math.max(x + 50, xEnd))
 
         if (shelfRight > x + 6) {
-          ctx.strokeStyle = ex.isRetested ? 'rgba(244, 63, 94, 0.4)' : 'rgba(244, 63, 94, 0.85)'
+          ctx.strokeStyle = 'rgba(244, 63, 94, 0.85)'
           ctx.setLineDash([3, 3])
           ctx.beginPath()
           ctx.moveTo(x, Math.round(y) + 0.5)
@@ -4687,11 +4681,6 @@ export function TradingChart({
           ctx.stroke()
           ctx.setLineDash([])
         }
-
-        // Volume & Retest label at session high (no high/low sentence)
-        ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-        ctx.fillStyle = '#f43f5e'
-        ctx.fillText(labelText, x + 6, y - 4)
       } else if (ex.type === 'LOW') {
         // Upward emerald triangle below low wick
         ctx.fillStyle = '#10b981'
@@ -4709,7 +4698,7 @@ export function TradingChart({
         const shelfRight = Math.min(paneW, Math.max(x + 50, xEnd))
 
         if (shelfRight > x + 6) {
-          ctx.strokeStyle = ex.isRetested ? 'rgba(16, 185, 129, 0.4)' : 'rgba(16, 185, 129, 0.85)'
+          ctx.strokeStyle = 'rgba(16, 185, 129, 0.85)'
           ctx.setLineDash([3, 3])
           ctx.beginPath()
           ctx.moveTo(x, Math.round(y) + 0.5)
@@ -4717,11 +4706,6 @@ export function TradingChart({
           ctx.stroke()
           ctx.setLineDash([])
         }
-
-        // Volume & Retest label at session low (no high/low sentence)
-        ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-        ctx.fillStyle = '#10b981'
-        ctx.fillText(labelText, x + 6, y + 12)
       }
     }
 
@@ -6039,11 +6023,7 @@ export function TradingChart({
           volume: hit.volStr,
           retestRatio: hit.retestVolumeRatio,
           isRetested: hit.isRetested,
-          description: `${hit.session} ${hit.type === 'HIGH' ? 'High' : 'Low'} at ${hit.price} (${hit.volStr}) ${
-            hit.isRetested
-              ? `[Retested with ${hit.retestVolumeRatio ?? 1}x volume]`
-              : '[Fresh / Untested]'
-          }`,
+          description: `${hit.session} ${hit.type === 'HIGH' ? 'High' : 'Low'} at ${hit.price} (${hit.volStr})`,
         },
       ])
     }
@@ -8260,15 +8240,16 @@ export function TradingChart({
       color: '#26a69a',
       priceFormat: { type: 'volume' },
       priceScaleId: 'volume',
+      lastValueVisible: false,
+      priceLineVisible: false,
     })
     chart.priceScale('volume').applyOptions({
       scaleMargins: {
         top: 0.78,   // bars occupy bottom 22% of chart (was 18%)
         bottom: 0,
       },
-      visible: true,
+      visible: false,
       borderVisible: false,
-      textColor: 'rgba(180, 180, 180, 0.65)',
     })
     volumeSeriesRef.current = volumeSeries
 
