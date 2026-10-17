@@ -3018,7 +3018,7 @@ export function TradingChart({
     ctx.rect(0, 0, plotW, plotH)
     ctx.clip()
 
-    if (timeframe === '1D') {
+    if (timeframe === '1D' || timeframe === '4h') {
       ctx.restore()
       return
     }
@@ -3224,7 +3224,7 @@ export function TradingChart({
     }
 
     ctx.restore()
-  }, [frvp5d, yesterdayNyc, overnightInventory, avwap5mBenchmark, showYesterdayNyc, showInventorySessions])
+  }, [frvp5d, yesterdayNyc, overnightInventory, avwap5mBenchmark, showYesterdayNyc, showInventorySessions, timeframe])
 
   useEffect(() => {
     paintFrvpHistogramRef.current = paintFrvpHistogram
@@ -3286,8 +3286,9 @@ export function TradingChart({
         ? candleTimesRef.current
         : list.map((c) => toChartTime(c.time as number, tz))
 
-    // 1. Render Manual FRVPs
-    for (const f of activeManualFrvps) {
+    // 1. Render Manual FRVPs (hidden on 4h and 1D macro timeframes)
+    if (timeframe !== '1D' && timeframe !== '4h') {
+      for (const f of activeManualFrvps) {
       const anchorChartT = toChartTime(f.timeStart, tz)
       const endChartT = toChartTime(f.timeEnd, tz)
       const rawXAnchor = timeToX(chart.timeScale(), anchorChartT, candleTimes)
@@ -3398,6 +3399,7 @@ export function TradingChart({
           ctx.fillText(`📊 ${f.label || 'Manual FRVP'} (${f.totalVolume.toLocaleString()})`, startX + 4, Math.max(12, bY - 6))
         }
       }
+    }
     }
 
     // 2. Render Range Boxes
@@ -4569,7 +4571,7 @@ export function TradingChart({
     }
 
     ctx.restore()
-  }, [activeTrendlines, activeRangeBoxes, activeManualFrvps, activeMeasures, activeAnchoredVwaps, selectedAvwapId, drawingDraft, activeDrawingTool, showCandlestickPatterns, hideTrendlineBadges, barSeconds, yesterdayNyc, ydayProfile, overnightInventory, frvp5d])
+  }, [activeTrendlines, activeRangeBoxes, activeManualFrvps, activeMeasures, activeAnchoredVwaps, selectedAvwapId, drawingDraft, activeDrawingTool, showCandlestickPatterns, hideTrendlineBadges, barSeconds, yesterdayNyc, ydayProfile, overnightInventory, frvp5d, timeframe])
 
   useEffect(() => {
     paintUserDrawingsRef.current = paintUserDrawings
