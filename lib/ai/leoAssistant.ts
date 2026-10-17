@@ -218,19 +218,6 @@ export interface LeoOrderFlowContext {
   description: string
 }
 
-export interface LeoLongTermMemoryItem {
-  id: string
-  instrument: string
-  timeframe: string
-  priceLow: number
-  priceHigh: number
-  purpose: string
-  notes?: string
-  status: 'ACTIVE' | 'TRIGGERED' | 'DISMISSED' | 'EXPIRED'
-  isLongTerm?: boolean
-  lastTriggeredAt?: string
-}
-
 export interface LeoChatContext {
   instrument: string
   currentPrice: number | null
@@ -240,7 +227,6 @@ export interface LeoChatContext {
   sessionDetails?: LeoSessionDetails | null
   activePosition?: LeoActivePosition | null
   orderFlow?: LeoOrderFlowContext | null
-  longTermMemories?: LeoLongTermMemoryItem[]
   longTermMoney: {
     avwap5m: number | null
     sigma1Upper: number | null

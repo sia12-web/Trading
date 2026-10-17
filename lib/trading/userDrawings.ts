@@ -31,10 +31,6 @@ export interface UserRangeBox {
   label?: string
   instrument?: string
   timeframe?: string
-  isMemory?: boolean
-  memoryPurpose?: string
-  memoryNotes?: string
-  alarmEnabled?: boolean
 }
 
 export interface UserManualFRVP {

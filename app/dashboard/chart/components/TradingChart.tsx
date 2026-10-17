@@ -183,13 +183,6 @@ import {
 } from '@/lib/trading/userDrawings'
 import { compareMultipleRanges } from '@/lib/trading/rangeVolumeComparison'
 import { playTradingViewChime } from '@/lib/chart/soundEffects'
-import {
-  type LeoLongTermMemory,
-  loadLongTermMemories,
-  saveLongTermMemory,
-  recordMemoryNotification,
-  evaluatePriceAgainstMemories,
-} from '@/lib/trading/leoLongTermMemory'
 import { detectCandlestickPatterns, type Candle } from '@/lib/trading/candlestickPatterns'
 import { isUsMarketHoliday } from '@/lib/chart/sessionVwap'
 import {
@@ -207,12 +200,6 @@ import {
   evaluateHorizontalRunway,
   calculateEmpiricalSpeedlines,
 } from '@/lib/trading/trendlineStrategy'
-import {
-  evaluateWyckoffSetup,
-  evaluateSpringOrUpthrustTrendline,
-  type WyckoffBar,
-  type WyckoffChartContext,
-} from '@/lib/trading/wyckoffStrategy'
 import {
   evaluatePriceQuestioning,
   isPriceQuestioningSessionActive,
@@ -1423,25 +1410,6 @@ export function TradingChart({
   const avwapAnchorHitsRef = useRef<Map<string, { x: number; y: number; r: number }>>(new Map())
   const avwapDeleteBtnHitsRef = useRef<Map<string, { x: number; y: number; w: number; h: number }>>(new Map())
 
-  // ── Leo Long-Term Memory Architecture & TradingView Alarms ────────────────
-  const [memories, setMemories] = useState<LeoLongTermMemory[]>(() => loadLongTermMemories())
-  const [memoryModalOpen, setMemoryModalOpen] = useState(false)
-  const [targetMemoryRange, setTargetMemoryRange] = useState<{
-    id: string
-    priceLow: number
-    priceHigh: number
-    purpose: string
-  } | null>(null)
-  const [activeTradingViewAlarm, setActiveTradingViewAlarm] = useState<{
-    memory: LeoLongTermMemory
-    price: number
-  } | null>(null)
-
-  useEffect(() => {
-    const onMems = () => setMemories(loadLongTermMemories())
-    window.addEventListener('leo-memories-updated', onMems)
-    return () => window.removeEventListener('leo-memories-updated', onMems)
-  }, [])
 
   // Auto-save drawings to localStorage on change
   useEffect(() => {
@@ -3402,18 +3370,14 @@ export function TradingChart({
         const boxW = Math.max(4, maxX - minX)
         const boxH = Math.max(4, botY - topY)
 
-        const isMem = Boolean(r.isMemory)
-        const memFill = isMem ? 'rgba(245, 158, 11, 0.18)' : 'rgba(168, 85, 247, 0.16)'
-        const memBorder = isMem ? 'rgba(245, 158, 11, 0.95)' : 'rgba(168, 85, 247, 0.85)'
-
         // Shaded fill
-        ctx.fillStyle = memFill
+        ctx.fillStyle = 'rgba(168, 85, 247, 0.16)'
         ctx.fillRect(minX, topY, boxW, boxH)
 
         // Border
-        ctx.strokeStyle = memBorder
-        ctx.lineWidth = isMem ? 2 : 1.5
-        ctx.setLineDash(isMem ? [] : [4, 4])
+        ctx.strokeStyle = 'rgba(168, 85, 247, 0.85)'
+        ctx.lineWidth = 1.5
+        ctx.setLineDash([4, 4])
         ctx.strokeRect(minX, topY, boxW, boxH)
         ctx.setLineDash([])
 
@@ -3421,45 +3385,25 @@ export function TradingChart({
         const lowP = Math.min(r.p1.price, r.p2.price)
         const spanPts = Math.round(highP - lowP)
 
-        if (isMem) {
-          // Top line Memory badge
-          ctx.fillStyle = 'rgba(20, 14, 5, 0.92)'
-          const headerText = `🧠 LEO MEMORY: ${r.memoryPurpose ? r.memoryPurpose.slice(0, 32) : 'Level Observation'} [🔔 ALARM ACTIVE]`
-          ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
-          const textW = Math.min(boxW, Math.max(160, ctx.measureText(headerText).width + 12))
-          ctx.fillRect(minX, Math.max(0, topY - 16), textW, 16)
-          ctx.strokeStyle = '#f59e0b'
-          ctx.lineWidth = 1
-          ctx.strokeRect(minX, Math.max(0, topY - 16), textW, 16)
-          ctx.fillStyle = '#fbbf24'
-          ctx.fillText(headerText, minX + 5, Math.max(11, topY - 4))
+        // Top line High badge
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
+        ctx.fillRect(minX, Math.max(0, topY - 14), 115, 14)
+        ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+        ctx.fillStyle = '#c084fc'
+        ctx.fillText(`Range High: ${highP.toLocaleString()}`, minX + 4, Math.max(10, topY - 3))
 
-          // Bottom line Low badge
-          ctx.fillStyle = 'rgba(20, 14, 5, 0.92)'
-          ctx.fillRect(minX, botY, 150, 14)
-          ctx.fillStyle = '#fcd34d'
-          ctx.fillText(`Zone: ${lowP.toLocaleString()} – ${highP.toLocaleString()} (${spanPts} pts)`, minX + 4, botY + 11)
-        } else {
-          // Top line High badge
-          ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
-          ctx.fillRect(minX, Math.max(0, topY - 14), 115, 14)
-          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-          ctx.fillStyle = '#c084fc'
-          ctx.fillText(`Range High: ${highP.toLocaleString()}`, minX + 4, Math.max(10, topY - 3))
+        // Bottom line Low badge
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
+        ctx.fillRect(minX, botY, 115, 14)
+        ctx.fillStyle = '#c084fc'
+        ctx.fillText(`Range Low: ${lowP.toLocaleString()}`, minX + 4, botY + 11)
 
-          // Bottom line Low badge
-          ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'
-          ctx.fillRect(minX, botY, 115, 14)
-          ctx.fillStyle = '#c084fc'
-          ctx.fillText(`Range Low: ${lowP.toLocaleString()}`, minX + 4, botY + 11)
-
-          // Center span pill
-          const midY = (topY + botY) / 2
-          ctx.fillStyle = 'rgba(88, 28, 135, 0.9)'
-          ctx.fillRect(minX + 4, midY - 8, 95, 16)
-          ctx.fillStyle = '#f3e8ff'
-          ctx.fillText(`⬛ ${spanPts} pts (${r.label || 'Range'})`, minX + 6, midY + 4)
-        }
+        // Center span pill
+        const midY = (topY + botY) / 2
+        ctx.fillStyle = 'rgba(88, 28, 135, 0.9)'
+        ctx.fillRect(minX + 4, midY - 8, 95, 16)
+        ctx.fillStyle = '#f3e8ff'
+        ctx.fillText(`⬛ ${spanPts} pts (${r.label || 'Range'})`, minX + 6, midY + 4)
       }
     }
 
@@ -3802,245 +3746,25 @@ export function TradingChart({
           ctx.restore()
         }
 
-        // ── Wyckoff Structure Line Engine (Supply / Demand, Spring, Upthrust, JAC Breakout, CVD & 2R Check) ──
-        const wyckoffBars: WyckoffBar[] = list.map((c: any) => ({
-          time: typeof c.time === 'number' ? c.time : 0,
-          open: Number(c.open),
-          high: Number(c.high),
-          low: Number(c.low),
-          close: Number(c.close),
-          volume: Number(c.volume || 1),
-          cvd: typeof c.cvd === 'number' ? c.cvd : undefined,
-        }))
-
-        const wyckoffCtx: WyckoffChartContext = {
-          yesterday: yesterdayNyc,
-          overnight: overnightInventory,
-          frvp5d,
-          avwap5m: avwap5mBenchmark,
-        }
-
-        // ── Wyckoff Spring / Upthrust Evaluation & Factor Scoring Engine (0-100 pts) ──
-        const springUpthrust = evaluateSpringOrUpthrustTrendline(tl, wyckoffBars, wyckoffCtx)
-        const isSpring = springUpthrust.originType === 'SPRING'
-        const isSupply = !isSpring
-
-        const wyckoffSetup = evaluateWyckoffSetup(tl, wyckoffBars, wyckoffCtx)
-
-        // Midpoint badge render
-        const labelText = `📐 Trendline · ${springUpthrust.originType} (${springUpthrust.totalScore}/100 pts · Grade ${springUpthrust.grade}) | Stop: ${springUpthrust.stopLoss.toFixed(1)} | Tgt: ${springUpthrust.targetPrice.toFixed(1)} (${springUpthrust.rrRatio}R)`
-
-        if (!hideTrendlineBadges) {
+        if (!hideTrendlineBadges && tl.label) {
           ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
+          const labelText = `📐 ${tl.label}`
           const textW = ctx.measureText(labelText).width
           const badgeW = textW + 12
           const badgeH = 16
           const { x: midBx, y: midBy } = allocateBadgePos(mx - badgeW / 2, my - 18, badgeW, badgeH, true)
 
-          ctx.fillStyle = isSupply ? 'rgba(30, 20, 5, 0.94)' : 'rgba(15, 23, 42, 0.90)'
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.90)'
           ctx.fillRect(midBx, midBy, badgeW, badgeH)
-          ctx.strokeStyle = springUpthrust.color
+          ctx.strokeStyle = tlColor
           ctx.lineWidth = 1.2
           ctx.strokeRect(midBx, midBy, badgeW, badgeH)
 
-          ctx.fillStyle = isSupply ? '#fef08a' : '#7dd3fc'
+          ctx.fillStyle = '#7dd3fc'
           ctx.fillText(labelText, midBx + 6, midBy + 11)
         }
-
-        // Render Stop Loss level (dashed red/rose) from Spring / Upthrust Evaluation
-        const hasStop = springUpthrust.stopLoss && Number.isFinite(springUpthrust.stopLoss)
-        const hasTarget = springUpthrust.targetPrice && Number.isFinite(springUpthrust.targetPrice)
-        const yStop = hasStop ? series.priceToCoordinate(springUpthrust.stopLoss) : null
-        const yTgt = hasTarget ? series.priceToCoordinate(springUpthrust.targetPrice) : null
-
-        if (yStop != null && Number.isFinite(yStop)) {
-          ctx.strokeStyle = '#f43f5e'
-          ctx.lineWidth = 1.3
-          ctx.setLineDash([4, 3])
-          ctx.beginPath()
-          ctx.moveTo(ex1, Math.round(yStop) + 0.5)
-          ctx.lineTo(ex2, Math.round(yStop) + 0.5)
-          ctx.stroke()
-          ctx.setLineDash([])
-
-          if (!hideTrendlineBadges) {
-            ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-            const slText = `🛑 Stop (${isSpring ? 'Spring Low' : 'Upthrust High'}): ${springUpthrust.stopLoss.toFixed(1)} [${springUpthrust.riskPoints.toFixed(1)}pts]`
-            const slW = ctx.measureText(slText).width + 10
-            ctx.fillStyle = 'rgba(76, 5, 25, 0.94)'
-            ctx.fillRect(ex2 - slW - 10, yStop - 16, slW, 15)
-            ctx.strokeStyle = '#f43f5e'
-            ctx.strokeRect(ex2 - slW - 10, yStop - 16, slW, 15)
-            ctx.fillStyle = '#fecdd3'
-            ctx.fillText(slText, ex2 - slW - 5, yStop - 5)
-          }
-        }
-
-        // Render Target level (dashed emerald) from Spring / Upthrust Evaluation
-        if (yTgt != null && Number.isFinite(yTgt)) {
-          ctx.strokeStyle = '#10b981'
-          ctx.lineWidth = 1.3
-          ctx.setLineDash([4, 3])
-          ctx.beginPath()
-          ctx.moveTo(ex1, Math.round(yTgt) + 0.5)
-          ctx.lineTo(ex2, Math.round(yTgt) + 0.5)
-          ctx.stroke()
-          ctx.setLineDash([])
-
-          if (!hideTrendlineBadges) {
-            ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-            const tgtText = `🎯 Target (${springUpthrust.targetZoneLabel}): ${springUpthrust.targetPrice.toFixed(1)} [${springUpthrust.rewardPoints.toFixed(1)}pts · ${springUpthrust.rrRatio}R] ${springUpthrust.is2RValid ? '✅' : '⚠️ <2R'}`
-            const tgtW = ctx.measureText(tgtText).width + 10
-            ctx.fillStyle = 'rgba(6, 78, 59, 0.94)'
-            ctx.fillRect(ex2 - tgtW - 10, yTgt - 16, tgtW, 15)
-            ctx.strokeStyle = '#10b981'
-            ctx.strokeRect(ex2 - tgtW - 10, yTgt - 16, tgtW, 15)
-            ctx.fillStyle = '#a7f3d0'
-            ctx.fillText(tgtText, ex2 - tgtW - 5, yTgt - 5)
-          }
-        }
-
-        // On-Chart Factor Points Breakdown Card (renders when trendline is hovered or selected)
-        if ((isSelected || isHovered) && !hideTrendlineBadges) {
-          ctx.save()
-          const cardW = 340
-          const cardH = 224
-          const cardX = Math.min(paneW - cardW - 12, Math.max(12, mx + 16))
-          const cardY = Math.min(paneH - cardH - 12, Math.max(12, my - cardH / 2))
-
-          // Card Background & Drop Shadow
-          ctx.shadowColor = 'rgba(0, 0, 0, 0.75)'
-          ctx.shadowBlur = 12
-          ctx.fillStyle = 'rgba(10, 15, 30, 0.96)'
-          ctx.beginPath()
-          if (typeof (ctx as any).roundRect === 'function') {
-            ;(ctx as any).roundRect(cardX, cardY, cardW, cardH, 8)
-          } else {
-            ctx.rect(cardX, cardY, cardW, cardH)
-          }
-          ctx.fill()
-          ctx.shadowBlur = 0
-
-          // Card Border
-          ctx.strokeStyle = springUpthrust.color
-          ctx.lineWidth = 1.5
-          ctx.stroke()
-
-          // Header Bar
-          ctx.fillStyle = isSpring ? 'rgba(6, 78, 59, 0.4)' : 'rgba(136, 19, 55, 0.4)'
-          ctx.beginPath()
-          if (typeof (ctx as any).roundRect === 'function') {
-            ;(ctx as any).roundRect(cardX, cardY, cardW, 28, [8, 8, 0, 0])
-          } else {
-            ctx.rect(cardX, cardY, cardW, 28)
-          }
-          ctx.fill()
-
-          // Header Text
-          ctx.font = 'bold 11px ui-monospace, SFMono-Regular, monospace'
-          ctx.fillStyle = '#ffffff'
-          ctx.textAlign = 'left'
-          ctx.textBaseline = 'middle'
-          ctx.fillText(`📐 Trendline · Wyckoff ${springUpthrust.originType} (${springUpthrust.totalScore}/100 pts · Grade ${springUpthrust.grade})`, cardX + 10, cardY + 14)
-
-          // Subtitle / Quick status
-          ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-          ctx.fillStyle = springUpthrust.is2RValid ? '#34d399' : '#fbbf24'
-          ctx.textAlign = 'right'
-          ctx.fillText(springUpthrust.is2RValid ? 'QUALIFIED >= 2R' : 'FILTERED (< 2R)', cardX + cardW - 10, cardY + 14)
-
-          // Factor Rows
-          const fList = [
-            springUpthrust.factors.location,
-            springUpthrust.factors.volumeEffortVsResult,
-            springUpthrust.factors.candleExcess,
-            springUpthrust.factors.cvdAbsorption,
-            springUpthrust.factors.avwap5m,
-            springUpthrust.factors.roundNumber,
-            springUpthrust.factors.rewardRisk,
-          ]
-
-          let curY = cardY + 42
-          for (const f of fList) {
-            ctx.textAlign = 'left'
-            ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-            ctx.fillStyle = '#cbd5e1'
-            ctx.fillText(f.name, cardX + 10, curY)
-
-            // Factor score on right
-            const scoreStr = `${f.score}/${f.maxScore} pts`
-            ctx.textAlign = 'right'
-            ctx.font = 'bold 9px ui-monospace, SFMono-Regular, monospace'
-            ctx.fillStyle = f.score >= f.maxScore * 0.7 ? '#34d399' : f.score >= f.maxScore * 0.4 ? '#fbbf24' : '#f87171'
-            ctx.fillText(scoreStr, cardX + cardW - 10, curY)
-
-            // Factor detail summary
-            ctx.textAlign = 'left'
-            ctx.font = '8px ui-monospace, SFMono-Regular, monospace'
-            ctx.fillStyle = '#94a3b8'
-            const detailText = f.details.length > 58 ? f.details.slice(0, 56) + '…' : f.details
-            ctx.fillText(detailText, cardX + 10, curY + 11)
-
-            curY += 21
-          }
-
-          // Bottom Trade Plan strip
-          ctx.fillStyle = 'rgba(15, 23, 42, 0.8)'
-          ctx.fillRect(cardX, cardY + cardH - 24, cardW, 24)
-          ctx.strokeStyle = 'rgba(51, 65, 85, 0.6)'
-          ctx.beginPath()
-          ctx.moveTo(cardX, cardY + cardH - 24)
-          ctx.lineTo(cardX + cardW, cardY + cardH - 24)
-          ctx.stroke()
-
-          ctx.font = 'bold 8.5px ui-monospace, SFMono-Regular, monospace'
-          ctx.fillStyle = '#e2e8f0'
-          ctx.textAlign = 'left'
-          ctx.textBaseline = 'middle'
-          ctx.fillText(`Stop: ${springUpthrust.stopLoss.toFixed(1)} (${springUpthrust.riskPoints.toFixed(1)}pts) | Tgt: ${springUpthrust.targetZoneLabel} ${springUpthrust.targetPrice.toFixed(1)} (${springUpthrust.rewardPoints.toFixed(1)}pts · ${springUpthrust.rrRatio}R)`, cardX + 8, cardY + cardH - 12)
-
-          ctx.restore()
-        }
-
-          // Draw Setup Alert Pill at the trigger candle
-          if (!hideTrendlineBadges && wyckoffSetup.triggerTime) {
-            const trigX = timeToX(chart.timeScale(), toChartTime(wyckoffSetup.triggerTime, tz), candleTimes)
-            const trigY = series.priceToCoordinate(wyckoffSetup.entryPrice)
-            if (trigX != null && trigY != null && Number.isFinite(trigX) && Number.isFinite(trigY)) {
-              // Glow marker on trigger candle
-              ctx.fillStyle = wyckoffSetup.color
-              ctx.beginPath()
-              ctx.arc(trigX, trigY, 4, 0, Math.PI * 2)
-              ctx.fill()
-
-              ctx.font = 'bold 9.5px ui-monospace, SFMono-Regular, monospace'
-              const bText = wyckoffSetup.badgeText
-              const bW = ctx.measureText(bText).width + 16
-              const bH = 18
-              const bX = Math.max(10, Math.min(paneW - bW - 10, trigX - bW / 2))
-              const bY = isSupply ? trigY - 26 : trigY + 12
-
-              ctx.fillStyle = 'rgba(15, 23, 42, 0.95)'
-              ctx.beginPath()
-              if (typeof (ctx as any).roundRect === 'function') {
-                (ctx as any).roundRect(bX, bY, bW, bH, 6)
-              } else {
-                ctx.rect(bX, bY, bW, bH)
-              }
-              ctx.fill()
-
-              ctx.strokeStyle = wyckoffSetup.color
-              ctx.lineWidth = 1.3
-              ctx.stroke()
-
-              ctx.fillStyle = wyckoffSetup.is2RValid ? '#f8fafc' : '#fef08a'
-              ctx.textAlign = 'left'
-              ctx.textBaseline = 'middle'
-              ctx.fillText(bText, bX + 8, bY + bH * 0.5)
-            }
-          }
-        }
       }
+    }
 
     // 3.5. Render User Drawn Anchored VWAPs (Professional Standard with ±1σ, ±2σ, ±3σ Bands & Clouds)
     avwapAnchorHitsRef.current.clear()
@@ -4322,9 +4046,7 @@ export function TradingChart({
 
       if (x1 != null && x2 != null && y1 != null && y2 != null) {
         if (activeDrawingTool === 'TRENDLINE') {
-          const isSupplyDraft = p2.price <= p1.price
-          const draftColor = isSupplyDraft ? '#f59e0b' : '#38bdf8'
-          const roleDraft = isSupplyDraft ? 'Supply (Creek)' : 'Demand (Ice)'
+          const draftColor = '#38bdf8'
           const [dex1, dey1, dex2, dey2] = extendedLine(x1, y1, x2, y2)
           ctx.strokeStyle = draftColor
           ctx.lineWidth = 2
@@ -4344,8 +4066,8 @@ export function TradingChart({
           ctx.fill()
 
           ctx.font = 'bold 10px ui-monospace, SFMono-Regular, monospace'
-          ctx.fillStyle = isSupplyDraft ? '#fef08a' : '#bae6fd'
-          ctx.fillText(`📐 Wyckoff ${roleDraft} P1: ${p1?.price != null ? p1.price.toLocaleString() : '—'}`, x1 + 8, y1 - 4)
+          ctx.fillStyle = '#bae6fd'
+          ctx.fillText(`📐 Trendline P1: ${p1?.price != null ? p1.price.toLocaleString() : '—'}`, x1 + 8, y1 - 4)
           ctx.fillText(`📐 P2: ${p2?.price != null ? p2.price.toLocaleString() : '—'} (${p1?.price != null && p2?.price != null ? (p2.price >= p1.price ? '+' : '') + (p2.price - p1.price).toFixed(1) + ' pts' : '—'})`, x2 + 8, y2 - 4)
         } else if (activeDrawingTool === 'RANGE') {
           const minX = Math.min(x1, p2.x)
@@ -4615,174 +4337,9 @@ export function TradingChart({
         daily
       )
 
-    // 2. Draw Extremes (Precomputed from analytics cache — zero CPU waste on scroll)
-    const sessionExtremes = sessionExtremesRef.current
-
     renderedSessionExtremesRef.current = []
-    for (const ex of sessionExtremes) {
-      const x = xAt(ex.time)
-      const y = series.priceToCoordinate(ex.price)
-      if (x == null || y == null || !Number.isFinite(x) || !Number.isFinite(y)) continue
-      if (x < -40 || x > paneW + 40 || y < 0 || y > paneH) continue
-
-      const volStr =
-        ex.volume >= 1000
-          ? `${(ex.volume / 1000).toFixed(1)}k`
-          : String(Math.round(ex.volume))
-
-      renderedSessionExtremesRef.current.push({
-        extreme: ex,
-        x,
-        y,
-        session: ex.session,
-        price: ex.price,
-        type: ex.type,
-        volume: ex.volume,
-        volStr,
-        isRetested: ex.isRetested,
-        retestVolumeRatio: ex.retestVolumeRatio,
-        bounds: {
-          minX: x - 15,
-          maxX: x + 15,
-          minY: ex.type === 'HIGH' ? y - 18 : y - 4,
-          maxY: ex.type === 'HIGH' ? y + 4 : y + 20,
-        },
-      })
-
-      if (ex.type === 'HIGH') {
-        // Downward rose triangle above high wick
-        ctx.fillStyle = '#f43f5e'
-        ctx.beginPath()
-        ctx.moveTo(x - 5, y - 11)
-        ctx.lineTo(x + 5, y - 11)
-        ctx.lineTo(x, y - 4)
-        ctx.closePath()
-        ctx.fill()
-
-        // Horizontal shelf extending to the end of the session
-        const xEnd = ex.sessionEndTime != null
-          ? (xAt(ex.sessionEndTime) ?? (x + 130))
-          : (x + 130)
-        const shelfRight = Math.min(paneW, Math.max(x + 50, xEnd))
-
-        if (shelfRight > x + 6) {
-          ctx.strokeStyle = 'rgba(244, 63, 94, 0.85)'
-          ctx.setLineDash([3, 3])
-          ctx.beginPath()
-          ctx.moveTo(x, Math.round(y) + 0.5)
-          ctx.lineTo(shelfRight, Math.round(y) + 0.5)
-          ctx.stroke()
-          ctx.setLineDash([])
-        }
-      } else if (ex.type === 'LOW') {
-        // Upward emerald triangle below low wick
-        ctx.fillStyle = '#10b981'
-        ctx.beginPath()
-        ctx.moveTo(x - 5, y + 11)
-        ctx.lineTo(x + 5, y + 11)
-        ctx.lineTo(x, y + 4)
-        ctx.closePath()
-        ctx.fill()
-
-        // Horizontal shelf extending to the end of the session
-        const xEnd = ex.sessionEndTime != null
-          ? (xAt(ex.sessionEndTime) ?? (x + 130))
-          : (x + 130)
-        const shelfRight = Math.min(paneW, Math.max(x + 50, xEnd))
-
-        if (shelfRight > x + 6) {
-          ctx.strokeStyle = 'rgba(16, 185, 129, 0.85)'
-          ctx.setLineDash([3, 3])
-          ctx.beginPath()
-          ctx.moveTo(x, Math.round(y) + 0.5)
-          ctx.lineTo(shelfRight, Math.round(y) + 0.5)
-          ctx.stroke()
-          ctx.setLineDash([])
-        }
-      }
-    }
 
     if (timeframe !== '1D') {
-      // 3. Draw Late-Session Spikes (Precomputed from analytics cache)
-      const spikes = spikesRef.current
-
-      for (const sp of spikes) {
-        const chartT = toChartTime(sp.startTime, tz)
-        const xStart = timeToX(chart.timeScale(), chartT, candleTimes)
-        if (xStart == null || !Number.isFinite(xStart)) continue
-        const shelfW = Math.min(160, paneW - xStart)
-        if (shelfW <= 10) continue
-
-        const yH = series.priceToCoordinate(sp.spikeHigh)
-        const yL = series.priceToCoordinate(sp.spikeLow)
-        const yBase = series.priceToCoordinate(sp.spikeBase)
-
-        ctx.setLineDash([4, 3])
-        ctx.lineWidth = 1
-
-        // Draw Spike Peak (High or Low)
-        const peakY = sp.direction === 'UP' ? yH : yL
-        if (peakY != null && Number.isFinite(peakY) && peakY >= 0 && peakY <= paneH) {
-          ctx.strokeStyle = 'rgba(192, 132, 252, 0.85)' // Purple
-          ctx.beginPath()
-          ctx.moveTo(xStart, Math.round(peakY) + 0.5)
-          ctx.lineTo(xStart + shelfW, Math.round(peakY) + 0.5)
-          ctx.stroke()
-        }
-
-        // Draw Spike Base (acceptance reference)
-        if (yBase != null && Number.isFinite(yBase) && yBase >= 0 && yBase <= paneH) {
-          ctx.strokeStyle = 'rgba(236, 72, 153, 0.85)' // Pink/magenta
-          ctx.beginPath()
-          ctx.moveTo(xStart, Math.round(yBase) + 0.5)
-          ctx.lineTo(xStart + shelfW, Math.round(yBase) + 0.5)
-          ctx.stroke()
-        }
-        ctx.setLineDash([])
-      }
-
-      // 4. Draw Dalton Distribution Reference Points (Precomputed from analytics cache)
-      const distRefs = distRefsRef.current
-
-      for (const ref of distRefs) {
-        const xStart = ref.startTime != null
-          ? (timeToX(chart.timeScale(), toChartTime(ref.startTime, tz), candleTimes) ?? 0)
-          : 0
-        const xEnd = ref.endTime != null
-          ? (timeToX(chart.timeScale(), toChartTime(ref.endTime, tz), candleTimes) ?? paneW)
-          : paneW
-
-        if (xEnd < -20 || xStart > paneW + 20) continue
-        const lineLeft = Math.max(0, xStart)
-        const lineRight = Math.min(paneW, Math.max(xStart + 60, xEnd))
-
-        if (ref.dayType === 'DOUBLE_DISTRIBUTION' && ref.separationLevel != null) {
-          const ySep = series.priceToCoordinate(ref.separationLevel)
-          if (ySep != null && Number.isFinite(ySep) && ySep >= 0 && ySep <= paneH) {
-            ctx.strokeStyle = 'rgba(251, 191, 36, 0.8)' // Amber/Gold
-            ctx.setLineDash([4, 4])
-            ctx.lineWidth = 1.2
-            ctx.beginPath()
-            ctx.moveTo(lineLeft, Math.round(ySep) + 0.5)
-            ctx.lineTo(lineRight, Math.round(ySep) + 0.5)
-            ctx.stroke()
-            ctx.setLineDash([])
-          }
-        } else if ((ref.dayType === 'TREND_BULL' || ref.dayType === 'TREND_BEAR') && ref.trendMidpoint != null) {
-          const yMid = series.priceToCoordinate(ref.trendMidpoint)
-          if (yMid != null && Number.isFinite(yMid) && yMid >= 0 && yMid <= paneH) {
-            ctx.strokeStyle = 'rgba(56, 189, 248, 0.8)' // Sky Blue
-            ctx.setLineDash([5, 3])
-            ctx.lineWidth = 1.2
-            ctx.beginPath()
-            ctx.moveTo(lineLeft, Math.round(yMid) + 0.5)
-            ctx.lineTo(lineRight, Math.round(yMid) + 0.5)
-            ctx.stroke()
-            ctx.setLineDash([])
-          }
-        }
-      }
-
       // 5. Draw Abnormal News Moves & Highlight Reaction Bars (2-3 bars) with Sentence Badges (Clean desk: only when toggled ON)
       if (showNewsOnChart) {
         const newsMoves = newsMovesRef.current
@@ -5939,17 +5496,6 @@ export function TradingChart({
           return active
         })()
       } : undefined,
-      longTermMemories: memories.map((m) => ({
-        id: m.id,
-        instrument: m.instrument,
-        timeframe: m.timeframe,
-        priceLow: m.priceLow,
-        priceHigh: m.priceHigh,
-        purpose: m.purpose,
-        notes: m.notes,
-        status: m.status,
-        lastTriggeredAt: m.lastTriggeredAt,
-      })),
       savedWyckoffEdges,
       recentCandles: (candles || []).slice(-100).map((c) => ({
         time: typeof c.time === 'number' ? c.time : Math.floor(new Date(c.time).getTime() / 1000),
@@ -5979,7 +5525,6 @@ export function TradingChart({
     activeRangeBoxes,
     activeManualFrvps,
     showCandlestickPatterns,
-    memories,
     savedWyckoffEdges,
     timeframe,
   ])
@@ -6226,54 +5771,6 @@ export function TradingChart({
     },
     [trendlines, rangeBoxes, manualFrvps, livePrice, instrument, avwap5mBenchmark, timeframe, candles]
   )
-
-  const handleAskLeoAboutMemory = useCallback(
-    (mem: LeoLongTermMemory, price: number) => {
-      setLeoExternalPoints([
-        {
-          id: mem.id,
-          label: `🧠 Leo Memory: ${mem.purpose}`,
-          value: `Zone ${mem.priceLow.toFixed(2)} – ${mem.priceHigh.toFixed(2)} (Current: ${price.toFixed(2)})`,
-          tier: 'LT',
-          category: 'RANGE',
-          description: `Higher Timeframe Daily Long-Term Memory on ${mem.instrument}. Purpose: "${mem.purpose}". Price is currently visiting this level. Analyze whether this zone acts as support or resistance, verify order flow absorption/exhaustion, and outline action plan.`,
-        },
-      ])
-      setLeoPanelOpen(true)
-    },
-    []
-  )
-
-  // ── Monitor Live Price Against Leo Long-Term Memories & Play Chime ────────
-  const prevLivePriceRef = useRef<number | null>(null)
-  useEffect(() => {
-    if (livePrice == null || !Number.isFinite(livePrice)) return
-    const { triggered } = evaluatePriceAgainstMemories({
-      instrument,
-      currentPrice: livePrice,
-      previousPrice: prevLivePriceRef.current,
-      cooldownSeconds: 90,
-    })
-    prevLivePriceRef.current = livePrice
-
-    for (const mem of triggered) {
-      if (mem.alarmSoundEnabled) {
-        playTradingViewChime()
-      }
-      recordMemoryNotification({
-        memoryId: mem.id,
-        instrument: mem.instrument,
-        price: livePrice,
-        priceLow: mem.priceLow,
-        priceHigh: mem.priceHigh,
-        purpose: mem.purpose,
-      })
-      setActiveTradingViewAlarm({
-        memory: mem,
-        price: livePrice,
-      })
-    }
-  }, [livePrice, instrument])
 
   const handleDeleteTrendline = useCallback((id: string) => {
     setTrendlines((prev) => prev.filter((t) => t.id !== id))
@@ -8254,11 +7751,8 @@ export function TradingChart({
         }
       }
       if (vols.length === 0 || rawMax <= 0) return null
-      vols.sort((a, b) => a - b)
-      const p92 = vols[Math.min(vols.length - 1, Math.floor(vols.length * 0.92))] ?? rawMax
-      const median = vols[Math.floor(vols.length * 0.5)] ?? rawMax
-      // Prevent a single open/roll spike from squishing all normal session volume bars into flat lines
-      const effectiveMax = Math.max(1, Math.min(rawMax, Math.max(p92 * 1.3, median * 2.8)))
+      // Keep volume bars scaled cleanly so normal bars stay in the lower zone and only large volume spikes reach higher
+      const effectiveMax = Math.max(1, rawMax * 1.05)
       volCacheList = list
       volCacheKey = cacheKey
       volCacheMax = effectiveMax
@@ -8280,7 +7774,7 @@ export function TradingChart({
     })
     chart.priceScale('volume').applyOptions({
       scaleMargins: {
-        top: 0.62,   // volume histogram occupies bottom 38% of chart for tall, clear volume bars
+        top: 0.82,   // volume histogram occupies bottom 18% of chart for clear, non-blocking volume bars
         bottom: 0,
       },
       visible: false,
@@ -10291,26 +9785,6 @@ export function TradingChart({
     requestAnimationFrame(() => refreshSessionHighlights())
   }, [refreshSessionHighlights, timeframe])
 
-  /** Stretch (>1) or compress (<1) candlestick vertical height while keeping auto-fit tracking */
-  const adjustVerticalZoom = useCallback((factor: number) => {
-    const chart = chartRef.current
-    if (!chart) return
-    const nextMult = Math.max(0.25, Math.min(6.0, verticalScaleMultiplierRef.current * factor))
-    verticalScaleMultiplierRef.current = nextMult
-    setVerticalZoomDisplay(Number(nextMult.toFixed(2)))
-    try {
-      chart.priceScale('right').applyOptions({
-        autoScale: true,
-        scaleMargins: DESK_CHART_THEME.rightPriceScale.scaleMargins,
-      })
-      const ts = chart.timeScale()
-      const r = ts.getVisibleLogicalRange()
-      if (r) ts.setVisibleLogicalRange({ from: r.from, to: r.to })
-    } catch {
-      /* ignore */
-    }
-    requestAnimationFrame(() => refreshSessionHighlights())
-  }, [refreshSessionHighlights])
 
   /** Zoom horizontal time scale in (<1) or out (>1) anchored near the right edge */
   const adjustHorizontalZoom = useCallback((spanMultiplier: number) => {
@@ -12033,17 +11507,7 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
             rawDeskSess === 'Asia' ? 'Asia' : rawDeskSess === 'London' ? 'London' : rawDeskSess === 'New York' ? 'NYC' : 'Asia'
           const isCarriedFromOvernight = sessionOrigin !== 'NYC'
 
-          const rawBars: WyckoffBar[] = (candlesRef.current || []).map((c: any) => ({
-            time: typeof c.time === 'number' ? c.time : 0,
-            open: Number(c.open),
-            high: Number(c.high),
-            low: Number(c.low),
-            close: Number(c.close),
-            volume: Number(c.volume || 1),
-            cvd: typeof c.cvd === 'number' ? c.cvd : undefined,
-          }))
-
-          const tempTl: UserTrendline = {
+          const newTl: UserTrendline = {
             id: `tl-${Date.now()}`,
             type: 'TRENDLINE',
             p1: { time: p1.time, price: p1.price },
@@ -12052,21 +11516,8 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
             direction: inferredDir,
             sessionOrigin,
             isCarriedFromOvernight,
-          }
-
-          const wyckoffCtx: WyckoffChartContext = {
-            yesterday: yesterdayNyc,
-            overnight: overnightInventory,
-            frvp5d,
-            avwap5m: avwap5mBenchmark,
-          }
-
-          const evaluation = evaluateSpringOrUpthrustTrendline(tempTl, rawBars, wyckoffCtx)
-
-          const newTl: UserTrendline = {
-            ...tempTl,
-            color: evaluation.color,
-            label: `Trendline · ${evaluation.originType} (${evaluation.totalScore} pts)`,
+            color: '#38bdf8',
+            label: `Trendline ${activeTrendlines.length + 1}`,
           }
           setTrendlines((prev) => [...prev, newTl])
 
@@ -12074,8 +11525,8 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
           setDrawingToast({
             type: 'TRENDLINE',
             id: newTl.id,
-            label: `Trendline · ${evaluation.originType} (${evaluation.totalScore}/100 pts · Grade ${evaluation.grade})`,
-            summary: `${evaluation.summary} | Stop: ${evaluation.stopLoss.toFixed(1)} | Target: ${evaluation.targetZoneLabel} (${evaluation.targetPrice.toFixed(1)}, ${evaluation.rrRatio}R) · ${evaluation.is2RValid ? '✅ Valid >= 2R' : '⚠️ Filtered (< 2R)'}`,
+            label: newTl.label || 'Trendline',
+            summary: `P1: ${p1.price.toFixed(1)} → P2: ${p2.price.toFixed(1)} (${(p2.price - p1.price).toFixed(1)} pts)`,
           })
         } else if (activeDrawingTool === 'RANGE') {
           const tfLabel = timeframe.toUpperCase()
@@ -12476,23 +11927,6 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
           // Invalidate breakout cache so engine recalculates against the new adjusted line
           confirmedBreakoutsRef.current.delete(tlId)
 
-          const rawBars: WyckoffBar[] = (candlesRef.current || []).map((c: any) => ({
-            time: typeof c.time === 'number' ? c.time : 0,
-            open: Number(c.open),
-            high: Number(c.high),
-            low: Number(c.low),
-            close: Number(c.close),
-            volume: Number(c.volume || 1),
-            cvd: typeof c.cvd === 'number' ? c.cvd : undefined,
-          }))
-
-          const wyckoffCtx: WyckoffChartContext = {
-            yesterday: yesterdayNyc,
-            overnight: overnightInventory,
-            frvp5d,
-            avwap5m: avwap5mBenchmark,
-          }
-
           let evalSummary = ''
           let evalLabel = 'Trendline'
 
@@ -12502,27 +11936,14 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
               const pDiff = finalDragged.p2.price - finalDragged.p1.price
               const inferredDir: 'BEARISH' | 'BULLISH' = pDiff < 0 ? 'BEARISH' : 'BULLISH'
 
-              const evaluation = evaluateSpringOrUpthrustTrendline(
-                {
-                  ...t,
-                  p1: finalDragged.p1,
-                  p2: finalDragged.p2,
-                  direction: inferredDir,
-                },
-                rawBars,
-                wyckoffCtx
-              )
-
-              evalLabel = `Trendline · ${evaluation.originType} (${evaluation.totalScore} pts)`
-              evalSummary = `Updated: ${finalDragged.p1.price.toFixed(1)} → ${finalDragged.p2.price.toFixed(1)} | Target: ${evaluation.targetZoneLabel} (${evaluation.targetPrice.toFixed(1)}, ${evaluation.rrRatio}R)`
+              evalLabel = t.label || 'Trendline'
+              evalSummary = `Updated: ${finalDragged.p1.price.toFixed(1)} → ${finalDragged.p2.price.toFixed(1)} (${(finalDragged.p2.price - finalDragged.p1.price).toFixed(1)} pts)`
 
               return {
                 ...t,
                 p1: finalDragged.p1,
                 p2: finalDragged.p2,
                 direction: inferredDir,
-                label: evalLabel,
-                color: evaluation.color,
               }
             })
           )
@@ -14785,25 +14206,20 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
                   </div>
                   <div className="space-y-1">
                     {activeTrendlines.map((tl) => {
-                      const isSpring = tl.label?.includes('Spring') || tl.p2.price >= tl.p1.price
                       return (
                         <div
                           key={tl.id}
                           className="group flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-800/40 hover:bg-slate-800/80 border border-slate-700/40 transition"
                         >
                           <div className="min-w-0 flex-1">
-                            <div
-                              className={`flex items-center gap-1 font-semibold truncate ${
-                                isSpring ? 'text-emerald-300' : 'text-rose-300'
-                              }`}
-                            >
+                            <div className="flex items-center gap-1 font-semibold truncate text-sky-300">
                               <span>📐</span>
                               <span className="truncate">
-                                {tl.label || (isSpring ? 'Trendline · Spring' : 'Trendline · Upthrust')}
+                                {tl.label || 'Trendline'}
                               </span>
                             </div>
                             <div className="text-[10px] text-slate-400 truncate">
-                              {tl?.p1?.price != null ? tl.p1.price.toLocaleString() : '—'} → {tl?.p2?.price != null ? tl.p2.price.toLocaleString() : '—'} ({isSpring ? 'Spring Origin' : 'Upthrust Origin'})
+                              {tl?.p1?.price != null ? tl.p1.price.toLocaleString() : '—'} → {tl?.p2?.price != null ? tl.p2.price.toLocaleString() : '—'}
                             </div>
                           </div>
                         <div className="flex items-center gap-1 shrink-0">
@@ -15231,195 +14647,6 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
           </div>
         )}
 
-        {/* Leo Long-Term Memory Activation Modal */}
-        {memoryModalOpen && targetMemoryRange && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-            <div className="w-full max-w-md rounded-xl border border-purple-500/60 bg-[#161b22] p-5 shadow-2xl space-y-4 text-gray-200">
-              <div className="flex items-center justify-between border-b border-[#30363d] pb-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-xl">🧠</span>
-                  <div>
-                    <h3 className="text-sm font-bold text-white">Activate Leo Long-Term Memory</h3>
-                    <p className="text-[11px] text-gray-400">Save Higher Timeframe level to Leo's memory with TradingView alarms</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMemoryModalOpen(false)
-                    setTargetMemoryRange(null)
-                  }}
-                  className="text-gray-400 hover:text-white text-xs font-bold"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div className="space-y-3 text-xs">
-                <div>
-                  <label className="block text-gray-400 text-[11px] font-semibold mb-1">
-                    Level / Range Boundaries ({instrument})
-                  </label>
-                  <div className="flex items-center gap-2 font-mono">
-                    <input
-                      type="number"
-                      value={targetMemoryRange.priceLow}
-                      onChange={(e) =>
-                        setTargetMemoryRange((prev) => prev ? { ...prev, priceLow: Number(e.target.value) } : null)
-                      }
-                      className="w-full rounded bg-[#0d1117] border border-[#30363d] px-2.5 py-1.5 text-white"
-                      placeholder="Low"
-                    />
-                    <span className="text-gray-500">to</span>
-                    <input
-                      type="number"
-                      value={targetMemoryRange.priceHigh}
-                      onChange={(e) =>
-                        setTargetMemoryRange((prev) => prev ? { ...prev, priceHigh: Number(e.target.value) } : null)
-                      }
-                      className="w-full rounded bg-[#0d1117] border border-[#30363d] px-2.5 py-1.5 text-white"
-                      placeholder="High"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-gray-400 text-[11px] font-semibold mb-1">
-                    Observation Purpose &amp; Note for Leo
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={targetMemoryRange.purpose}
-                    onChange={(e) =>
-                      setTargetMemoryRange((prev) => prev ? { ...prev, purpose: e.target.value } : null)
-                    }
-                    className="w-full rounded bg-[#0d1117] border border-[#30363d] p-2 text-white placeholder-gray-500 text-xs resize-none"
-                    placeholder="e.g. Keep eyes on this level when price visits to see if support or resistance"
-                  />
-                  <p className="text-[10px] text-gray-500 mt-1">
-                    Leo will memorize this macro level, monitor order flow &amp; volume on approach, and provide HTF commentary.
-                  </p>
-                </div>
-
-                <div className="rounded-lg bg-[#0d1117] p-3 border border-[#30363d] space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-amber-300 font-semibold flex items-center gap-1.5">
-                      <span>🔔</span>
-                      <span>TradingView-Style Chime Alarm</span>
-                    </span>
-                    <span className="text-[10px] text-emerald-400 font-bold uppercase">Armed</span>
-                  </div>
-                  <p className="text-[10px] text-gray-400">
-                    Dual-tone audio chime will sound the instant price touches or enters this range.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#30363d]">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMemoryModalOpen(false)
-                    setTargetMemoryRange(null)
-                  }}
-                  className="px-3 py-1.5 rounded border border-[#30363d] text-xs font-semibold text-gray-400 hover:text-white"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!targetMemoryRange) return
-                    const low = Math.min(targetMemoryRange.priceLow, targetMemoryRange.priceHigh)
-                    const high = Math.max(targetMemoryRange.priceLow, targetMemoryRange.priceHigh)
-                    const memory: LeoLongTermMemory = {
-                      id: `mem-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                      instrument,
-                      timeframe,
-                      priceLow: low,
-                      priceHigh: high,
-                      purpose: targetMemoryRange.purpose || 'Keep eyes on this level when price visits to see if support or resistance',
-                      status: 'ACTIVE',
-                      createdAt: new Date().toISOString(),
-                      triggerCount: 0,
-                      sourceDrawingId: targetMemoryRange.id,
-                      alarmSoundEnabled: true,
-                      isLongTerm: true,
-                    }
-                    saveLongTermMemory(memory)
-                    // Tag range box
-                    setRangeBoxes((prev) =>
-                      prev.map((b) =>
-                        b.id === targetMemoryRange.id
-                          ? {
-                              ...b,
-                              isMemory: true,
-                              memoryPurpose: memory.purpose,
-                              color: '#f59e0b',
-                            }
-                          : b
-                      )
-                    )
-                    playTradingViewChime()
-                    setMemoryModalOpen(false)
-                    setTargetMemoryRange(null)
-                  }}
-                  className="px-3.5 py-1.5 rounded bg-purple-600 hover:bg-purple-500 text-xs font-bold text-white shadow-md flex items-center gap-1.5"
-                >
-                  <span>🧠</span>
-                  <span>Save to Long-Term Memory</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TradingView-Style Live Alarm Toast */}
-        {activeTradingViewAlarm && (
-          <div className="absolute top-16 right-6 z-50 max-w-sm rounded-xl border border-amber-500/70 bg-slate-900/95 p-4 shadow-2xl backdrop-blur-md text-slate-100 flex items-start gap-3 animate-in slide-in-from-top-4 duration-200">
-            <span className="text-2xl animate-bounce">🔔</span>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-bold text-amber-300 uppercase tracking-wider">
-                  TradingView Alarm Triggered
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setActiveTradingViewAlarm(null)}
-                  className="text-slate-400 hover:text-white text-xs font-bold px-1"
-                >
-                  ✕
-                </button>
-              </div>
-              <div className="mt-1 font-mono text-sm font-bold text-white">
-                {activeTradingViewAlarm.memory.instrument} visited @ ${activeTradingViewAlarm.price.toFixed(2)}
-              </div>
-              <p className="mt-1 text-xs text-gray-300 italic line-clamp-2">
-                &ldquo;{activeTradingViewAlarm.memory.purpose}&rdquo;
-              </p>
-              <div className="mt-2.5 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleAskLeoAboutMemory(activeTradingViewAlarm.memory, activeTradingViewAlarm.price)
-                    setActiveTradingViewAlarm(null)
-                  }}
-                  className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-semibold text-xs border border-amber-500/40 transition flex items-center gap-1.5"
-                >
-                  <span>🤖</span>
-                  <span>Consult Leo on Level Visit</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTradingViewAlarm(null)}
-                  className="px-2 py-1 rounded text-slate-400 hover:text-slate-200 text-xs transition"
-                >
-                  Dismiss
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {activeNewsTooltip && (
           <div
@@ -16066,23 +15293,6 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
             title="Zoom In Horizontally (Larger, wider candlesticks)"
           >
             +
-          </button>
-          <span className="text-zinc-700 px-0.5">|</span>
-          <button
-            type="button"
-            onClick={() => adjustVerticalZoom(1.18)}
-            className="px-1.5 py-0.5 rounded hover:bg-zinc-800 hover:text-emerald-300 transition cursor-pointer"
-            title="Make Bars Taller Vertically (Or scroll mouse wheel over the right price scale / Alt+Wheel)"
-          >
-            ↕ Taller
-          </button>
-          <button
-            type="button"
-            onClick={() => adjustVerticalZoom(0.85)}
-            className="px-1.5 py-0.5 rounded hover:bg-zinc-800 hover:text-amber-300 transition cursor-pointer"
-            title="Make Bars Shorter Vertically (Or scroll mouse wheel over the right price scale / Alt+Wheel)"
-          >
-            ↕ Shorter
           </button>
           <span className="text-zinc-700 px-0.5">|</span>
           <button
