@@ -496,7 +496,7 @@ export function SessionBanner({
 
   if (!gate) {
     return (
-      <div className="rounded-lg border border-[#30363d] bg-[#161b22] px-3 py-2 text-xs text-gray-500 font-mono">
+      <div className="rounded-md border border-[#30363d] bg-[#161b22] px-2.5 py-1 text-[11px] text-gray-500 font-mono">
         <span suppressHydrationWarning>
           {mounted && clockNow ? `${clockNow} ${clockLabel} · ` : ''}
         </span>
@@ -525,21 +525,21 @@ export function SessionBanner({
 
   return (
     <>
-      <div className={`rounded-lg border px-3 py-2 text-xs flex flex-wrap items-center gap-3 ${tone}`}>
+      <div className={`rounded-md border px-2.5 py-1 text-[11px] flex flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap ${tone}`}>
         {currentPhaseLabel && currentPhaseLabel !== 'CLOSED' && currentPhaseLabel !== 'ASIA' && (
-          <span className="font-semibold tracking-wide uppercase flex items-center gap-1.5">
+          <span className="font-semibold tracking-wide uppercase flex items-center gap-1 shrink-0">
             {currentPhaseLabel}
           </span>
         )}
         <span
-          className="text-gray-400 font-mono tabular-nums min-w-[5.5rem]"
+          className="text-gray-400 font-mono tabular-nums shrink-0"
           title="Montreal time (America/Toronto)"
           suppressHydrationWarning
         >
           {mounted && clockNow ? `${clockNow} ${clockLabel}` : `—:—:— ${clockLabel}`}
         </span>
         {activeBannerInstrument && (
-          <span className="rounded bg-white/10 px-2 py-0.5 font-medium">
+          <span className="rounded bg-white/10 px-1.5 py-0.5 font-medium shrink-0">
             {liveDeskContractLabel(activeBannerInstrument)}
           </span>
         )}

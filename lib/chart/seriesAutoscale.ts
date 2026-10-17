@@ -59,7 +59,8 @@ export function sessionFocusHighLow(
 export function paddedCandlePriceRange(
   minValue: number,
   maxValue: number,
-  extraPrices: number[] = []
+  extraPrices: number[] = [],
+  verticalZoomMultiplier = 1
 ): { priceRange: { minValue: number; maxValue: number } } | null {
   let min = minValue
   let max = maxValue
@@ -70,11 +71,22 @@ export function paddedCandlePriceRange(
     }
   }
   if (!(max > min) || !Number.isFinite(min) || !Number.isFinite(max)) return null
-  const pad = Math.max((max - min) * 0.08, Math.abs(max) * 0.0004)
+  const span = max - min
+  // Tight 2% breathing room — rightPriceScale.scaleMargins already handles top/bottom margins.
+  // Avoid price-proportional padding (like 0.0004 * price) which squishes intraday bars into a flat range.
+  const pad = Math.max(span * 0.02, 1e-4)
+  let low = min - pad
+  let high = max + pad
+  if (Number.isFinite(verticalZoomMultiplier) && verticalZoomMultiplier !== 1 && verticalZoomMultiplier > 0.15) {
+    const mid = (low + high) / 2
+    const half = ((high - low) / 2) / verticalZoomMultiplier
+    low = mid - half
+    high = mid + half
+  }
   return {
     priceRange: {
-      minValue: min - pad,
-      maxValue: max + pad,
+      minValue: low,
+      maxValue: high,
     },
   }
 }

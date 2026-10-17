@@ -255,7 +255,9 @@ const Dow15mFailHudPanel = (_props: any): any => null
 import {
   DESK_BAR_SPACING,
   DESK_CANDLE_DOWN,
+  DESK_CANDLE_DOWN_BORDER,
   DESK_CANDLE_UP,
+  DESK_CANDLE_UP_BORDER,
   DESK_CHART_THEME,
   ensureVisibleCandleRange,
   getDeskChartThemeOptions,
@@ -263,7 +265,6 @@ import {
 import {
   lockToCandleAutoscale,
   paddedCandlePriceRange,
-  sessionFocusHighLow,
 } from '@/lib/chart/seriesAutoscale'
 import {
   isDeskInstrument,
@@ -1896,6 +1897,9 @@ export function TradingChart({
 
   const [candles, setCandles] = useState<OHLCV[]>([])
   const candlesRef = useRef<OHLCV[]>([])
+  const orderedCandlesRef = useRef<OHLCV[]>([])
+  const verticalScaleMultiplierRef = useRef<number>(1)
+  const [verticalZoomDisplay, setVerticalZoomDisplay] = useState<number>(1)
   const instrumentRef = useRef<Instrument>(instrument)
   instrumentRef.current = instrument
   const [armedSituations, setArmedSituations] = useState<ArmedRule[]>([])
@@ -8137,7 +8141,7 @@ export function TradingChart({
     let scaleCacheBounds: { min: number; max: number } | null = null
 
     const candleAutoscale = () => {
-      const list = candlesRef.current
+      const list = orderedCandlesRef.current.length ? orderedCandlesRef.current : candlesRef.current
       if (!list.length) return null
 
       let startIndex = 0
@@ -8148,54 +8152,45 @@ export function TradingChart({
           startIndex = Math.max(0, Math.floor(range.from))
           endIndex = Math.min(list.length - 1, Math.ceil(range.to))
         } else {
-          startIndex = Math.max(0, list.length - 60)
+          startIndex = Math.max(0, list.length - 120)
         }
       } catch {
-        startIndex = Math.max(0, list.length - 60)
+        startIndex = Math.max(0, list.length - 120)
       }
 
       const edge = list[endIndex]
+      const vMult = verticalScaleMultiplierRef.current
       const cacheKey =
-        `${startIndex}|${endIndex}|${list.length}|${instrumentRef.current}` +
+        `${startIndex}|${endIndex}|${list.length}|${instrumentRef.current}|${vMult.toFixed(3)}` +
         `|${edge ? `${edge.time}:${edge.high}:${edge.low}` : ''}`
       if (scaleCacheList === list && scaleCacheKey === cacheKey && scaleCacheBounds) {
-        return paddedCandlePriceRange(scaleCacheBounds.min, scaleCacheBounds.max)
+        return paddedCandlePriceRange(scaleCacheBounds.min, scaleCacheBounds.max, [], vMult)
       }
 
       let min = Infinity
       let max = -Infinity
-      const visibleBars: Array<{ time: number; high: number; low: number }> = []
       for (let i = startIndex; i <= endIndex; i++) {
         const c = list[i]
         if (c) {
-          visibleBars.push({ time: c.time as number, high: c.high, low: c.low })
           if (Number.isFinite(c.low) && c.low > 0) min = Math.min(min, c.low)
           if (Number.isFinite(c.high) && c.high > 0) max = Math.max(max, c.high)
-        }
-      }
-
-      if (timeframe !== '1D') {
-        const session = sessionFocusHighLow(visibleBars, instrumentRef.current)
-        if (session) {
-          min = session.min
-          max = session.max
         }
       }
 
       scaleCacheList = list
       scaleCacheKey = cacheKey
       scaleCacheBounds = { min, max }
-      return paddedCandlePriceRange(min, max)
+      return paddedCandlePriceRange(min, max, [], vMult)
     }
 
     const candleSeries = chart.addCandlestickSeries({
       upColor: DESK_CANDLE_UP,
       downColor: DESK_CANDLE_DOWN,
-      borderUpColor: DESK_CANDLE_UP,
-      borderDownColor: DESK_CANDLE_DOWN,
-      wickUpColor: DESK_CANDLE_UP,
-      wickDownColor: DESK_CANDLE_DOWN,
-      borderVisible: false,
+      borderUpColor: DESK_CANDLE_UP_BORDER,
+      borderDownColor: DESK_CANDLE_DOWN_BORDER,
+      wickUpColor: DESK_CANDLE_UP_BORDER,
+      wickDownColor: DESK_CANDLE_DOWN_BORDER,
+      borderVisible: true,
       wickVisible: true,
       lastValueVisible: true,
       priceLineVisible: true,
@@ -8217,16 +8212,68 @@ export function TradingChart({
       ...ignoreScale,
     })
 
+    let volCacheList: OHLCV[] | null = null
+    let volCacheKey = ''
+    let volCacheMax = 0
+
+    const volumeAutoscale = () => {
+      const list = orderedCandlesRef.current.length ? orderedCandlesRef.current : candlesRef.current
+      if (!list.length) return null
+      let startIndex = 0
+      let endIndex = list.length - 1
+      try {
+        const range = chart.timeScale().getVisibleLogicalRange()
+        if (range) {
+          startIndex = Math.max(0, Math.floor(range.from))
+          endIndex = Math.min(list.length - 1, Math.ceil(range.to))
+        } else {
+          startIndex = Math.max(0, list.length - 120)
+        }
+      } catch {
+        startIndex = Math.max(0, list.length - 120)
+      }
+      const edge = list[endIndex]
+      const cacheKey = `${startIndex}|${endIndex}|${list.length}|${edge ? `${edge.time}:${edge.volume ?? 0}` : ''}`
+      if (volCacheList === list && volCacheKey === cacheKey && volCacheMax > 0) {
+        return { priceRange: { minValue: 0, maxValue: volCacheMax } }
+      }
+      const vols: number[] = []
+      let rawMax = 0
+      for (let i = startIndex; i <= endIndex; i++) {
+        const v = Number(list[i]?.volume ?? 0)
+        if (Number.isFinite(v) && v > 0) {
+          vols.push(v)
+          if (v > rawMax) rawMax = v
+        }
+      }
+      if (vols.length === 0 || rawMax <= 0) return null
+      vols.sort((a, b) => a - b)
+      const p92 = vols[Math.min(vols.length - 1, Math.floor(vols.length * 0.92))] ?? rawMax
+      const median = vols[Math.floor(vols.length * 0.5)] ?? rawMax
+      // Prevent a single open/roll spike from squishing all normal session volume bars into flat lines
+      const effectiveMax = Math.max(1, Math.min(rawMax, Math.max(p92 * 1.3, median * 2.8)))
+      volCacheList = list
+      volCacheKey = cacheKey
+      volCacheMax = effectiveMax
+      return {
+        priceRange: {
+          minValue: 0,
+          maxValue: effectiveMax,
+        },
+      }
+    }
+
     const volumeSeries = chart.addHistogramSeries({
-      color: '#26a69a',
+      color: '#10b981',
       priceFormat: { type: 'volume' },
       priceScaleId: 'volume',
       lastValueVisible: false,
       priceLineVisible: false,
+      autoscaleInfoProvider: volumeAutoscale,
     })
     chart.priceScale('volume').applyOptions({
       scaleMargins: {
-        top: 0.78,   // bars occupy bottom 22% of chart (was 18%)
+        top: 0.62,   // volume histogram occupies bottom 38% of chart for tall, clear volume bars
         bottom: 0,
       },
       visible: false,
@@ -8548,15 +8595,23 @@ export function TradingChart({
       }
     }
 
-    // Sync overlay coordinates on chart scroll/zoom — immediate execution for 0-lag 60fps tracking
-    const onScroll = () => {
+    // Sync overlay coordinates on chart scroll/zoom — coalesced to 1x per animation frame for buttery 60fps TradingView smoothness
+    let scrollRaf = 0
+    const scheduleOverlaySync = () => {
       pokeOverlayLayoutRef.current()
       syncCvdFromMainRef.current()
-      paintFrvpHistogramRef.current?.()
-      paintExcessesAndRoundedRef.current?.()
-      paintUserDrawingsRef.current?.()
-      paintNewsMarkersRef.current?.()
-      updateCvdUnderCursor()
+      if (scrollRaf) return
+      scrollRaf = requestAnimationFrame(() => {
+        scrollRaf = 0
+        paintFrvpHistogramRef.current?.()
+        paintExcessesAndRoundedRef.current?.()
+        paintUserDrawingsRef.current?.()
+        paintNewsMarkersRef.current?.()
+        updateCvdUnderCursor()
+      })
+    }
+    const onScroll = () => {
+      scheduleOverlaySync()
     }
     chart.timeScale().subscribeVisibleLogicalRangeChange(onScroll)
 
@@ -8590,9 +8645,11 @@ export function TradingChart({
     })
     ro.observe(containerRef.current)
 
-    // Intercept wheel events across the chart canvas and toolbar to zoom the chart time scale,
-    // but NEVER intercept wheel events when scrolling inside the Leo AI Assistant interface,
-    // dropdowns, or modals.
+    // TradingView-style interactive wheel handler:
+    // 1. Never intercept wheel events inside Leo AI Assistant, dropdowns, or modals.
+    // 2. When hovering over the right price axis (or holding Alt/Ctrl), wheel scales candle height vertically!
+    // 3. When hovering over the chart canvas, let Lightweight Charts' native 60fps cursor-centered wheel zoom run unhindered.
+    // 4. When hovering over the top toolbar, wheel zooms the chart time scale smoothly.
     const onChartWheel = (e: WheelEvent) => {
       const target = e.target as HTMLElement | null
       if (
@@ -8605,11 +8662,50 @@ export function TradingChart({
         return
       }
 
-      e.preventDefault()
-      e.stopPropagation()
       if (!chartRef.current) return
       const delta = e.deltaY
       if (Math.abs(delta) < 1) return
+
+      const mainEl = containerRef.current
+      const cvdEl = cvdContainerRef.current
+      const inMainCanvas = !!(mainEl && target && mainEl.contains(target))
+      const inCvdCanvas = !!(cvdEl && target && cvdEl.contains(target))
+
+      if (inMainCanvas && mainEl) {
+        const rect = mainEl.getBoundingClientRect()
+        let priceAxisW = 78
+        try {
+          priceAxisW = chartRef.current.priceScale('right').width() || 78
+        } catch {}
+        const isOverPriceAxis = rect.right - e.clientX <= priceAxisW + 6
+        if (isOverPriceAxis || e.altKey || e.ctrlKey) {
+          e.preventDefault()
+          e.stopPropagation()
+          const step = delta < 0 ? 1.12 : 0.89
+          const nextMult = Math.max(0.25, Math.min(6.0, verticalScaleMultiplierRef.current * step))
+          verticalScaleMultiplierRef.current = nextMult
+          setVerticalZoomDisplay(Number(nextMult.toFixed(2)))
+          try {
+            chartRef.current.priceScale('right').applyOptions({ autoScale: true })
+            const ts = chartRef.current.timeScale()
+            const r = ts.getVisibleLogicalRange()
+            if (r) ts.setVisibleLogicalRange({ from: r.from, to: r.to })
+          } catch {}
+          scheduleOverlaySync()
+          return
+        }
+        // Let Lightweight Charts' native cursor-centered 60fps wheel zoom handle the main canvas directly!
+        return
+      }
+
+      if (inCvdCanvas) {
+        // Let Lightweight Charts' native wheel zoom handle CVD canvas (1:1 synced to main)
+        return
+      }
+
+      // Wheel over toolbar / outer chrome: zoom time scale smoothly
+      e.preventDefault()
+      e.stopPropagation()
       const ts = chartRef.current.timeScale()
       try {
         const range = ts.getVisibleLogicalRange()
@@ -8621,13 +8717,7 @@ export function TradingChart({
           const newTo = range.to + change / 2
           if (newTo - newFrom > 2) {
             ts.setVisibleLogicalRange({ from: newFrom, to: newTo })
-            pokeOverlayLayoutRef.current()
-            relinkCvdToPriceRef.current()
-            paintFrvpHistogramRef.current?.()
-            paintExcessesAndRoundedRef.current?.()
-            paintUserDrawingsRef.current?.()
-            paintNewsMarkersRef.current?.()
-            updateCvdUnderCursor()
+            scheduleOverlaySync()
           }
         }
       } catch {
@@ -8635,13 +8725,11 @@ export function TradingChart({
       }
     }
 
-    const wrapperEl = outerWrapperRef.current
     const headerEl = chartHeaderRef.current
-    const frameEl = chartFrameRef.current
+    const mainCanvasEl = containerRef.current
 
-    wrapperEl?.addEventListener('wheel', onChartWheel, { passive: false })
     headerEl?.addEventListener('wheel', onChartWheel, { passive: false })
-    frameEl?.addEventListener('wheel', onChartWheel, { passive: false })
+    mainCanvasEl?.addEventListener('wheel', onChartWheel, { passive: false, capture: true })
 
     const onPricePointer = () => {
       relinkCvdToPriceRef.current()
@@ -8649,6 +8737,10 @@ export function TradingChart({
     }
     const onPointerMove = (e: MouseEvent) => {
       lastPointerPosRef.current = { x: e.clientX, y: e.clientY }
+      // When dragging (e.g. vertical price-axis drag or manual pan), keep overlays 1:1 synced at 60fps
+      if (e.buttons === 1) {
+        scheduleOverlaySync()
+      }
     }
     const onPointerLeave = () => {
       lastPointerPosRef.current = null
@@ -8658,10 +8750,10 @@ export function TradingChart({
     containerRef.current.addEventListener('mousedown', onPricePointer)
 
     return () => {
+      if (scrollRaf) cancelAnimationFrame(scrollRaf)
       ro.disconnect()
-      wrapperEl?.removeEventListener('wheel', onChartWheel)
       headerEl?.removeEventListener('wheel', onChartWheel)
-      frameEl?.removeEventListener('wheel', onChartWheel)
+      mainCanvasEl?.removeEventListener('wheel', onChartWheel, { capture: true } as any)
       containerRef.current?.removeEventListener('mousemove', onPointerMove)
       containerRef.current?.removeEventListener('mouseleave', onPointerLeave)
       containerRef.current?.removeEventListener('mousedown', onPricePointer)
@@ -9497,6 +9589,7 @@ export function TradingChart({
     const ordered = normalizeCandleTimes(candles, timeframe, instrument)
     const tz = chartTzRef.current
     const seenTimes = new Set<string>()
+    const dedupedOrdered: OHLCV[] = []
     const candleData: CandlestickData[] = []
     const volumeData: { time: Time; value: number; color: string }[] = []
     const cvdRaw = computeCvdCandleBars(
@@ -9512,11 +9605,14 @@ export function TradingChart({
     const cvdByUnix = new Map<number, (typeof cvdRaw)[number]>()
     for (const b of cvdRaw) cvdByUnix.set(b.time, b)
     const shiftedCvd: CandlestickData[] = []
+    let rollingVolSum = 0
+    const rollingVolWindow: number[] = []
     for (const c of ordered) {
       const t = toSeriesTime(c.time as number, timeframe, tz)
       const key = isBusinessDay(t) ? `${t.year}-${t.month}-${t.day}` : String(t)
       if (!seenTimes.has(key)) {
         seenTimes.add(key)
+        dedupedOrdered.push(c)
         candleData.push({
           time: t,
           open: c.open,
@@ -9527,10 +9623,23 @@ export function TradingChart({
         const isUp = c.close >= c.open
         const rawVol = Number.isFinite(c.volume) ? (c.volume ?? 0) : 0
         const volVal = rawVol > 0 ? rawVol : (timeframe !== '1D' ? 1 : 0)
+        const avgVol = rollingVolWindow.length > 0 ? rollingVolSum / rollingVolWindow.length : volVal
+        const isHighVol = rollingVolWindow.length >= 5 && avgVol > 0 && volVal >= avgVol * 1.5
+        rollingVolWindow.push(volVal)
+        rollingVolSum += volVal
+        if (rollingVolWindow.length > 20) {
+          rollingVolSum -= rollingVolWindow.shift() ?? 0
+        }
         volumeData.push({
           time: t,
           value: volVal,
-          color: isUp ? 'rgba(8, 153, 129, 0.7)' : 'rgba(242, 54, 69, 0.7)',
+          color: isUp
+            ? isHighVol
+              ? 'rgba(52, 211, 153, 0.96)'
+              : 'rgba(16, 185, 129, 0.78)'
+            : isHighVol
+              ? 'rgba(251, 113, 133, 0.96)'
+              : 'rgba(244, 63, 94, 0.78)',
         })
         const d = cvdByUnix.get(c.time as number)
         shiftedCvd.push({
@@ -9542,6 +9651,7 @@ export function TradingChart({
         })
       }
     }
+    orderedCandlesRef.current = dedupedOrdered
     candleData.sort((a, b) => chartTimeToUnix(a.time) - chartTimeToUnix(b.time))
     volumeData.sort((a, b) => chartTimeToUnix(a.time) - chartTimeToUnix(b.time))
     shiftedCvd.sort((a, b) => chartTimeToUnix(a.time) - chartTimeToUnix(b.time))
@@ -10148,12 +10258,14 @@ export function TradingChart({
   const resetPriceScale = useCallback(() => {
     const chart = chartRef.current
     if (!chart) return
+    verticalScaleMultiplierRef.current = 1
+    setVerticalZoomDisplay(1)
     chart.priceScale('right').applyOptions({
       autoScale: true,
       scaleMargins: DESK_CHART_THEME.rightPriceScale.scaleMargins,
     })
-    const list = candlesRef.current
-    const width = containerRef.current?.clientWidth ?? 900
+    const list = orderedCandlesRef.current.length ? orderedCandlesRef.current : candlesRef.current
+    const width = containerRef.current?.clientWidth ?? 1280
     const isDaily = timeframe === '1D'
     try {
       const ts = chart.timeScale()
@@ -10166,6 +10278,52 @@ export function TradingChart({
       const defaultRange = deskVisibleLogicalRange(list.length, width, timeframe)
       ts.setVisibleLogicalRange(defaultRange)
       saveDeskViewport(instrumentRef.current, defaultRange, list.length, timeframe)
+    } catch {
+      /* ignore */
+    }
+    requestAnimationFrame(() => refreshSessionHighlights())
+  }, [refreshSessionHighlights, timeframe])
+
+  /** Stretch (>1) or compress (<1) candlestick vertical height while keeping auto-fit tracking */
+  const adjustVerticalZoom = useCallback((factor: number) => {
+    const chart = chartRef.current
+    if (!chart) return
+    const nextMult = Math.max(0.25, Math.min(6.0, verticalScaleMultiplierRef.current * factor))
+    verticalScaleMultiplierRef.current = nextMult
+    setVerticalZoomDisplay(Number(nextMult.toFixed(2)))
+    try {
+      chart.priceScale('right').applyOptions({
+        autoScale: true,
+        scaleMargins: DESK_CHART_THEME.rightPriceScale.scaleMargins,
+      })
+      const ts = chart.timeScale()
+      const r = ts.getVisibleLogicalRange()
+      if (r) ts.setVisibleLogicalRange({ from: r.from, to: r.to })
+    } catch {
+      /* ignore */
+    }
+    requestAnimationFrame(() => refreshSessionHighlights())
+  }, [refreshSessionHighlights])
+
+  /** Zoom horizontal time scale in (<1) or out (>1) anchored near the right edge */
+  const adjustHorizontalZoom = useCallback((spanMultiplier: number) => {
+    const chart = chartRef.current
+    if (!chart) return
+    try {
+      const ts = chart.timeScale()
+      const range = ts.getVisibleLogicalRange()
+      if (!range) return
+      const currentSpan = Math.max(6, range.to - range.from)
+      const nextSpan = Math.max(10, Math.min(2500, currentSpan * spanMultiplier))
+      // Anchor 85% toward the right edge (live price side) like TradingView zoom buttons
+      const anchor = range.from + currentSpan * 0.85
+      const newFrom = anchor - nextSpan * 0.85
+      const newTo = anchor + nextSpan * 0.15
+      ts.setVisibleLogicalRange({ from: newFrom, to: newTo })
+      const list = orderedCandlesRef.current.length ? orderedCandlesRef.current : candlesRef.current
+      if (list.length > 1) {
+        saveDeskViewport(instrumentRef.current, { from: newFrom, to: newTo }, list.length, timeframe)
+      }
     } catch {
       /* ignore */
     }
@@ -10203,7 +10361,7 @@ export function TradingChart({
         if (didFitRef.current && chartRef.current) {
           try {
             const range = chartRef.current.timeScale().getVisibleLogicalRange()
-            const list = candlesRef.current
+            const list = orderedCandlesRef.current.length ? orderedCandlesRef.current : candlesRef.current
             if (range && list.length > 1) {
               saveDeskViewport(instrumentRef.current, range, list.length, timeframe)
             }
@@ -10211,7 +10369,7 @@ export function TradingChart({
             /* ignore */
           }
         }
-      }, 16)
+      }, 32)
     }
 
     const beginInteract = () => {
@@ -10234,7 +10392,6 @@ export function TradingChart({
     const onRangeChange = () => {
       if (!didFitRef.current) return
       if (host) host.style.opacity = '1'
-      paintNow()
       scheduleSettle()
     }
     ts.subscribeVisibleLogicalRangeChange(onRangeChange)
@@ -10319,8 +10476,8 @@ export function TradingChart({
             const volTime = toSeriesTime(b.time as number, timeframe, chartTzRef.current)
             const volColor =
               b.close >= b.open
-                ? 'rgba(8, 153, 129, 0.7)'
-                : 'rgba(242, 54, 69, 0.7)'
+                ? 'rgba(16, 185, 129, 0.78)'
+                : 'rgba(244, 63, 94, 0.78)'
             try {
               volumeSeriesRef.current.update({
                 time: volTime,
@@ -10377,8 +10534,8 @@ export function TradingChart({
             const volTime = toSeriesTime(bar.time as number, timeframe, chartTzRef.current)
             const volColor =
               bar.close >= bar.open
-                ? 'rgba(8, 153, 129, 0.7)'
-                : 'rgba(242, 54, 69, 0.7)'
+                ? 'rgba(16, 185, 129, 0.78)'
+                : 'rgba(244, 63, 94, 0.78)'
             volumeSeriesRef.current.update({
               time: volTime,
               value: bar.volume ?? 0,
@@ -10551,7 +10708,7 @@ export function TradingChart({
               volumeSeriesRef.current.update({
                 time: volTime,
                 value: newBar.volume ?? 0,
-                color: 'rgba(8, 153, 129, 0.7)',
+                color: 'rgba(16, 185, 129, 0.78)',
               } as any)
             } catch {
               /* ignore */
@@ -10580,8 +10737,8 @@ export function TradingChart({
           const volTime = toSeriesTime(updated.time as number, '1D', chartTzRef.current)
           const volColor =
             updated.close >= updated.open
-              ? 'rgba(8, 153, 129, 0.7)'
-              : 'rgba(242, 54, 69, 0.7)'
+              ? 'rgba(16, 185, 129, 0.78)'
+              : 'rgba(244, 63, 94, 0.78)'
           try {
             volumeSeriesRef.current.update({
               time: volTime,
@@ -10900,7 +11057,7 @@ export function TradingChart({
                 volumeData.push({
                   time: t,
                   value: Number.isFinite(c.volume) ? (c.volume ?? 0) : 0,
-                  color: c.close >= c.open ? 'rgba(8, 153, 129, 0.7)' : 'rgba(242, 54, 69, 0.7)',
+                  color: c.close >= c.open ? 'rgba(16, 185, 129, 0.78)' : 'rgba(244, 63, 94, 0.78)',
                 })
               }
             }
@@ -10946,7 +11103,7 @@ export function TradingChart({
                 volumeSeriesRef.current.update({
                   time: t,
                   value: Number.isFinite(b.volume) ? (b.volume ?? 0) : 0,
-                  color: b.close >= b.open ? 'rgba(8, 153, 129, 0.7)' : 'rgba(242, 54, 69, 0.7)',
+                  color: b.close >= b.open ? 'rgba(16, 185, 129, 0.78)' : 'rgba(244, 63, 94, 0.78)',
                 } as any)
               } catch {
                 /* ignore */
@@ -10974,7 +11131,7 @@ export function TradingChart({
                   volumeData.push({
                     time: t,
                     value: Number.isFinite(c.volume) ? (c.volume ?? 0) : 0,
-                    color: c.close >= c.open ? 'rgba(8, 153, 129, 0.7)' : 'rgba(242, 54, 69, 0.7)',
+                    color: c.close >= c.open ? 'rgba(16, 185, 129, 0.78)' : 'rgba(244, 63, 94, 0.78)',
                   })
                 }
               }
@@ -13752,11 +13909,11 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
     >
       {/* ── Toolbar & Sub-header HUD (Hidden in Fullscreen Mode) ────────────────── */}
       {!isFullscreen && (
-        <div ref={chartHeaderRef} className="flex flex-col gap-1 shrink-0 select-none overscroll-none">
+        <div ref={chartHeaderRef} className="flex flex-col gap-0.5 shrink-0 select-none overscroll-none">
           {/* ── Toolbar ─────────────────────────────────────────────────────────── */}
-          <div className="flex flex-wrap items-center gap-1.5 pb-0.5 shrink-0">
+          <div className="flex flex-nowrap items-center gap-1 overflow-x-auto whitespace-nowrap pb-0 shrink-0">
             {/* Instrument tabs — LIVE focus hides off-session desks */}
-            <div className="tab-bar">
+            <div className="tab-bar shrink-0">
               {visibleInstruments.map((inst) => (
                 <button
                   key={inst}
@@ -13770,7 +13927,7 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
             </div>
 
             {/* Timeframe selector */}
-            <div className="flex items-center rounded-lg border border-surface-700 bg-surface-900/80 p-0.5">
+            <div className="flex items-center rounded-lg border border-surface-700 bg-surface-900/80 p-0.5 shrink-0">
               {(['1m', '5m', '30m', '4h', '1D'] as const).map((tf) => (
                 <button
                   key={tf}
@@ -13783,12 +13940,13 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
                     sessionSpansRef.current = null
                     setCandles([])
                     candlesRef.current = []
+                    orderedCandlesRef.current = []
                     try { candleRef.current?.setData([]) } catch {}
                     try { volumeSeriesRef.current?.setData([]) } catch {}
                     try { priceLineHostRef.current?.setData([]) } catch {}
                     setTimeframe(tf)
                   }}
-                  className={`rounded px-2.5 py-1 text-xs font-semibold transition-all ${
+                  className={`rounded px-2 py-0.5 text-xs font-semibold transition-all ${
                     timeframe === tf
                       ? 'bg-blue-600 text-white shadow-sm font-bold'
                       : 'text-gray-400 hover:text-gray-200 hover:bg-surface-800'
@@ -15964,14 +16122,65 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
           )
         })()}
 
-        <button
-          type="button"
-          onClick={resetPriceScale}
-          className="absolute bottom-2.5 right-14 z-20 rounded-md border border-surface-500/80 bg-surface-800/95 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-300 shadow-lg backdrop-blur transition hover:border-brand-500/50 hover:text-white select-none"
-          title="Reset price scale (and fit time) — same as TradingView double-click on price axis"
+        <div
+          className="absolute bottom-7 right-20 z-20 flex items-center gap-0.5 rounded-lg border border-zinc-700/80 bg-zinc-900/90 p-0.5 text-[10px] font-mono font-semibold text-zinc-300 shadow-xl backdrop-blur-md select-none"
+          onClick={(e) => e.stopPropagation()}
         >
-          Reset scale
-        </button>
+          <button
+            type="button"
+            onClick={() => adjustHorizontalZoom(1.25)}
+            className="px-2 py-0.5 rounded hover:bg-zinc-800 hover:text-white transition cursor-pointer"
+            title="Zoom Out Horizontally (Show more bars / broader Mark-Up & Mark-Down structure)"
+          >
+            −
+          </button>
+          <button
+            type="button"
+            onClick={() => adjustHorizontalZoom(0.8)}
+            className="px-2 py-0.5 rounded hover:bg-zinc-800 hover:text-white transition cursor-pointer"
+            title="Zoom In Horizontally (Larger, wider candlesticks)"
+          >
+            +
+          </button>
+          <span className="text-zinc-700 px-0.5">|</span>
+          <button
+            type="button"
+            onClick={() => adjustVerticalZoom(1.18)}
+            className="px-1.5 py-0.5 rounded hover:bg-zinc-800 hover:text-emerald-300 transition cursor-pointer"
+            title="Make Bars Taller Vertically (Or scroll mouse wheel over the right price scale / Alt+Wheel)"
+          >
+            ↕ Taller
+          </button>
+          <button
+            type="button"
+            onClick={() => adjustVerticalZoom(0.85)}
+            className="px-1.5 py-0.5 rounded hover:bg-zinc-800 hover:text-amber-300 transition cursor-pointer"
+            title="Make Bars Shorter Vertically (Or scroll mouse wheel over the right price scale / Alt+Wheel)"
+          >
+            ↕ Shorter
+          </button>
+          <span className="text-zinc-700 px-0.5">|</span>
+          <button
+            type="button"
+            onClick={resetPriceScale}
+            className={`px-2 py-0.5 rounded transition cursor-pointer ${
+              verticalZoomDisplay !== 1
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 hover:bg-sky-500/30'
+                : 'hover:bg-zinc-800 hover:text-white'
+            }`}
+            title="Auto Fit price & time scale (Same as double-clicking the right price axis)"
+          >
+            Auto {verticalZoomDisplay !== 1 ? `(${verticalZoomDisplay}x)` : 'Fit'}
+          </button>
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            className="px-1.5 py-0.5 rounded hover:bg-zinc-800 hover:text-cyan-300 transition cursor-pointer"
+            title={isFullscreen ? 'Exit Fullscreen (Hotkey: F or Esc)' : 'Maximize Chart Fullscreen (Hotkey: F)'}
+          >
+            ⤢
+          </button>
+        </div>
 
         {/* Live Voice coach — floating panel (self-contained card; toggle via Voice button) */}
         {!SYSTEMATIC_LIVE_DESK && voiceOpen && (

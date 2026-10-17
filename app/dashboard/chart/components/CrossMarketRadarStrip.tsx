@@ -201,10 +201,10 @@ export function CrossMarketRadarStrip({
 
   return (
     <div className="relative border-b border-surface-800 bg-surface-950/90 text-xs select-none backdrop-blur-sm">
-      <div className="px-3 py-1.5 flex flex-wrap items-center justify-between gap-2">
+      <div className="px-2.5 py-1 flex flex-nowrap items-center justify-between gap-2 overflow-x-auto whitespace-nowrap">
         {/* Left: Volatility Gauges */}
-        <div className="flex items-center gap-2 overflow-x-auto text-[11px] font-mono shrink-0">
-          <div className="flex items-center gap-1.5 text-gray-400 font-bold uppercase tracking-wider text-[9px] mr-1">
+        <div className="flex items-center gap-1.5 text-[10.5px] font-mono shrink-0">
+          <div className="flex items-center gap-1 text-gray-400 font-bold uppercase tracking-wider text-[9px] mr-0.5">
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
             <span>Vol Gauges:</span>
             <button

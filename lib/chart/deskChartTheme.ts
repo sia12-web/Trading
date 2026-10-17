@@ -12,6 +12,8 @@ export const DESK_CHART_TEXT = '#8b949e'
 export const DESK_CHART_BORDER = '#21262d'
 export const DESK_CANDLE_UP = '#089981'
 export const DESK_CANDLE_DOWN = '#f23645'
+export const DESK_CANDLE_UP_BORDER = '#10b981'
+export const DESK_CANDLE_DOWN_BORDER = '#f43f5e'
 export const DESK_LIGHT_CHART_BG = '#ffffff'
 export const DESK_LIGHT_CHART_GRID = '#f0f3f6'
 export const DESK_LIGHT_CHART_TEXT = '#131722'
@@ -43,11 +45,11 @@ export function getDeskChartThemeOptions(theme: 'dark' | 'light') {
   }
 }
 
-/** 14px slot produces the dense 8–10px solid body used by TradingView. */
-export const DESK_BAR_SPACING = 14
-export const DESK_COMPACT_BAR_SPACING = 11
-export const DESK_DAILY_BAR_SPACING = 12
-export const DESK_30M_BAR_SPACING = 16
+/** 9px default slot shows ~130–150 bars cleanly so Mark-Up, Mark-Down, and Ranges are immediately clear like TradingView. */
+export const DESK_BAR_SPACING = 9
+export const DESK_COMPACT_BAR_SPACING = 7.5
+export const DESK_DAILY_BAR_SPACING = 10
+export const DESK_30M_BAR_SPACING = 10
 /** Wheel zoom-out floor — allows smooth TradingView-style deep zoom-out without snapping. */
 export const DESK_MIN_BAR_SPACING = 0.5
 
@@ -86,14 +88,14 @@ export const DESK_CHART_THEME = {
     alignLabels: true,
     entireTextOnly: true,
     ticksVisible: true,
-    minimumWidth: 82,
-    scaleMargins: { top: 0.08, bottom: 0.24 },
+    minimumWidth: 78,
+    scaleMargins: { top: 0.04, bottom: 0.25 },
   },
   timeScale: {
     borderColor: DESK_CHART_BORDER,
     timeVisible: true,
     secondsVisible: false,
-    rightOffset: 8,
+    rightOffset: 6,
     barSpacing: DESK_BAR_SPACING,
     minBarSpacing: DESK_MIN_BAR_SPACING,
     fixLeftEdge: false,

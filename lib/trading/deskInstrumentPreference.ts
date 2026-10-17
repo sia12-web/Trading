@@ -110,7 +110,7 @@ export function setDeskInstrumentPreference(instrument: DeskInstrumentPref): voi
  * Fitting all ~3k bars makes the chart look randomly "zoomed out."
  * Bar count follows pane width so each candle stays ~DESK_BAR_SPACING px.
  */
-export const DESK_VISIBLE_BARS = 77
+export const DESK_VISIBLE_BARS = 135
 
 export function deskVisibleBarCount(
   containerWidth: number,
@@ -121,36 +121,36 @@ export function deskVisibleBarCount(
   const is4H = timeframe === '4h' || timeframe === '4H'
   const is30m = timeframe === '30m'
   const spacing = deskBarSpacing(containerWidth, barCount, timeframe)
-  const byWidth = Math.floor(Math.max(containerWidth - 80, 240) / spacing)
+  const byWidth = Math.floor(Math.max(containerWidth - 78, 320) / spacing)
   const compact = containerWidth < 700
   const minBars = isDaily
     ? compact
-      ? 50
-      : 80
+      ? 70
+      : 110
     : is4H
       ? compact
-        ? 40
-        : 60
+        ? 65
+        : 100
     : is30m
       ? compact
-        ? 18
-        : 28
+        ? 60
+        : 95
       : compact
-        ? 28
-        : 40
+        ? 75
+        : 120
   return Math.min(Math.max(barCount, 1), Math.max(minBars, byWidth))
 }
 
 export function deskVisibleLogicalRange(
   barCount: number,
-  containerWidth = 1160,
+  containerWidth = 1280,
   timeframe?: string
 ): { from: number; to: number } {
   const last = Math.max(barCount - 1, 0)
   const visible = deskVisibleBarCount(containerWidth, barCount, timeframe)
   return {
     from: Math.max(0, last - visible + 1),
-    to: last + 3,
+    to: last + 4,
   }
 }
 
@@ -164,12 +164,12 @@ export function deskBarSpacing(
     return compact ? 7 : DESK_DAILY_BAR_SPACING
   }
   if (timeframe === '4h' || timeframe === '4H') {
-    return compact ? 8 : 10
+    return compact ? 7.5 : 9
   }
   if (timeframe === '30m') {
-    return compact ? 16 : DESK_30M_BAR_SPACING
+    return compact ? 8 : DESK_30M_BAR_SPACING
   }
-  if (compact) return 10
+  if (compact) return 7.5
   if (containerWidth < 1000) return DESK_COMPACT_BAR_SPACING
   return DESK_BAR_SPACING
 }
@@ -196,29 +196,20 @@ export function encodeDeskViewport(
 export function decodeDeskViewport(
   saved: SavedDeskViewport,
   barCount: number,
-  containerWidth = 1160,
+  containerWidth = 1280,
   timeframe?: string
 ): { from: number; to: number } {
   const fallback = deskVisibleLogicalRange(barCount, containerWidth, timeframe)
   if (!Number.isFinite(saved.fromEnd) || !Number.isFinite(saved.span) || saved.span < 8) {
     return fallback
   }
-  const is30m = timeframe === '30m'
-  const expectedVisible = deskVisibleBarCount(containerWidth, barCount, timeframe)
-  // If the saved span was from an old squished view (> 1.5x expected 30m visible bars), reset to fallback
-  if (is30m && saved.span > expectedVisible * 1.5) {
-    return fallback
-  }
+  const span = Math.min(Math.max(saved.span, 12), 10000)
   const last = Math.max(barCount - 1, 0)
-  const maxSpan = is30m
-    ? Math.max(48, Math.floor((containerWidth - 80) / 20))
-    : 10000
-  const span = Math.min(Math.max(saved.span, 10), maxSpan)
   const from = last - saved.fromEnd
   return { from, to: from + span }
 }
 
-const VIEW_KEY = (instrument: string, timeframe = '5m') => `tradepulse.chart.view.${instrument}.${timeframe}`
+const VIEW_KEY = (instrument: string, timeframe = '5m') => `tradepulse.chart.view.v3.${instrument}.${timeframe}`
 
 export function saveDeskViewport(
   instrument: string,
