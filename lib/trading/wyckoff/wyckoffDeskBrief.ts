@@ -135,6 +135,8 @@ function shortSymbolLabel(instrument: WyckoffInstrument): string {
       return 'YM'
     case 'GOLD':
       return 'GC'
+    case 'SILVER':
+      return 'SI'
     case 'CRUDE':
       return 'CL'
     case 'NIKKEI':

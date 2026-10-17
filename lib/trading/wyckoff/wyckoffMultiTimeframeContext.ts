@@ -1050,7 +1050,7 @@ export function computeWyckoffVolatilityAndRadarSynthesis(args: {
   let primaryGaugeRegime = 'UNKNOWN'
   let isGaugeExpanding = false
 
-  if (instrument === 'GOLD') {
+  if (instrument === 'GOLD' || instrument === 'SILVER') {
     primaryGaugeSymbol = 'GVZ'
     if (crossMarketVolatility?.gold?.gvz) {
       primaryGaugeValue = crossMarketVolatility.gold.gvz.value
@@ -1170,9 +1170,11 @@ export function computeWyckoffVolatilityAndRadarSynthesis(args: {
         ? (['NASDAQ', 'DOW', 'SP500'].filter((k) => k !== instrument) as RadarMarket[])
         : instrument === 'GOLD'
           ? ['SILVER', 'CRUDE']
-          : instrument === 'CRUDE'
-            ? ['GOLD', 'NASDAQ']
-            : ['NASDAQ', 'DOW']
+          : instrument === 'SILVER'
+            ? ['GOLD', 'CRUDE']
+            : instrument === 'CRUDE'
+              ? ['GOLD', 'NASDAQ']
+              : ['NASDAQ', 'DOW']
 
     const peerCards = peerKeys
       .map((k) => marketRadar.markets[k])

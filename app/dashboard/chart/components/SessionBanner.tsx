@@ -119,7 +119,7 @@ export function SessionBanner({
   lastQuoteAt: _lastQuoteAt = null,
   dataMode: _dataMode = 'live',
   viewingInstrument = null,
-  asiaOrderLive = false,
+  asiaOrderLive: _asiaOrderLive = false,
 }: {
   onGate?: (g: SessionGateState) => void
   refreshKey?: number
@@ -516,23 +516,19 @@ export function SessionBanner({
         ? 'border-amber-600/50 bg-amber-950/80 text-amber-100'
         : gate.phase === 'DONE'
           ? 'border-red-600/50 bg-red-950/80 text-red-200'
-          : gate.phase === 'FLAT'
+            : gate.phase === 'FLAT'
             ? 'border-sky-700/40 bg-sky-950/50 text-sky-100'
-            : gate.phase === 'ASIA'
-              ? 'border-purple-500/50 bg-purple-950/80 text-purple-200 shadow-sm shadow-purple-500/10'
-              : 'border-[#30363d] bg-[#161b22]/90 text-gray-300'
+            : 'border-[#30363d] bg-[#161b22]/90 text-gray-300'
 
-  const currentPhaseLabel = phaseLabel(gate.phase, gate.rangeStrategy, gate.lockedInstrument)
+  const activeBannerInstrument = viewingInstrument || gate.lockedInstrument
+  const currentPhaseLabel = phaseLabel(gate.phase, gate.rangeStrategy, activeBannerInstrument)
 
   return (
     <>
       <div className={`rounded-lg border px-3 py-2 text-xs flex flex-wrap items-center gap-3 ${tone}`}>
-        {currentPhaseLabel && currentPhaseLabel !== 'CLOSED' && (
+        {currentPhaseLabel && currentPhaseLabel !== 'CLOSED' && currentPhaseLabel !== 'ASIA' && (
           <span className="font-semibold tracking-wide uppercase flex items-center gap-1.5">
-            {gate.phase === 'ASIA' && (
-              <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
-            )}
-            {currentPhaseLabel === 'ASIA' ? 'ASIA LIVE' : currentPhaseLabel}
+            {currentPhaseLabel}
           </span>
         )}
         <span
@@ -542,9 +538,9 @@ export function SessionBanner({
         >
           {mounted && clockNow ? `${clockNow} ${clockLabel}` : `—:—:— ${clockLabel}`}
         </span>
-        {gate.lockedInstrument && (
+        {activeBannerInstrument && (
           <span className="rounded bg-white/10 px-2 py-0.5 font-medium">
-            {liveDeskContractLabel(gate.lockedInstrument)}
+            {liveDeskContractLabel(activeBannerInstrument)}
           </span>
         )}
         <span
@@ -578,14 +574,6 @@ export function SessionBanner({
               : 'Measuring...'}
           </span>
         </span>
-        {asiaOrderLive && (
-          <span
-            className="rounded bg-lime-500/25 px-2 py-0.5 text-lime-200 font-semibold text-xs border border-lime-500/40"
-            title="Overnight Asia range qualified — bracket setup after 02:00 Montreal. Session window through 10:25."
-          >
-            ASIA DESK · BOTH STOPS
-          </span>
-        )}
 
         {!SYSTEMATIC_LIVE_DESK && htfCorr && htfCorr.type !== 'NONE' && (
           <span

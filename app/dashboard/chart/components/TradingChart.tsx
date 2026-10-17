@@ -273,7 +273,6 @@ import {
   isLevelPaintAllowed,
   isAfternoonWatchWindow,
   isLiveTradingPageOpen,
-  liveVisibleInstruments,
   sessionFor,
   deskMarketFor,
   isNycSessionActive,
@@ -366,7 +365,6 @@ import {
 import {
   liveDeskContractLabel,
   liveDeskIndexHint,
-  resolveClockedChartInstrument,
 } from '@/lib/trading/liveDeskBook'
 import { snapDeskPrice, snapStopToTick, snapTargetToTick } from '@/lib/trading/instrumentTicks'
 import { deskBookLines } from '@/lib/trading/cmeContracts'
@@ -1260,7 +1258,7 @@ export interface RenderedSessionExtremeHit {
 
 export function TradingChart({
   onInstrumentChange,
-  onInstrumentSync,
+  onInstrumentSync: _onInstrumentSync,
   onPriceUpdate,
   onQuoteTick,
   onDataModeChange,
@@ -1838,6 +1836,13 @@ export function TradingChart({
   const [instrument, setInstrumentState] = useState<Instrument>(
     () => initialInstrument ?? lockedInstrument ?? 'DOW'
   )
+
+  useEffect(() => {
+    if (initialInstrument && initialInstrument !== instrument) {
+      setInstrumentState(initialInstrument)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialInstrument])
 
   const activeTrendlines = useMemo(
     () => (Array.isArray(trendlines) ? trendlines : []).filter((t) => t && t.instrument === instrument),
@@ -7754,20 +7759,7 @@ export function TradingChart({
     const now = new Date()
     setClockReady(true)
     setDeskSessionLive(isLiveTradingPageOpen(now))
-    const live = [
-      ...liveVisibleInstruments(now, {
-        lockedInstrument,
-        clockedIn: deskAttended,
-        attendedToday: deskAttended,
-      }),
-      'NIKKEI',
-    ] as Instrument[]
-    if (allowedInstruments && allowedInstruments.length > 0) {
-      const fromGate = allowedInstruments.filter((i) => live.includes(i as Instrument)) as Instrument[]
-      setVisibleInstruments(fromGate.length > 0 ? fromGate : live)
-      return
-    }
-    setVisibleInstruments(live)
+    setVisibleInstruments(['DOW', 'NASDAQ', 'GOLD', 'CRUDE', 'SILVER', 'NIKKEI'])
   }, [allowedInstruments, lockedInstrument, focusTick, deskAttended])
 
   /** Tip/SSE: pre-open focus free; active during any desk session (Asia, London, NY) or open CME */
@@ -7785,9 +7777,7 @@ export function TradingChart({
   }, [instrument, deskAttended, focusTick, clockReady])
 
   const setInstrument = useCallback((inst: Instrument) => {
-    if (!visibleInstruments.includes(inst)) return
     setInstrumentState(inst)
-    // Free-switch: remember any board tab (indexes + gold/crude/silver/nikkei).
     if (
       inst === 'DOW' ||
       inst === 'NASDAQ' ||
@@ -7799,20 +7789,7 @@ export function TradingChart({
       setDeskInstrumentPreference(inst)
     }
     onInstrumentChange?.(inst)
-  }, [onInstrumentChange, visibleInstruments])
-
-  useEffect(() => {
-    setInstrumentState((prev) => {
-      const next = resolveClockedChartInstrument({
-        locked: lockedInstrument,
-        viewing: prev,
-        visible: visibleInstruments,
-      }) as Instrument
-      if (next !== prev) onInstrumentSync?.(next)
-      return next
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lockedInstrument, visibleInstruments.join('|')])
+  }, [onInstrumentChange])
 
   const jumpMarkerRef = useRef<any | null>(null)
 
@@ -13251,66 +13228,6 @@ Please evaluate this highlighted move from ${clickStartP != null ? clickStartP.t
         },
       ])
       return
-    }
-
-    const asiaLive =
-      asiaOco && asiaOco.qualified && asiaOco.event === 'place_both'
-    if (asiaLive && asiaOco) {
-      const inst = String(asiaOco.instrument)
-      const frac = inst === 'SILVER' ? 3 : inst === 'GOLD' ? 1 : (inst === 'CRUDE' || inst === 'NASDAQ') ? 2 : 0
-      const fmtA = (n?: number | null) =>
-        n != null && Number.isFinite(n) ? n.toLocaleString('en-US', { maximumFractionDigits: frac }) : '—'
-      paint([
-        {
-          price: asiaOco.asiaHigh,
-          color: '#26a69a',
-          label: `ASIA H ${fmtA(asiaOco.asiaHigh)}`,
-          style: LineStyle.Dotted,
-          width: 1,
-        },
-        {
-          price: asiaOco.asiaLow,
-          color: '#ef5350',
-          label: `ASIA L ${fmtA(asiaOco.asiaLow)}`,
-          style: LineStyle.Dotted,
-          width: 1,
-        },
-        {
-          price: asiaOco.buyStop,
-          color: '#00e676',
-          label: `BUY STOP ${fmtA(asiaOco.buyStop)} · ${asiaOco.contract} x ${asiaOco.contracts}`,
-          style: LineStyle.Solid,
-          width: 3,
-        },
-        {
-          price: asiaOco.sellStop,
-          color: '#ff1744',
-          label: `SELL STOP ${fmtA(asiaOco.sellStop)} · ${asiaOco.contract} x ${asiaOco.contracts}`,
-          style: LineStyle.Solid,
-          width: 3,
-        },
-        {
-          price: asiaOco.asiaMid,
-          color: '#ffeb3b',
-          label: `SL MID ${fmtA(asiaOco.asiaMid)}`,
-          style: LineStyle.Solid,
-          width: 2,
-        },
-        {
-          price: asiaOco.longTp,
-          color: '#69f0ae',
-          label: `LONG TP ${fmtA(asiaOco.longTp)}`,
-          style: LineStyle.Dotted,
-          width: 2,
-        },
-        {
-          price: asiaOco.shortTp,
-          color: '#ff8a80',
-          label: `SHORT TP ${fmtA(asiaOco.shortTp)}`,
-          style: LineStyle.Dotted,
-          width: 2,
-        },
-      ])
     }
 
     if (pendingLimit) {

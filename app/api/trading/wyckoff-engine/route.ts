@@ -9,7 +9,7 @@ import {
 } from '@/lib/trading/wyckoff'
 import { getCrossMarketVolatility } from '@/lib/trading/crossMarketVolatility'
 import { getLiveCrossMarketRadarReport } from '@/lib/trading/crossMarketRadar'
-import { YAHOO_SYMBOLS } from '@/lib/yahoo/symbols'
+import { YAHOO_CASH_INDEX_SYMBOLS, YAHOO_SYMBOLS } from '@/lib/yahoo/symbols'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -17,12 +17,11 @@ export const dynamic = 'force-dynamic'
 const YAHOO_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
 
-async function fetchYahooChartCandles(
-  instrument: WyckoffInstrument,
+async function fetchYahooSymbolCandles(
+  yahooSym: string,
   interval: '1d' | '30m' | '5m',
   range: string
 ): Promise<WyckoffCandle[]> {
-  const yahooSym = YAHOO_SYMBOLS[instrument] ?? 'MNQ=F'
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
     yahooSym
   )}?interval=${interval}&range=${range}`
@@ -77,6 +76,21 @@ async function fetchYahooChartCandles(
   } catch {
     return []
   }
+}
+
+async function fetchYahooChartCandles(
+  instrument: WyckoffInstrument,
+  interval: '1d' | '30m' | '5m',
+  range: string
+): Promise<WyckoffCandle[]> {
+  const primarySym = YAHOO_SYMBOLS[instrument] ?? 'MNQ=F'
+  const bars = await fetchYahooSymbolCandles(primarySym, interval, range)
+  if (bars.length > 0) return bars
+  const fallbackSym = YAHOO_CASH_INDEX_SYMBOLS[instrument]
+  if (fallbackSym && fallbackSym !== primarySym) {
+    return fetchYahooSymbolCandles(fallbackSym, interval, range)
+  }
+  return []
 }
 
 export async function GET(req: NextRequest) {

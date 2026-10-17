@@ -29,13 +29,12 @@ import {
 } from './components/ManageDeskBar'
 import {
   initialDeskChartInstrument,
+  parseDeskInstrument,
   saveDeskClockLock,
   setDeskInstrumentPreference,
   type DeskInstrumentPref,
 } from '@/lib/trading/deskInstrumentPreference'
 import { isAfternoonWatchWindow, sessionFor, deskMarketFor } from '@/lib/trading/sessionGate'
-import { isAsiaLiveOrderOverlay, type AsiaDeskOverlay } from '@/lib/trading/asiaDesk'
-import { isLiveClockInstrument } from '@/lib/trading/liveDeskBook'
 import { quoteBelongsToBook } from '@/lib/trading/deskExitGuard'
 import {
   TRADER_DISPLAY_LABEL,
@@ -78,7 +77,6 @@ import {
 import type { DeskCalendarEvent } from '@/lib/trading/deskNews'
 import { infoToast, warningToast, successToast } from '@/lib/utils/toastUtils'
 import {
-  deskAlertTelegramText,
   formatDeskAlertToast,
 } from '@/lib/notify/deskAlertTelegram'
 import type { DeskInstrument } from '@/lib/trading/sessionGate'
@@ -155,7 +153,7 @@ import { MorningLunchFlatConfirm } from './components/MorningLunchFlatConfirm'
 type Instrument = DeskInstrumentPref
 
 function asLiveNy(i: string | null | undefined): Instrument {
-  return isLiveClockInstrument(i) ? i : 'DOW'
+  return parseDeskInstrument(i) ?? 'DOW'
 }
 
 interface PositionOverlay {
@@ -221,15 +219,12 @@ export default function ChartPage() {
 
   const gateRef = useRef<SessionGateState | null>(null)
 
-  /** User tab click — persist unclocked browse or the clocked name */
+  /** User tab click — always persist the chosen instrument and keep all components in sync */
   const setInstrument = useCallback((i: string) => {
     const next = asLiveNy(i)
     setInstrumentState(next)
-    const g = gateRef.current
-    const locked = g?.lockedInstrument
-    if (!g?.clockedIn || !locked || next === locked) {
-      setDeskInstrumentPreference(next)
-    }
+    setDeskInstrumentPreference(next)
+    saveDeskClockLock(next)
   }, [])
 
   /** Gate/lock sync — update view only, do not clobber saved preference */
@@ -294,69 +289,9 @@ export default function ChartPage() {
     },
     []
   )
-  const [asiaOverlays, setAsiaOverlays] = useState<
-    Partial<Record<'DOW' | 'GOLD', AsiaDeskOverlay>>
-  >({})
   const lastRiskDollarsRef = useRef(0)
   const [gate, setGate] = useState<SessionGateState | null>(null)
   gateRef.current = gate
-
-  // Persist clock preference; only snap chart to that book on rising-edge clock-in
-  // (free-switch among DOW/NASDAQ/GOLD/CRUDE/SILVER after that).
-  const wasClockedRef = useRef(false)
-  useEffect(() => {
-    const locked = gate?.lockedInstrument
-    if (!gate?.clockedIn || !locked) {
-      if (gate && !gate.clockedIn) saveDeskClockLock(null)
-      wasClockedRef.current = false
-      return
-    }
-    const pref = asLiveNy(locked)
-    saveDeskClockLock(pref)
-    if (!wasClockedRef.current) {
-      setInstrumentState(pref)
-    }
-    wasClockedRef.current = true
-  }, [gate?.clockedIn, gate?.lockedInstrument])
-
-  useEffect(() => {
-    let cancelled = false
-    const load = async () => {
-      try {
-        const res = await fetch('/api/trading/asia-signal', { cache: 'no-store' })
-        const json = await res.json()
-        if (!cancelled && json?.overlays) {
-          setAsiaOverlays(json.overlays)
-        }
-      } catch {
-        /* ignore */
-      }
-    }
-    const scan = () => {
-      if (!gate?.asiaDeskActive) return
-      void fetch('/api/trading/asia-scan', { method: 'POST' })
-        .then(() => load())
-        .catch(() => {})
-    }
-    void load()
-    if (gate?.asiaDeskActive) scan()
-    const poll = window.setInterval(() => void load(), 15_000)
-    const scanId = window.setInterval(scan, 60_000)
-    return () => {
-      cancelled = true
-      window.clearInterval(poll)
-      window.clearInterval(scanId)
-    }
-  }, [gate?.asiaDeskActive])
-
-  useEffect(() => {
-    if (!gate?.asiaDeskActive || gate.clockedIn) return
-    if (instrument === 'GOLD' || instrument === 'DOW') return
-    const gold = asiaOverlays.GOLD
-    const dow = asiaOverlays.DOW
-    if (isAsiaLiveOrderOverlay(gold)) setInstrument('GOLD')
-    else if (isAsiaLiveOrderOverlay(dow)) setInstrument('DOW')
-  }, [gate?.asiaDeskActive, gate?.clockedIn, asiaOverlays, instrument, setInstrument])
   const [_orderLevel, setOrderLevel] = useState<number | null>(null)
   const [_orderLevelType, setOrderLevelType] = useState<string | undefined>()
   const [_orderLevelSide, setOrderLevelSide] = useState<'BUY' | 'SHORT' | undefined>()
@@ -763,18 +698,11 @@ export default function ChartPage() {
       kind: string
       title: string
       body: string
-      telegram: string
+      telegram?: string
       dedupeKey?: string
       instrument?: string
     }) => {
       warningToast(formatDeskAlertToast(alert.title, alert.body), 8000)
-      const telegram = deskAlertTelegramText(alert)
-      if (!telegram) return
-      void fetch('/api/notify/desk-alert', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...alert, telegram }),
-      }).catch(() => {})
     },
     []
   )
@@ -1999,10 +1927,6 @@ export default function ChartPage() {
           lastQuoteAt={lastQuoteAt}
           dataMode={dataMode}
           viewingInstrument={instrument}
-          asiaOrderLive={
-            isAsiaLiveOrderOverlay(asiaOverlays.GOLD) ||
-            isAsiaLiveOrderOverlay(asiaOverlays.DOW)
-          }
           onRefreshReady={(fn) => {
             bannerRefreshRef.current = fn
           }}
@@ -2187,13 +2111,6 @@ export default function ChartPage() {
                       profitTarget: pending.profitTarget,
                       riskDollars: pending.riskAmount,
                     }
-                  : null
-              }
-              asiaOco={
-                instrument === 'GOLD' || instrument === 'DOW'
-                  ? isAsiaLiveOrderOverlay(asiaOverlays[instrument] ?? null)
-                    ? asiaOverlays[instrument] ?? null
-                    : null
                   : null
               }
               onCancelPending={() => {

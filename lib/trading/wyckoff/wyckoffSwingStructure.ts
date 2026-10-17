@@ -69,6 +69,22 @@ export const WYCKOFF_MARKET_SPECS: Record<WyckoffInstrument, WyckoffMarketSpec> 
     },
     rolloverCycleMonths: [2, 4, 6, 8, 10, 12],
   },
+  SILVER: {
+    instrument: 'SILVER',
+    canonicalId: 'GC',
+    exchange: 'COMEX',
+    primaryContract: 'SI',
+    microContract: 'SIL',
+    tickSize: 0.005,
+    pointValue: 5000,
+    sessionCalendar: {
+      timezone: 'America/New_York',
+      cashOpenLocal: '08:25',
+      cashCloseLocal: '13:25',
+      globexResetHourEt: 18,
+    },
+    rolloverCycleMonths: [3, 5, 7, 9, 12],
+  },
   CRUDE: {
     instrument: 'CRUDE',
     canonicalId: 'CL',
@@ -104,6 +120,10 @@ export const WYCKOFF_MARKET_SPECS: Record<WyckoffInstrument, WyckoffMarketSpec> 
 }
 
 export function resolveWyckoffMarketSpec(rawInstrument: string): WyckoffMarketSpec {
+  const norm = String(rawInstrument || '').trim().toUpperCase()
+  if (norm.includes('SILVER') || norm === 'SI' || norm === 'SIL' || norm.startsWith('SI=') || norm.startsWith('SIL=')) {
+    return WYCKOFF_MARKET_SPECS.SILVER
+  }
   const canonical = resolveCanonicalMarketId(rawInstrument)
   switch (canonical) {
     case 'YM':

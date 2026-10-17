@@ -252,11 +252,15 @@ export function WyckoffRulesPanel({
     fetchBoxAnalysis(mapped)
   }, [instrument])
 
-  const handleRefreshAll = () => {
+  const handleRefreshAll = async () => {
     const mapped = (getWyckoffBenchmark(instrument).market as WyckoffBenchmarkMarket) || 'NASDAQ'
-    fetchWyckoffEngine(selectedEngineMarket)
-    fetchBoxAnalysis(mapped)
-    fetchBusStatus(selectedEngineMarket)
+    await Promise.all([
+      fetchWyckoffEngine(instrument),
+      fetchBoxAnalysis(mapped),
+      fetchBusStatus(instrument),
+    ])
+    setSyncFeedback(`Live 1D/4H/15m/5m/1m Wyckoff Discovery & Box Backtest refreshed for ${mapped} (${activeBenchmark.contractLabel})`)
+    setTimeout(() => setSyncFeedback(null), 4000)
   }
 
   const handleSaveRangeToNotes = (tf: WyckoffTimeframeAnalysis) => {
@@ -357,7 +361,17 @@ export function WyckoffRulesPanel({
             <span className="text-gray-400 font-semibold text-[9.5px]">Chart Instrument:</span>
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-950/80 border border-emerald-500/50 text-white font-bold shadow-sm">
               <span className="text-sm">
-                {activeBenchmark.market === 'GOLD' ? '🥇' : activeBenchmark.market === 'CRUDE' ? '🛢️' : activeBenchmark.market === 'DOW' ? '📈' : activeBenchmark.market === 'NIKKEI' ? '🗾' : '💻'}
+                {activeBenchmark.market === 'GOLD'
+                  ? '🥇'
+                  : activeBenchmark.market === 'SILVER'
+                  ? '🥈'
+                  : activeBenchmark.market === 'CRUDE'
+                  ? '🛢️'
+                  : activeBenchmark.market === 'DOW'
+                  ? '📈'
+                  : activeBenchmark.market === 'NIKKEI'
+                  ? '🗾'
+                  : '💻'}
               </span>
               <span className="text-emerald-300 font-mono text-xs">{activeBenchmark.market}</span>
               <span className="text-gray-400 text-[10px]">({activeBenchmark.contractLabel})</span>

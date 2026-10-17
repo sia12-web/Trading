@@ -11,7 +11,7 @@ import type { CanonicalMarketId } from '@/lib/ai/canonicalMarkets'
 
 export type WyckoffTimeframe = '1D' | '4H' | '30m' | '5m'
 
-export type WyckoffInstrument = 'NASDAQ' | 'DOW' | 'GOLD' | 'CRUDE' | 'NIKKEI'
+export type WyckoffInstrument = 'NASDAQ' | 'DOW' | 'GOLD' | 'SILVER' | 'CRUDE' | 'NIKKEI'
 
 export type WyckoffRangeClassification =
   | 'BALANCE'

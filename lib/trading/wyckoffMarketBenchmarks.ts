@@ -66,6 +66,7 @@ const CONTRACT_LABELS: Record<string, string> = {
   DOW: 'YM / MYM',
   CRUDE: 'CL / MCL',
   GOLD: 'GC / MGC',
+  SILVER: 'SI / SIL',
   NIKKEI: 'NKD / NIY',
 }
 
@@ -171,15 +172,16 @@ export function getWyckoffBenchmark(instrument: string): WyckoffMarketBenchmark 
   const pick = (k: string) => WYCKOFF_BENCHMARKS_BY_MARKET[k]!
   if (norm.includes('DOW') || norm.includes('YM')) return pick('DOW')
   if (norm.includes('CRUDE') || norm.includes('OIL') || norm.includes('CL')) return pick('CRUDE')
+  if (norm.includes('SILVER') || norm === 'SI' || norm === 'SIL' || norm.startsWith('SI=') || norm.startsWith('SIL=')) return pick('SILVER')
   if (norm.includes('GOLD') || norm.includes('GC') || norm.includes('MGC')) return pick('GOLD')
   if (norm.includes('NIKKEI') || norm.includes('NKD') || norm.includes('NIY') || norm.includes('N225')) return pick('NIKKEI')
   return pick('NASDAQ')
 }
 
-export type WyckoffBenchmarkMarket = 'NASDAQ' | 'DOW' | 'CRUDE' | 'GOLD' | 'NIKKEI'
+export type WyckoffBenchmarkMarket = 'NASDAQ' | 'DOW' | 'CRUDE' | 'GOLD' | 'SILVER' | 'NIKKEI'
 
 export function getAllWyckoffBenchmarks(): WyckoffMarketBenchmark[] {
-  const order: WyckoffBenchmarkMarket[] = ['NASDAQ', 'DOW', 'CRUDE', 'GOLD', 'NIKKEI']
+  const order: WyckoffBenchmarkMarket[] = ['NASDAQ', 'DOW', 'CRUDE', 'GOLD', 'SILVER', 'NIKKEI']
   return order
     .map((k) => WYCKOFF_BENCHMARKS_BY_MARKET[k])
     .filter((m): m is WyckoffMarketBenchmark => Boolean(m))

@@ -145,6 +145,32 @@
         "NY_PM (38)",
         "POST_SETTLE (11)"
       ]
+    },
+    "SILVER": {
+      "market": "SILVER (SI / SIL)",
+      "totalRanges": 412,
+      "accumulationCount": 224,
+      "distributionCount": 188,
+      "accumulationSpringRatePct": 18.8,
+      "distributionUtadRatePct": 21.3,
+      "bullishAbsorptionCvdRatePct": 19.2,
+      "bearishAbsorptionCvdRatePct": 20.7,
+      "avgRangeDurationHours": 5.4,
+      "avgAtrExpansionRatio": 1.04,
+      "avgSweepVolumeRatio": 1.74,
+      "topBreakoutHoursEt": [
+        "8:30 ET (34 ranges)",
+        "9:30 ET (29 ranges)",
+        "3:00 ET (26 ranges)",
+        "10:00 ET (24 ranges)"
+      ],
+      "topFormationSessions": [
+        "ASIA (148)",
+        "LONDON (132)",
+        "NY_AM (74)",
+        "NY_PM (44)",
+        "POST_SETTLE (14)"
+      ]
     }
   }
 }

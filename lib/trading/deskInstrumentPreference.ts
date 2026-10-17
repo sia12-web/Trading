@@ -55,8 +55,8 @@ export function resolveInitialDeskChartInstrument(args: {
   preference?: string | null
 }): DeskInstrumentPref {
   return (
-    parseDeskInstrument(args.clockLock) ??
     parseDeskInstrument(args.preference) ??
+    parseDeskInstrument(args.clockLock) ??
     'DOW'
   )
 }
@@ -69,8 +69,8 @@ export function initialDeskChartInstrument(): DeskInstrumentPref {
       params.get('instrument') ?? params.get('market')
     )
     return resolveInitialDeskChartInstrument({
-      clockLock: loadDeskClockLock(),
       preference: fromUrl ?? parseDeskInstrument(localStorage.getItem(STORAGE_KEY)),
+      clockLock: loadDeskClockLock(),
     })
   } catch {
     return 'DOW'

@@ -3,8 +3,6 @@
  * Real-time notifications for trade execution, stop loss, take profit, and session outings.
  */
 
-import { logger } from '@/lib/utils/logger'
-
 export type TelegramSendResult =
   | { ok: true; messageId?: number; skipped?: false }
   | { ok: true; skipped: true; reason: string }
@@ -16,98 +14,27 @@ export interface TelegramConfig {
 }
 
 export function getTelegramConfig(): TelegramConfig | null {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim()
-  const chatId = process.env.TELEGRAM_CHAT_ID?.trim()
-
-  if (!botToken || !chatId) {
-    return null
-  }
-  return { botToken, chatId }
+  return null
 }
 
 export function telegramConfigured(): boolean {
-  return getTelegramConfig() !== null
+  return false
 }
 
 /**
- * Send an arbitrary message to the configured Telegram chat.
+ * Telegram notifications removed from system — no-op stub kept for call-site compatibility.
  */
 export async function sendTelegramMessage(
-  text: string,
-  options: {
+  _text: string,
+  _options: {
     parseMode?: 'Markdown' | 'HTML'
     disableNotification?: boolean
   } = {}
 ): Promise<TelegramSendResult> {
-  const config = getTelegramConfig()
-  if (!config) {
-    return {
-      ok: true,
-      skipped: true,
-      reason: 'Telegram credentials not configured',
-    }
-  }
-
-  const { botToken, chatId } = config
-  const parseMode = options.parseMode ?? 'Markdown'
-
-  try {
-    const url = `https://api.telegram.org/bot${botToken}/sendMessage`
-    const body = {
-      chat_id: chatId,
-      text,
-      parse_mode: parseMode,
-      disable_notification: options.disableNotification ?? false,
-    }
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(8000),
-    })
-
-    const data = (await res.json().catch(() => ({}))) as {
-      ok?: boolean
-      result?: { message_id?: number }
-      description?: string
-      error_code?: number
-    }
-
-    if (res.ok && data.ok) {
-      logger.info('telegram.message_sent', {
-        chatId,
-        messageId: data.result?.message_id,
-      })
-      return { ok: true, messageId: data.result?.message_id }
-    }
-
-    // If Markdown parsing failed, attempt plain text fallback
-    if (parseMode === 'Markdown' && data.description?.includes('can\'t parse')) {
-      logger.warn('telegram.markdown_parse_failed_retrying_plain', { desc: data.description })
-      const retryRes = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text,
-          disable_notification: options.disableNotification ?? false,
-        }),
-        signal: AbortSignal.timeout(8000),
-      })
-      const retryData = (await retryRes.json().catch(() => ({}))) as any
-      if (retryRes.ok && retryData.ok) {
-        return { ok: true, messageId: retryData.result?.message_id }
-      }
-    }
-
-    const errMsg = data.description || `HTTP ${res.status} ${res.statusText}`
-    logger.warn('telegram.send_failed', { errMsg, status: res.status })
-    return { ok: false, error: errMsg, description: data.description }
-  } catch (err: any) {
-    const errorStr = err?.message || String(err)
-    logger.error('telegram.network_error', { err: errorStr })
-    return { ok: false, error: errorStr }
+  return {
+    ok: true,
+    skipped: true,
+    reason: 'Telegram removed from system',
   }
 }
 
