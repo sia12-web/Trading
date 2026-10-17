@@ -55,12 +55,6 @@ export default function DashboardHomePage() {
           Open Chart →
         </Link>
         <Link
-          href="/dashboard/positions"
-          className="rounded-lg border border-surface-600 px-4 py-2.5 text-sm font-semibold text-gray-300 hover:border-surface-500 hover:text-white"
-        >
-          Positions
-        </Link>
-        <Link
           href="/dashboard/journal"
           className="rounded-lg border border-surface-600 px-4 py-2.5 text-sm font-semibold text-gray-300 hover:border-surface-500 hover:text-white"
         >
