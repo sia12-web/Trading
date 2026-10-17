@@ -189,6 +189,8 @@ export async function POST(req: NextRequest) {
               fiveDaySupportLow: chartContext.intermediateMoney?.low5d,
               fiveDaySupportHigh: chartContext.intermediateMoney?.val5d,
             },
+            crossMarketVolatility: chartContext.crossMarketVolatility ?? null,
+            marketRadar: chartContext.marketRadar ?? null,
           })
         } catch {
           // Non-fatal
@@ -384,6 +386,8 @@ export function buildDeskFallbackResponse(
       wReport = generateAndPersistWyckoffReport({
         instrumentRaw: ctx.instrument,
         intradayCandles: ctx.recentCandles,
+        crossMarketVolatility: ctx.crossMarketVolatility ?? null,
+        marketRadar: ctx.marketRadar ?? null,
       })
     } catch {
       // ignore
@@ -636,7 +640,7 @@ ${box.subLegs
 
   // 1b. Cross-Asset Volatility & 5-Market Selection Radar (e.g. "rank the 5 markets", "market selection", "cross asset", "vix", "ovx", "gvz", "where is big money")
   if (
-    /\b(rank|market\s+selection|cross[\s-]asset|volatility\s+index|vix|ovx|gvz|5\s+markets|where\s+is\s+big\s+money|which\s+market|which\s+ticker|compete\s+for\s+attention)\b/i.test(lower)
+    /\b(rank|market\s+selection|cross[\s-]asset|volatility\s+index|vix|ovx|gvz|jniv|5\s+markets|where\s+is\s+big\s+money|which\s+market|which\s+ticker|compete\s+for\s+attention|vol\s+gauge\w*|market\s+radar)\b/i.test(lower)
   ) {
     const vol = ctx.crossMarketVolatility
     const radar = ctx.marketRadar
@@ -644,6 +648,7 @@ ${box.subLegs
     const vix = vol?.equities.vix.value.toFixed(1) ?? '16.8'
     const ovx = vol?.crude.ovx.value.toFixed(1) ?? '36.4'
     const gvz = vol?.gold.gvz.value.toFixed(1) ?? '15.1'
+    const jniv = vol?.nikkei?.jniv.value.toFixed(1) ?? '20.4'
 
     const directive = radar?.deskDirective ?? 'CL (Crude Oil) is the sole Grade A candidate today. Ignore Grade B/C chop on peer markets.'
 
@@ -656,17 +661,23 @@ ${box.subLegs
           .join('\n\n')
       : `- **CRUDE (CL):** **Grade A** (FOCUS TRADE) — OVX surging + price at 5D LVN + Bullish CVD absorption.\n- **NASDAQ (MNQ):** **Grade C** (CHOP) — VIX1D flat, compressing inside yesterday value area.\n- **DOW (MYM):** **Grade B** (ARMED) — Range expanding but suspended 120 pts from support.\n- **SP500 (MES):** **Grade B** (ARMED) — Awaiting location touch at Y-VAL.\n- **GOLD (MGC):** **Grade C** (IGNORE) — GVZ compressed, volume light.`
 
+    const vr = wReport?.volatilityAndRadarSynthesis
+    const wyckoffVolRadarSection = vr
+      ? `\n\n---\n\n### 🏛️ **Wyckoff Accumulation / Distribution Read from Vol Gauge & Radar (${ctx.instrument}):**\n- **Asset Implied Vol Gauge (${vr.primaryGaugeSymbol}):** **${vr.primaryGaugeValue != null ? vr.primaryGaugeValue.toFixed(1) : 'N/A'}** (${vr.primaryGaugeChangePct != null ? `${vr.primaryGaugeChangePct >= 0 ? '+' : ''}${vr.primaryGaugeChangePct.toFixed(1)}%` : '0.0%'}, Regime: **${vr.primaryGaugeRegime}**)\n- **Vol Gauge Wyckoff Signal:** **\`${vr.volGaugeSignal}\`**\n  * *Diagnostic:* ${vr.volGaugeDiagnosis}\n- **Cross-Market Radar Signal:** **\`${vr.crossMarketSignal}\`** (Grade **${vr.radarGrade ?? 'N/A'}**, Top Pick: **${vr.radarTopPick ?? 'NONE'}**)\n  * *Diagnostic:* ${vr.crossMarketDiagnosis}\n- **Combined Accumulation / Distribution Verdict:** **${vr.combinedAccDistVerdict}**\n  * **Actionable Synthesis:** ${vr.actionableSynthesis}`
+      : `\n\n---\n\n### 🏛️ **How Vol Gauges & Radar Identify Wyckoff Accumulation vs. Distribution:**\n- **Silent Spring Absorption (Accumulation Phase C):** Price sweeps support while the asset's Vol Gauge (\`VIX1D\` / \`OVX\` / \`GVZ\` / \`JNIV\`) fails to spike or makes a lower high -> confirms absence of institutional panic hedging and favors passive limit absorption (Spring Reclaim).\n- **Post-Spring Vol Crush (Accumulation Phase D):** Price reclaims support or breaks resistance (SOS/LPS) while the Vol Gauge contracts -> confirms supply removal and supports markup.\n- **Distribution Vol Floor Divergence (Distribution Phase B/C):** Price probes resistance (UTAD) while the Vol Gauge stays elevated or rises (+2%+) -> warns of institutional downside hedging and raises Upthrust risk.\n- **Intermarket Non-Confirmation (SMTI):** When one index sweeps a high alone while peer indices fail to confirm on the Radar, treat it as an isolated Upthrust warning.`
+
     return `### 🎯 **Cross-Asset Volatility & 5-Market Selection Matrix**
 
-**Cboe Implied Volatility Gauges (Asset-Specific):**
+**Implied Volatility Gauges (Asset-Specific):**
 - **Equities (ES / NQ / YM):** VIX1D **${vix1d}** | 30D VIX **${vix}** (${vol?.equities.activeRegime ?? 'NORMAL'})
 - **Crude Oil (CL / MCL):** OVX (USO options) **${ovx}** (${vol?.crude.activeRegime ?? 'EXPANDING'} 🔥)
 - **Gold (GC / MGC):** GVZ (GLD options) **${gvz}** (${vol?.gold.activeRegime ?? 'NORMAL'})
+- **Nikkei 225 (NKD):** JNIV **${jniv}** (${vol?.nikkei?.activeRegime ?? 'NORMAL'})
 
 ---
 
 ### 📊 **5-Market Opportunity Ranking (Participation × Location × Structure):**
-${marketsList}
+${marketsList}${wyckoffVolRadarSection}
 
 ---
 
@@ -761,6 +772,17 @@ ${marketsList}
     const iceStr = resistanceCeiling != null ? resistanceCeiling.toFixed(2) : 'Awaiting Tier 1 resistance'
     const pocStr = equilibriumPoc != null ? equilibriumPoc.toFixed(2) : 'Awaiting POC'
     const b = getWyckoffBenchmark(ctx.instrument)
+    const vr = wReport?.volatilityAndRadarSynthesis
+
+    const volRadarBlock = vr
+      ? `\n\n---\n\n### 2B. **Volatility Gauge (${vr.primaryGaugeSymbol}) & Cross-Market Radar Wyckoff Synthesis:**
+- **Asset Vol Gauge (${vr.primaryGaugeSymbol}):** **${vr.primaryGaugeValue != null ? vr.primaryGaugeValue.toFixed(1) : 'N/A'}** (${vr.primaryGaugeChangePct != null ? `${vr.primaryGaugeChangePct >= 0 ? '+' : ''}${vr.primaryGaugeChangePct.toFixed(1)}%` : '0.0%'}, Regime: **${vr.primaryGaugeRegime}**) → Signal: **\`${vr.volGaugeSignal}\`**
+  * *Vol Read:* ${vr.volGaugeDiagnosis}
+- **Cross-Market Radar (${ctx.instrument}):** **Grade ${vr.radarGrade ?? 'N/A'}** (Top Pick: ${vr.radarTopPick ?? 'NONE'}) → Signal: **\`${vr.crossMarketSignal}\`**
+  * *Intermarket Read:* ${vr.crossMarketDiagnosis}
+- **Combined Vol + Radar Acc/Dist Verdict:** **${vr.combinedAccDistVerdict}**
+  * **Takeaway:** ${vr.actionableSynthesis}`
+      : ''
 
     return `### 🏛️ **Leo Wyckoff Accumulation vs. Distribution Master Audit (${ctx.instrument} @ ${curPxStr})**
 
@@ -779,7 +801,7 @@ ${marketsList}
 ### 2. **Current Phase Diagnosis & Market State:**
 - **Diagnosed Phase:** **${phaseDiagnosis}**
 - **Structural Analysis:** ${phaseDetails}
-- **Effort vs. Result Read:** Session CVD is **${cvdNum >= 0 ? '+' : ''}${cvdNum.toLocaleString()} contracts** (${trend}). Bar delta: **${deltaNum >= 0 ? '+' : ''}${deltaNum.toLocaleString()}**. Order flow divergence: **${div !== 'NONE' ? div : 'None'}**.
+- **Effort vs. Result Read:** Session CVD is **${cvdNum >= 0 ? '+' : ''}${cvdNum.toLocaleString()} contracts** (${trend}). Bar delta: **${deltaNum >= 0 ? '+' : ''}${deltaNum.toLocaleString()}**. Order flow divergence: **${div !== 'NONE' ? div : 'None'}**.${volRadarBlock}
 
 ---
 
@@ -828,13 +850,15 @@ ${marketsList}
 - **Execution Read:** ${executionRead}
 - **Required Clearance:** Minimum **2.0R** reward clearance to opposite boundary required before entering.
 - **VERDICT:** **${tradeVerdict}** *(Advisory tradeable hypothesis only; read-only platform never executes orders).*${
-      ctx.wyckoffMultiTimeframeReport || (ctx.recentCandles && ctx.recentCandles.length >= 6)
+      wReport || (ctx.recentCandles && ctx.recentCandles.length >= 6)
         ? `\n\n---\n\n### 8. **Live Multi-Timeframe Wyckoff Auction Intelligence Engine (1D → 30m → 5m):**\n\`\`\`text\n${formatWyckoffMultiTimeframeBriefForLeo(
-            ctx.wyckoffMultiTimeframeReport ??
+            wReport ??
               generateAndPersistWyckoffReport(
                 {
                   instrumentRaw: ctx.instrument,
                   intradayCandles: ctx.recentCandles,
+                  crossMarketVolatility: ctx.crossMarketVolatility ?? null,
+                  marketRadar: ctx.marketRadar ?? null,
                 },
                 { persistToDisk: false }
               )

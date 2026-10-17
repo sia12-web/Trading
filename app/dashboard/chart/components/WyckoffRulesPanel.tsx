@@ -547,6 +547,89 @@ export function WyckoffRulesPanel({
                 </div>
               </div>
 
+              {/* 1B. VOLATILITY GAUGE & CROSS-MARKET RADAR WYCKOFF ACCUMULATION / DISTRIBUTION SYNTHESIS */}
+              {wyckoffReport?.volatilityAndRadarSynthesis && (
+                <div className="p-3 rounded-xl bg-gradient-to-r from-indigo-950/50 via-surface-900 to-cyan-950/40 border border-indigo-500/40 shadow-sm space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-surface-800 pb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">📡</span>
+                      <div>
+                        <div className="text-white text-xs font-bold flex items-center gap-2 flex-wrap">
+                          <span>Vol Gauge ({wyckoffReport.volatilityAndRadarSynthesis.primaryGaugeSymbol}) & Cross-Market Radar Wyckoff Diagnostic</span>
+                          <span
+                            className={`px-2 py-0.5 rounded text-[9px] font-bold border ${
+                              wyckoffReport.volatilityAndRadarSynthesis.combinedAccDistVerdict === 'ACCUMULATION_FAVORED'
+                                ? 'bg-emerald-950/90 text-emerald-200 border-emerald-500/60'
+                                : wyckoffReport.volatilityAndRadarSynthesis.combinedAccDistVerdict === 'DISTRIBUTION_FAVORED'
+                                ? 'bg-rose-950/90 text-rose-200 border-rose-500/60'
+                                : wyckoffReport.volatilityAndRadarSynthesis.combinedAccDistVerdict === 'CAUSE_BUILDING_NEUTRAL'
+                                ? 'bg-cyan-950/90 text-cyan-200 border-cyan-500/60'
+                                : 'bg-amber-950/90 text-amber-200 border-amber-500/60'
+                            }`}
+                          >
+                            {wyckoffReport.volatilityAndRadarSynthesis.combinedAccDistVerdict.replace(/_/g, ' ')}
+                          </span>
+                        </div>
+                        <span className="text-gray-400 text-[9.5px] block">
+                          Silent Spring Absorption · Post-Spring Vol Crush · Distribution Skew Divergence · Intermarket SMTI
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        askLeoWithContext(
+                          `Leo, audit whether ${activeBenchmark.market} is in Wyckoff Accumulation or Distribution using its live implied volatility gauge (${wyckoffReport.volatilityAndRadarSynthesis?.primaryGaugeSymbol}: ${wyckoffReport.volatilityAndRadarSynthesis?.primaryGaugeValue?.toFixed(1) ?? 'N/A'}, signal: ${wyckoffReport.volatilityAndRadarSynthesis?.volGaugeSignal}) and the Cross-Market Radar (Grade ${wyckoffReport.volatilityAndRadarSynthesis?.radarGrade ?? 'N/A'}, signal: ${wyckoffReport.volatilityAndRadarSynthesis?.crossMarketSignal}).`
+                        )
+                      }
+                      className="px-2.5 py-1 rounded bg-indigo-950 hover:bg-indigo-900 border border-indigo-500/50 text-indigo-200 text-[9px] font-bold transition flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>🤖</span>
+                      <span>Ask Leo: Vol & Radar Acc/Dist Audit</span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[9.5px]">
+                    <div className="p-2.5 rounded-lg bg-surface-900/80 border border-surface-800 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-cyan-300 font-bold">
+                          Implied Vol Gauge ({wyckoffReport.volatilityAndRadarSynthesis.primaryGaugeSymbol}):{' '}
+                          {wyckoffReport.volatilityAndRadarSynthesis.primaryGaugeValue != null
+                            ? wyckoffReport.volatilityAndRadarSynthesis.primaryGaugeValue.toFixed(1)
+                            : 'N/A'}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded bg-surface-800 text-gray-200 text-[8.5px] font-bold border border-surface-700">
+                          {wyckoffReport.volatilityAndRadarSynthesis.volGaugeSignal.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                      <p className="text-gray-300 font-sans text-[9.5px] leading-relaxed">
+                        {wyckoffReport.volatilityAndRadarSynthesis.volGaugeDiagnosis}
+                      </p>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-surface-900/80 border border-surface-800 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-amber-300 font-bold">
+                          Cross-Market Radar: Grade {wyckoffReport.volatilityAndRadarSynthesis.radarGrade ?? 'N/A'} (Top Pick:{' '}
+                          {wyckoffReport.volatilityAndRadarSynthesis.radarTopPick ?? 'NONE'})
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded bg-surface-800 text-gray-200 text-[8.5px] font-bold border border-surface-700">
+                          {wyckoffReport.volatilityAndRadarSynthesis.crossMarketSignal.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                      <p className="text-gray-300 font-sans text-[9.5px] leading-relaxed">
+                        {wyckoffReport.volatilityAndRadarSynthesis.crossMarketDiagnosis}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-2 rounded-lg bg-indigo-950/30 border border-indigo-500/30 text-[10px] text-indigo-100 font-sans flex items-start gap-2">
+                    <span className="text-indigo-400 font-bold shrink-0">🎯 Desk Synthesis:</span>
+                    <span>{wyckoffReport.volatilityAndRadarSynthesis.actionableSynthesis}</span>
+                  </div>
+                </div>
+              )}
+
               {/* 2. THE 5-TIMEFRAME TELEMETRY MATRIX (DAILY · 4H · 15M · 5M · 1M) */}
               <div className="p-3 rounded-xl bg-surface-950/90 border border-surface-800 space-y-2.5">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-surface-800 pb-1.5">

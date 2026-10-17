@@ -7,6 +7,8 @@ import {
   type WyckoffCandle,
   type WyckoffInstrument,
 } from '@/lib/trading/wyckoff'
+import { getCrossMarketVolatility } from '@/lib/trading/crossMarketVolatility'
+import { getLiveCrossMarketRadarReport } from '@/lib/trading/crossMarketRadar'
 import { YAHOO_SYMBOLS } from '@/lib/yahoo/symbols'
 
 export const runtime = 'nodejs'
@@ -83,11 +85,15 @@ export async function GET(req: NextRequest) {
     const instrumentParam = searchParams.get('instrument') || 'NASDAQ'
     const spec = resolveWyckoffMarketSpec(instrumentParam)
 
-    const [dailyCandles, m30Candles, m5Candles] = await Promise.all([
+    const [dailyCandles, m30Candles, m5Candles, vol] = await Promise.all([
       fetchYahooChartCandles(spec.instrument, '1d', '3mo'),
       fetchYahooChartCandles(spec.instrument, '30m', '10d'),
       fetchYahooChartCandles(spec.instrument, '5m', '5d'),
+      getCrossMarketVolatility().catch(() => null),
     ])
+    const radar = vol
+      ? await getLiveCrossMarketRadarReport(vol).catch(() => null)
+      : null
 
     const report = generateAndPersistWyckoffReport({
       instrumentRaw: spec.instrument,
@@ -95,6 +101,8 @@ export async function GET(req: NextRequest) {
       m30Candles,
       m5Candles,
       dataSource: `${spec.exchange}:${spec.primaryContract} (Yahoo Futures Feed)`,
+      crossMarketVolatility: vol,
+      marketRadar: radar,
     })
 
     return NextResponse.json({
@@ -143,6 +151,13 @@ export async function POST(req: NextRequest) {
       ])
     }
 
+    const vol =
+      body?.crossMarketVolatility ??
+      (await getCrossMarketVolatility().catch(() => null))
+    const radar =
+      body?.marketRadar ??
+      (vol ? await getLiveCrossMarketRadarReport(vol).catch(() => null) : null)
+
     const report = generateAndPersistWyckoffReport(
       {
         instrumentRaw: spec.instrument,
@@ -152,6 +167,8 @@ export async function POST(req: NextRequest) {
         intradayCandles,
         dataSource: body?.dataSource ?? `${spec.exchange}:${spec.primaryContract}`,
         externalObstacles: body?.externalObstacles,
+        crossMarketVolatility: vol,
+        marketRadar: radar,
       },
       {
         bypassDeduplication: Boolean(body?.bypassDeduplication),
@@ -171,3 +188,4 @@ export async function POST(req: NextRequest) {
     )
   }
 }
+

@@ -21,14 +21,18 @@ import { computeWyckoffAtrRegime } from './wyckoffAtrRegime'
 import { computeWyckoffVolumeEffortResult } from './wyckoffVolumeEffortResult'
 import { detectWyckoffTradingRange } from './wyckoffRangeDetector'
 import { evaluateWyckoffEventStateMachine } from './wyckoffEventStateMachine'
+import type { CrossMarketVolatilityState } from '../crossMarketVolatility'
+import type { CrossMarketRadarReport, RadarMarket } from '../crossMarketRadar'
 import type {
   AdversarialQuestionCheck,
   WyckoffAtrRegime,
   WyckoffCandle,
+  WyckoffCrossMarketSignal,
   WyckoffCvdVolumeIntelligence,
   WyckoffDetectedRange,
   WyckoffEventState,
   WyckoffHypothesisEvaluation,
+  WyckoffInstrument,
   WyckoffMindsetAudit,
   WyckoffMonitoringStatus,
   WyckoffMultiTimeframeReport,
@@ -36,6 +40,8 @@ import type {
   WyckoffSwingStructure,
   WyckoffTimeframe,
   WyckoffTimeframeAnalysis,
+  WyckoffVolGaugeSignal,
+  WyckoffVolatilityAndRadarSynthesis,
 } from './types'
 
 export interface ExternalReferenceObstacles {
@@ -1023,6 +1029,243 @@ export interface MultiTimeframeWyckoffInput {
   dataSource?: string
   nowUnixSec?: number
   externalObstacles?: ExternalReferenceObstacles
+  crossMarketVolatility?: CrossMarketVolatilityState | null
+  marketRadar?: CrossMarketRadarReport | null
+}
+
+export function computeWyckoffVolatilityAndRadarSynthesis(args: {
+  instrument: WyckoffInstrument
+  daily: WyckoffTimeframeAnalysis
+  m30: WyckoffTimeframeAnalysis
+  m5: WyckoffTimeframeAnalysis
+  crossMarketVolatility?: CrossMarketVolatilityState | null
+  marketRadar?: CrossMarketRadarReport | null
+}): WyckoffVolatilityAndRadarSynthesis {
+  const { instrument, daily, m30, m5, crossMarketVolatility, marketRadar } = args
+
+  // 1. Resolve Dedicated Implied Volatility Gauge for Instrument
+  let primaryGaugeSymbol: 'VIX1D' | 'VIX' | 'OVX' | 'GVZ' | 'JNIV' = 'VIX1D'
+  let primaryGaugeValue: number | null = null
+  let primaryGaugeChangePct: number | null = null
+  let primaryGaugeRegime = 'UNKNOWN'
+  let isGaugeExpanding = false
+
+  if (instrument === 'GOLD') {
+    primaryGaugeSymbol = 'GVZ'
+    if (crossMarketVolatility?.gold?.gvz) {
+      primaryGaugeValue = crossMarketVolatility.gold.gvz.value
+      primaryGaugeChangePct = crossMarketVolatility.gold.gvz.changePct
+      primaryGaugeRegime = crossMarketVolatility.gold.activeRegime
+      isGaugeExpanding = crossMarketVolatility.gold.isExpanding
+    }
+  } else if (instrument === 'CRUDE') {
+    primaryGaugeSymbol = 'OVX'
+    if (crossMarketVolatility?.crude?.ovx) {
+      primaryGaugeValue = crossMarketVolatility.crude.ovx.value
+      primaryGaugeChangePct = crossMarketVolatility.crude.ovx.changePct
+      primaryGaugeRegime = crossMarketVolatility.crude.activeRegime
+      isGaugeExpanding = crossMarketVolatility.crude.isExpanding
+    }
+  } else if (instrument === 'NIKKEI') {
+    primaryGaugeSymbol = 'JNIV'
+    if (crossMarketVolatility?.nikkei?.jniv) {
+      primaryGaugeValue = crossMarketVolatility.nikkei.jniv.value
+      primaryGaugeChangePct = crossMarketVolatility.nikkei.jniv.changePct
+      primaryGaugeRegime = crossMarketVolatility.nikkei.activeRegime
+      isGaugeExpanding = crossMarketVolatility.nikkei.isExpanding
+    }
+  } else {
+    primaryGaugeSymbol = 'VIX1D'
+    if (crossMarketVolatility?.equities?.vix1d) {
+      primaryGaugeValue = crossMarketVolatility.equities.vix1d.value
+      primaryGaugeChangePct = crossMarketVolatility.equities.vix1d.changePct
+      primaryGaugeRegime = crossMarketVolatility.equities.activeRegime
+      isGaugeExpanding = crossMarketVolatility.equities.isExpanding
+    }
+  }
+
+  // Fallback to realized ATR regime if live Cboe gauge was not passed
+  if (primaryGaugeRegime === 'UNKNOWN') {
+    if (m5.atrRegime.atrTrend === 'CONTRACTING') primaryGaugeRegime = 'COMPRESSED'
+    else if (m5.atrRegime.atrTrend === 'EXPANDING') {
+      primaryGaugeRegime = 'EXPANDING'
+      isGaugeExpanding = true
+    } else primaryGaugeRegime = 'NORMAL'
+  }
+
+  const gaugeValStr =
+    primaryGaugeValue != null
+      ? `${primaryGaugeSymbol} ${primaryGaugeValue.toFixed(1)} (${primaryGaugeChangePct != null && primaryGaugeChangePct >= 0 ? '+' : ''}${primaryGaugeChangePct?.toFixed(1) ?? '0.0'}%, ${primaryGaugeRegime})`
+      : `${primaryGaugeSymbol} (ATR proxy: ${primaryGaugeRegime})`
+
+  const activeRange = m5.detectedRange ?? m30.detectedRange ?? daily.detectedRange
+  const ev = m5.eventState.candidateEvent !== 'NONE' ? m5.eventState : m30.eventState
+
+  const nearLowerBoundary =
+    activeRange?.pricePosition === 'LOWER_BOUNDARY_ZONE' ||
+    activeRange?.pricePosition === 'BELOW_RANGE' ||
+    ev.candidateEvent === 'SPRING' ||
+    ev.candidateEvent === 'SECONDARY_TEST'
+
+  const nearUpperBoundary =
+    activeRange?.pricePosition === 'UPPER_BOUNDARY_ZONE' ||
+    activeRange?.pricePosition === 'ABOVE_RANGE' ||
+    ev.candidateEvent === 'UPTHRUST' ||
+    ev.candidateEvent === 'UTAD'
+
+  let volGaugeSignal: WyckoffVolGaugeSignal = 'NEUTRAL_VOL_CONTEXT'
+  let volGaugeDiagnosis = `${gaugeValStr} — Volatility is in balanced equilibrium; monitor range boundary tests for expansion or compression.`
+
+  if (
+    (ev.candidateEvent === 'SPRING' ||
+      ev.candidateEvent === 'SIGN_OF_STRENGTH' ||
+      ev.candidateEvent === 'BREAKOUT_RETEST') &&
+    (ev.lifecycleStage === 'RECLAIM' ||
+      ev.lifecycleStage === 'RETEST' ||
+      ev.lifecycleStage === 'CONFIRMED') &&
+    ((primaryGaugeChangePct != null && primaryGaugeChangePct < 0) ||
+      (!isGaugeExpanding && m5.atrRegime.atrTrend !== 'EXPANDING'))
+  ) {
+    volGaugeSignal = 'POST_SPRING_VOL_CRUSH_MARKUP'
+    volGaugeDiagnosis = `Post-Spring Volatility Crush (${gaugeValStr}): Implied volatility is contracting after support reclaim, confirming trapped sellers and orderly Wyckoff Phase D/E mark-up.`
+  } else if (nearLowerBoundary) {
+    if (isGaugeExpanding && (primaryGaugeChangePct == null || primaryGaugeChangePct >= 3.5)) {
+      volGaugeSignal = 'CLIMACTIC_STOPPING_VOLUME_PHASE_A'
+      volGaugeDiagnosis = `Phase A Selling Climax Volatility Spike (${gaugeValStr}): Sharp volatility expansion at support marks initial stopping action (SC). Require a Secondary Test (ST) with contracting volatility before confirming accumulation.`
+    } else if (!isGaugeExpanding && (primaryGaugeChangePct == null || primaryGaugeChangePct <= 1.8)) {
+      volGaugeSignal = 'SILENT_SPRING_ABSORPTION'
+      volGaugeDiagnosis = `Silent Spring Volatility Divergence (${gaugeValStr}): Price is probing/sweeping support while ${primaryGaugeSymbol} refuses to spike — institutions are NOT buying panic put protection, confirming passive limit-bid absorption (Accumulation Phase C).`
+    }
+  } else if (nearUpperBoundary) {
+    if (
+      isGaugeExpanding ||
+      (primaryGaugeChangePct != null && primaryGaugeChangePct >= 1.0) ||
+      primaryGaugeRegime === 'ELEVATED' ||
+      primaryGaugeRegime === 'EXPANDING'
+    ) {
+      volGaugeSignal = 'DISTRIBUTION_VOL_FLOOR_DIVERGENCE'
+      volGaugeDiagnosis = `Distribution Volatility Floor/Skew Divergence (${gaugeValStr}): Price is testing upper resistance while ${primaryGaugeSymbol} is elevated/rising — smart money is buying downside protection into retail strength (Upthrust / Distribution Phase B-C).`
+    }
+  } else if (
+    activeRange &&
+    (primaryGaugeRegime === 'COMPRESSED' ||
+      primaryGaugeRegime === 'NORMAL' ||
+      m5.atrRegime.atrTrend === 'CONTRACTING')
+  ) {
+    volGaugeSignal = 'PHASE_B_COMPRESSION_CAUSE_BUILDING'
+    volGaugeDiagnosis = `Phase B Volatility Compression (${gaugeValStr}): Volatility has drained into compression inside [${activeRange.rangeLow.toFixed(2)} – ${activeRange.rangeHigh.toFixed(2)}], indicating circulating float is being absorbed and Wyckoff Cause is charging.`
+  }
+
+  // 2. Evaluate Cross-Market Radar (Wyckoff Principle of Selection & Intermarket Non-Confirmation)
+  const radarCard = marketRadar?.markets?.[instrument as RadarMarket] ?? null
+  const radarGrade = radarCard?.grade ?? null
+  const radarTopPick = marketRadar?.topPick ?? null
+
+  let crossMarketSignal: WyckoffCrossMarketSignal = 'PEER_ALIGNED_BALANCE'
+  let crossMarketDiagnosis = `Cross-market peer comparison is balanced; await clear relative strength or weakness at a Tier 1 boundary.`
+
+  if (marketRadar && radarCard) {
+    const peerKeys: RadarMarket[] =
+      instrument === 'NASDAQ' || instrument === 'DOW'
+        ? (['NASDAQ', 'DOW', 'SP500'].filter((k) => k !== instrument) as RadarMarket[])
+        : instrument === 'GOLD'
+          ? ['SILVER', 'CRUDE']
+          : instrument === 'CRUDE'
+            ? ['GOLD', 'NASDAQ']
+            : ['NASDAQ', 'DOW']
+
+    const peerCards = peerKeys
+      .map((k) => marketRadar.markets[k])
+      .filter((c): c is NonNullable<typeof c> => c != null)
+
+    const avgPeerChange =
+      peerCards.length > 0
+        ? peerCards.reduce((acc, c) => acc + c.dayChangePct, 0) / peerCards.length
+        : radarCard.dayChangePct
+
+    const relDiff = radarCard.dayChangePct - avgPeerChange
+    const peerSummary = peerCards
+      .map((c) => `${c.tickerRoot} ${c.dayChangePct >= 0 ? '+' : ''}${c.dayChangePct.toFixed(2)}% (Gr ${c.grade})`)
+      .join(', ')
+
+    // Check defensive rotation (Equities stalling while Gold/Crude vol & price expand)
+    const goldCard = marketRadar.markets.GOLD
+    const crudeCard = marketRadar.markets.CRUDE
+    const defensiveExpanding =
+      (instrument === 'NASDAQ' || instrument === 'DOW') &&
+      ((goldCard && goldCard.dayChangePct > 0.4 && crossMarketVolatility?.gold?.isExpanding) ||
+        (crudeCard && crudeCard.dayChangePct > 0.8 && crossMarketVolatility?.crude?.isExpanding))
+
+    if (defensiveExpanding && nearUpperBoundary) {
+      crossMarketSignal = 'DEFENSIVE_ROTATION_DISTRIBUTION_WARN'
+      crossMarketDiagnosis = `Macro Defensive Rotation Warning: ${instrument} is stalling near resistance while hard assets (GC/CL) expand in price and volatility — capital rotation warns of Equity Distribution rather than Reaccumulation.`
+    } else if (
+      radarCard.grade === 'A' ||
+      (relDiff >= 0.18 && (nearLowerBoundary || m5.cvdVolume.condition === 'BULLISH_ABSORPTION_CANDIDATE'))
+    ) {
+      crossMarketSignal = 'REL_STRENGTH_ACCUMULATION_LEADER'
+      crossMarketDiagnosis = `Wyckoff Relative Strength Leader (Grade ${radarCard.grade}): ${instrument} (${radarCard.dayChangePct >= 0 ? '+' : ''}${radarCard.dayChangePct.toFixed(2)}%) is outperforming peer complex (${peerSummary}) with stronger structural absorption — confirms institutional accumulation leadership.`
+    } else if (
+      nearUpperBoundary &&
+      (relDiff <= -0.18 || peerCards.some((p) => p.dayChangePct < 0))
+    ) {
+      crossMarketSignal = 'ISOLATED_UPTHRUST_DISTRIBUTION_WARN'
+      crossMarketDiagnosis = `Intermarket Non-Confirmation Warning (Grade ${radarCard.grade}): ${instrument} is probing highs without peer breadth confirmation (${peerSummary}) — elevated risk of Upthrust After Distribution (UTAD).`
+    } else if (
+      radarCard.dayChangePct > 0 &&
+      primaryGaugeChangePct != null &&
+      primaryGaugeChangePct < 0
+    ) {
+      crossMarketSignal = 'RISK_ON_MARKUP_CONFIRMATION'
+      crossMarketDiagnosis = `Broad Markup Confirmation (Grade ${radarCard.grade}): ${instrument} is advancing alongside contracting ${primaryGaugeSymbol} (${primaryGaugeChangePct.toFixed(1)}%) and supportive peer breadth (${peerSummary}).`
+    } else {
+      crossMarketSignal = 'PEER_ALIGNED_BALANCE'
+      crossMarketDiagnosis = `Cross-Market Radar Grade ${radarCard.grade} (Top Pick: ${radarTopPick ?? 'NONE'}): ${instrument} (${radarCard.dayChangePct >= 0 ? '+' : ''}${radarCard.dayChangePct.toFixed(2)}%) is tracking in line with peers (${peerSummary}).`
+    }
+  }
+
+  // 3. Combined Accumulation vs. Distribution Verdict
+  let combinedAccDistVerdict: WyckoffVolatilityAndRadarSynthesis['combinedAccDistVerdict'] =
+    'AWAITING_CONFIRMATION'
+
+  if (
+    volGaugeSignal === 'SILENT_SPRING_ABSORPTION' ||
+    volGaugeSignal === 'POST_SPRING_VOL_CRUSH_MARKUP' ||
+    crossMarketSignal === 'REL_STRENGTH_ACCUMULATION_LEADER' ||
+    (volGaugeSignal === 'PHASE_B_COMPRESSION_CAUSE_BUILDING' &&
+      (m5.cvdVolume.condition === 'BULLISH_ABSORPTION_CANDIDATE' ||
+        m30.detectedRange?.classification === 'POSSIBLE_ACCUMULATION' ||
+        m30.detectedRange?.classification === 'POSSIBLE_REACCUMULATION'))
+  ) {
+    combinedAccDistVerdict = 'ACCUMULATION_FAVORED'
+  } else if (
+    volGaugeSignal === 'DISTRIBUTION_VOL_FLOOR_DIVERGENCE' ||
+    crossMarketSignal === 'ISOLATED_UPTHRUST_DISTRIBUTION_WARN' ||
+    crossMarketSignal === 'DEFENSIVE_ROTATION_DISTRIBUTION_WARN' ||
+    (m5.cvdVolume.condition === 'BEARISH_ABSORPTION_CANDIDATE' && nearUpperBoundary)
+  ) {
+    combinedAccDistVerdict = 'DISTRIBUTION_FAVORED'
+  } else if (volGaugeSignal === 'PHASE_B_COMPRESSION_CAUSE_BUILDING') {
+    combinedAccDistVerdict = 'CAUSE_BUILDING_NEUTRAL'
+  }
+
+  const actionableSynthesis = `[${combinedAccDistVerdict}] ${volGaugeDiagnosis} | ${crossMarketDiagnosis}`
+
+  return {
+    primaryGaugeSymbol,
+    primaryGaugeValue,
+    primaryGaugeChangePct,
+    primaryGaugeRegime,
+    isGaugeExpanding,
+    volGaugeSignal,
+    volGaugeDiagnosis,
+    radarGrade,
+    radarTopPick,
+    crossMarketSignal,
+    crossMarketDiagnosis,
+    combinedAccDistVerdict,
+    actionableSynthesis,
+  }
 }
 
 function isBearishContext(tf: WyckoffTimeframeAnalysis): boolean {
@@ -1252,6 +1495,50 @@ export function evaluateWyckoffMultiTimeframe(
     },
   })
 
+  // 3. Synthesize Implied Volatility Gauges (VIX1D / OVX / GVZ / JNIV) & 5-Market Radar for Accumulation vs Distribution
+  const volatilityAndRadarSynthesis = computeWyckoffVolatilityAndRadarSynthesis({
+    instrument: spec.instrument,
+    daily,
+    m30,
+    m5,
+    crossMarketVolatility: input.crossMarketVolatility,
+    marketRadar: input.marketRadar,
+  })
+
+  if (volatilityAndRadarSynthesis.combinedAccDistVerdict === 'ACCUMULATION_FAVORED') {
+    if (
+      m5.hypothesis.primaryHypothesis === 'POSSIBLE_ACCUMULATION' ||
+      m5.hypothesis.primaryHypothesis === 'POSSIBLE_REACCUMULATION' ||
+      m5.hypothesis.primaryHypothesis === 'BALANCE'
+    ) {
+      m5.hypothesis.supportingEvidence.push(volatilityAndRadarSynthesis.volGaugeDiagnosis)
+      if (volatilityAndRadarSynthesis.crossMarketSignal !== 'PEER_ALIGNED_BALANCE') {
+        m5.hypothesis.supportingEvidence.push(volatilityAndRadarSynthesis.crossMarketDiagnosis)
+      }
+    } else if (
+      m5.hypothesis.primaryHypothesis === 'POSSIBLE_DISTRIBUTION' ||
+      m5.hypothesis.primaryHypothesis === 'POSSIBLE_REDISTRIBUTION'
+    ) {
+      m5.hypothesis.contradictingEvidence.push(volatilityAndRadarSynthesis.volGaugeDiagnosis)
+    }
+  } else if (volatilityAndRadarSynthesis.combinedAccDistVerdict === 'DISTRIBUTION_FAVORED') {
+    if (
+      m5.hypothesis.primaryHypothesis === 'POSSIBLE_DISTRIBUTION' ||
+      m5.hypothesis.primaryHypothesis === 'POSSIBLE_REDISTRIBUTION' ||
+      m5.hypothesis.primaryHypothesis === 'BALANCE'
+    ) {
+      m5.hypothesis.supportingEvidence.push(volatilityAndRadarSynthesis.volGaugeDiagnosis)
+      if (volatilityAndRadarSynthesis.crossMarketSignal !== 'PEER_ALIGNED_BALANCE') {
+        m5.hypothesis.supportingEvidence.push(volatilityAndRadarSynthesis.crossMarketDiagnosis)
+      }
+    } else if (
+      m5.hypothesis.primaryHypothesis === 'POSSIBLE_ACCUMULATION' ||
+      m5.hypothesis.primaryHypothesis === 'POSSIBLE_REACCUMULATION'
+    ) {
+      m5.hypothesis.contradictingEvidence.push(volatilityAndRadarSynthesis.volGaugeDiagnosis)
+    }
+  }
+
   const currentPrice =
     m5.currentPrice ?? m30.currentPrice ?? daily.currentPrice ?? null
 
@@ -1264,7 +1551,7 @@ export function evaluateWyckoffMultiTimeframe(
 
   const actionableSummary = isCountertrend5m
     ? `${spec.instrument}: Countertrend 5m ${m5.eventState.candidateEvent} (${m5.eventState.confirmationStatus}) vs higher-timeframe ${m30Bearish ? '30m bearish' : '30m bullish'} / ${dailyBearish ? '1D bearish' : '1D bullish'} structure. Lower conviction — treat as tactical scalp only or wait for 30m reclaim.`
-    : `${spec.instrument} [${alignmentStatus}]: 1D ${daily.detectedRange?.classification ?? daily.swingStructure.structuralTrend} | 30m ${m30.detectedRange?.classification ?? m30.swingStructure.structuralTrend} (${m30.eventState.lifecycleStage}) | 5m ${m5.eventState.candidateEvent} (${m5.eventState.lifecycleStage}, ${m5.monitoringStatus}).`
+    : `${spec.instrument} [${alignmentStatus}]: 1D ${daily.detectedRange?.classification ?? daily.swingStructure.structuralTrend} | 30m ${m30.detectedRange?.classification ?? m30.swingStructure.structuralTrend} (${m30.eventState.lifecycleStage}) | 5m ${m5.eventState.candidateEvent} (${m5.eventState.lifecycleStage}, ${m5.monitoringStatus}) | Vol/Radar: ${volatilityAndRadarSynthesis.combinedAccDistVerdict} (${volatilityAndRadarSynthesis.primaryGaugeSymbol} ${volatilityAndRadarSynthesis.volGaugeSignal}).`
 
   return {
     market: spec.canonicalId,
@@ -1288,5 +1575,6 @@ export function evaluateWyckoffMultiTimeframe(
       combinedVerdict,
       actionableSummary,
     },
+    volatilityAndRadarSynthesis,
   }
 }

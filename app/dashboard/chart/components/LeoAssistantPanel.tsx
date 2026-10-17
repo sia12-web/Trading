@@ -1914,6 +1914,7 @@ export function LeoAssistantPanel({
         onClearExternalAttachedPoints?.()
       }
 
+      setActiveTab('CHAT')
       handleSendMessage(promptToSend, points)
     }
   }, [
@@ -1925,6 +1926,29 @@ export function LeoAssistantPanel({
     onClearExternalPrompt,
     onClearExternalAttachedPoints,
   ])
+
+  // Global custom event listener so CrossMarketRadarStrip & Vol Gauges can directly query Leo
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handleGlobalAskLeo = (e: Event) => {
+      const custom = e as CustomEvent<{ prompt?: string }>
+      const promptToSend = custom.detail?.prompt?.trim()
+      if (!promptToSend) return
+      setActiveTab('CHAT')
+      if (!isPanelOpen) {
+        if (onToggleOpen) {
+          onToggleOpen()
+        } else {
+          setInternalIsOpen(true)
+        }
+      }
+      handleSendMessage(promptToSend, [])
+    }
+    window.addEventListener('tradepulse-ask-leo', handleGlobalAskLeo)
+    return () => {
+      window.removeEventListener('tradepulse-ask-leo', handleGlobalAskLeo)
+    }
+  }, [isPanelOpen, onToggleOpen])
 
   const activePos = context.activePosition
 

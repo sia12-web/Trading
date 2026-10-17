@@ -451,6 +451,17 @@ export function formatWyckoffMultiTimeframeBriefForLeo(
       ? report.alerts.map((a) => `  • [${a.monitoringStatus}] ${a.headline}`).join('\n')
       : '  • No new un-emitted Wyckoff transition alerts on this bar.'
 
+  const volRadarBlock = report.volatilityAndRadarSynthesis
+    ? [
+        `Volatility Gauge & Cross-Market Radar Wyckoff Synthesis:`,
+        `  - Implied Vol Gauge (${report.volatilityAndRadarSynthesis.primaryGaugeSymbol}): ${report.volatilityAndRadarSynthesis.primaryGaugeValue != null ? report.volatilityAndRadarSynthesis.primaryGaugeValue.toFixed(1) : 'UNAVAILABLE'} (${report.volatilityAndRadarSynthesis.primaryGaugeChangePct != null ? `${report.volatilityAndRadarSynthesis.primaryGaugeChangePct >= 0 ? '+' : ''}${report.volatilityAndRadarSynthesis.primaryGaugeChangePct.toFixed(1)}%` : '0.0%'}, Regime: ${report.volatilityAndRadarSynthesis.primaryGaugeRegime}) -> Signal: ${report.volatilityAndRadarSynthesis.volGaugeSignal}`,
+        `  - Vol Gauge Read: ${report.volatilityAndRadarSynthesis.volGaugeDiagnosis}`,
+        `  - Cross-Market Radar: Grade ${report.volatilityAndRadarSynthesis.radarGrade ?? 'N/A'} (Top Pick: ${report.volatilityAndRadarSynthesis.radarTopPick ?? 'NONE'}) -> Signal: ${report.volatilityAndRadarSynthesis.crossMarketSignal}`,
+        `  - Cross-Market Read: ${report.volatilityAndRadarSynthesis.crossMarketDiagnosis}`,
+        `  - Combined Vol + Radar Acc/Dist Verdict: ${report.volatilityAndRadarSynthesis.combinedAccDistVerdict} — ${report.volatilityAndRadarSynthesis.actionableSynthesis}`,
+      ].join('\n')
+    : null
+
   return [
     `=== WYCKOFF MULTI-TIMEFRAME AUCTION INTELLIGENCE (${report.instrument} / ${report.market}) ===`,
     `Hierarchy Alignment: ${report.hierarchySynthesis.alignmentStatus} | Combined Verdict: ${report.hierarchySynthesis.combinedVerdict}`,
@@ -458,6 +469,7 @@ export function formatWyckoffMultiTimeframeBriefForLeo(
     ...(report.hierarchySynthesis.explicitConflicts.length > 0
       ? [`HTF Conflict Warnings: ${report.hierarchySynthesis.explicitConflicts.join(' | ')}`]
       : []),
+    ...(volRadarBlock ? [volRadarBlock] : []),
     `Multi-Timeframe Breakdown (1D -> 4H -> 30m -> 5m):`,
     formatTfLine(report.daily),
     ...(report.h4 ? [formatTfLine(report.h4)] : []),
@@ -476,3 +488,4 @@ export function formatWyckoffMultiTimeframeBriefForLeo(
     alertsBlock,
   ].join('\n')
 }
+

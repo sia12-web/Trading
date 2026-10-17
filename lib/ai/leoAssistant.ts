@@ -965,6 +965,8 @@ export function buildLeoSystemPrompt(ctx: LeoChatContext): string {
               fiveDaySupportLow: ctx.intermediateMoney?.low5d,
               fiveDaySupportHigh: ctx.intermediateMoney?.val5d,
             },
+            crossMarketVolatility: ctx.crossMarketVolatility ?? null,
+            marketRadar: ctx.marketRadar ?? null,
           },
           { persistToDisk: false }
         )
@@ -1096,8 +1098,18 @@ B = 2 of 3. Wait.
 C = 0 or 1 of 3. No trade.
 There is no point score. POC, round numbers, AVWAP, and candles do not add points.
 
-CROSS-ASSET VOLATILITY & 5-MARKET SELECTION MATRIX (PARTICIPATION x LOCATION x STRUCTURE):
-Gauges are context only. VIX1D measures 1-day expected volatility for equities. OVX is crude volatility. GVZ is gold volatility. JNIV is Nikkei volatility. A gauge does not say who is positioned and does not trigger a trade.
+CROSS-ASSET VOLATILITY & 5-MARKET SELECTION MATRIX (PARTICIPATION x LOCATION x STRUCTURE) + WYCKOFF ACCUMULATION / DISTRIBUTION DIAGNOSTICS:
+Gauges are context and confirmation, never a standalone trigger. VIX1D/VIX measure equity volatility (NQ/YM/ES). OVX measures crude volatility (CL). GVZ measures gold volatility (GC). JNIV measures Nikkei volatility (NKD).
+Actively use the Volatility Gauges and Cross-Market Radar to help diagnose Wyckoff Accumulation vs. Distribution:
+- Silent Spring Absorption (Accumulation Phase C): Price sweeps range support (Creek), but the asset's Vol Gauge (VIX1D/OVX/GVZ/JNIV) fails to spike or makes a lower high. Indicates absence of institutional put hedging/liquidation and favors passive limit absorption (Spring Reclaim).
+- Post-Spring Vol Crush (Accumulation Phase D): Price reclaims support or breaks above resistance (SOS/LPS) while the Vol Gauge actively contracts (<0% change). Confirms supply removal and supports clean Phase D/E markup.
+- Phase B Compression (Cause Building): Both price ATR and the Vol Gauge sit in a compressed/normal regime while price rotates inside the range. Confirms floating supply is drying up (Phase B); enforce WAIT until a Phase C boundary test occurs.
+- Distribution Vol Floor / Skew Divergence (Distribution Phase B/C): Price probes range resistance (Ice / UTAD) or grinds near highs while the Vol Gauge stays elevated or rises (+2%+). Warns of downside hedging/supply distribution and raises Upthrust / LPSY failure risk.
+- Phase A Stopping Volume Climax: Vol Gauge is in EXPANDING/EXTREME spike while price tests support with high effort and diminishing downward progress. Signals Selling Climax (SC) / Automatic Rally (AR) transition; wait for a lower-vol Secondary Test (ST).
+- Cross-Market Relative Strength & Non-Confirmation:
+  * Accumulation Leader: If an asset holds higher lows or reclaims support with Grade A/B participation while peer markets remain weaker, it exhibits institutional relative strength accumulation.
+  * Isolated Upthrust Warning: If an asset sweeps resistance alone while correlated peers (e.g., YM/ES vs NQ) fail to confirm and remain in balance/weakness, treat the breakout as a higher-probability Upthrust (UTAD) trap.
+  * Defensive Haven Rotation: If Gold (GC) attracts Grade A/B bullish absorption while equity indices stall at resistance with firm VIX1D, macro flow warns of equity distribution.
 Do not decide the market in advance. At the open defined by the injected session policy, prefer the name with participation, a predetermined location, and one of the four structures.
 TRADE ONLY GRADE A under the checklist above, and only as a hypothesis.
 The Anti-Chase Imperative: the largest move, away from a predetermined zone, is not a setup.

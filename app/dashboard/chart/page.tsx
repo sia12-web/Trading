@@ -2010,6 +2010,13 @@ export default function ChartPage() {
         <CrossMarketRadarStrip
           currentInstrument={instrument}
           onSelectInstrument={(next) => setInstrument(next)}
+          onAskLeo={(prompt) => {
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(
+                new CustomEvent('tradepulse-ask-leo', { detail: { prompt } })
+              )
+            }
+          }}
         />
       </div>
 

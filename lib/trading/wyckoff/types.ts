@@ -379,6 +379,43 @@ export interface WyckoffAuctionAlert {
   isoTime: string
 }
 
+export type WyckoffVolGaugeSignal =
+  | 'SILENT_SPRING_ABSORPTION'
+  | 'POST_SPRING_VOL_CRUSH_MARKUP'
+  | 'PHASE_B_COMPRESSION_CAUSE_BUILDING'
+  | 'DISTRIBUTION_VOL_FLOOR_DIVERGENCE'
+  | 'CLIMACTIC_STOPPING_VOLUME_PHASE_A'
+  | 'NEUTRAL_VOL_CONTEXT'
+  | 'UNAVAILABLE'
+
+export type WyckoffCrossMarketSignal =
+  | 'REL_STRENGTH_ACCUMULATION_LEADER'
+  | 'ISOLATED_UPTHRUST_DISTRIBUTION_WARN'
+  | 'DEFENSIVE_ROTATION_DISTRIBUTION_WARN'
+  | 'RISK_ON_MARKUP_CONFIRMATION'
+  | 'PEER_ALIGNED_BALANCE'
+  | 'UNAVAILABLE'
+
+export interface WyckoffVolatilityAndRadarSynthesis {
+  primaryGaugeSymbol: 'VIX1D' | 'VIX' | 'OVX' | 'GVZ' | 'JNIV'
+  primaryGaugeValue: number | null
+  primaryGaugeChangePct: number | null
+  primaryGaugeRegime: string
+  isGaugeExpanding: boolean
+  volGaugeSignal: WyckoffVolGaugeSignal
+  volGaugeDiagnosis: string
+  radarGrade: 'A' | 'B' | 'C' | null
+  radarTopPick: string | null
+  crossMarketSignal: WyckoffCrossMarketSignal
+  crossMarketDiagnosis: string
+  combinedAccDistVerdict:
+    | 'ACCUMULATION_FAVORED'
+    | 'DISTRIBUTION_FAVORED'
+    | 'CAUSE_BUILDING_NEUTRAL'
+    | 'AWAITING_CONFIRMATION'
+  actionableSynthesis: string
+}
+
 export interface WyckoffMultiTimeframeReport {
   market: CanonicalMarketId
   instrument: WyckoffInstrument
@@ -408,5 +445,7 @@ export interface WyckoffMultiTimeframeReport {
     combinedVerdict: WyckoffMonitoringStatus
     actionableSummary: string
   }
+  volatilityAndRadarSynthesis?: WyckoffVolatilityAndRadarSynthesis
   alerts: WyckoffAuctionAlert[]
 }
+

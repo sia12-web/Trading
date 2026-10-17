@@ -556,3 +556,146 @@ test('Test F — Multi-timeframe conflict: 5m spring against bearish 1D and 30m 
   assert.ok(brief.includes('COUNTERTREND_5M_BULLISH_VS_HTF_BEARISH'))
   assert.ok(brief.includes('Self-Challenge'))
 })
+
+test('Test G — Volatility Gauge & Cross-Market Radar Wyckoff Accumulation vs Distribution Synthesis', () => {
+  const rangeBars = buildRotationalRangeCandles(24)
+  const lastTime = rangeBars[rangeBars.length - 1]!.time
+  const baseCvd = rangeBars[rangeBars.length - 1]!.cvd ?? 0
+
+  const springReclaimBars: WyckoffCandle[] = [
+    ...rangeBars,
+    {
+      time: lastTime + 300,
+      open: 101.5,
+      high: 102.0,
+      low: 97.5,
+      close: 99.8,
+      volume: 3200,
+      buyVolume: 850,
+      sellVolume: 2350,
+      delta: -1500,
+      cvd: baseCvd - 1900,
+    },
+    {
+      time: lastTime + 600,
+      open: 99.8,
+      high: 105.0,
+      low: 99.5,
+      close: 104.5,
+      volume: 2800,
+      buyVolume: 2000,
+      sellVolume: 800,
+      delta: 1200,
+      cvd: baseCvd - 700,
+    },
+    {
+      time: lastTime + 900,
+      open: 104.5,
+      high: 107.0,
+      low: 102.0,
+      close: 106.5,
+      volume: 1900,
+      buyVolume: 1350,
+      sellVolume: 550,
+      delta: 800,
+      cvd: baseCvd + 100,
+    },
+  ]
+
+  const mockVol: any = {
+    equities: {
+      vix1d: { ticker: '^VIX1D', label: 'VIX1D', value: 13.8, previousClose: 14.9, changePct: -7.4, regime: 'COMPRESSED' },
+      vix: { ticker: '^VIX', label: 'VIX', value: 15.1, previousClose: 15.6, changePct: -3.2, regime: 'NORMAL' },
+      activeRegime: 'COMPRESSED',
+      isExpanding: false,
+      summary: 'VIX1D contracting',
+    },
+    crude: {
+      ovx: { ticker: '^OVX', label: 'OVX', value: 32.0, previousClose: 31.5, changePct: 1.5, regime: 'NORMAL' },
+      activeRegime: 'NORMAL',
+      isExpanding: false,
+      summary: 'OVX normal',
+    },
+    gold: {
+      gvz: { ticker: '^GVZ', label: 'GVZ', value: 14.5, previousClose: 15.2, changePct: -4.6, regime: 'NORMAL' },
+      activeRegime: 'NORMAL',
+      isExpanding: false,
+      summary: 'GVZ contracting',
+    },
+  }
+
+  const mockRadar: any = {
+    timestamp: new Date().toISOString(),
+    topOpportunity: 'NASDAQ',
+    deskDirective: 'NASDAQ Grade A Focus Trade',
+    markets: {
+      NASDAQ: {
+        market: 'NASDAQ',
+        tickerRoot: 'MNQ',
+        contractLabel: 'Micro Nasdaq-100 (MNQ)',
+        currentPrice: 106.5,
+        dayChangePct: 0.85,
+        volatilityGauge: 'VIX1D',
+        volatilityValue: 13.8,
+        volatilityRegime: 'COMPRESSED',
+        participation: { present: true, score: 85, headline: 'Strong RVOL', details: '' },
+        location: { present: true, score: 90, nearestZoneLabel: 'Y-VAL', distancePoints: 2, headline: 'At support', details: '' },
+        structure: { present: true, score: 90, activeSetup: 'SPRING_RECLAIM', headline: 'Spring reclaim', details: '' },
+        grade: 'A',
+        verdict: 'FOCUS_TRADE',
+        isTopPick: true,
+        summaryLine: 'Grade A Spring Reclaim',
+      },
+      DOW: {
+        market: 'DOW',
+        tickerRoot: 'MYM',
+        contractLabel: 'Micro Dow (MYM)',
+        currentPrice: 40000,
+        dayChangePct: -0.15,
+        volatilityGauge: 'VIX1D',
+        volatilityValue: 13.8,
+        volatilityRegime: 'COMPRESSED',
+        participation: { present: false, score: 40, headline: 'Light', details: '' },
+        location: { present: false, score: 40, nearestZoneLabel: 'Mid', distancePoints: 50, headline: 'Mid range', details: '' },
+        structure: { present: false, score: 40, activeSetup: 'NONE', headline: 'Chop', details: '' },
+        grade: 'C',
+        verdict: 'CHOP',
+        isTopPick: false,
+        summaryLine: 'Chop',
+      },
+    },
+  }
+
+  const report = generateAndPersistWyckoffReport(
+    {
+      instrumentRaw: 'NQ',
+      dailyCandles: springReclaimBars,
+      m30Candles: springReclaimBars,
+      m5Candles: springReclaimBars,
+      crossMarketVolatility: mockVol,
+      marketRadar: mockRadar,
+    },
+    { bypassDeduplication: true, persistToDisk: false }
+  )
+
+  assert.ok(report.volatilityAndRadarSynthesis, 'Report should include volatilityAndRadarSynthesis')
+  assert.equal(report.volatilityAndRadarSynthesis?.primaryGaugeSymbol, 'VIX1D')
+  assert.equal(
+    report.volatilityAndRadarSynthesis?.volGaugeSignal,
+    'POST_SPRING_VOL_CRUSH_MARKUP'
+  )
+  assert.equal(
+    report.volatilityAndRadarSynthesis?.crossMarketSignal,
+    'REL_STRENGTH_ACCUMULATION_LEADER'
+  )
+  assert.equal(
+    report.volatilityAndRadarSynthesis?.combinedAccDistVerdict,
+    'ACCUMULATION_FAVORED'
+  )
+
+  const brief = formatWyckoffMultiTimeframeBriefForLeo(report)
+  assert.ok(brief.includes('Volatility Gauge & Cross-Market Radar Wyckoff Synthesis:'))
+  assert.ok(brief.includes('POST_SPRING_VOL_CRUSH_MARKUP'))
+  assert.ok(brief.includes('REL_STRENGTH_ACCUMULATION_LEADER'))
+})
+

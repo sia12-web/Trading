@@ -420,20 +420,23 @@ export function CrossMarketRadarStrip({
           })}
 
           {/* Quick Ask Leo Button */}
-          {onAskLeo && (
-            <button
-              type="button"
-              onClick={() =>
-                onAskLeo(
-                  'Leo, rank the 5 markets (Nasdaq, Dow, S&P, Gold, Oil) using cross-asset volatility (VIX1D, OVX, GVZ) and the Participation x Location x Structure matrix. Tell me which market is Grade A today.'
+          <button
+            type="button"
+            onClick={() => {
+              const prompt = `Leo, rank the 5 markets using cross-asset volatility (VIX1D, OVX, GVZ, JNIV) and the Participation x Location x Structure matrix, and tell me how the Vol Gauge and Cross-Market Radar diagnose Wyckoff Accumulation vs. Distribution on ${currentInstrument}.`
+              if (onAskLeo) {
+                onAskLeo(prompt)
+              } else if (typeof window !== 'undefined') {
+                window.dispatchEvent(
+                  new CustomEvent('tradepulse-ask-leo', { detail: { prompt } })
                 )
               }
-              className="px-2 py-0.5 ml-1 rounded bg-indigo-950/60 hover:bg-indigo-900 border border-indigo-500/40 text-[10px] text-indigo-200 font-bold shrink-0 transition"
-              title="Ask Leo for live 5-market radar ranking"
-            >
-              🤖 Radar
-            </button>
-          )}
+            }}
+            className="px-2 py-0.5 ml-1 rounded bg-indigo-950/60 hover:bg-indigo-900 border border-indigo-500/40 text-[10px] text-indigo-200 font-bold shrink-0 transition cursor-pointer"
+            title="Ask Leo for live 5-market radar ranking & Wyckoff Vol/Radar Accumulation vs Distribution audit"
+          >
+            🤖 Radar & Vol Audit
+          </button>
         </div>
       </div>
 
@@ -504,19 +507,22 @@ export function CrossMarketRadarStrip({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {onAskLeo && (
-              <button
-                type="button"
-                onClick={() =>
-                  onAskLeo(
-                    `Leo, give me the detailed breakdown for ${selectedCard.contractLabel}. Explain its Participation (${selectedCard.volatilityGauge}), Location, and Structure.`
+            <button
+              type="button"
+              onClick={() => {
+                const prompt = `Leo, audit whether ${selectedCard.contractLabel} is in Wyckoff Accumulation or Distribution using its implied volatility gauge (${selectedCard.volatilityGauge}: ${selectedCard.volatilityValue.toFixed(1)}, ${selectedCard.volatilityRegime}), Cross-Market Radar Grade ${selectedCard.grade}, Location, and CVD Order Flow.`
+                if (onAskLeo) {
+                  onAskLeo(prompt)
+                } else if (typeof window !== 'undefined') {
+                  window.dispatchEvent(
+                    new CustomEvent('tradepulse-ask-leo', { detail: { prompt } })
                   )
                 }
-                className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-[10px] text-amber-200 font-bold transition"
-              >
-                Ask Leo About {selectedCard.tickerRoot}
-              </button>
-            )}
+              }}
+              className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-[10px] text-amber-200 font-bold transition cursor-pointer"
+            >
+              Ask Leo: {selectedCard.tickerRoot} Vol & Wyckoff Audit
+            </button>
             <button
               type="button"
               onClick={() => setSelectedCard(null)}
