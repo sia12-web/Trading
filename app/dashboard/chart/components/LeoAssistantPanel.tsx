@@ -116,7 +116,7 @@ interface LeoAssistantPanelProps {
   context: LeoChatContext
   candles?: any[]
   isOpen?: boolean
-  initialTab?: 'CHAT' | 'WYCKOFF_ENGINE' | 'STRATEGY_RULES'
+  initialTab?: 'CHAT' | 'WYCKOFF_ENGINE'
   onToggleOpen?: () => void
   onClose?: () => void
   onSelectDataPoint?: (point: LeoDataPoint) => void
@@ -135,7 +135,7 @@ function getWelcomeMessage(instrument: string): LeoMessage {
   return {
     id: `welcome-${instrument}`,
     role: 'assistant',
-    content: `**Leo Online.** Institutional desk assistant calibrated to ${instrument}.\n\nMonitoring **Time & Sessions**, **Multi-Timeframe Money**, and **Auction Tails**.\n\nClick any arrow or reference directly on the chart, or speak hands-free via mic.`,
+    content: `**Leo Online.** Wyckoff desk assistant calibrated to ${instrument}.\n\nFocused on **Wyckoff Accumulation & Distribution**, **Multi-Timeframe Structure** (1D · 4H · 5m), and **Drawn Range Backtests**.\n\nTalk directly to Leo, discuss market behavior, or draw range boxes on the chart to backtest.`,
     timestamp: Date.now(),
   }
 }
@@ -282,15 +282,15 @@ export function LeoAssistantPanel({
     }
   }, [inputPrompt])
 
-  // Active Panel Tab: Chat vs Wyckoff MTF Engine vs Strategy Rules
-  const [activeTab, setActiveTab] = useState<'CHAT' | 'WYCKOFF_ENGINE' | 'STRATEGY_RULES'>(
-    initialTab || 'CHAT'
+  // Active Panel Tab: Chat vs Wyckoff MTF Engine
+  const [activeTab, setActiveTab] = useState<'CHAT' | 'WYCKOFF_ENGINE'>(
+    initialTab === 'WYCKOFF_ENGINE' ? 'WYCKOFF_ENGINE' : 'CHAT'
   )
   const [isExpanded, setIsExpanded] = useState(false)
 
   useEffect(() => {
     if (initialTab) {
-      setActiveTab(initialTab)
+      setActiveTab(initialTab === 'WYCKOFF_ENGINE' ? 'WYCKOFF_ENGINE' : 'CHAT')
     }
   }, [initialTab])
 
@@ -2044,7 +2044,7 @@ export function LeoAssistantPanel({
               <span className="text-sky-300 font-semibold">
                 {context.sessionDetails?.sessionElapsedMinutes != null
                   ? `${context.sessionDetails.sessionElapsedMinutes}m in`
-                  : context.openingType ?? 'Open Auction'}
+                  : context.openingType ?? 'Active Session'}
               </span>
             </span>
             {context.sessionDetails?.barCountdown && (
@@ -2055,7 +2055,7 @@ export function LeoAssistantPanel({
             )}
           </div>
 
-          {/* ── Mode Switcher Tabs (Leo Chat vs Wyckoff MTF Engine vs 22 Rules & Desks) ── */}
+          {/* ── Mode Switcher Tabs (Leo Flow vs Wyckoff MTF Engine) ── */}
           <div className="flex items-center border-b border-neutral-800/80 bg-neutral-950/90 px-2 py-1.5 gap-1 shrink-0">
             <button
               type="button"
@@ -2083,18 +2083,6 @@ export function LeoAssistantPanel({
             >
               <span>🧭</span>
               <span>Wyckoff MTF</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('STRATEGY_RULES')}
-              className={`flex-1 py-1.5 px-1.5 rounded-lg text-[10px] font-mono font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                activeTab === 'STRATEGY_RULES'
-                  ? 'bg-cyan-950/80 text-cyan-200 border border-cyan-500/60 shadow-sm'
-                  : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900/60 border border-transparent'
-              }`}
-            >
-              <span>🏛️</span>
-              <span>22 Rules & Desks</span>
             </button>
           </div>
 
@@ -2690,97 +2678,8 @@ export function LeoAssistantPanel({
             </div>
           )}
 
-          {/* Quick Prompt Strip */}
-              <div className="px-3 py-1.5 border-b border-neutral-800/60 bg-neutral-950/40 flex items-center gap-1.5 overflow-x-auto shrink-0">
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleSendMessage(
-                      `Leo, how do the fundamental agent and headline agent cooperate on ${context.instrument} right now? Connect the dots with our Wyckoff structure.`
-                    )
-                  }
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-950/70 hover:bg-amber-900/90 border border-amber-500/60 text-[9.5px] font-mono text-amber-200 shrink-0 transition shadow-sm font-semibold"
-                  title="Synthesize Chart Leo x Fundamental Specialist x Desk News Agent"
-                >
-                  <span>🤝</span> Multi-Agent Synthesis
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleSendMessage(
-                      `Leo, audit 1-year 5-minute Wyckoff range backtest benchmarks on ${context.instrument}.`
-                    )
-                  }
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-950/70 hover:bg-blue-900/90 border border-blue-500/60 text-[9.5px] font-mono text-blue-200 shrink-0 transition shadow-sm font-semibold"
-                  title="Audit 1-Year 5-Minute Wyckoff Backtest Benchmarks"
-                >
-                  <span>🔬</span> 1-Yr Wyckoff Benchmarks
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleSendMessage(
-                      'Leo, compare markets for accumulation and distribution backtests. Show me the cross-market comparative matrix.'
-                    )
-                  }
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-950/70 hover:bg-indigo-900/90 border border-indigo-500/60 text-[9.5px] font-mono text-indigo-200 shrink-0 transition shadow-sm font-semibold"
-                  title="Compare all 5 markets across 6,104 Wyckoff ranges"
-                >
-                  <span>🌐</span> Compare 5 Markets (Wyckoff)
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleSendMessage(
-                      'Leo, rank the 5 markets (Nasdaq, Dow, S&P, Gold, Oil) using cross-asset volatility (VIX1D, OVX, GVZ) and the Participation x Location x Structure matrix. Tell me which market is Grade A today.'
-                    )
-                  }
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-950/60 hover:bg-cyan-900/80 border border-cyan-500/50 text-[9.5px] font-mono text-cyan-200 shrink-0 transition shadow-sm"
-                  title="Rank 5 markets on Participation x Location x Structure"
-                >
-                  <span>🎯</span> Rank 5 Markets (VIX/OVX/GVZ)
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleSendMessage(
-                      `Leo, audit the 4 Wyckoff execution setups for ${context.instrument} (Spring, Upthrust, Breakout Retest, Breakdown Retest). Tell me if price is interacting with our frozen pre-market Tier 1 zones.`
-                    )
-                  }
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-950/60 hover:bg-emerald-900/80 border border-emerald-500/50 text-[9.5px] font-mono text-emerald-200 shrink-0 transition shadow-sm"
-                  title="Audit 4 Wyckoff setups at frozen Tier 1 zones"
-                >
-                  <span>🏛️</span> Audit 4 Setups
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSendMessage(`Leo, audit order flow delta vs VWAP on ${context.instrument}, check absorption and exhaustion, and advise trade setup.`)}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-950/60 hover:bg-cyan-900/80 border border-cyan-500/50 text-[9.5px] font-mono text-cyan-200 shrink-0 transition shadow-sm"
-                >
-                  <span>⚡</span> Audit Order Flow
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleSendMessage(
-                      'Leo, compare the volume traded in these ranges and evaluate whether they will act as good or bad support or resistance.'
-                    )
-                  }
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-950/60 hover:bg-emerald-900/80 border border-emerald-500/50 text-[9.5px] font-mono text-emerald-200 shrink-0 transition shadow-sm"
-                >
-                  <span>📈</span> Compare Range Volumes
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSendMessage(`Leo, summarize key auction tails and Dalton day type for ${context.instrument}.`)}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-950/60 hover:bg-sky-900/80 border border-sky-500/50 text-[9.5px] font-mono text-sky-200 shrink-0 transition shadow-sm"
-                >
-                  <span>📊</span> Dalton Day Type
-                </button>
-              </div>
-
-              {/* Conversation History */}
-              <div className="flex-1 min-h-0 p-3 overflow-y-auto space-y-3 font-sans text-xs">
+          {/* Conversation History */}
+          <div className="flex-1 min-h-0 p-3 overflow-y-auto space-y-3 font-sans text-xs">
             {messages.map((msg) => {
               const isUser = msg.role === 'user'
               // Strip <execute> block from regular visual chat text
@@ -2886,94 +2785,6 @@ export function LeoAssistantPanel({
 
           {/* Input & Voice Controls Bar */}
           <div className="p-2.5 border-t border-neutral-800/80 bg-neutral-900/70 space-y-1.5 shrink-0">
-            {/* Quick Action Suggestion Chips */}
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5 text-[9.5px] font-mono">
-              <button
-                type="button"
-                onClick={() =>
-                  handleSendMessage(
-                    `Leo, audit order flow delta vs VWAP on ${context.instrument}. Analyze buyer/seller absorption, CVD divergences, and confirm if execution criteria are met.`
-                  )
-                }
-                className="px-2 py-0.5 rounded-md bg-cyan-950/60 hover:bg-cyan-900/80 border border-cyan-500/50 text-cyan-200 shrink-0 transition shadow-sm font-semibold"
-                title="Audit Order Flow & CVD delta vs VWAP"
-              >
-                🤖 Audit Order Flow
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  handleSendMessage(
-                    `Leo, compare volume across our drawn range boxes and fixed volume profiles for ${context.instrument}, evaluating support/resistance quality.`
-                  )
-                }
-                className="px-2 py-0.5 rounded-md bg-emerald-950/60 hover:bg-emerald-900/80 border border-emerald-500/50 text-emerald-200 shrink-0 transition shadow-sm font-semibold"
-                title="Compare volume across ranges and profiles"
-              >
-                📈 Compare Range Volume
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  handleSendMessage(
-                    `Leo, analyze price location and distance relative to the 5-Month Anchored VWAP and institutional bands on ${context.instrument}.`
-                  )
-                }
-                className="px-2 py-0.5 rounded-md bg-emerald-950/60 hover:bg-emerald-900/80 border border-emerald-500/50 text-emerald-200 shrink-0 transition shadow-sm font-semibold"
-                title="Analyze 5-Month Anchored VWAP"
-              >
-                ⚓ 5M AVWAP Benchmark
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  handleSendMessage(
-                    `Leo, summarize upcoming Tier-1 macro news catalysts and economic events for ${context.instrument}.`
-                  )
-                }
-                className="px-2 py-0.5 rounded-md bg-amber-950/60 hover:bg-amber-900/80 border border-amber-500/50 text-amber-200 shrink-0 transition shadow-sm font-semibold"
-                title="Check macro news catalysts"
-              >
-                ⚡ News Catalysts
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  handleSendMessage(
-                    `Leo, rank the 5 markets (NQ, ES, YM, Gold, Oil) on Participation x Location x Structure using VIX, OVX, and GVZ gauges.`
-                  )
-                }
-                className="px-2 py-0.5 rounded-md bg-purple-950/60 hover:bg-purple-900/80 border border-purple-500/50 text-purple-200 shrink-0 transition shadow-sm font-semibold"
-                title="Rank 5 markets on Participation x Location x Structure"
-              >
-                🎯 Rank 5 Markets
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  handleSendMessage(
-                    `Leo, what are our must-act levels, dealer gamma walls, and CTA triggers for ${context.instrument}?`
-                  )
-                }
-                className="px-2 py-0.5 rounded-md bg-neutral-800/80 hover:bg-purple-950/60 border border-neutral-700/60 hover:border-purple-600/60 text-neutral-300 hover:text-purple-200 shrink-0 transition"
-                title="Quick query Big Money levels"
-              >
-                🎯 Big Money Triggers
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  handleSendMessage(
-                    `Leo, evaluate current position risk, rule status, and proximity to major reference magnets.`
-                  )
-                }
-                className="px-2 py-0.5 rounded-md bg-neutral-800/80 hover:bg-purple-950/60 border border-neutral-700/60 hover:border-purple-600/60 text-neutral-300 hover:text-purple-200 shrink-0 transition"
-                title="Evaluate trade risk and rules"
-              >
-                🛡️ Risk & Rules
-              </button>
-            </div>
-
             <form
               onSubmit={(e) => {
                 e.preventDefault()
@@ -3069,7 +2880,7 @@ export function LeoAssistantPanel({
       ) : (
         <WyckoffRulesPanel
           instrument={context.instrument}
-          initialSubTab={activeTab === 'WYCKOFF_ENGINE' ? 'MTF_ENGINE' : 'RULES_22'}
+          initialSubTab="MTF_ENGINE"
           onSyncData={(data) => {
             if (data.boxAnalysis) setSyncedBoxAnalysis(data.boxAnalysis)
             if (data.wyckoffReport) setSyncedWyckoffReport(data.wyckoffReport)

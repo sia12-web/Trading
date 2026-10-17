@@ -5372,7 +5372,7 @@ export function TradingChart({
   const [leoPanelOpen, setLeoPanelOpen] = useState(false)
   const [leoExternalPoints, setLeoExternalPoints] = useState<LeoDataPoint[]>([])
   const [leoAutoPrompt, setLeoAutoPrompt] = useState<string | null>(null)
-  const [leoInitialTab, setLeoInitialTab] = useState<'CHAT' | 'WYCKOFF_ENGINE' | 'STRATEGY_RULES'>('CHAT')
+  const [leoInitialTab, setLeoInitialTab] = useState<'CHAT' | 'WYCKOFF_ENGINE'>('CHAT')
   const [showQuestioningModal, setShowQuestioningModal] = useState(false)
 
   // ── Auction Price Critique & "Questioning" Engine Evaluation ───────────────
