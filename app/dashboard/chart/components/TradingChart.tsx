@@ -8586,9 +8586,21 @@ export function TradingChart({
     })
     ro.observe(containerRef.current)
 
-    // Intercept wheel events across the entire chart wrapper (toolbar, main chart, volume bars at bottom, time scale, sub-panes)
-    // to prevent browser page bounce/shaking and zoom the chart time scale seamlessly
+    // Intercept wheel events across the chart canvas and toolbar to zoom the chart time scale,
+    // but NEVER intercept wheel events when scrolling inside the Leo AI Assistant interface,
+    // dropdowns, or modals.
     const onChartWheel = (e: WheelEvent) => {
+      const target = e.target as HTMLElement | null
+      if (
+        target?.closest('[data-leo-panel]') ||
+        target?.closest('.leo-panel') ||
+        target?.closest('[role="dialog"]') ||
+        target?.closest('textarea') ||
+        target?.closest('.overflow-y-auto')
+      ) {
+        return
+      }
+
       e.preventDefault()
       e.stopPropagation()
       if (!chartRef.current) return

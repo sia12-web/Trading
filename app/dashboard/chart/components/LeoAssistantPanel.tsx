@@ -1991,7 +1991,9 @@ export function LeoAssistantPanel({
       {/* ─── Expanded Glassmorphism Assistant Panel ───────────────────────── */}
       {isPanelOpen && (
         <div
-          className={`absolute top-2 bottom-2 right-2 z-[60] w-full ${
+          data-leo-panel="true"
+          onWheel={(e) => e.stopPropagation()}
+          className={`leo-panel absolute top-2 bottom-2 right-2 z-[60] w-full ${
             isExpanded ? 'max-w-[860px]' : 'max-w-[400px]'
           } flex flex-col rounded-2xl backdrop-blur-xl bg-neutral-950/95 border border-purple-500/35 shadow-2xl overflow-hidden transition-all duration-300`}
         >
